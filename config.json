@@ -1,0 +1,179 @@
+{
+  "currencies": {
+    "base": "NZD",
+    "targets": ["USD", "EUR", "AUD", "BDT", "ZAR"]
+  },
+  "pinned": [
+    {
+      "label": "Xero Dashboard",
+      "type": "link",
+      "url": "https://go.xero.com/app/!8QbL4/dashboard"
+    },
+    {
+      "label": "Dispatch Tally",
+      "type": "link",
+      "url": "https://docs.google.com/spreadsheets/d/1UlNjWUBaGlJfQal-rFidtP4meeWTaNB5vrAKBJrEfF8/edit?gid=0#gid=0"
+    },
+    {
+      "label": "Analytics Dashboard",
+      "type": "link",
+      "url": "https://lookerstudio.google.com/u/0/reporting/6b38d012-6da9-4242-8130-5eef543507f0/page/p_5vl0qssvgd"
+    },
+    {
+      "label": "Search Gmail",
+      "type": "link",
+      "url": "https://mail.google.com/mail/u/0/#search/"
+    }
+  ],
+  "groups": [
+    {
+      "name": "Pricing & Costing",
+      "colour": "#16a34a",
+      "items": [
+        {
+          "label": "Buy Prices — Spring 2026",
+          "type": "file",
+          "path": "/Users/amcleod/Documents/Pricing/buy-prices-spring-2026.xlsx",
+          "season": "sep-nov"
+        },
+        {
+          "label": "Landed Cost Calculator",
+          "type": "file",
+          "path": "/Users/amcleod/Documents/Pricing/landed-cost-calc.xlsx"
+        },
+        {
+          "label": "Pricing Folder",
+          "type": "folder",
+          "path": "/Users/amcleod/Documents/Pricing"
+        }
+      ]
+    },
+    {
+      "name": "Dispatch Tallies",
+      "colour": "#2563eb",
+      "items": [
+        {
+          "label": "Packing Slip Generator",
+          "type": "link",
+          "url": "https://enviroware-packing-slip.onrender.com"
+        },
+        {
+          "label": "Dispatch Tally",
+          "type": "link",
+          "url": "https://docs.google.com/spreadsheets/d/1UlNjWUBaGlJfQal-rFidtP4meeWTaNB5vrAKBJrEfF8/edit?gid=0#gid=0"
+        },
+        {
+          "label": "Sales Data Sheet 2",
+          "type": "link",
+          "url": "https://docs.google.com/spreadsheets/d/1CLXqaO9nmRCKfWy8bA-m3SCVK-e9wrjrlqInTjyKEKQ/edit?gid=1603094938#gid=1603094938"
+        },
+        {
+          "label": "Import Schedule",
+          "type": "link",
+          "url": "https://docs.google.com/spreadsheets/d/1cqcTPcfJpT10cY0xNEdgM3iLkdiMQD6nPC2QaBovsyM/edit?gid=1512495171#gid=1512495171"
+        }
+      ]
+    },
+    {
+      "name": "Accounting",
+      "colour": "#7c3aed",
+      "items": [
+        {
+          "label": "Xero Dashboard",
+          "type": "link",
+          "url": "https://go.xero.com/app/!8QbL4/dashboard"
+        },
+        {
+          "label": "MYOB (legacy)",
+          "type": "link",
+          "url": "https://id.myob.com/u/login/password?state=hKFo2SBNaGh2bnlETHBxZHVHR3YtQlc5VEprYUxKSGY5ekN5MqFur3VuaXZlcnNhbC1sb2dpbqN0aWTZIEItY2x6cVJqbkJ4RGIzaFJFcmE5RGRLUUZqRi10dWFPo2NpZNkgVVYxOHMzWXpscU9pRWhybFR3NTNTdHVWMUVFN0RVU2E",
+          "tag": "transition"
+        }
+      ]
+    },
+    {
+      "name": "Suppliers",
+      "colour": "#ea580c",
+      "items": [
+        {
+          "label": "Farmlands",
+          "type": "link",
+          "url": "https://websupplier.apac.f4f.com/websupplier/Login.action"
+        },
+        {
+          "label": "PGG Wrightson Orders",
+          "type": "link",
+          "url": "https://mail.google.com/mail/u/0/#label/.Purchase+Orders%2FPGG+Wrightson"
+        },
+        {
+          "label": "Horticentre Orders",
+          "type": "link",
+          "url": "https://mail.google.com/mail/u/0/#label/.Purchase+Orders%2FHorticentre"
+        }
+      ]
+    },
+    {
+      "name": "Inventory & Stock",
+      "colour": "#0891b2",
+      "items": [
+        {
+          "label": "Stock Count Sheet",
+          "type": "file",
+          "path": "/Users/amcleod/Documents/Inventory/stock-count.xlsx"
+        },
+        {
+          "label": "Warehouse Folder",
+          "type": "folder",
+          "path": "/Users/amcleod/Documents/Inventory/Warehouse"
+        }
+      ]
+    },
+    {
+      "name": "Reference & Tools",
+      "colour": "#64748b",
+      "items": [
+        {
+          "label": "Analytics Dashboard",
+          "type": "link",
+          "url": "https://lookerstudio.google.com/u/0/reporting/6b38d012-6da9-4242-8130-5eef543507f0/page/p_5vl0qssvgd"
+        },
+        {
+          "label": "Drive: 1.Admin",
+          "type": "link",
+          "url": "https://drive.google.com/drive/u/0/folders/1VPaonoKnn4GfhSkyGKBMN5S3sQ4blfJn"
+        },
+        {
+          "label": "Drive: 5. Packing Slips",
+          "type": "link",
+          "url": "https://drive.google.com/drive/u/0/folders/1-2PQs0ChVg4JGu0x7XvqfDFROwH-HG7U"
+        },
+        {
+          "label": "Drive: 9. Accounting",
+          "type": "link",
+          "url": "https://drive.google.com/drive/u/0/folders/1ydOFoKLT1BENUTVYxDS0BiNz0-Ubm_X9"
+        }
+      ]
+    },
+    {
+      "name": "Search & AI",
+      "colour": "#dc2626",
+      "items": [
+        {
+          "label": "Search Gmail",
+          "type": "link",
+          "url": "https://mail.google.com/mail/u/0/#search/"
+        },
+        {
+          "label": "Search Google Drive",
+          "type": "link",
+          "url": "https://drive.google.com/drive/u/0/search?q="
+        },
+        {
+          "label": "Gemini AI",
+          "type": "link",
+          "url": "https://gemini.google.com"
+        }
+      ]
+    }
+  ]
+}
