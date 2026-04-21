@@ -56,7 +56,7 @@ function updateTimestamp() {
 function toggleEditMode() {
     editMode = !editMode;
     const btn = document.getElementById('edit-btn');
-    btn.textContent = editMode ? 'Done' : 'Edit';
+    btn.querySelector('.sidebar-btn-label').textContent = editMode ? 'Done' : 'Edit Layout';
     btn.classList.toggle('edit-active', editMode);
     document.getElementById('export-btn').style.display = editMode ? '' : 'none';
     document.getElementById('reset-btn').style.display = editMode ? '' : 'none';
@@ -80,7 +80,7 @@ function resetConfig() {
     if (!confirm('Reset to the deployed config? Local edits will be lost.')) return;
     localStorage.removeItem('hub-config-override');
     editMode = false;
-    document.getElementById('edit-btn').textContent = 'Edit';
+    document.getElementById('edit-btn').querySelector('.sidebar-btn-label').textContent = 'Edit Layout';
     document.getElementById('edit-btn').classList.remove('edit-active');
     document.getElementById('export-btn').style.display = 'none';
     document.getElementById('reset-btn').style.display = 'none';
@@ -225,6 +225,7 @@ function buildGroupCard(group, gIdx) {
     card.className = 'group' +
         (collapsedGroups[group.name] ? ' collapsed' : '') +
         (editMode ? ' edit-mode' : '');
+    if (group.colour) card.style.setProperty('--group-colour', group.colour);
 
     const header = document.createElement('div');
     header.className = 'group-header';
@@ -661,6 +662,15 @@ document.addEventListener('keydown', e => {
         if (e.key === 'Escape') closeModal();
         if (e.key === 'Enter' && e.target.tagName !== 'SELECT') { e.preventDefault(); saveModal(); }
     }
+});
+
+// ── Coming-soon nav items ──
+document.querySelectorAll('.nav-item--soon').forEach(el => {
+    el.addEventListener('click', e => {
+        e.preventDefault();
+        const label = el.textContent.replace(/\s*Soon\s*/gi, '').trim();
+        showToast(label + ' — ' + el.dataset.phase + ', coming soon');
+    });
 });
 
 // ── Init ──
