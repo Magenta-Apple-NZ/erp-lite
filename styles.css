@@ -370,3 +370,244 @@ li.off-season:hover a {
         padding: 0.75rem;
     }
 }
+
+/* ── Edit mode buttons (header) ── */
+.btn-ghost {
+    background: rgba(255,255,255,0.1);
+    border: 1px solid rgba(255,255,255,0.2);
+    color: white;
+    font-size: 0.78rem;
+    padding: 0.3rem 0.7rem;
+    border-radius: 6px;
+    cursor: pointer;
+    font-family: inherit;
+    transition: background 0.2s;
+}
+.btn-ghost:hover { background: rgba(255,255,255,0.22); }
+.btn-ghost.edit-active {
+    background: #2563eb;
+    border-color: #3b82f6;
+}
+
+/* ── Drag handles ── */
+.drag-handle {
+    cursor: grab;
+    color: #94a3b8;
+    font-size: 1rem;
+    padding: 0 0.4rem 0 0;
+    flex-shrink: 0;
+    user-select: none;
+    line-height: 1;
+}
+.drag-handle:active { cursor: grabbing; }
+.item-drag-handle { padding: 0 0.35rem; color: #cbd5e1; font-size: 0.9rem; }
+
+/* ── Drag visual feedback ── */
+.group.edit-mode .group-header { cursor: default; }
+.group.dragging { opacity: 0.35; }
+.group.drag-over { outline: 2px dashed #3b82f6; outline-offset: 2px; }
+li.dragging { opacity: 0.35; }
+li.drag-over { background: #eff6ff; }
+
+/* ── Group name & colour editing ── */
+.group-name-input {
+    background: transparent;
+    border: none;
+    border-bottom: 1px dashed #94a3b8;
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: #1e293b;
+    padding: 0;
+    min-width: 80px;
+    max-width: 180px;
+    outline: none;
+    font-family: inherit;
+}
+.group-name-input:focus { border-bottom-color: #3b82f6; }
+
+.group-colour-picker {
+    width: 22px;
+    height: 22px;
+    border: none;
+    padding: 0;
+    cursor: pointer;
+    background: none;
+    border-radius: 4px;
+    flex-shrink: 0;
+}
+
+/* ── Edit action buttons (pencil, ×) ── */
+.edit-action-btn {
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: #94a3b8;
+    font-size: 0.85rem;
+    padding: 0.2rem 0.3rem;
+    border-radius: 4px;
+    flex-shrink: 0;
+    line-height: 1;
+    transition: background 0.12s, color 0.12s;
+}
+.edit-action-btn:hover { background: #f1f5f9; color: #475569; }
+.edit-action-btn.delete-btn:hover { background: #fee2e2; color: #ef4444; }
+
+/* ── Add item / group buttons ── */
+.add-item-btn {
+    display: block;
+    width: calc(100% - 2rem);
+    margin: 0.4rem 1rem;
+    padding: 0.35rem;
+    background: none;
+    border: 1px dashed #cbd5e1;
+    border-radius: 6px;
+    color: #64748b;
+    font-size: 0.8rem;
+    font-family: inherit;
+    cursor: pointer;
+    text-align: center;
+    transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+.add-item-btn:hover { background: #f8fafc; border-color: #3b82f6; color: #2563eb; }
+
+.add-group-btn {
+    background: white;
+    border: 2px dashed #cbd5e1;
+    border-radius: 10px;
+    color: #64748b;
+    font-size: 0.88rem;
+    font-family: inherit;
+    cursor: pointer;
+    padding: 1.5rem;
+    width: 100%;
+    text-align: center;
+    transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+.add-group-btn:hover { background: #f8fafc; border-color: #3b82f6; color: #2563eb; }
+
+/* ── Pinned edit mode ── */
+.pinned-edit-wrapper {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.15rem;
+    background: white;
+    border: 1px solid #e2e8f0;
+    border-radius: 6px;
+    padding: 0.2rem 0.3rem 0.2rem 0.7rem;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+}
+.pinned-edit-wrapper .pinned-item {
+    border: none;
+    background: none;
+    padding: 0;
+    box-shadow: none;
+    pointer-events: none;
+}
+.add-pinned-btn {
+    border-style: dashed !important;
+    color: #64748b !important;
+}
+.add-pinned-btn:hover { border-color: #3b82f6 !important; color: #2563eb !important; }
+
+/* ── Item edit modal ── */
+.modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 200;
+    padding: 1rem;
+}
+.modal-box {
+    background: white;
+    border-radius: 12px;
+    padding: 1.5rem;
+    width: 100%;
+    max-width: 420px;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+}
+.modal-title {
+    margin: 0 0 1.25rem;
+    font-size: 1rem;
+    font-weight: 600;
+    color: #1e293b;
+}
+.modal-field { margin-bottom: 0.9rem; }
+.modal-field label {
+    display: block;
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: #475569;
+    margin-bottom: 0.3rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+.modal-hint {
+    font-weight: 400;
+    text-transform: none;
+    letter-spacing: 0;
+    color: #94a3b8;
+    margin-left: 0.25rem;
+}
+.modal-field input, .modal-field select {
+    width: 100%;
+    padding: 0.55rem 0.75rem;
+    border: 1px solid #e2e8f0;
+    border-radius: 6px;
+    font-size: 0.9rem;
+    color: #1a1a1a;
+    background: white;
+    outline: none;
+    font-family: inherit;
+    transition: border-color 0.15s, box-shadow 0.15s;
+}
+.modal-field input:focus, .modal-field select:focus {
+    border-color: #3b82f6;
+    box-shadow: 0 0 0 3px rgba(59,130,246,0.12);
+}
+.modal-actions {
+    display: flex;
+    gap: 0.6rem;
+    margin-top: 1.25rem;
+    justify-content: flex-end;
+}
+.btn-primary {
+    background: #2563eb;
+    color: white;
+    border: none;
+    padding: 0.55rem 1.2rem;
+    border-radius: 6px;
+    font-size: 0.88rem;
+    font-weight: 600;
+    cursor: pointer;
+    font-family: inherit;
+    transition: background 0.15s;
+}
+.btn-primary:hover { background: #1d4ed8; }
+.btn-secondary {
+    background: white;
+    color: #475569;
+    border: 1px solid #e2e8f0;
+    padding: 0.55rem 1.2rem;
+    border-radius: 6px;
+    font-size: 0.88rem;
+    font-weight: 500;
+    cursor: pointer;
+    font-family: inherit;
+    transition: background 0.15s;
+}
+.btn-secondary:hover { background: #f8fafc; }
+
+/* ── Currency sparklines ── */
+.currency-pair { min-width: 78px; }
+.sparkline {
+    display: block;
+    width: 100%;
+    height: 22px;
+    margin-top: 0.3rem;
+    overflow: visible;
+}
+.sparkline-up polyline { stroke: rgba(134, 239, 172, 0.85); }
+.sparkline-down polyline { stroke: rgba(252, 165, 165, 0.8); }

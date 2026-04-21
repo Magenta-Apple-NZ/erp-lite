@@ -12,6 +12,9 @@
             <h1>Business Hub</h1>
             <div class="header-actions">
                 <span id="last-updated" title="Last config load time"></span>
+                <button id="reset-btn" class="btn-ghost" style="display:none" title="Reset to deployed config">Reset</button>
+                <button id="export-btn" class="btn-ghost" style="display:none" title="Download config.json">Export</button>
+                <button id="edit-btn" class="btn-ghost" title="Edit mode">Edit</button>
                 <button id="reload-btn" title="Reload config">&#x21bb;</button>
             </div>
         </div>
@@ -25,6 +28,46 @@
     <main id="dashboard">
         <!-- Groups will be loaded here -->
     </main>
+
+    <!-- Item edit modal -->
+    <div id="item-modal" class="modal-overlay" style="display:none">
+        <div class="modal-box">
+            <h3 class="modal-title">Edit Item</h3>
+            <div class="modal-field">
+                <label>Label</label>
+                <input type="text" id="modal-label" placeholder="Display name">
+            </div>
+            <div class="modal-field">
+                <label>Type</label>
+                <select id="modal-type">
+                    <option value="link">Link (URL)</option>
+                    <option value="file">File</option>
+                    <option value="folder">Folder</option>
+                </select>
+            </div>
+            <div class="modal-field" id="modal-url-field">
+                <label>URL</label>
+                <input type="url" id="modal-url" placeholder="https://...">
+            </div>
+            <div class="modal-field" id="modal-path-field" style="display:none">
+                <label>Path</label>
+                <input type="text" id="modal-path" placeholder="/Users/...">
+            </div>
+            <div class="modal-field">
+                <label>Tag <span class="modal-hint">optional</span></label>
+                <input type="text" id="modal-tag" placeholder="e.g. transition">
+            </div>
+            <div class="modal-field">
+                <label>Season <span class="modal-hint">optional — e.g. oct-mar</span></label>
+                <input type="text" id="modal-season" placeholder="e.g. oct-mar">
+            </div>
+            <div class="modal-actions">
+                <button id="modal-save" class="btn-primary">Save</button>
+                <button id="modal-cancel" class="btn-secondary">Cancel</button>
+            </div>
+        </div>
+    </div>
+
     <div id="toast" class="toast"></div>
     <script src="app.js"></script>
 </body>
