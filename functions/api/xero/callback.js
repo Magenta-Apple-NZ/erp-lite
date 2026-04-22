@@ -27,7 +27,7 @@ export async function onRequestGet({ env, request }) {
         body: new URLSearchParams({
             grant_type: 'authorization_code',
             code,
-            redirect_uri: env.XERO_REDIRECT_URI,
+            redirect_uri: 'https://hub.primetie.co.nz/api/xero/callback',
             client_id: env.XERO_CLIENT_ID,
             client_secret: env.XERO_CLIENT_SECRET,
         }),

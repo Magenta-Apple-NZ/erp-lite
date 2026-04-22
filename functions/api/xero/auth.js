@@ -16,7 +16,7 @@ export async function onRequestGet({ env }) {
     const params = new URLSearchParams({
         response_type: 'code',
         client_id: env.XERO_CLIENT_ID,
-        redirect_uri: env.XERO_REDIRECT_URI,
+        redirect_uri: 'https://hub.primetie.co.nz/api/xero/callback',
         scope: SCOPES,
         state,
     });
