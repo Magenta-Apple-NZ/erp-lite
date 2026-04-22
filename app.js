@@ -672,6 +672,10 @@ function setActiveView(viewId) {
         const el = document.getElementById(id);
         if (el) el.style.display = id === viewId ? '' : 'none';
     });
+    // Remove slip-view class from detail container when navigating away
+    if (viewId !== 'view-orders-detail') {
+        document.getElementById('orders-detail-container')?.classList.remove('slip-view');
+    }
     const topbar = document.getElementById('dashboard-topbar');
     if (topbar) topbar.style.display = viewId === 'view-dashboard' ? '' : 'none';
 }

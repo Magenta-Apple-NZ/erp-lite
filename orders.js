@@ -509,11 +509,8 @@ const Orders = (() => {
 
     // ── Order detail / packing slip ──
     async function renderDetail(container, orderId) {
-        container.innerHTML = `
-        <div class="view-header">
-            <a href="#orders" class="btn-secondary">← Orders</a>
-        </div>
-        <div id="order-detail-body"><div class="orders-loading">Loading…</div></div>`;
+        container.classList.add('slip-view');
+        container.innerHTML = `<div id="order-detail-body"><div class="orders-loading">Loading…</div></div>`;
 
         let order;
         try {
@@ -534,6 +531,7 @@ const Orders = (() => {
         <!-- Action bar (hidden when printing) -->
         <div class="order-actions no-print">
             <div class="order-actions-left">
+                <a href="#orders" class="btn-secondary btn-sm">← Orders</a>
                 ${statusBadge(order.status)}
                 <div class="status-update-wrap">
                     <select id="status-select" class="status-select">
@@ -686,7 +684,11 @@ const Orders = (() => {
             const win = window.open('', '_blank', 'width=900,height=700');
             win.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8">
                 <title>${escHtml(order.xeroInvoiceNumber || order.id)}</title>
-                <style>${styles} @media print { @page { margin: 0; } body { margin: 0; } .packing-slip { box-shadow:none; border-radius:0; padding: 14mm 18mm; max-width:100%; } }</style>
+                <style>${styles}
+                body { margin: 0; padding: 0; background: white; }
+                .packing-slip { box-shadow: none; border-radius: 0; width: 100%; min-height: auto; padding: 14mm 18mm; box-sizing: border-box; }
+                @media print { @page { margin: 0; size: A4; } }
+                </style>
                 </head><body>${slipEl.outerHTML}</body></html>`);
             win.document.close();
             win.focus();
