@@ -8,10 +8,11 @@ const Orders = (() => {
     let customersCache = null;
     let currentUser = null;
 
+    // label = display name, xeroName = exact Xero contact name, xeroCode = Xero account number for lookup
     const CUSTOMER_PRESETS = [
-        { key: 'farmlands',   label: 'Farmlands' },
-        { key: 'pgg',         label: 'PGG Wrightson' },
-        { key: 'horicentre',  label: 'Horicentre' },
+        { key: 'farmlands',   label: 'Farmlands',     xeroName: 'Farmlands',      xeroCode: 'C1010' },
+        { key: 'pgg',         label: 'PGG Wrightson', xeroName: 'PGG Wrightson',  xeroCode: 'C1020' },
+        { key: 'horicentre',  label: 'HortiCentre',   xeroName: 'HortiCentre Ltd', xeroCode: 'C1030' },
     ];
 
     // ── Status helpers ──
@@ -188,7 +189,10 @@ const Orders = (() => {
     // ── Customer section HTML (shared by new + edit forms) ──
     function customerSectionHtml(customers, selectedName = '', selectedId = '') {
         const presetMatch = CUSTOMER_PRESETS.find(p =>
-            selectedName && selectedName.toLowerCase().includes(p.label.toLowerCase())
+            selectedName && (
+                selectedName.toLowerCase() === p.xeroName.toLowerCase() ||
+                selectedName.toLowerCase().includes(p.label.toLowerCase())
+            )
         );
         const selectedKey = presetMatch ? presetMatch.key : (selectedName ? 'other' : '');
 
@@ -239,10 +243,12 @@ const Orders = (() => {
 
                 otherWrap.style.display = 'none';
                 const preset = CUSTOMER_PRESETS.find(p => p.key === radio.value);
-                const targetName = preset.label;
-                nameInput.value = targetName;
+                nameInput.value = preset.xeroName;
 
-                const match = customers.find(c => c.name.toLowerCase().includes(targetName.toLowerCase()));
+                // Match by exact xeroName first, then partial, then xeroCode
+                const match = customers.find(c => c.name.toLowerCase() === preset.xeroName.toLowerCase())
+                    || customers.find(c => c.name.toLowerCase().includes(preset.xeroName.toLowerCase()))
+                    || customers.find(c => (c.accountNumber || '').toUpperCase() === preset.xeroCode);
                 idInput.value = match ? match.xeroContactId : '';
             });
         });
@@ -255,9 +261,11 @@ const Orders = (() => {
         if (checked && checked.value !== 'other') {
             const preset = CUSTOMER_PRESETS.find(p => p.key === checked.value);
             if (preset) {
-                const match = customers.find(c => c.name.toLowerCase().includes(preset.label.toLowerCase()));
+                const match = customers.find(c => c.name.toLowerCase() === preset.xeroName.toLowerCase())
+                    || customers.find(c => c.name.toLowerCase().includes(preset.xeroName.toLowerCase()))
+                    || customers.find(c => (c.accountNumber || '').toUpperCase() === preset.xeroCode);
                 document.getElementById('customer-id').value = match ? match.xeroContactId : '';
-                document.getElementById('customer-name-val').value = preset.label;
+                document.getElementById('customer-name-val').value = preset.xeroName;
             }
         }
     }

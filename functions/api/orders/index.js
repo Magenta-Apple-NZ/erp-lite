@@ -23,8 +23,8 @@ export async function onRequestPost({ env, request }) {
         const body = await request.json();
         const { customer, poNumber, shipTo, lines, packingNotes } = body;
 
-        if (!customer?.xeroContactId || !customer?.name) {
-            return errResponse('customer.xeroContactId and customer.name are required', 400);
+        if (!customer?.name) {
+            return errResponse('customer.name is required', 400);
         }
         if (!Array.isArray(lines) || lines.length === 0) {
             return errResponse('at least one line item is required', 400);
