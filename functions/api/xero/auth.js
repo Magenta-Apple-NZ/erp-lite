@@ -4,7 +4,7 @@ import { saveOAuthState } from '../_xero.js';
 
 const SCOPES = [
     'openid',
-    'accounting.transactions',
+    'accounting.invoices',
     'accounting.contacts.read',
     'offline_access',
 ].join(' ');
