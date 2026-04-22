@@ -9,18 +9,14 @@ const Orders = (() => {
 
     // ── Status helpers ──
     const STATUS_LABELS = {
-        confirmed: 'New',
-        ready:     'Ready to Pack',
-        packing:   'Packing',
-        packed:    'Packed',
-        dispatched:'Dispatched',
+        awaiting:   'Awaiting Confirmation',
+        ready:      'Ready to Dispatch',
+        dispatched: 'Dispatched',
     };
     const STATUS_COLOURS = {
-        confirmed: '#3b82f6',
-        ready:     '#f59e0b',
-        packing:   '#8b5cf6',
-        packed:    '#10b981',
-        dispatched:'#64748b',
+        awaiting:   '#3b82f6',
+        ready:      '#f59e0b',
+        dispatched: '#64748b',
     };
 
     function statusBadge(status) {
@@ -268,7 +264,7 @@ const Orders = (() => {
             <div class="form-actions">
                 <div id="form-error" class="form-error" style="display:none"></div>
                 <button type="button" id="submit-order-btn" class="btn-primary btn-lg">
-                    Create Order ${xeroConnected ? '+ Push to Xero' : ''}
+                    Create Order
                 </button>
             </div>
         </form>`;
@@ -435,26 +431,11 @@ const Orders = (() => {
                 body: JSON.stringify(payload),
             });
 
-            // Push to Xero if connected
-            if (xeroConnected && customerId) {
-                try {
-                    btn.textContent = 'Pushing to Xero…';
-                    await api('/api/xero/push', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ orderId: order.id }),
-                    });
-                } catch (e) {
-                    // Non-fatal — order is created; Xero push can be retried from detail view
-                    console.warn('Xero push failed:', e.message);
-                }
-            }
-
             location.hash = 'orders/' + order.id;
         } catch (e) {
             showFormError(e.message);
             btn.disabled = false;
-            btn.textContent = 'Create Order' + (xeroConnected ? ' + Push to Xero' : '');
+            btn.textContent = 'Create Order';
         }
     }
 
@@ -486,16 +467,7 @@ const Orders = (() => {
         <div class="order-actions no-print">
             <div class="order-actions-left">
                 ${statusBadge(order.status)}
-                ${order.xeroInvoiceNumber
-                    ? `<span class="xero-inv-linked">Xero: ${escHtml(order.xeroInvoiceNumber)}</span>`
-                    : (xeroConnected
-                        ? `<button id="push-xero-btn" class="btn-secondary btn-sm">Push to Xero</button>`
-                        : `<span class="xero-not-connected">Xero not connected</span>`)
-                }
-            </div>
-            <div class="order-actions-right">
                 <div class="status-update-wrap">
-                    <label class="status-label">Update status:</label>
                     <select id="status-select" class="status-select">
                         ${Object.entries(STATUS_LABELS).map(([v, l]) =>
                             `<option value="${v}" ${order.status === v ? 'selected' : ''}>${l}</option>`
@@ -503,7 +475,15 @@ const Orders = (() => {
                     </select>
                     <button id="status-save-btn" class="btn-primary btn-sm">Save</button>
                 </div>
-                <button onclick="window.print()" class="btn-secondary btn-sm">🖨 Print</button>
+            </div>
+            <div class="order-actions-right">
+                ${order.xeroInvoiceNumber
+                    ? `<span class="xero-inv-linked">✓ Xero: ${escHtml(order.xeroInvoiceNumber)}</span>`
+                    : (xeroConnected
+                        ? `<button id="push-xero-btn" class="btn-primary">Review Packing Slip &amp; Send to Xero</button>`
+                        : `<span class="xero-not-connected">Xero not connected</span>`)
+                }
+                <button id="print-slip-btn" class="btn-secondary">Print</button>
             </div>
         </div>
 
@@ -607,26 +587,42 @@ const Orders = (() => {
         document.getElementById('push-xero-btn')?.addEventListener('click', async () => {
             const btn = document.getElementById('push-xero-btn');
             btn.disabled = true;
-            btn.textContent = 'Pushing…';
+            btn.textContent = 'Sending to Xero…';
             try {
                 const result = await api('/api/xero/push', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ orderId }),
                 });
-                btn.outerHTML = `<span class="xero-inv-linked">Xero: ${escHtml(result.invoiceNumber)}</span>`;
-                // Add invoice number to the packing slip header
-                const metaDiv = document.querySelector('.slip-meta');
-                if (metaDiv) {
-                    metaDiv.insertAdjacentHTML('beforeend',
-                        `<div class="slip-meta-row"><span>Invoice</span><strong>${escHtml(result.invoiceNumber)}</strong></div>`);
+                btn.outerHTML = `<span class="xero-inv-linked">✓ Xero: ${escHtml(result.invoiceNumber)}</span>`;
+                // Update invoice details on the slip
+                const invDetails = document.querySelector('.slip-inv-details');
+                if (invDetails) {
+                    invDetails.querySelector('.slip-inv-row strong').textContent = result.invoiceNumber;
                 }
                 showToast('Invoice created in Xero: ' + result.invoiceNumber);
             } catch (e) {
                 showToast('Xero push failed: ' + e.message);
                 btn.disabled = false;
-                btn.textContent = 'Push to Xero';
+                btn.textContent = 'Review Packing Slip & Send to Xero';
             }
+        });
+
+        // Print — open clean popup so browser doesn't add title/date/URL to PDF
+        document.getElementById('print-slip-btn')?.addEventListener('click', () => {
+            const slipEl = document.getElementById('packing-slip');
+            if (!slipEl) return;
+            const styles = Array.from(document.styleSheets)
+                .map(s => { try { return Array.from(s.cssRules).map(r => r.cssText).join('\n'); } catch { return ''; } })
+                .join('\n');
+            const win = window.open('', '_blank', 'width=900,height=700');
+            win.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8">
+                <title>${escHtml(order.xeroInvoiceNumber || order.id)}</title>
+                <style>${styles} @media print { @page { margin: 0; } body { margin: 0; } .packing-slip { box-shadow:none; border-radius:0; padding: 14mm 18mm; max-width:100%; } }</style>
+                </head><body>${slipEl.outerHTML}</body></html>`);
+            win.document.close();
+            win.focus();
+            setTimeout(() => { win.print(); win.close(); }, 400);
         });
     }
 

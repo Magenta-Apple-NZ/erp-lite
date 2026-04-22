@@ -26,7 +26,6 @@ export async function onRequestPost({ env, request }) {
             DueDate: dueDate,
             Reference: order.id,
             Contact: { ContactID: order.customer.xeroContactId },
-            LineAmountTypes: 'EXCLUSIVE',
             LineItems: order.lines.map(l => ({
                 Description: l.description,
                 Quantity: l.quantity,
