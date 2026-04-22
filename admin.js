@@ -24,9 +24,9 @@ const Admin = (() => {
         setTimeout(() => t.classList.remove('show'), 3000);
     }
 
-    // CSV parser — handles quoted fields
+    // CSV parser — handles quoted fields and Excel BOM
     function parseCsv(text) {
-        const lines = text.trim().split(/\r?\n/);
+        const lines = text.replace(/^﻿/, '').trim().split(/\r?\n/);
         if (lines.length < 2) return [];
         const headers = lines[0].split(',').map(h => h.trim().toLowerCase().replace(/[\s-]+/g, '_').replace(/[^a-z0-9_]/g, ''));
         return lines.slice(1)
@@ -44,11 +44,17 @@ const Admin = (() => {
             });
     }
 
-    function downloadTemplate(headers, filename) {
+    const ITEM_EXAMPLE  = ['PT-I-10', 'Prime Vine Tie Loose 10kg', '119.00', '200'];
+    const STORE_EXAMPLE = ['Farmlands Retail - New Plymouth', '35 Hudson Road', 'Bell Block', 'New Plymouth', '4312'];
+
+    function downloadTemplate(headers, example, filename) {
+        const csv = [headers.join(','), example.join(',')].join('\n');
         const a = document.createElement('a');
-        a.href = 'data:text/csv;charset=utf-8,' + encodeURIComponent(headers.join(',') + '\n');
+        a.href = 'data:text/csv;charset=utf-8,' + encodeURIComponent(csv);
         a.download = filename;
+        document.body.appendChild(a);
         a.click();
+        document.body.removeChild(a);
     }
 
     function itemsTableRows(items) {
@@ -150,14 +156,15 @@ const Admin = (() => {
 
         // ── Template downloads ──
         document.getElementById('items-tpl-btn').addEventListener('click', () =>
-            downloadTemplate(['SKU', 'Description', 'UnitPrice', 'AccountCode'], 'items-template.csv'));
+            downloadTemplate(['SKU', 'Description', 'UnitPrice', 'AccountCode'], ITEM_EXAMPLE, 'items-template.csv'));
         document.getElementById('stores-tpl-btn').addEventListener('click', () =>
-            downloadTemplate(['Name', 'AddressLine1', 'AddressLine2', 'City', 'Postcode'], 'stores-template.csv'));
+            downloadTemplate(['Name', 'AddressLine1', 'AddressLine2', 'City', 'Postcode'], STORE_EXAMPLE, 'stores-template.csv'));
 
         // ── Items CSV upload ──
         document.getElementById('items-file').addEventListener('change', async e => {
             const file = e.target.files[0];
             if (!file) return;
+            e.target.value = ''; // reset so same file can be re-selected
             const rows = parseCsv(await file.text());
             const parsed = rows.map(r => ({
                 sku:         r.sku || r.item_code || r.itemcode || r.code || '',
@@ -166,10 +173,13 @@ const Admin = (() => {
                 accountCode: r.accountcode || r.account_code || r.account || '200',
             })).filter(i => i.description);
 
-            if (!parsed.length) { showToast('No valid rows — check CSV headers'); return; }
+            if (!parsed.length) { showToast('No valid rows — check CSV headers match: SKU, Description, UnitPrice, AccountCode'); return; }
             document.getElementById('items-tbody').innerHTML = itemsTableRows(parsed);
             document.getElementById('items-preview').style.display = '';
-            document.getElementById('items-sub').textContent = `${parsed.length} items — unsaved`;
+            const existing = items.length;
+            document.getElementById('items-sub').textContent = existing
+                ? `${parsed.length} items ready to save — will replace ${existing} existing`
+                : `${parsed.length} items ready to save`;
             const btn = document.getElementById('items-save-btn');
             btn.style.display = '';
             btn._data = parsed;
@@ -183,8 +193,9 @@ const Admin = (() => {
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ items: this._data }),
                 });
+                items = this._data; // keep local copy current
                 showToast(`Saved ${r.count} items`);
-                document.getElementById('items-sub').textContent = `${r.count} items`;
+                document.getElementById('items-sub').textContent = `${r.count} item${r.count !== 1 ? 's' : ''}`;
                 this.style.display = 'none';
             } catch (e) {
                 showToast('Save failed: ' + e.message);
@@ -196,6 +207,7 @@ const Admin = (() => {
         document.getElementById('stores-file').addEventListener('change', async e => {
             const file = e.target.files[0];
             if (!file) return;
+            e.target.value = ''; // reset so same file can be re-selected
             const rows = parseCsv(await file.text());
             const parsed = rows.map(r => ({
                 name:         r.name || r.store_name || r.storename || r.store || '',
@@ -205,10 +217,13 @@ const Admin = (() => {
                 postcode:     r.postcode || r.post_code || r.zip || '',
             })).filter(s => s.name);
 
-            if (!parsed.length) { showToast('No valid rows — check CSV headers'); return; }
+            if (!parsed.length) { showToast('No valid rows — check CSV headers match: Name, AddressLine1, AddressLine2, City, Postcode'); return; }
             document.getElementById('stores-tbody').innerHTML = storesTableRows(parsed);
             document.getElementById('stores-preview').style.display = '';
-            document.getElementById('stores-sub').textContent = `${parsed.length} stores — unsaved`;
+            const existing = stores.length;
+            document.getElementById('stores-sub').textContent = existing
+                ? `${parsed.length} stores ready to save — will replace ${existing} existing`
+                : `${parsed.length} stores ready to save`;
             const btn = document.getElementById('stores-save-btn');
             btn.style.display = '';
             btn._data = parsed;
@@ -222,8 +237,9 @@ const Admin = (() => {
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ stores: this._data }),
                 });
+                stores = this._data; // keep local copy current
                 showToast(`Saved ${r.count} stores`);
-                document.getElementById('stores-sub').textContent = `${r.count} stores`;
+                document.getElementById('stores-sub').textContent = `${r.count} store${r.count !== 1 ? 's' : ''}`;
                 this.style.display = 'none';
             } catch (e) {
                 showToast('Save failed: ' + e.message);
