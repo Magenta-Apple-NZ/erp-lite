@@ -1170,3 +1170,75 @@ li.drag-over { background: #eff6ff; }
     .slip-lines td, .slip-lines th { padding: 0.4rem 0.5rem; }
     @page { margin: 15mm 20mm; }
 }
+
+/* ═══════════════════════════════════════════════
+   Catalogue / Admin panel
+   ═══════════════════════════════════════════════ */
+
+.cat-section {
+    background: var(--card-bg, white);
+    border: 1px solid var(--border, #e2e8f0);
+    border-radius: 10px;
+    padding: 1.5rem;
+    margin-bottom: 1.25rem;
+}
+.cat-section-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 1rem;
+}
+.cat-title { font-size: 1rem; font-weight: 700; color: #1e293b; margin: 0 0 0.2rem 0; }
+.cat-sub { font-size: 0.8rem; color: #94a3b8; margin: 0; }
+.cat-actions { display: flex; gap: 0.5rem; align-items: center; }
+
+.cat-upload-lbl {
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+}
+
+.cat-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.83rem;
+    margin-bottom: 0.75rem;
+}
+.cat-table th {
+    text-align: left;
+    font-size: 0.68rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: #64748b;
+    padding: 0.4rem 0.6rem;
+    border-bottom: 1px solid #e2e8f0;
+}
+.cat-table td {
+    padding: 0.45rem 0.6rem;
+    border-bottom: 1px solid #f1f5f9;
+    color: #334155;
+}
+.cat-num { text-align: right; }
+.cat-more { text-align: center; color: #94a3b8; font-style: italic; }
+
+.cat-save-row { display: flex; justify-content: flex-end; }
+
+.cat-format {
+    font-size: 0.75rem;
+    color: #94a3b8;
+    margin: 0.75rem 0 0 0;
+}
+.cat-format code {
+    background: #f1f5f9;
+    padding: 0.1rem 0.3rem;
+    border-radius: 3px;
+    font-size: 0.73rem;
+    color: #475569;
+}
+
+.store-city {
+    font-size: 0.75rem;
+    color: #94a3b8;
+    margin-left: 0.5rem;
+}

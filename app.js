@@ -714,6 +714,13 @@ async function handleRoute() {
         return;
     }
 
+    if (hash === 'admin') {
+        setActiveView('view-admin');
+        setActiveNav('nav-admin');
+        await Admin.renderAdmin(document.getElementById('admin-container'));
+        return;
+    }
+
     // Unknown hash — fall back to dashboard
     location.hash = '';
 }
@@ -737,6 +744,11 @@ if (ordersNavItem) {
         location.hash = 'orders';
     });
 }
+
+document.getElementById('nav-admin')?.addEventListener('click', e => {
+    e.preventDefault();
+    location.hash = 'admin';
+});
 
 // Remaining coming-soon nav items
 document.querySelectorAll('.nav-item--soon').forEach(el => {

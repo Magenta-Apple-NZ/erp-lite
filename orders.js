@@ -164,12 +164,12 @@ const Orders = (() => {
 
         await checkXeroStatus();
 
-        let customers = [];
+        let customers = [], catalogStores = [], catalogItems = [];
         try {
             if (xeroConnected) customers = await loadCustomers();
-        } catch (e) {
-            // Non-fatal — will show manual entry fallback
-        }
+        } catch (e) { /* manual entry fallback */ }
+        try { catalogStores = await api('/api/catalog/stores'); } catch (e) { /* optional */ }
+        try { catalogItems = await api('/api/catalog/items'); } catch (e) { /* optional */ }
 
         const body = document.getElementById('new-order-body');
 
@@ -215,13 +215,18 @@ const Orders = (() => {
                 <div class="form-row">
                     <div class="form-field" style="flex:2">
                         <label>Branch / location</label>
-                        <input type="text" id="ship-branch" placeholder="e.g. Martinborough Branch">
+                        ${catalogStores.length ? `
+                        <div class="customer-search-wrap">
+                            <input type="text" id="ship-branch" placeholder="Search stores…" autocomplete="off">
+                            <div id="store-dropdown" class="customer-dropdown" style="display:none"></div>
+                        </div>` : `
+                        <input type="text" id="ship-branch" placeholder="e.g. Martinborough Branch">`}
                     </div>
                 </div>
                 <div class="form-row">
                     <div class="form-field" style="flex:1">
                         <label>Delivery address <span class="form-hint">optional</span></label>
-                        <textarea id="ship-address" rows="2" placeholder="Street address…"></textarea>
+                        <textarea id="ship-address" rows="3" placeholder="Street address…"></textarea>
                     </div>
                 </div>
             </section>
@@ -270,15 +275,16 @@ const Orders = (() => {
         </form>`;
 
         // Wire up customer search
-        if (customers.length) {
-            wireCustomerSearch(customers);
-        }
+        if (customers.length) wireCustomerSearch(customers);
+
+        // Wire store search
+        if (catalogStores.length) wireStoreSearch(catalogStores);
 
         // Add first line item
-        addLineItem();
+        addLineItem(catalogItems);
 
         // Wire add line button
-        document.getElementById('add-line-btn').addEventListener('click', addLineItem);
+        document.getElementById('add-line-btn').addEventListener('click', () => addLineItem(catalogItems));
 
         // Submit
         document.getElementById('submit-order-btn').addEventListener('click', submitNewOrder);
@@ -315,9 +321,38 @@ const Orders = (() => {
         });
     }
 
+    function wireStoreSearch(stores) {
+        const input = document.getElementById('ship-branch');
+        const dropdown = document.getElementById('store-dropdown');
+        if (!input || !dropdown) return;
+
+        input.addEventListener('input', () => {
+            const q = input.value.toLowerCase().trim();
+            if (!q) { dropdown.style.display = 'none'; return; }
+            const matches = stores.filter(s => s.name.toLowerCase().includes(q) || s.city.toLowerCase().includes(q)).slice(0, 8);
+            if (!matches.length) { dropdown.style.display = 'none'; return; }
+            dropdown.innerHTML = matches.map(s =>
+                `<div class="customer-option" data-name="${escHtml(s.name)}" data-addr="${escHtml([s.addressLine1, s.addressLine2, s.city, s.postcode].filter(Boolean).join('\n'))}">${escHtml(s.name)}<span class="store-city">${escHtml(s.city)}</span></div>`
+            ).join('');
+            dropdown.style.display = '';
+        });
+
+        dropdown.addEventListener('mousedown', e => {
+            const opt = e.target.closest('.customer-option');
+            if (!opt) return;
+            input.value = opt.dataset.name;
+            document.getElementById('ship-address').value = opt.dataset.addr;
+            dropdown.style.display = 'none';
+        });
+
+        document.addEventListener('click', e => {
+            if (!e.target.closest('.customer-search-wrap')) dropdown.style.display = 'none';
+        });
+    }
+
     let lineCount = 0;
 
-    function addLineItem() {
+    function addLineItem(catalogItems = []) {
         const idx = lineCount++;
         const tbody = document.getElementById('line-items-body');
         const tr = document.createElement('tr');
@@ -343,7 +378,9 @@ const Orders = (() => {
 
         tbody.appendChild(tr);
 
-        const qtyEl = tr.querySelector('.line-qty');
+        const skuEl   = tr.querySelector('.line-sku');
+        const descEl  = tr.querySelector('.line-desc');
+        const qtyEl   = tr.querySelector('.line-qty');
         const priceEl = tr.querySelector('.line-price');
         const totalEl = tr.querySelector('.line-total');
 
@@ -356,10 +393,41 @@ const Orders = (() => {
 
         qtyEl.addEventListener('input', updateRow);
         priceEl.addEventListener('input', updateRow);
-        tr.querySelector('.line-remove-btn').addEventListener('click', () => {
-            tr.remove();
-            updateFormTotal();
-        });
+        tr.querySelector('.line-remove-btn').addEventListener('click', () => { tr.remove(); updateFormTotal(); });
+
+        // Item autocomplete from catalog
+        if (catalogItems.length) {
+            const itemDropdown = document.createElement('div');
+            itemDropdown.className = 'customer-dropdown';
+            itemDropdown.style.display = 'none';
+            descEl.parentNode.style.position = 'relative';
+            descEl.parentNode.appendChild(itemDropdown);
+
+            descEl.addEventListener('input', () => {
+                const q = descEl.value.toLowerCase().trim();
+                if (!q) { itemDropdown.style.display = 'none'; return; }
+                const matches = catalogItems.filter(i =>
+                    i.description.toLowerCase().includes(q) || (i.sku && i.sku.toLowerCase().includes(q))
+                ).slice(0, 6);
+                if (!matches.length) { itemDropdown.style.display = 'none'; return; }
+                itemDropdown.innerHTML = matches.map(i =>
+                    `<div class="customer-option" data-sku="${escHtml(i.sku)}" data-desc="${escHtml(i.description)}" data-price="${i.unitPrice}">${escHtml(i.description)}<span class="store-city">${escHtml(i.sku)}</span></div>`
+                ).join('');
+                itemDropdown.style.display = '';
+            });
+
+            itemDropdown.addEventListener('mousedown', e => {
+                const opt = e.target.closest('.customer-option');
+                if (!opt) return;
+                descEl.value = opt.dataset.desc;
+                skuEl.value = opt.dataset.sku;
+                priceEl.value = opt.dataset.price;
+                itemDropdown.style.display = 'none';
+                updateRow();
+            });
+
+            descEl.addEventListener('blur', () => setTimeout(() => { itemDropdown.style.display = 'none'; }, 150));
+        }
     }
 
     function updateFormTotal() {
