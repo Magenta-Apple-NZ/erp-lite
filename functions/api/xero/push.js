@@ -13,6 +13,13 @@ export async function onRequestPost({ env, request }) {
         if (order.xeroInvoiceId) {
             return errResponse('Invoice already created: ' + order.xeroInvoiceNumber, 409);
         }
+        if (!order.customer?.xeroContactId) {
+            return errResponse(
+                `No Xero contact ID for "${order.customer?.name}". ` +
+                `Edit the order and select the customer from the Xero search dropdown so the contact ID is resolved.`,
+                422
+            );
+        }
 
         const token = await getValidToken(env);
 
