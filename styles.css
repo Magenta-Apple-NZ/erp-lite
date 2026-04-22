@@ -1270,6 +1270,32 @@ li.drag-over { background: #eff6ff; }
     color: #475569;
 }
 
+/* ── Order number field ── */
+.order-num-wrap {
+    display: flex;
+    align-items: center;
+    border: 1.5px solid #e2e8f0;
+    border-radius: 6px;
+    overflow: hidden;
+    background: #fff;
+}
+.order-num-wrap:focus-within { border-color: #3b82f6; }
+.order-num-prefix {
+    padding: 0.5rem 0.6rem;
+    background: #f8fafc;
+    border-right: 1.5px solid #e2e8f0;
+    font-size: 0.875rem;
+    color: #64748b;
+    font-weight: 600;
+    white-space: nowrap;
+}
+.order-num-wrap input {
+    border: none !important;
+    border-radius: 0 !important;
+    flex: 1;
+    min-width: 0;
+}
+
 /* ── Customer preset radio buttons ── */
 .customer-presets {
     display: flex;

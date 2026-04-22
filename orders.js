@@ -357,10 +357,19 @@ const Orders = (() => {
                 </div>
             </section>
 
-            <!-- PO Number -->
+            <!-- Order Reference -->
             <section class="form-section">
                 <h2 class="form-section-title">Order Reference</h2>
                 <div class="form-row">
+                    <div class="form-field" style="flex:1">
+                        <label>Order Number <span class="form-hint">optional — leave blank to auto-assign</span></label>
+                        <div class="order-num-wrap">
+                            <span class="order-num-prefix">ORD-</span>
+                            <input type="text" id="order-number" placeholder="e.g. 1021" pattern="[0-9]*" inputmode="numeric"
+                                value="${escHtml(defaults.id ? defaults.id.replace(/^ORD-/, '') : '')}">
+                        </div>
+                        <p class="form-hint" style="margin-top:4px">Xero invoice will be created as INV-<span id="order-num-preview">${defaults.id ? defaults.id.replace(/^ORD-/, '') : '…'}</span></p>
+                    </div>
                     <div class="form-field" style="flex:2">
                         <label>PO Number <span class="form-hint">optional</span></label>
                         <input type="text" id="po-number" placeholder="e.g. 1529131-CONF-1776762069025" value="${escHtml(defaults.poNumber || '')}">
@@ -436,6 +445,12 @@ const Orders = (() => {
     function wireOrderForm({ customers, catalogStores, catalogItems, defaults = {} }) {
         wireCustomerSection(customers);
         if (catalogStores.length) wireStoreSearch(catalogStores);
+
+        // Live preview: ORD-1021 → INV-1021
+        document.getElementById('order-number')?.addEventListener('input', e => {
+            const preview = document.getElementById('order-num-preview');
+            if (preview) preview.textContent = e.target.value.trim() || '…';
+        });
 
         lineCount = 0;
         // Pre-populate existing lines or add a blank one
@@ -698,6 +713,7 @@ const Orders = (() => {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     customer,
+                    orderNumber: document.getElementById('order-number')?.value.trim() || '',
                     poNumber: document.getElementById('po-number').value.trim(),
                     shipTo: {
                         branch: document.getElementById('ship-branch').value.trim(),
