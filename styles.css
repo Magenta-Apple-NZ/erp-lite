@@ -1027,77 +1027,102 @@ li.drag-over { background: #eff6ff; }
     border-radius: 10px;
     padding: 2rem 2.5rem;
     box-shadow: 0 1px 3px rgba(0,0,0,0.06);
-    max-width: 780px;
-    font-size: 0.9rem;
+    max-width: 800px;
+    font-size: 0.88rem;
     color: #1e293b;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
 }
 
-.slip-header {
+/* Top bar: logo left, title right */
+.slip-top {
     display: flex;
     justify-content: space-between;
     align-items: flex-start;
-    padding-bottom: 1.5rem;
-    border-bottom: 2px solid #1e293b;
-    margin-bottom: 1.5rem;
+    margin-bottom: 1rem;
 }
-.slip-company-name { font-size: 1.4rem; font-weight: 800; letter-spacing: -0.03em; color: #1e293b; }
-.slip-company-sub { font-size: 0.8rem; color: #64748b; margin-top: 0.15rem; letter-spacing: 0.04em; text-transform: uppercase; }
+.slip-logo {
+    height: 56px;
+    width: auto;
+}
+.slip-title {
+    font-size: 1.6rem;
+    font-weight: 800;
+    letter-spacing: 0.04em;
+    color: #1e293b;
+    align-self: center;
+}
 
-.slip-meta { text-align: right; }
-.slip-meta-row {
-    display: flex;
-    gap: 1rem;
-    justify-content: flex-end;
-    font-size: 0.85rem;
-    margin-bottom: 0.2rem;
-    color: #475569;
+.slip-rule {
+    border: none;
+    border-top: 1px solid #cbd5e1;
+    margin: 0 0 1.25rem 0;
 }
-.slip-meta-row span { color: #94a3b8; }
-.slip-meta-row strong { color: #1e293b; min-width: 90px; text-align: right; }
 
-.slip-parties {
-    display: flex;
-    gap: 3rem;
-    margin-bottom: 1.75rem;
+/* FROM / SHIP TO two-column */
+.slip-body {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 2rem;
+    margin-bottom: 1.25rem;
 }
-.slip-party-label {
-    font-size: 0.68rem;
+
+.slip-col-label {
+    font-size: 0.65rem;
     font-weight: 700;
     text-transform: uppercase;
-    letter-spacing: 0.08em;
+    letter-spacing: 0.1em;
     color: #94a3b8;
-    margin-bottom: 0.3rem;
+    margin-bottom: 0.4rem;
 }
-.slip-party-name { font-weight: 600; font-size: 0.95rem; }
-.slip-party-addr { font-size: 0.85rem; color: #475569; margin-top: 0.15rem; line-height: 1.5; }
+.slip-from-name { font-weight: 700; font-size: 0.9rem; margin-bottom: 0.25rem; }
+.slip-from-addr { font-size: 0.82rem; color: #475569; line-height: 1.6; }
 
+.slip-inv-details { margin-top: 1rem; }
+.slip-inv-row {
+    display: flex;
+    gap: 0.75rem;
+    font-size: 0.82rem;
+    margin-bottom: 0.2rem;
+}
+.slip-inv-row span { color: #64748b; min-width: 70px; font-weight: 600; }
+.slip-inv-row strong { color: #1e293b; }
+
+.slip-shipto-name {
+    font-weight: 800;
+    font-size: 1.25rem;
+    line-height: 1.2;
+    margin-bottom: 0.4rem;
+    color: #0f172a;
+}
+.slip-shipto-addr { font-size: 1rem; color: #334155; line-height: 1.6; }
+
+/* Line items table */
 .slip-lines {
     width: 100%;
     border-collapse: collapse;
     margin-bottom: 1.5rem;
 }
 .slip-lines th {
-    padding: 0.5rem 0.75rem;
+    padding: 0.45rem 0.6rem;
     text-align: left;
-    font-size: 0.7rem;
+    font-size: 0.68rem;
     font-weight: 700;
-    text-transform: uppercase;
     letter-spacing: 0.07em;
     color: #64748b;
-    border-bottom: 1px solid #e2e8f0;
+    border-bottom: 1px solid #1e293b;
+    border-top: 1px solid #1e293b;
 }
 .slip-lines td {
-    padding: 0.6rem 0.75rem;
-    border-bottom: 1px solid #f1f5f9;
-    font-size: 0.88rem;
+    padding: 0.55rem 0.6rem;
+    border-bottom: 1px solid #e2e8f0;
+    font-size: 0.86rem;
     color: #334155;
+    vertical-align: top;
 }
-.sl-desc { width: 55%; }
-.sl-num { text-align: right; white-space: nowrap; }
-
-.slip-lines tfoot tr { }
-.slip-subtotal td { border-top: 1px solid #e2e8f0; padding-top: 0.65rem; color: #64748b; }
-.slip-total td { font-size: 0.95rem; border-top: 2px solid #1e293b; padding-top: 0.65rem; }
+.sl-qty { width: 50px; }
+.sl-sku { width: 90px; white-space: nowrap; }
+.sl-desc { }
+.sl-num { text-align: right; white-space: nowrap; width: 100px; }
 
 .slip-notes {
     background: #f8fafc;
@@ -1107,19 +1132,20 @@ li.drag-over { background: #eff6ff; }
     margin-bottom: 1.5rem;
 }
 .slip-notes-label {
-    font-size: 0.68rem;
+    font-size: 0.65rem;
     font-weight: 700;
     text-transform: uppercase;
-    letter-spacing: 0.07em;
+    letter-spacing: 0.08em;
     color: #94a3b8;
-    margin-bottom: 0.35rem;
+    margin-bottom: 0.3rem;
 }
-.slip-notes-text { font-size: 0.87rem; color: #475569; line-height: 1.5; }
+.slip-notes-text { font-size: 0.85rem; color: #475569; line-height: 1.5; }
 
 .slip-footer {
-    border-top: 1px solid #f1f5f9;
-    padding-top: 1rem;
-    font-size: 0.8rem;
+    border-top: 1px solid #cbd5e1;
+    padding-top: 0.75rem;
+    margin-top: 1rem;
+    font-size: 0.75rem;
     color: #94a3b8;
     text-align: center;
 }

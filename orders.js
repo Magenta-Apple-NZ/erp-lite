@@ -202,6 +202,17 @@ const Orders = (() => {
                 </div>
             </section>
 
+            <!-- PO Number -->
+            <section class="form-section">
+                <h2 class="form-section-title">Order Reference</h2>
+                <div class="form-row">
+                    <div class="form-field" style="flex:2">
+                        <label>PO Number <span class="form-hint">optional</span></label>
+                        <input type="text" id="po-number" placeholder="e.g. 1529131-CONF-1776762069025">
+                    </div>
+                </div>
+            </section>
+
             <!-- Ship To -->
             <section class="form-section">
                 <h2 class="form-section-title">Ship To</h2>
@@ -226,6 +237,7 @@ const Orders = (() => {
                     <table class="line-items-table">
                         <thead>
                             <tr>
+                                <th style="flex:1">SKU</th>
                                 <th style="flex:3">Description</th>
                                 <th style="flex:1;text-align:right">Qty</th>
                                 <th style="flex:1;text-align:right">Unit Price</th>
@@ -316,11 +328,14 @@ const Orders = (() => {
         tr.className = 'line-item-row';
         tr.dataset.idx = idx;
         tr.innerHTML = `
+            <td style="flex:1">
+                <input type="text" class="line-sku" placeholder="e.g. PT-I-10">
+            </td>
             <td style="flex:3">
                 <input type="text" class="line-desc" placeholder="Product / description" required>
             </td>
             <td style="flex:1">
-                <input type="number" class="line-qty" value="1" min="0.01" step="any" required>
+                <input type="number" class="line-qty" value="1" min="0" step="any" required>
             </td>
             <td style="flex:1">
                 <input type="number" class="line-price" value="" min="0" step="0.01" placeholder="0.00" required>
@@ -365,11 +380,12 @@ const Orders = (() => {
     function getLineItems() {
         const lines = [];
         document.querySelectorAll('.line-item-row').forEach(tr => {
+            const sku = tr.querySelector('.line-sku').value.trim();
             const desc = tr.querySelector('.line-desc').value.trim();
             const qty = parseFloat(tr.querySelector('.line-qty').value);
             const price = parseFloat(tr.querySelector('.line-price').value);
-            if (desc && !isNaN(qty) && !isNaN(price)) {
-                lines.push({ description: desc, quantity: qty, unitPrice: price });
+            if (desc && !isNaN(price)) {
+                lines.push({ sku, description: desc, quantity: isNaN(qty) ? 0 : qty, unitPrice: price });
             }
         });
         return lines;
@@ -404,6 +420,7 @@ const Orders = (() => {
                     xeroContactId: customerId || '',
                     name: customerName,
                 },
+                poNumber: document.getElementById('po-number').value.trim(),
                 shipTo: {
                     branch: document.getElementById('ship-branch').value.trim(),
                     address: document.getElementById('ship-address').value.trim(),
@@ -492,65 +509,65 @@ const Orders = (() => {
 
         <!-- Packing Slip (printable) -->
         <div class="packing-slip" id="packing-slip">
-            <div class="slip-header">
-                <div class="slip-company">
-                    <div class="slip-company-name">Enviroware</div>
-                    <div class="slip-company-sub">Packing Slip</div>
+
+            <!-- Top bar: logo + title -->
+            <div class="slip-top">
+                <img src="enviroware_logo_clean.png" alt="Enviroware" class="slip-logo">
+                <div class="slip-title">PACKING SLIP</div>
+            </div>
+
+            <hr class="slip-rule">
+
+            <!-- FROM / SHIP TO two-column -->
+            <div class="slip-body">
+                <div class="slip-from">
+                    <div class="slip-col-label">FROM</div>
+                    <div class="slip-from-name">Enviroware</div>
+                    <div class="slip-from-addr">93 Tetley Road,<br>Katikati<br>(07) 549-1716<br>orders@primetie.co.nz</div>
+
+                    <div class="slip-inv-details">
+                        <div class="slip-col-label">INVOICE DETAILS</div>
+                        ${order.xeroInvoiceNumber
+                            ? `<div class="slip-inv-row"><span>Invoice No.</span><strong>${escHtml(order.xeroInvoiceNumber)}</strong></div>`
+                            : `<div class="slip-inv-row"><span>Order</span><strong>${escHtml(order.id)}</strong></div>`}
+                        ${order.poNumber
+                            ? `<div class="slip-inv-row"><span>PO</span><strong>${escHtml(order.poNumber)}</strong></div>`
+                            : ''}
+                    </div>
                 </div>
-                <div class="slip-meta">
-                    <div class="slip-meta-row"><span>Order</span><strong>${escHtml(order.id)}</strong></div>
-                    <div class="slip-meta-row"><span>Date</span><strong>${fmtDate(order.createdAt)}</strong></div>
-                    ${order.xeroInvoiceNumber
-                        ? `<div class="slip-meta-row"><span>Invoice</span><strong>${escHtml(order.xeroInvoiceNumber)}</strong></div>`
+
+                <div class="slip-shipto">
+                    <div class="slip-col-label">SHIP TO</div>
+                    ${order.shipTo?.branch
+                        ? `<div class="slip-shipto-name">${escHtml(order.shipTo.branch)}</div>`
+                        : `<div class="slip-shipto-name">${escHtml(order.customer.name)}</div>`}
+                    ${order.shipTo?.address
+                        ? `<div class="slip-shipto-addr">${escHtml(order.shipTo.address).replace(/\n/g, '<br>')}</div>`
                         : ''}
                 </div>
             </div>
 
-            <div class="slip-parties">
-                <div class="slip-party">
-                    <div class="slip-party-label">Bill To</div>
-                    <div class="slip-party-name">${escHtml(order.customer.name)}</div>
-                </div>
-                ${order.shipTo?.branch || order.shipTo?.address ? `
-                <div class="slip-party">
-                    <div class="slip-party-label">Ship To</div>
-                    ${order.shipTo.branch ? `<div class="slip-party-name">${escHtml(order.shipTo.branch)}</div>` : ''}
-                    ${order.shipTo.address ? `<div class="slip-party-addr">${escHtml(order.shipTo.address).replace(/\n/g, '<br>')}</div>` : ''}
-                </div>` : ''}
-            </div>
+            <hr class="slip-rule">
 
+            <!-- Line items — no totals, matches PDF -->
             <table class="slip-lines">
                 <thead>
                     <tr>
-                        <th class="sl-desc">Description</th>
-                        <th class="sl-num">Qty</th>
-                        <th class="sl-num">Unit Price</th>
-                        <th class="sl-num">Total</th>
+                        <th class="sl-qty">QTY</th>
+                        <th class="sl-sku">SKU</th>
+                        <th class="sl-desc">DESCRIPTION</th>
+                        <th class="sl-num">UNIT PRICE</th>
                     </tr>
                 </thead>
                 <tbody>
                     ${order.lines.map(l => `
                     <tr>
-                        <td>${escHtml(l.description)}</td>
-                        <td class="sl-num">${l.quantity}</td>
+                        <td class="sl-qty">${l.quantity || ''}</td>
+                        <td class="sl-sku">${escHtml(l.sku || '')}</td>
+                        <td class="sl-desc">${escHtml(l.description)}</td>
                         <td class="sl-num">$${fmt(l.unitPrice)}</td>
-                        <td class="sl-num">$${fmt(l.quantity * l.unitPrice)}</td>
                     </tr>`).join('')}
                 </tbody>
-                <tfoot>
-                    <tr class="slip-subtotal">
-                        <td colspan="3">Subtotal (excl. GST)</td>
-                        <td class="sl-num">$${fmt(total)}</td>
-                    </tr>
-                    <tr>
-                        <td colspan="3">GST (15%)</td>
-                        <td class="sl-num">$${fmt(gst)}</td>
-                    </tr>
-                    <tr class="slip-total">
-                        <td colspan="3"><strong>Total (incl. GST)</strong></td>
-                        <td class="sl-num"><strong>$${fmt(total + gst)}</strong></td>
-                    </tr>
-                </tfoot>
             </table>
 
             ${order.packingNotes ? `
@@ -560,7 +577,7 @@ const Orders = (() => {
             </div>` : ''}
 
             <div class="slip-footer">
-                <div>Thank you for your order.</div>
+                Enviroware &middot; orders@primetie.co.nz &middot; (07) 549-1716 &middot; 93 Tetley Road, Katikati
             </div>
         </div>`;
 

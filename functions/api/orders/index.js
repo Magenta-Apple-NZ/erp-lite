@@ -21,7 +21,7 @@ export async function onRequestGet({ env }) {
 export async function onRequestPost({ env, request }) {
     try {
         const body = await request.json();
-        const { customer, shipTo, lines, packingNotes } = body;
+        const { customer, poNumber, shipTo, lines, packingNotes } = body;
 
         if (!customer?.xeroContactId || !customer?.name) {
             return errResponse('customer.xeroContactId and customer.name are required', 400);
@@ -46,8 +46,10 @@ export async function onRequestPost({ env, request }) {
             updatedAt: new Date().toISOString(),
             status: 'confirmed',
             customer,
+            poNumber: poNumber || '',
             shipTo: shipTo || {},
             lines: lines.map(l => ({
+                sku: l.sku || '',
                 description: l.description,
                 quantity: Number(l.quantity),
                 unitPrice: Number(l.unitPrice),
