@@ -9,14 +9,16 @@ const Orders = (() => {
 
     // ── Status helpers ──
     const STATUS_LABELS = {
-        awaiting:   'Awaiting Confirmation',
-        ready:      'Ready to Dispatch',
-        dispatched: 'Dispatched',
+        new:          'New',
+        reviewed:     'Reviewed',
+        sent_to_xero: 'Sent to Xero',
+        dispatched:   'Dispatched',
     };
     const STATUS_COLOURS = {
-        awaiting:   '#3b82f6',
-        ready:      '#f59e0b',
-        dispatched: '#64748b',
+        new:          '#3b82f6',
+        reviewed:     '#f59e0b',
+        sent_to_xero: '#8b5cf6',
+        dispatched:   '#64748b',
     };
 
     function statusBadge(status) {
@@ -507,6 +509,34 @@ const Orders = (() => {
         }
     }
 
+    // ── Action bar buttons — driven by order status ──
+    function actionButtons(order, xeroConnected) {
+        const print = `<button id="print-slip-btn" class="btn-secondary">Print Packing Slip</button>`;
+
+        if (order.status === 'new') {
+            return `<button class="btn-secondary" disabled title="Print the packing slip first to review it">Send to Xero</button>${print}`;
+        }
+        if (order.status === 'reviewed') {
+            const xeroBtn = xeroConnected
+                ? `<button id="push-xero-btn" class="btn-primary">Send to Xero</button>`
+                : `<span class="xero-not-connected">Xero not connected</span>`;
+            return xeroBtn + print;
+        }
+        if (order.status === 'sent_to_xero') {
+            return `${order.xeroInvoiceNumber ? `<span class="xero-inv-linked">✓ Xero: ${escHtml(order.xeroInvoiceNumber)}</span>` : ''}
+                    <button id="dispatch-btn" class="btn-primary">Mark as Dispatched</button>${print}`;
+        }
+        // dispatched
+        return `${order.xeroInvoiceNumber ? `<span class="xero-inv-linked">✓ Xero: ${escHtml(order.xeroInvoiceNumber)}</span>` : ''}
+                <span class="status-dispatched-tag">✓ Dispatched</span>${print}`;
+    }
+
+    function refreshActionBar(order) {
+        document.getElementById('status-badge-wrap').innerHTML = statusBadge(order.status);
+        document.getElementById('action-btns').innerHTML = actionButtons(order, xeroConnected);
+        wireDetailButtons(order);
+    }
+
     // ── Order detail / packing slip ──
     async function renderDetail(container, orderId) {
         container.classList.add('slip-view');
@@ -532,24 +562,10 @@ const Orders = (() => {
         <div class="order-actions no-print">
             <div class="order-actions-left">
                 <a href="#orders" class="btn-secondary btn-sm">← Orders</a>
-                ${statusBadge(order.status)}
-                <div class="status-update-wrap">
-                    <select id="status-select" class="status-select">
-                        ${Object.entries(STATUS_LABELS).map(([v, l]) =>
-                            `<option value="${v}" ${order.status === v ? 'selected' : ''}>${l}</option>`
-                        ).join('')}
-                    </select>
-                    <button id="status-save-btn" class="btn-primary btn-sm">Save</button>
-                </div>
+                <span id="status-badge-wrap">${statusBadge(order.status)}</span>
             </div>
-            <div class="order-actions-right">
-                ${order.xeroInvoiceNumber
-                    ? `<span class="xero-inv-linked">✓ Xero: ${escHtml(order.xeroInvoiceNumber)}</span>`
-                    : (xeroConnected
-                        ? `<button id="push-xero-btn" class="btn-primary">Review Packing Slip &amp; Send to Xero</button>`
-                        : `<span class="xero-not-connected">Xero not connected</span>`)
-                }
-                <button id="print-slip-btn" class="btn-secondary">Print</button>
+            <div class="order-actions-right" id="action-btns">
+                ${actionButtons(order, xeroConnected)}
             </div>
         </div>
 
@@ -627,54 +643,13 @@ const Orders = (() => {
             </div>
         </div>`;
 
-        // Status update
-        document.getElementById('status-save-btn')?.addEventListener('click', async () => {
-            const newStatus = document.getElementById('status-select').value;
-            const btn = document.getElementById('status-save-btn');
-            btn.disabled = true;
-            try {
-                const updated = await api('/api/orders/' + orderId, {
-                    method: 'PATCH',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ status: newStatus }),
-                });
-                // Refresh the status badge inline
-                const badge = document.querySelector('.order-actions-left .order-status-badge');
-                if (badge) badge.outerHTML = statusBadge(updated.status);
-                showToast('Status updated');
-            } catch (e) {
-                showToast('Error: ' + e.message);
-            } finally {
-                btn.disabled = false;
-            }
-        });
+        wireDetailButtons(order);
+    }
 
-        // Xero push
-        document.getElementById('push-xero-btn')?.addEventListener('click', async () => {
-            const btn = document.getElementById('push-xero-btn');
-            btn.disabled = true;
-            btn.textContent = 'Sending to Xero…';
-            try {
-                const result = await api('/api/xero/push', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ orderId }),
-                });
-                btn.outerHTML = `<span class="xero-inv-linked">✓ Xero: ${escHtml(result.invoiceNumber)}</span>`;
-                // Update invoice details on the slip
-                const invDetails = document.querySelector('.slip-inv-details');
-                if (invDetails) {
-                    invDetails.querySelector('.slip-inv-row strong').textContent = result.invoiceNumber;
-                }
-                showToast('Invoice created in Xero: ' + result.invoiceNumber);
-            } catch (e) {
-                showToast('Xero push failed: ' + e.message);
-                btn.disabled = false;
-                btn.textContent = 'Review Packing Slip & Send to Xero';
-            }
-        });
+    function wireDetailButtons(order) {
+        const orderId = order.id;
 
-        // Print — open clean popup so browser doesn't add title/date/URL to PDF
+        // Print — opens clean popup, advances new → reviewed
         document.getElementById('print-slip-btn')?.addEventListener('click', () => {
             const slipEl = document.getElementById('packing-slip');
             if (!slipEl) return;
@@ -693,6 +668,65 @@ const Orders = (() => {
             win.document.close();
             win.focus();
             setTimeout(() => { win.print(); win.close(); }, 400);
+
+            // Advance new → reviewed
+            if (order.status === 'new') {
+                api('/api/orders/' + orderId, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ status: 'reviewed' }),
+                }).then(updated => {
+                    order.status = 'reviewed';
+                    refreshActionBar(order);
+                }).catch(() => {});
+            }
+        });
+
+        // Send to Xero — advances reviewed → sent_to_xero
+        document.getElementById('push-xero-btn')?.addEventListener('click', async () => {
+            const btn = document.getElementById('push-xero-btn');
+            btn.disabled = true;
+            btn.textContent = 'Sending to Xero…';
+            try {
+                const result = await api('/api/xero/push', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ orderId }),
+                });
+                // Update invoice details on the slip
+                const invRow = document.querySelector('.slip-inv-details .slip-inv-row strong');
+                if (invRow) invRow.textContent = result.invoiceNumber;
+                // Advance status
+                order.status = 'sent_to_xero';
+                order.xeroInvoiceNumber = result.invoiceNumber;
+                refreshActionBar(order);
+                showToast('Invoice created in Xero: ' + result.invoiceNumber);
+            } catch (e) {
+                showToast('Xero push failed: ' + e.message);
+                btn.disabled = false;
+                btn.textContent = 'Send to Xero';
+            }
+        });
+
+        // Mark as Dispatched
+        document.getElementById('dispatch-btn')?.addEventListener('click', async () => {
+            const btn = document.getElementById('dispatch-btn');
+            btn.disabled = true;
+            btn.textContent = 'Saving…';
+            try {
+                await api('/api/orders/' + orderId, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ status: 'dispatched' }),
+                });
+                order.status = 'dispatched';
+                refreshActionBar(order);
+                showToast('Order marked as dispatched');
+            } catch (e) {
+                showToast('Error: ' + e.message);
+                btn.disabled = false;
+                btn.textContent = 'Mark as Dispatched';
+            }
         });
     }
 
