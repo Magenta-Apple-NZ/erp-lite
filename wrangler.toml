@@ -1,0 +1,26 @@
+# Cloudflare Pages + Functions config
+# Local dev: npx wrangler pages dev . --kv ORDERS_KV --kv XERO_KV
+#
+# SETUP STEPS (one-time):
+# 1. npx wrangler kv:namespace create ORDERS_KV
+#    → copy the id into [[kv_namespaces]] below
+# 2. npx wrangler kv:namespace create XERO_KV
+#    → copy the id into [[kv_namespaces]] below
+# 3. In Cloudflare Pages dashboard → Settings → Environment variables, set:
+#    XERO_CLIENT_ID     = (from developer.xero.com)
+#    XERO_CLIENT_SECRET = (from developer.xero.com)
+#    XERO_REDIRECT_URI  = https://hub.primetie.co.nz/api/xero/callback
+# 4. In Pages dashboard → Functions → KV namespace bindings, bind:
+#    ORDERS_KV → the namespace you created
+#    XERO_KV   → the namespace you created
+
+name = "business-hub"
+compatibility_date = "2025-01-01"
+
+[[kv_namespaces]]
+binding = "ORDERS_KV"
+id = "REPLACE_WITH_ORDERS_KV_ID"
+
+[[kv_namespaces]]
+binding = "XERO_KV"
+id = "REPLACE_WITH_XERO_KV_ID"

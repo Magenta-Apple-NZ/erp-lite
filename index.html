@@ -116,17 +116,37 @@
 
     <!-- ── Main ── -->
     <div class="main-wrap">
-        <div class="topbar">
+
+        <!-- Dashboard topbar (hidden in orders views) -->
+        <div class="topbar" id="dashboard-topbar">
             <input type="text" id="search" placeholder="Search links, files, and tools…" autocomplete="off">
             <span id="last-updated"></span>
         </div>
 
-        <section id="pinned-section" class="pinned-section" style="display:none">
-            <h2 class="pinned-heading">Pinned</h2>
-            <div id="pinned-items" class="pinned-items"></div>
-        </section>
+        <!-- ── View: Dashboard ── -->
+        <div id="view-dashboard" class="app-view">
+            <section id="pinned-section" class="pinned-section" style="display:none">
+                <h2 class="pinned-heading">Pinned</h2>
+                <div id="pinned-items" class="pinned-items"></div>
+            </section>
+            <main id="dashboard"></main>
+        </div>
 
-        <main id="dashboard"></main>
+        <!-- ── View: Orders list ── -->
+        <div id="view-orders" class="app-view" style="display:none">
+            <div class="orders-view-inner" id="orders-list-container"></div>
+        </div>
+
+        <!-- ── View: New order ── -->
+        <div id="view-orders-new" class="app-view" style="display:none">
+            <div class="orders-view-inner" id="orders-new-container"></div>
+        </div>
+
+        <!-- ── View: Order detail ── -->
+        <div id="view-orders-detail" class="app-view" style="display:none">
+            <div class="orders-view-inner" id="orders-detail-container"></div>
+        </div>
+
     </div>
 
 </div>
@@ -171,6 +191,7 @@
 </div>
 
 <div id="toast" class="toast"></div>
+<script src="orders.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

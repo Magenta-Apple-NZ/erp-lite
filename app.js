@@ -664,7 +664,81 @@ document.addEventListener('keydown', e => {
     }
 });
 
-// ── Coming-soon nav items ──
+// ── Hash router ──
+const VIEWS = ['view-dashboard', 'view-orders', 'view-orders-new', 'view-orders-detail'];
+
+function setActiveView(viewId) {
+    VIEWS.forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.style.display = id === viewId ? '' : 'none';
+    });
+    const topbar = document.getElementById('dashboard-topbar');
+    if (topbar) topbar.style.display = viewId === 'view-dashboard' ? '' : 'none';
+}
+
+function setActiveNav(navId) {
+    document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
+    const el = document.getElementById(navId);
+    if (el) el.classList.add('active');
+}
+
+async function handleRoute() {
+    const hash = location.hash.replace(/^#\/?/, '');
+
+    if (!hash || hash === 'dashboard') {
+        setActiveView('view-dashboard');
+        setActiveNav('nav-dashboard');
+        return;
+    }
+
+    if (hash === 'orders') {
+        setActiveView('view-orders');
+        setActiveNav('nav-orders');
+        await Orders.renderList(document.getElementById('orders-list-container'));
+        Orders.handleXeroQueryParams();
+        return;
+    }
+
+    if (hash === 'orders/new') {
+        setActiveView('view-orders-new');
+        setActiveNav('nav-orders');
+        await Orders.renderNew(document.getElementById('orders-new-container'));
+        return;
+    }
+
+    if (hash.startsWith('orders/')) {
+        const orderId = hash.slice('orders/'.length);
+        setActiveView('view-orders-detail');
+        setActiveNav('nav-orders');
+        await Orders.renderDetail(document.getElementById('orders-detail-container'), orderId);
+        return;
+    }
+
+    // Unknown hash — fall back to dashboard
+    location.hash = '';
+}
+
+window.addEventListener('hashchange', handleRoute);
+
+// ── Nav items ──
+document.getElementById('nav-dashboard').addEventListener('click', e => {
+    e.preventDefault();
+    location.hash = '';
+});
+
+// Make Orders nav item active (it was nav-item--soon)
+const ordersNavItem = document.querySelector('.nav-item--soon[data-phase="Phase 1"]');
+if (ordersNavItem) {
+    ordersNavItem.classList.remove('nav-item--soon');
+    ordersNavItem.id = 'nav-orders';
+    ordersNavItem.querySelector('.nav-soon-badge')?.remove();
+    ordersNavItem.addEventListener('click', e => {
+        e.preventDefault();
+        location.hash = 'orders';
+    });
+}
+
+// Remaining coming-soon nav items
 document.querySelectorAll('.nav-item--soon').forEach(el => {
     el.addEventListener('click', e => {
         e.preventDefault();
@@ -675,3 +749,4 @@ document.querySelectorAll('.nav-item--soon').forEach(el => {
 
 // ── Init ──
 loadConfig();
+handleRoute();
