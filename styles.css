@@ -1270,6 +1270,107 @@ li.drag-over { background: #eff6ff; }
     color: #475569;
 }
 
+/* ── Customer preset radio buttons ── */
+.customer-presets {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-bottom: 0.25rem;
+}
+.customer-preset-opt {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.45rem 1rem;
+    border: 1.5px solid #e2e8f0;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.875rem;
+    color: #334155;
+    background: #fff;
+    transition: border-color 0.15s, background 0.15s, color 0.15s;
+    user-select: none;
+}
+.customer-preset-opt input[type="radio"] { display: none; }
+.customer-preset-opt:hover { border-color: #94a3b8; }
+.customer-preset-opt.selected,
+.customer-preset-opt:has(input:checked) {
+    border-color: #3b82f6;
+    background: #eff6ff;
+    color: #1d4ed8;
+    font-weight: 600;
+}
+
+/* ── Order error banner ── */
+.order-error-banner {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    background: #fef2f2;
+    border: 1px solid #fca5a5;
+    border-radius: 8px;
+    padding: 0.75rem 1rem;
+    margin: 0.75rem 1.5rem 0;
+    color: #dc2626;
+    font-size: 0.875rem;
+}
+.order-error-banner button {
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: #dc2626;
+    font-size: 1rem;
+    padding: 0;
+    line-height: 1;
+    flex-shrink: 0;
+}
+
+/* ── Edit order warning ── */
+.form-warn {
+    background: #fffbeb;
+    border: 1px solid #fcd34d;
+    border-radius: 8px;
+    padding: 0.75rem 1rem;
+    font-size: 0.875rem;
+    color: #92400e;
+    margin-bottom: 1.25rem;
+}
+
+/* ── Activity log ── */
+.event-log {
+    max-width: 794px;
+    margin: 1rem auto 2rem;
+    padding: 0 18mm;
+}
+.event-log-title {
+    font-size: 0.75rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: #94a3b8;
+    margin: 0 0 0.6rem;
+}
+.event-log-empty {
+    font-size: 0.8rem;
+    color: #94a3b8;
+    margin: 0;
+}
+.event-list { display: flex; flex-direction: column; gap: 0.35rem; }
+.event-item {
+    display: flex;
+    align-items: baseline;
+    gap: 0.4rem;
+    font-size: 0.8rem;
+    color: #475569;
+    padding: 0.3rem 0;
+    border-bottom: 1px solid #f1f5f9;
+}
+.event-who { font-weight: 600; color: #1e293b; }
+.event-action { flex: 1; }
+.event-detail { color: #8b5cf6; font-family: monospace; font-size: 0.75rem; }
+.event-time { font-size: 0.73rem; color: #94a3b8; white-space: nowrap; }
+
 .store-city {
     font-size: 0.75rem;
     color: #94a3b8;

@@ -1,11 +1,18 @@
 // ── Orders module ──
-// Handles all views under #orders, #orders/new, #orders/<id>
+// Handles all views under #orders, #orders/new, #orders/<id>, #orders/<id>/edit
 
 const Orders = (() => {
 
     // ── State ──
     let xeroConnected = false;
     let customersCache = null;
+    let currentUser = null;
+
+    const CUSTOMER_PRESETS = [
+        { key: 'farmlands',   label: 'Farmlands' },
+        { key: 'pgg',         label: 'PGG Wrightson' },
+        { key: 'horicentre',  label: 'Horicentre' },
+    ];
 
     // ── Status helpers ──
     const STATUS_LABELS = {
@@ -37,6 +44,27 @@ const Orders = (() => {
         return resp.json();
     }
 
+    async function getUser() {
+        if (currentUser) return currentUser;
+        try {
+            currentUser = await api('/api/me');
+        } catch {
+            currentUser = { name: 'Unknown', email: null };
+        }
+        return currentUser;
+    }
+
+    async function logEvent(orderId, action, detail = '') {
+        const user = await getUser();
+        return api('/api/orders/' + orderId, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                event: { timestamp: new Date().toISOString(), user: user.name, action, detail },
+            }),
+        }).catch(() => {}); // non-blocking
+    }
+
     async function checkXeroStatus() {
         try {
             const s = await api('/api/xero/status');
@@ -64,6 +92,10 @@ const Orders = (() => {
     // ── Date format ──
     function fmtDate(iso) {
         return new Date(iso).toLocaleDateString('en-NZ', { day: 'numeric', month: 'short', year: 'numeric' });
+    }
+
+    function fmtDateTime(iso) {
+        return new Date(iso).toLocaleString('en-NZ', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
     }
 
     // ── Xero connection banner ──
@@ -153,6 +185,83 @@ const Orders = (() => {
         </div>`;
     }
 
+    // ── Customer section HTML (shared by new + edit forms) ──
+    function customerSectionHtml(customers, selectedName = '', selectedId = '') {
+        const presetMatch = CUSTOMER_PRESETS.find(p =>
+            selectedName && selectedName.toLowerCase().includes(p.label.toLowerCase())
+        );
+        const selectedKey = presetMatch ? presetMatch.key : (selectedName ? 'other' : '');
+
+        const radios = CUSTOMER_PRESETS.map(p => `
+            <label class="customer-preset-opt ${selectedKey === p.key ? 'selected' : ''}">
+                <input type="radio" name="customer-preset" value="${p.key}" ${selectedKey === p.key ? 'checked' : ''}>
+                <span>${p.label}</span>
+            </label>`).join('') + `
+            <label class="customer-preset-opt ${selectedKey === 'other' ? 'selected' : ''}">
+                <input type="radio" name="customer-preset" value="other" ${selectedKey === 'other' ? 'checked' : ''}>
+                <span>Other</span>
+            </label>`;
+
+        const otherDisplay = selectedKey === 'other' ? '' : 'none';
+        const otherSearch = customers.length
+            ? `<div class="customer-search-wrap">
+                <input type="text" id="customer-search" placeholder="Search customers…" autocomplete="off" value="${escHtml(selectedKey === 'other' ? selectedName : '')}">
+                <div id="customer-dropdown" class="customer-dropdown" style="display:none"></div>
+               </div>`
+            : `<input type="text" id="customer-search" placeholder="Customer name" value="${escHtml(selectedKey === 'other' ? selectedName : '')}">`;
+
+        return `
+        <div class="customer-presets">${radios}</div>
+        <div id="customer-other-wrap" style="display:${otherDisplay};margin-top:10px">
+            ${otherSearch}
+        </div>
+        <input type="hidden" id="customer-id" value="${escHtml(selectedKey === 'other' ? selectedId : '')}">
+        <input type="hidden" id="customer-name-val" value="${escHtml(selectedName)}">`;
+    }
+
+    function wireCustomerSection(customers) {
+        document.querySelectorAll('input[name="customer-preset"]').forEach(radio => {
+            radio.addEventListener('change', () => {
+                const otherWrap = document.getElementById('customer-other-wrap');
+                const idInput = document.getElementById('customer-id');
+                const nameInput = document.getElementById('customer-name-val');
+                // Update selected styling
+                document.querySelectorAll('.customer-preset-opt').forEach(l => l.classList.remove('selected'));
+                radio.closest('.customer-preset-opt').classList.add('selected');
+
+                if (radio.value === 'other') {
+                    otherWrap.style.display = '';
+                    idInput.value = '';
+                    nameInput.value = '';
+                    document.getElementById('customer-search')?.focus();
+                    return;
+                }
+
+                otherWrap.style.display = 'none';
+                const preset = CUSTOMER_PRESETS.find(p => p.key === radio.value);
+                const targetName = preset.label;
+                nameInput.value = targetName;
+
+                const match = customers.find(c => c.name.toLowerCase().includes(targetName.toLowerCase()));
+                idInput.value = match ? match.xeroContactId : '';
+            });
+        });
+
+        // If "Other" is pre-selected, wire up the search
+        if (customers.length) wireCustomerSearch(customers);
+
+        // If a preset is already checked (edit mode pre-population), set the hidden fields
+        const checked = document.querySelector('input[name="customer-preset"]:checked');
+        if (checked && checked.value !== 'other') {
+            const preset = CUSTOMER_PRESETS.find(p => p.key === checked.value);
+            if (preset) {
+                const match = customers.find(c => c.name.toLowerCase().includes(preset.label.toLowerCase()));
+                document.getElementById('customer-id').value = match ? match.xeroContactId : '';
+                document.getElementById('customer-name-val').value = preset.label;
+            }
+        }
+    }
+
     // ── New order form ──
     async function renderNew(container) {
         container.innerHTML = `
@@ -162,7 +271,7 @@ const Orders = (() => {
             </div>
             <a href="#orders" class="btn-secondary">← Back to Orders</a>
         </div>
-        <div id="new-order-body"><div class="orders-loading">Loading customers…</div></div>`;
+        <div id="new-order-body"><div class="orders-loading">Loading…</div></div>`;
 
         await checkXeroStatus();
 
@@ -174,28 +283,68 @@ const Orders = (() => {
         try { catalogItems = await api('/api/catalog/items'); } catch (e) { /* optional */ }
 
         const body = document.getElementById('new-order-body');
+        if (!xeroConnected) body.insertAdjacentHTML('beforebegin', xeroConnectBanner());
 
-        if (!xeroConnected) {
-            body.insertAdjacentHTML('beforebegin', xeroConnectBanner());
+        body.innerHTML = orderFormHtml({ customers, catalogStores, submitLabel: 'Create Order' });
+
+        wireOrderForm({ customers, catalogStores, catalogItems });
+        document.getElementById('submit-order-btn').addEventListener('click', () => submitNewOrder());
+    }
+
+    // ── Edit order form ──
+    async function renderEdit(container, orderId) {
+        container.innerHTML = `
+        <div class="view-header">
+            <div>
+                <h1 class="view-title">Edit Order</h1>
+            </div>
+            <a href="#orders/${orderId}" class="btn-secondary">← Cancel</a>
+        </div>
+        <div id="new-order-body"><div class="orders-loading">Loading…</div></div>`;
+
+        await checkXeroStatus();
+
+        let order, customers = [], catalogStores = [], catalogItems = [];
+        try {
+            order = await api('/api/orders/' + orderId);
+        } catch (e) {
+            document.getElementById('new-order-body').innerHTML =
+                `<div class="orders-error">${e.message}</div>`;
+            return;
+        }
+        try { if (xeroConnected) customers = await loadCustomers(); } catch (e) {}
+        try { catalogStores = await api('/api/catalog/stores'); } catch (e) {}
+        try { catalogItems = await api('/api/catalog/items'); } catch (e) {}
+
+        const body = document.getElementById('new-order-body');
+        if (!xeroConnected) body.insertAdjacentHTML('beforebegin', xeroConnectBanner());
+
+        if (order.xeroInvoiceId) {
+            body.insertAdjacentHTML('afterbegin', `
+                <div class="form-warn">This order has already been pushed to Xero (${escHtml(order.xeroInvoiceNumber)}). Editing it here will not update the Xero invoice.</div>`);
         }
 
-        body.innerHTML = `
+        body.innerHTML += orderFormHtml({
+            customers,
+            catalogStores,
+            submitLabel: 'Save Changes',
+            defaults: order,
+        });
+
+        wireOrderForm({ customers, catalogStores, catalogItems, defaults: order });
+        document.getElementById('submit-order-btn').addEventListener('click', () => submitEditOrder(orderId));
+    }
+
+    // ── Shared order form HTML ──
+    function orderFormHtml({ customers, catalogStores, submitLabel, defaults = {} }) {
+        return `
         <form id="new-order-form" class="order-form" onsubmit="return false">
             <!-- Customer -->
             <section class="form-section">
                 <h2 class="form-section-title">Customer</h2>
                 <div class="form-row">
                     <div class="form-field" style="flex:2">
-                        <label>Customer name <span class="required">*</span></label>
-                        ${customers.length
-                            ? `<div class="customer-search-wrap">
-                                <input type="text" id="customer-search" placeholder="Search customers…" autocomplete="off">
-                                <div id="customer-dropdown" class="customer-dropdown" style="display:none"></div>
-                                <input type="hidden" id="customer-id">
-                                <input type="hidden" id="customer-name-val">
-                               </div>`
-                            : `<input type="text" id="customer-name-val" placeholder="Customer name" required>`
-                        }
+                        ${customerSectionHtml(customers, defaults.customer?.name || '', defaults.customer?.xeroContactId || '')}
                     </div>
                 </div>
             </section>
@@ -206,7 +355,7 @@ const Orders = (() => {
                 <div class="form-row">
                     <div class="form-field" style="flex:2">
                         <label>PO Number <span class="form-hint">optional</span></label>
-                        <input type="text" id="po-number" placeholder="e.g. 1529131-CONF-1776762069025">
+                        <input type="text" id="po-number" placeholder="e.g. 1529131-CONF-1776762069025" value="${escHtml(defaults.poNumber || '')}">
                     </div>
                 </div>
             </section>
@@ -219,16 +368,16 @@ const Orders = (() => {
                         <label>Branch / location</label>
                         ${catalogStores.length ? `
                         <div class="customer-search-wrap">
-                            <input type="text" id="ship-branch" placeholder="Search stores…" autocomplete="off">
+                            <input type="text" id="ship-branch" placeholder="Search stores…" autocomplete="off" value="${escHtml(defaults.shipTo?.branch || '')}">
                             <div id="store-dropdown" class="customer-dropdown" style="display:none"></div>
                         </div>` : `
-                        <input type="text" id="ship-branch" placeholder="e.g. Martinborough Branch">`}
+                        <input type="text" id="ship-branch" placeholder="e.g. Martinborough Branch" value="${escHtml(defaults.shipTo?.branch || '')}">`}
                     </div>
                 </div>
                 <div class="form-row">
                     <div class="form-field" style="flex:1">
                         <label>Delivery address <span class="form-hint">optional</span></label>
-                        <textarea id="ship-address" rows="3" placeholder="Street address…"></textarea>
+                        <textarea id="ship-address" rows="3" placeholder="Street address…">${escHtml(defaults.shipTo?.address || '')}</textarea>
                     </div>
                 </div>
             </section>
@@ -264,32 +413,32 @@ const Orders = (() => {
             <section class="form-section">
                 <h2 class="form-section-title">Packing Notes <span class="form-hint">optional</span></h2>
                 <div class="form-field">
-                    <textarea id="packing-notes" rows="3" placeholder="Any special handling, packaging instructions, or delivery notes…"></textarea>
+                    <textarea id="packing-notes" rows="3" placeholder="Any special handling, packaging instructions, or delivery notes…">${escHtml(defaults.packingNotes || '')}</textarea>
                 </div>
             </section>
 
             <div class="form-actions">
                 <div id="form-error" class="form-error" style="display:none"></div>
-                <button type="button" id="submit-order-btn" class="btn-primary btn-lg">
-                    Create Order
-                </button>
+                <button type="button" id="submit-order-btn" class="btn-primary btn-lg">${submitLabel}</button>
             </div>
         </form>`;
+    }
 
-        // Wire up customer search
-        if (customers.length) wireCustomerSearch(customers);
-
-        // Wire store search
+    // ── Wire form interactions (shared by new + edit) ──
+    function wireOrderForm({ customers, catalogStores, catalogItems, defaults = {} }) {
+        wireCustomerSection(customers);
         if (catalogStores.length) wireStoreSearch(catalogStores);
 
-        // Add first line item
-        addLineItem(catalogItems);
+        lineCount = 0;
+        // Pre-populate existing lines or add a blank one
+        const existingLines = defaults.lines || [];
+        if (existingLines.length) {
+            existingLines.forEach(l => addLineItem(catalogItems, l));
+        } else {
+            addLineItem(catalogItems);
+        }
 
-        // Wire add line button
         document.getElementById('add-line-btn').addEventListener('click', () => addLineItem(catalogItems));
-
-        // Submit
-        document.getElementById('submit-order-btn').addEventListener('click', submitNewOrder);
     }
 
     function wireCustomerSearch(customers) {
@@ -297,8 +446,11 @@ const Orders = (() => {
         const dropdown = document.getElementById('customer-dropdown');
         const idInput = document.getElementById('customer-id');
         const nameInput = document.getElementById('customer-name-val');
+        if (!searchEl || !dropdown) return;
 
         searchEl.addEventListener('input', () => {
+            nameInput.value = searchEl.value;
+            idInput.value = '';
             const q = searchEl.value.toLowerCase().trim();
             if (!q) { dropdown.style.display = 'none'; return; }
             const matches = customers.filter(c => c.name.toLowerCase().includes(q)).slice(0, 8);
@@ -357,10 +509,11 @@ const Orders = (() => {
             if (!opt) return;
             input.value = opt.dataset.name;
             document.getElementById('ship-address').value = opt.dataset.addr;
-            // Auto-fill customer if field is empty
+            // Auto-fill customer if "Other" is selected and field is empty
             const customerSearch = document.getElementById('customer-search');
             const customerNameVal = document.getElementById('customer-name-val');
-            if (customerSearch && !customerSearch.value && opt.dataset.customer) {
+            const checkedPreset = document.querySelector('input[name="customer-preset"]:checked');
+            if (customerSearch && (!customerSearch.value || checkedPreset?.value === 'other') && opt.dataset.customer) {
                 customerSearch.value = opt.dataset.customer;
                 if (customerNameVal) customerNameVal.value = opt.dataset.customer;
             }
@@ -381,7 +534,7 @@ const Orders = (() => {
         return item.defaultPrice;
     }
 
-    function addLineItem(catalogItems = []) {
+    function addLineItem(catalogItems = [], prefill = null) {
         const idx = lineCount++;
         const tbody = document.getElementById('line-items-body');
         const tr = document.createElement('tr');
@@ -389,16 +542,16 @@ const Orders = (() => {
         tr.dataset.idx = idx;
         tr.innerHTML = `
             <td style="flex:1">
-                <input type="text" class="line-sku" placeholder="e.g. PT-I-10">
+                <input type="text" class="line-sku" placeholder="e.g. PT-I-10" value="${escHtml(prefill?.sku || '')}">
             </td>
             <td style="flex:3">
-                <input type="text" class="line-desc" placeholder="Product / description" required>
+                <input type="text" class="line-desc" placeholder="Product / description" required value="${escHtml(prefill?.description || '')}">
             </td>
             <td style="flex:1">
-                <input type="number" class="line-qty" value="1" min="0" step="any" required>
+                <input type="number" class="line-qty" value="${prefill?.quantity ?? 1}" min="0" step="any" required>
             </td>
             <td style="flex:1">
-                <input type="number" class="line-price" value="" min="0" step="0.01" placeholder="0.00" required>
+                <input type="number" class="line-price" value="${prefill?.unitPrice ?? ''}" min="0" step="0.01" placeholder="0.00" required>
             </td>
             <td style="flex:1" class="line-total">$0.00</td>
             <td style="flex:none;width:36px">
@@ -415,11 +568,17 @@ const Orders = (() => {
 
         function updateRow() {
             const qty = parseFloat(qtyEl.value) || 0;
-            // Recalculate price from price breaks if a catalog item is selected
             if (tr._catalogItem) {
-                const pb = getPriceForQty(tr._catalogItem, qty);
-                priceEl.value = pb.toFixed(2);
+                priceEl.value = getPriceForQty(tr._catalogItem, qty).toFixed(2);
             }
+            const price = parseFloat(priceEl.value) || 0;
+            totalEl.textContent = '$' + fmt(qty * price);
+            updateFormTotal();
+        }
+
+        // Initialise total for pre-filled rows
+        if (prefill) {
+            const qty = parseFloat(qtyEl.value) || 0;
             const price = parseFloat(priceEl.value) || 0;
             totalEl.textContent = '$' + fmt(qty * price);
             updateFormTotal();
@@ -427,7 +586,7 @@ const Orders = (() => {
 
         qtyEl.addEventListener('input', updateRow);
         priceEl.addEventListener('input', () => {
-            tr._catalogItem = null; // manual price override clears price break tracking
+            tr._catalogItem = null;
             const qty = parseFloat(qtyEl.value) || 0;
             const price = parseFloat(priceEl.value) || 0;
             totalEl.textContent = '$' + fmt(qty * price);
@@ -444,7 +603,7 @@ const Orders = (() => {
             descEl.parentNode.appendChild(itemDropdown);
 
             descEl.addEventListener('input', () => {
-                tr._catalogItem = null; // text edited manually
+                tr._catalogItem = null;
                 const q = descEl.value.toLowerCase().trim();
                 if (!q) { itemDropdown.style.display = 'none'; return; }
                 const matches = catalogItems.filter(i =>
@@ -500,6 +659,14 @@ const Orders = (() => {
         return lines;
     }
 
+    function getCustomerFromForm() {
+        return {
+            xeroContactId: document.getElementById('customer-id')?.value || '',
+            name: document.getElementById('customer-name-val')?.value.trim() ||
+                  document.getElementById('customer-search')?.value.trim() || '',
+        };
+    }
+
     function showFormError(msg) {
         const el = document.getElementById('form-error');
         if (!el) return;
@@ -509,64 +676,86 @@ const Orders = (() => {
 
     async function submitNewOrder() {
         showFormError('');
-
-        const customerId = document.getElementById('customer-id')?.value;
-        const customerName = document.getElementById('customer-name-val')?.value.trim()
-            || document.getElementById('customer-search')?.value.trim();
-
-        if (!customerName) { showFormError('Customer name is required.'); return; }
-
+        const customer = getCustomerFromForm();
+        if (!customer.name) { showFormError('Customer name is required.'); return; }
         const lines = getLineItems();
         if (!lines.length) { showFormError('Add at least one line item.'); return; }
 
         const btn = document.getElementById('submit-order-btn');
-        btn.disabled = true;
-        btn.textContent = 'Creating…';
+        btn.disabled = true; btn.textContent = 'Creating…';
 
         try {
-            const payload = {
-                customer: {
-                    xeroContactId: customerId || '',
-                    name: customerName,
-                },
-                poNumber: document.getElementById('po-number').value.trim(),
-                shipTo: {
-                    branch: document.getElementById('ship-branch').value.trim(),
-                    address: document.getElementById('ship-address').value.trim(),
-                },
-                lines,
-                packingNotes: document.getElementById('packing-notes').value.trim(),
-            };
-
             const order = await api('/api/orders', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload),
+                body: JSON.stringify({
+                    customer,
+                    poNumber: document.getElementById('po-number').value.trim(),
+                    shipTo: {
+                        branch: document.getElementById('ship-branch').value.trim(),
+                        address: document.getElementById('ship-address').value.trim(),
+                    },
+                    lines,
+                    packingNotes: document.getElementById('packing-notes').value.trim(),
+                }),
             });
-
+            await logEvent(order.id, 'Order created');
             location.hash = 'orders/' + order.id;
         } catch (e) {
             showFormError(e.message);
-            btn.disabled = false;
-            btn.textContent = 'Create Order';
+            btn.disabled = false; btn.textContent = 'Create Order';
+        }
+    }
+
+    async function submitEditOrder(orderId) {
+        showFormError('');
+        const customer = getCustomerFromForm();
+        if (!customer.name) { showFormError('Customer name is required.'); return; }
+        const lines = getLineItems();
+        if (!lines.length) { showFormError('Add at least one line item.'); return; }
+
+        const btn = document.getElementById('submit-order-btn');
+        btn.disabled = true; btn.textContent = 'Saving…';
+
+        try {
+            await api('/api/orders/' + orderId, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    customer,
+                    poNumber: document.getElementById('po-number').value.trim(),
+                    shipTo: {
+                        branch: document.getElementById('ship-branch').value.trim(),
+                        address: document.getElementById('ship-address').value.trim(),
+                    },
+                    lines,
+                    packingNotes: document.getElementById('packing-notes').value.trim(),
+                }),
+            });
+            await logEvent(orderId, 'Order edited');
+            location.hash = 'orders/' + orderId;
+        } catch (e) {
+            showFormError(e.message);
+            btn.disabled = false; btn.textContent = 'Save Changes';
         }
     }
 
     // ── Action bar buttons — driven by order status ──
     function actionButtons(order, xeroConnected) {
         const print = `<button id="print-slip-btn" class="btn-secondary">Print Packing Slip</button>`;
+        const edit  = `<a href="#orders/${order.id}/edit" class="btn-secondary btn-sm" id="edit-order-btn">Edit</a>`;
 
         if (order.status === 'new') {
-            return `<button class="btn-secondary" disabled title="Print the packing slip first to review it">Send to Xero</button>${print}`;
+            return `${edit}<button class="btn-secondary" disabled title="Print the packing slip first to review it">Send to Xero</button>${print}`;
         }
         if (order.status === 'reviewed') {
             const xeroBtn = xeroConnected
                 ? `<button id="push-xero-btn" class="btn-primary">Send to Xero</button>`
                 : `<span class="xero-not-connected">Xero not connected</span>`;
-            return xeroBtn + print;
+            return `${edit}${xeroBtn}${print}`;
         }
         if (order.status === 'sent_to_xero') {
-            return `${order.xeroInvoiceNumber ? `<span class="xero-inv-linked">✓ Xero: ${escHtml(order.xeroInvoiceNumber)}</span>` : ''}
+            return `${edit}${order.xeroInvoiceNumber ? `<span class="xero-inv-linked">✓ Xero: ${escHtml(order.xeroInvoiceNumber)}</span>` : ''}
                     <button id="dispatch-btn" class="btn-primary">Mark as Dispatched</button>${print}`;
         }
         // dispatched
@@ -596,8 +785,6 @@ const Orders = (() => {
 
         await checkXeroStatus();
 
-        const total = orderTotal(order);
-        const gst = total * 0.15;
         const body = document.getElementById('order-detail-body');
 
         body.innerHTML = `
@@ -654,7 +841,7 @@ const Orders = (() => {
 
             <hr class="slip-rule">
 
-            <!-- Line items — no totals, matches PDF -->
+            <!-- Line items -->
             <table class="slip-lines">
                 <thead>
                     <tr>
@@ -684,16 +871,36 @@ const Orders = (() => {
             <div class="slip-footer">
                 Enviroware &middot; orders@primetie.co.nz &middot; (07) 549-1716 &middot; 93 Tetley Road, Katikati
             </div>
-        </div>`;
+        </div>
+
+        <!-- Activity log (hidden when printing) -->
+        ${renderEventLog(order.events || [])}`;
 
         wireDetailButtons(order);
+    }
+
+    function renderEventLog(events) {
+        if (!events.length) return `<div class="event-log no-print"><p class="event-log-empty">No activity yet.</p></div>`;
+        return `
+        <div class="event-log no-print">
+            <h3 class="event-log-title">Activity</h3>
+            <div class="event-list">
+                ${events.map(e => `
+                <div class="event-item">
+                    <span class="event-who">${escHtml(e.user)}</span>
+                    <span class="event-action">${escHtml(e.action)}</span>
+                    ${e.detail ? `<span class="event-detail">${escHtml(e.detail)}</span>` : ''}
+                    <span class="event-time">${fmtDateTime(e.timestamp)}</span>
+                </div>`).join('')}
+            </div>
+        </div>`;
     }
 
     function wireDetailButtons(order) {
         const orderId = order.id;
 
         // Print — opens clean popup, advances new → reviewed
-        document.getElementById('print-slip-btn')?.addEventListener('click', () => {
+        document.getElementById('print-slip-btn')?.addEventListener('click', async () => {
             const slipEl = document.getElementById('packing-slip');
             if (!slipEl) return;
             const styles = Array.from(document.styleSheets)
@@ -712,7 +919,8 @@ const Orders = (() => {
             win.focus();
             setTimeout(() => { win.print(); win.close(); }, 400);
 
-            // Advance new → reviewed
+            // Log the print event and advance new → reviewed
+            logEvent(orderId, 'Printed packing slip');
             if (order.status === 'new') {
                 api('/api/orders/' + orderId, {
                     method: 'PATCH',
@@ -721,7 +929,7 @@ const Orders = (() => {
                 }).then(updated => {
                     order.status = 'reviewed';
                     refreshActionBar(order);
-                }).catch(() => {});
+                }).catch(err => showErrorBanner('Could not update status: ' + err.message));
             }
         });
 
@@ -730,22 +938,30 @@ const Orders = (() => {
             const btn = document.getElementById('push-xero-btn');
             btn.disabled = true;
             btn.textContent = 'Sending to Xero…';
+            clearErrorBanner();
             try {
                 const result = await api('/api/xero/push', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ orderId }),
                 });
-                // Update invoice details on the slip
+                // Persist status change
+                await api('/api/orders/' + orderId, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ status: 'sent_to_xero' }),
+                });
+                // Update invoice on the slip
                 const invRow = document.querySelector('.slip-inv-details .slip-inv-row strong');
                 if (invRow) invRow.textContent = result.invoiceNumber;
-                // Advance status
                 order.status = 'sent_to_xero';
                 order.xeroInvoiceNumber = result.invoiceNumber;
                 refreshActionBar(order);
+                logEvent(orderId, 'Sent to Xero', result.invoiceNumber);
                 showToast('Invoice created in Xero: ' + result.invoiceNumber);
             } catch (e) {
-                showToast('Xero push failed: ' + e.message);
+                console.error('Xero push failed:', e);
+                showErrorBanner('Xero push failed: ' + e.message);
                 btn.disabled = false;
                 btn.textContent = 'Send to Xero';
             }
@@ -756,6 +972,7 @@ const Orders = (() => {
             const btn = document.getElementById('dispatch-btn');
             btn.disabled = true;
             btn.textContent = 'Saving…';
+            clearErrorBanner();
             try {
                 await api('/api/orders/' + orderId, {
                     method: 'PATCH',
@@ -764,13 +981,31 @@ const Orders = (() => {
                 });
                 order.status = 'dispatched';
                 refreshActionBar(order);
+                logEvent(orderId, 'Marked as dispatched');
                 showToast('Order marked as dispatched');
             } catch (e) {
-                showToast('Error: ' + e.message);
+                showErrorBanner('Error: ' + e.message);
                 btn.disabled = false;
                 btn.textContent = 'Mark as Dispatched';
             }
         });
+    }
+
+    // ── Error banner (persistent, above action bar) ──
+    function showErrorBanner(msg) {
+        let banner = document.getElementById('order-error-banner');
+        if (!banner) {
+            banner = document.createElement('div');
+            banner.id = 'order-error-banner';
+            banner.className = 'order-error-banner no-print';
+            const actionsEl = document.querySelector('.order-actions');
+            if (actionsEl) actionsEl.insertAdjacentElement('beforebegin', banner);
+        }
+        banner.innerHTML = `<span>${escHtml(msg)}</span><button onclick="document.getElementById('order-error-banner').remove()">✕</button>`;
+    }
+
+    function clearErrorBanner() {
+        document.getElementById('order-error-banner')?.remove();
     }
 
     // ── Escape HTML ──
@@ -782,10 +1017,20 @@ const Orders = (() => {
             .replace(/"/g, '&quot;');
     }
 
+    // ── Toast ──
+    function showToast(msg) {
+        const t = document.getElementById('toast');
+        if (!t) return;
+        t.textContent = msg;
+        t.classList.add('show');
+        setTimeout(() => t.classList.remove('show'), 3000);
+    }
+
     // ── Public API ──
     return {
         renderList,
         renderNew,
+        renderEdit,
         renderDetail,
         handleXeroQueryParams() {
             const params = new URLSearchParams(location.search);

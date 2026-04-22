@@ -665,7 +665,7 @@ document.addEventListener('keydown', e => {
 });
 
 // ── Hash router ──
-const VIEWS = ['view-dashboard', 'view-orders', 'view-orders-new', 'view-orders-detail', 'view-admin'];
+const VIEWS = ['view-dashboard', 'view-orders', 'view-orders-new', 'view-orders-detail', 'view-orders-edit', 'view-admin'];
 
 function setActiveView(viewId) {
     VIEWS.forEach(id => {
@@ -707,6 +707,14 @@ async function handleRoute() {
         setActiveView('view-orders-new');
         setActiveNav('nav-orders');
         await Orders.renderNew(document.getElementById('orders-new-container'));
+        return;
+    }
+
+    const editMatch = hash.match(/^orders\/([^/]+)\/edit$/);
+    if (editMatch) {
+        setActiveView('view-orders-edit');
+        setActiveNav('nav-orders');
+        await Orders.renderEdit(document.getElementById('orders-edit-container'), editMatch[1]);
         return;
     }
 
