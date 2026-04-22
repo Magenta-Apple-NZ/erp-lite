@@ -44,8 +44,10 @@ const Admin = (() => {
             });
     }
 
-    const ITEM_EXAMPLE  = ['PT-I-10', 'Prime Vine Tie Loose 10kg', '119.00', '200'];
-    const STORE_EXAMPLE = ['Farmlands Retail - New Plymouth', '35 Hudson Road', 'Bell Block', 'New Plymouth', '4312'];
+    const ITEM_HEADERS  = ['Id', 'Name', 'Default Price', 'PB1 Quantity', 'PB1 Price', 'PB2 Quantity', 'PB2 Price', 'PB3 Quantity', 'PB3 Price'];
+    const ITEM_EXAMPLE  = ['PT-I-10', 'Prime Vine Tie Loose 10kg', '119.00', '50', '109.00', '100', '99.00', '', ''];
+    const STORE_HEADERS = ['Account ID', 'Customer', 'Branch', 'Street Address', 'City', 'Postcode', 'Phone'];
+    const STORE_EXAMPLE = ['ACC001', 'Farmlands Co-operative', 'New Plymouth', '35 Hudson Road', 'New Plymouth', '4312', '06 759 0000'];
 
     function downloadTemplate(headers, example, filename) {
         const csv = [headers.join(','), example.join(',')].join('\n');
@@ -57,26 +59,34 @@ const Admin = (() => {
         document.body.removeChild(a);
     }
 
+    function pbCell(qty, price) {
+        if (!qty && !price) return '<td class="cat-num cat-dim">—</td>';
+        return `<td class="cat-num">${qty ? qty + ' × ' : ''}$${Number(price || 0).toFixed(2)}</td>`;
+    }
+
     function itemsTableRows(items) {
         return items.slice(0, 15).map(i => `
             <tr>
-                <td>${escHtml(i.sku)}</td>
-                <td>${escHtml(i.description)}</td>
-                <td class="cat-num">$${Number(i.unitPrice || 0).toFixed(2)}</td>
-                <td class="cat-num">${escHtml(i.accountCode || '200')}</td>
+                <td class="cat-mono">${escHtml(i.id || i.sku || '')}</td>
+                <td>${escHtml(i.name || i.description || '')}</td>
+                <td class="cat-num">$${Number(i.defaultPrice || i.unitPrice || 0).toFixed(2)}</td>
+                ${pbCell(i.pb1Quantity, i.pb1Price)}
+                ${pbCell(i.pb2Quantity, i.pb2Price)}
+                ${pbCell(i.pb3Quantity, i.pb3Price)}
             </tr>`).join('') +
-            (items.length > 15 ? `<tr><td colspan="4" class="cat-more">…and ${items.length - 15} more</td></tr>` : '');
+            (items.length > 15 ? `<tr><td colspan="6" class="cat-more">…and ${items.length - 15} more</td></tr>` : '');
     }
 
     function storesTableRows(stores) {
         return stores.slice(0, 15).map(s => `
             <tr>
-                <td>${escHtml(s.name)}</td>
-                <td>${escHtml([s.addressLine1, s.addressLine2].filter(Boolean).join(', '))}</td>
-                <td>${escHtml(s.city)}</td>
-                <td>${escHtml(s.postcode)}</td>
+                <td class="cat-mono">${escHtml(s.accountId || '')}</td>
+                <td>${escHtml(s.customer || s.name || '')}</td>
+                <td>${escHtml(s.branch || '')}</td>
+                <td>${escHtml(s.city || '')}</td>
+                <td>${escHtml(s.postcode || '')}</td>
             </tr>`).join('') +
-            (stores.length > 15 ? `<tr><td colspan="4" class="cat-more">…and ${stores.length - 15} more</td></tr>` : '');
+            (stores.length > 15 ? `<tr><td colspan="5" class="cat-more">…and ${stores.length - 15} more</td></tr>` : '');
     }
 
     async function renderAdmin(container) {
@@ -117,14 +127,14 @@ const Admin = (() => {
             </div>
             <div id="items-preview" style="display:${items.length ? '' : 'none'}">
                 <table class="cat-table">
-                    <thead><tr><th>SKU</th><th>Description</th><th class="cat-num">Unit Price</th><th class="cat-num">Account</th></tr></thead>
+                    <thead><tr><th>ID</th><th>Name</th><th class="cat-num">Default</th><th class="cat-num">PB1</th><th class="cat-num">PB2</th><th class="cat-num">PB3</th></tr></thead>
                     <tbody id="items-tbody">${itemsTableRows(items)}</tbody>
                 </table>
                 <div class="cat-save-row">
                     <button class="btn-primary btn-sm" id="items-save-btn" style="display:none">Save to Hub</button>
                 </div>
             </div>
-            <p class="cat-format">Expected columns: <code>SKU, Description, UnitPrice, AccountCode</code></p>
+            <p class="cat-format">Expected columns: <code>Id, Name, Default Price, PB1 Quantity, PB1 Price, PB2 Quantity, PB2 Price, PB3 Quantity, PB3 Price</code></p>
         </div>
 
         <!-- ── Store Locations ── -->
@@ -144,21 +154,21 @@ const Admin = (() => {
             </div>
             <div id="stores-preview" style="display:${stores.length ? '' : 'none'}">
                 <table class="cat-table">
-                    <thead><tr><th>Name</th><th>Address</th><th>City</th><th>Postcode</th></tr></thead>
+                    <thead><tr><th>Account ID</th><th>Customer</th><th>Branch</th><th>City</th><th>Postcode</th></tr></thead>
                     <tbody id="stores-tbody">${storesTableRows(stores)}</tbody>
                 </table>
                 <div class="cat-save-row">
                     <button class="btn-primary btn-sm" id="stores-save-btn" style="display:none">Save to Hub</button>
                 </div>
             </div>
-            <p class="cat-format">Expected columns: <code>Name, AddressLine1, AddressLine2, City, Postcode</code></p>
+            <p class="cat-format">Expected columns: <code>Account ID, Customer, Branch, Street Address, City, Postcode, Phone</code></p>
         </div>`;
 
         // ── Template downloads ──
         document.getElementById('items-tpl-btn').addEventListener('click', () =>
-            downloadTemplate(['SKU', 'Description', 'UnitPrice', 'AccountCode'], ITEM_EXAMPLE, 'items-template.csv'));
+            downloadTemplate(ITEM_HEADERS, ITEM_EXAMPLE, 'items-template.csv'));
         document.getElementById('stores-tpl-btn').addEventListener('click', () =>
-            downloadTemplate(['Name', 'AddressLine1', 'AddressLine2', 'City', 'Postcode'], STORE_EXAMPLE, 'stores-template.csv'));
+            downloadTemplate(STORE_HEADERS, STORE_EXAMPLE, 'stores-template.csv'));
 
         // ── Items CSV upload ──
         document.getElementById('items-file').addEventListener('change', async e => {
@@ -167,13 +177,18 @@ const Admin = (() => {
             e.target.value = ''; // reset so same file can be re-selected
             const rows = parseCsv(await file.text());
             const parsed = rows.map(r => ({
-                sku:         r.sku || r.item_code || r.itemcode || r.code || '',
-                description: r.description || r.name || r.product || '',
-                unitPrice:   parseFloat(r.unitprice || r.unit_price || r.price || 0),
-                accountCode: r.accountcode || r.account_code || r.account || '200',
-            })).filter(i => i.description);
+                id:           r.id || r.sku || r.item_id || r.itemid || '',
+                name:         r.name || r.description || r.product || '',
+                defaultPrice: parseFloat(r.default_price || r.defaultprice || r.price || 0),
+                pb1Quantity:  parseFloat(r.pb1_quantity || r.pb1quantity || '') || null,
+                pb1Price:     parseFloat(r.pb1_price || r.pb1price || '') || null,
+                pb2Quantity:  parseFloat(r.pb2_quantity || r.pb2quantity || '') || null,
+                pb2Price:     parseFloat(r.pb2_price || r.pb2price || '') || null,
+                pb3Quantity:  parseFloat(r.pb3_quantity || r.pb3quantity || '') || null,
+                pb3Price:     parseFloat(r.pb3_price || r.pb3price || '') || null,
+            })).filter(i => i.name);
 
-            if (!parsed.length) { showToast('No valid rows — check CSV headers match: SKU, Description, UnitPrice, AccountCode'); return; }
+            if (!parsed.length) { showToast('No valid rows — check CSV headers match: Id, Name, Default Price…'); return; }
             document.getElementById('items-tbody').innerHTML = itemsTableRows(parsed);
             document.getElementById('items-preview').style.display = '';
             const existing = items.length;
@@ -210,14 +225,16 @@ const Admin = (() => {
             e.target.value = ''; // reset so same file can be re-selected
             const rows = parseCsv(await file.text());
             const parsed = rows.map(r => ({
-                name:         r.name || r.store_name || r.storename || r.store || '',
-                addressLine1: r.addressline1 || r.address_line1 || r.address1 || r.address || r.street || '',
-                addressLine2: r.addressline2 || r.address_line2 || r.address2 || r.suburb || '',
-                city:         r.city || r.town || '',
-                postcode:     r.postcode || r.post_code || r.zip || '',
-            })).filter(s => s.name);
+                accountId:     r.account_id || r.accountid || r.id || '',
+                customer:      r.customer || r.customer_name || r.company || '',
+                branch:        r.branch || r.branch_name || r.store || r.name || '',
+                streetAddress: r.street_address || r.streetaddress || r.address || r.street || '',
+                city:          r.city || r.town || '',
+                postcode:      r.postcode || r.post_code || r.zip || '',
+                phone:         r.phone || r.telephone || r.tel || '',
+            })).filter(s => s.customer || s.branch);
 
-            if (!parsed.length) { showToast('No valid rows — check CSV headers match: Name, AddressLine1, AddressLine2, City, Postcode'); return; }
+            if (!parsed.length) { showToast('No valid rows — check CSV headers match: Account ID, Customer, Branch…'); return; }
             document.getElementById('stores-tbody').innerHTML = storesTableRows(parsed);
             document.getElementById('stores-preview').style.display = '';
             const existing = stores.length;

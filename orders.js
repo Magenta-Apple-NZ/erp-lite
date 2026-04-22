@@ -331,11 +331,24 @@ const Orders = (() => {
         input.addEventListener('input', () => {
             const q = input.value.toLowerCase().trim();
             if (!q) { dropdown.style.display = 'none'; return; }
-            const matches = stores.filter(s => s.name.toLowerCase().includes(q) || s.city.toLowerCase().includes(q)).slice(0, 8);
+            const matches = stores.filter(s =>
+                (s.customer || '').toLowerCase().includes(q) ||
+                (s.branch || '').toLowerCase().includes(q) ||
+                (s.city || '').toLowerCase().includes(q)
+            ).slice(0, 8);
             if (!matches.length) { dropdown.style.display = 'none'; return; }
-            dropdown.innerHTML = matches.map(s =>
-                `<div class="customer-option" data-name="${escHtml(s.name)}" data-addr="${escHtml([s.addressLine1, s.addressLine2, s.city, s.postcode].filter(Boolean).join('\n'))}">${escHtml(s.name)}<span class="store-city">${escHtml(s.city)}</span></div>`
-            ).join('');
+            dropdown.innerHTML = matches.map(s => {
+                const label = [s.customer, s.branch].filter(Boolean).join(' — ');
+                const addr  = [s.streetAddress, s.city, s.postcode].filter(Boolean).join('\n');
+                const displayName = [s.customer, s.branch].filter(Boolean).join(' - ');
+                return `<div class="customer-option"
+                    data-name="${escHtml(displayName)}"
+                    data-addr="${escHtml(addr)}"
+                    data-customer="${escHtml(s.customer || '')}"
+                    data-accountid="${escHtml(s.accountId || '')}">
+                    ${escHtml(label)}<span class="store-city">${escHtml(s.city)}</span>
+                </div>`;
+            }).join('');
             dropdown.style.display = '';
         });
 
@@ -344,6 +357,13 @@ const Orders = (() => {
             if (!opt) return;
             input.value = opt.dataset.name;
             document.getElementById('ship-address').value = opt.dataset.addr;
+            // Auto-fill customer if field is empty
+            const customerSearch = document.getElementById('customer-search');
+            const customerNameVal = document.getElementById('customer-name-val');
+            if (customerSearch && !customerSearch.value && opt.dataset.customer) {
+                customerSearch.value = opt.dataset.customer;
+                if (customerNameVal) customerNameVal.value = opt.dataset.customer;
+            }
             dropdown.style.display = 'none';
         });
 
@@ -353,6 +373,13 @@ const Orders = (() => {
     }
 
     let lineCount = 0;
+
+    function getPriceForQty(item, qty) {
+        if (item.pb3Quantity && qty >= item.pb3Quantity) return item.pb3Price;
+        if (item.pb2Quantity && qty >= item.pb2Quantity) return item.pb2Price;
+        if (item.pb1Quantity && qty >= item.pb1Quantity) return item.pb1Price;
+        return item.defaultPrice;
+    }
 
     function addLineItem(catalogItems = []) {
         const idx = lineCount++;
@@ -388,13 +415,24 @@ const Orders = (() => {
 
         function updateRow() {
             const qty = parseFloat(qtyEl.value) || 0;
+            // Recalculate price from price breaks if a catalog item is selected
+            if (tr._catalogItem) {
+                const pb = getPriceForQty(tr._catalogItem, qty);
+                priceEl.value = pb.toFixed(2);
+            }
             const price = parseFloat(priceEl.value) || 0;
             totalEl.textContent = '$' + fmt(qty * price);
             updateFormTotal();
         }
 
         qtyEl.addEventListener('input', updateRow);
-        priceEl.addEventListener('input', updateRow);
+        priceEl.addEventListener('input', () => {
+            tr._catalogItem = null; // manual price override clears price break tracking
+            const qty = parseFloat(qtyEl.value) || 0;
+            const price = parseFloat(priceEl.value) || 0;
+            totalEl.textContent = '$' + fmt(qty * price);
+            updateFormTotal();
+        });
         tr.querySelector('.line-remove-btn').addEventListener('click', () => { tr.remove(); updateFormTotal(); });
 
         // Item autocomplete from catalog
@@ -406,14 +444,15 @@ const Orders = (() => {
             descEl.parentNode.appendChild(itemDropdown);
 
             descEl.addEventListener('input', () => {
+                tr._catalogItem = null; // text edited manually
                 const q = descEl.value.toLowerCase().trim();
                 if (!q) { itemDropdown.style.display = 'none'; return; }
                 const matches = catalogItems.filter(i =>
-                    i.description.toLowerCase().includes(q) || (i.sku && i.sku.toLowerCase().includes(q))
+                    (i.name || '').toLowerCase().includes(q) || (i.id && i.id.toLowerCase().includes(q))
                 ).slice(0, 6);
                 if (!matches.length) { itemDropdown.style.display = 'none'; return; }
                 itemDropdown.innerHTML = matches.map(i =>
-                    `<div class="customer-option" data-sku="${escHtml(i.sku)}" data-desc="${escHtml(i.description)}" data-price="${i.unitPrice}">${escHtml(i.description)}<span class="store-city">${escHtml(i.sku)}</span></div>`
+                    `<div class="customer-option" data-idx="${catalogItems.indexOf(i)}">${escHtml(i.name)}<span class="store-city">${escHtml(i.id)}</span></div>`
                 ).join('');
                 itemDropdown.style.display = '';
             });
@@ -421,9 +460,13 @@ const Orders = (() => {
             itemDropdown.addEventListener('mousedown', e => {
                 const opt = e.target.closest('.customer-option');
                 if (!opt) return;
-                descEl.value = opt.dataset.desc;
-                skuEl.value = opt.dataset.sku;
-                priceEl.value = opt.dataset.price;
+                const item = catalogItems[parseInt(opt.dataset.idx)];
+                if (!item) return;
+                tr._catalogItem = item;
+                descEl.value = item.name;
+                skuEl.value = item.id;
+                const qty = parseFloat(qtyEl.value) || 1;
+                priceEl.value = getPriceForQty(item, qty).toFixed(2);
                 itemDropdown.style.display = 'none';
                 updateRow();
             });
