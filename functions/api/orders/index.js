@@ -37,13 +37,13 @@ export async function onRequestPost({ env, request }) {
 
         let id;
         if (orderNumber && /^\d+$/.test(String(orderNumber).trim())) {
-            id = `ORD-${String(orderNumber).trim()}`;
+            id = `PKS-${String(orderNumber).trim()}`;
             const existing = await env.ORDERS_KV.get('order:' + id);
             if (existing) return errResponse(`Order number ${id} already exists`, 409);
         } else {
             const counter = parseInt(await env.ORDERS_KV.get('order_counter') || '0') + 1;
             await env.ORDERS_KV.put('order_counter', String(counter));
-            id = `ORD-${String(counter).padStart(4, '0')}`;
+            id = `PKS-${String(counter).padStart(4, '0')}`;
         }
 
         const order = {

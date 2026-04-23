@@ -15,6 +15,23 @@ export async function onRequestGet({ env, params }) {
     }
 }
 
+export async function onRequestDelete({ env, params }) {
+    try {
+        const order = await env.ORDERS_KV.get('order:' + params.id, { type: 'json' });
+        if (!order) return errResponse('Order not found', 404);
+
+        await env.ORDERS_KV.delete('order:' + params.id);
+
+        const index = JSON.parse(await env.ORDERS_KV.get('orders_index') || '[]');
+        const updated = index.filter(id => id !== params.id);
+        await env.ORDERS_KV.put('orders_index', JSON.stringify(updated));
+
+        return jsonResponse({ deleted: params.id });
+    } catch (e) {
+        return errResponse(e.message);
+    }
+}
+
 export async function onRequestPatch({ env, params, request }) {
     try {
         const order = await env.ORDERS_KV.get('order:' + params.id, { type: 'json' });

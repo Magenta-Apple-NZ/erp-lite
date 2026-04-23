@@ -41,7 +41,7 @@ export async function onRequestPost({ env, request }) {
         const year = new Date().getFullYear();
         const counter = parseInt(await env.ORDERS_KV.get('order_counter') || '0') + 1;
         await env.ORDERS_KV.put('order_counter', String(counter));
-        const id = `ORD-${year}-${String(counter).padStart(3, '0')}`;
+        const id = `PKS-${year}-${String(counter).padStart(3, '0')}`;
 
         const order = {
             id,

@@ -654,6 +654,19 @@ li.drag-over { background: #eff6ff; }
     transition: background 0.15s;
 }
 .btn-secondary:hover { background: #f8fafc; }
+.btn-danger {
+    background: white;
+    color: #dc2626;
+    border: 1px solid #fca5a5;
+    padding: 0.52rem 1.1rem;
+    border-radius: 6px;
+    font-size: 0.86rem;
+    font-weight: 500;
+    cursor: pointer;
+    font-family: inherit;
+    transition: background 0.15s, border-color 0.15s;
+}
+.btn-danger:hover { background: #fef2f2; border-color: #dc2626; }
 
 /* ── btn-ghost (kept for potential reuse) ── */
 .btn-ghost {
@@ -813,6 +826,23 @@ li.drag-over { background: #eff6ff; }
     font-weight: 600;
 }
 .xero-pending { color: #cbd5e1; }
+.order-actions-col { width: 1px; white-space: nowrap; padding-right: 0.5rem !important; }
+.slip-shortcut-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    background: none;
+    border: 1px solid #e2e8f0;
+    border-radius: 5px;
+    color: #64748b;
+    font-size: 0.75rem;
+    font-family: inherit;
+    padding: 0.25rem 0.55rem;
+    cursor: pointer;
+    transition: background 0.12s, border-color 0.12s, color 0.12s;
+    white-space: nowrap;
+}
+.slip-shortcut-btn:hover { background: #f1f5f9; border-color: #94a3b8; color: #334155; }
 
 /* ── Loading / error / empty states ── */
 .orders-loading { padding: 2rem; color: #94a3b8; font-size: 0.9rem; }
@@ -1021,7 +1051,10 @@ li.drag-over { background: #eff6ff; }
     border: 1px solid #a7f3d0;
     padding: 0.25rem 0.6rem;
     border-radius: 5px;
+    text-decoration: none;
+    transition: background 0.12s, border-color 0.12s;
 }
+a.xero-inv-linked:hover { background: #d1fae5; border-color: #6ee7b7; }
 .xero-not-connected { font-size: 0.8rem; color: #94a3b8; }
 .status-dispatched-tag {
     font-size: 0.82rem;

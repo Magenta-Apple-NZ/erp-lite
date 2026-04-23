@@ -26,8 +26,8 @@ export async function onRequestPost({ env, request }) {
         const today = new Date().toISOString().split('T')[0];
         const dueDate = new Date(Date.now() + 30 * 86400_000).toISOString().split('T')[0];
 
-        // Derive Xero invoice number: ORD-1021 → INV-1021
-        const invoiceNumber = order.id.replace(/^ORD-/, 'INV-');
+        // Derive Xero invoice number: PKS-1021 → INV-1021 (also handles legacy ORD- prefix)
+        const invoiceNumber = order.id.replace(/^(?:PKS|ORD)-/, 'INV-');
 
         const invoice = {
             Type: 'ACCREC',

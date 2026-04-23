@@ -48,9 +48,14 @@ const Orders = (() => {
     async function getUser() {
         if (currentUser) return currentUser;
         try {
-            currentUser = await api('/api/me');
+            const u = await api('/api/me');
+            if (u && u.name && u.name !== 'Unknown') {
+                currentUser = u;
+            } else {
+                return u || { name: 'Unknown', email: null };
+            }
         } catch {
-            currentUser = { name: 'Unknown', email: null };
+            return { name: 'Unknown', email: null };
         }
         return currentUser;
     }
@@ -166,6 +171,7 @@ const Orders = (() => {
                         <th>Total</th>
                         <th>Status</th>
                         <th>Xero</th>
+                        <th></th>
                     </tr>
                 </thead>
                 <tbody>
@@ -180,6 +186,12 @@ const Orders = (() => {
                         <td class="order-xero">${o.xeroInvoiceNumber
                             ? `<span class="xero-inv-num">${escHtml(o.xeroInvoiceNumber)}</span>`
                             : '<span class="xero-pending">—</span>'}</td>
+                        <td class="order-actions-col">
+                            <button class="slip-shortcut-btn" title="View packing slip" onclick="event.stopPropagation();location.hash='orders/${o.id}'">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
+                                Slip
+                            </button>
+                        </td>
                     </tr>`).join('')}
                 </tbody>
             </table>
@@ -345,30 +357,28 @@ const Orders = (() => {
 
     // ── Shared order form HTML ──
     function orderFormHtml({ customers, catalogStores, submitLabel, defaults = {} }) {
+        // Strip the prefix to show just the numeric portion in the input
+        const numericId = defaults.id
+            ? defaults.id.replace(/^(?:PKS|ORD)-(?:\d{4}-)?/, '')
+            : '';
         return `
         <form id="new-order-form" class="order-form" onsubmit="return false">
-            <!-- Customer -->
+            <!-- Customer + PO number in one card -->
             <section class="form-section">
-                <h2 class="form-section-title">Customer</h2>
-                <div class="form-row">
-                    <div class="form-field" style="flex:2">
-                        ${customerSectionHtml(customers, defaults.customer?.name || '', defaults.customer?.xeroContactId || '')}
-                    </div>
+                <h2 class="form-section-title">Customer & Reference</h2>
+                <div class="form-field" style="margin-bottom:0.75rem">
+                    <label>Customer</label>
+                    ${customerSectionHtml(customers, defaults.customer?.name || '', defaults.customer?.xeroContactId || '')}
                 </div>
-            </section>
-
-            <!-- Order Reference -->
-            <section class="form-section">
-                <h2 class="form-section-title">Order Reference</h2>
-                <div class="form-row">
+                <div class="form-row" style="margin-top:0.5rem">
                     <div class="form-field" style="flex:1">
                         <label>Order Number <span class="form-hint">optional — leave blank to auto-assign</span></label>
                         <div class="order-num-wrap">
-                            <span class="order-num-prefix">ORD-</span>
+                            <span class="order-num-prefix">PKS-</span>
                             <input type="text" id="order-number" placeholder="e.g. 1021" pattern="[0-9]*" inputmode="numeric"
-                                value="${escHtml(defaults.id ? defaults.id.replace(/^ORD-/, '') : '')}">
+                                value="${escHtml(numericId)}"${defaults.id ? ' readonly style="background:#f8fafc;color:#64748b"' : ''}>
                         </div>
-                        <p class="form-hint" style="margin-top:4px">Xero invoice will be created as INV-<span id="order-num-preview">${defaults.id ? defaults.id.replace(/^ORD-/, '') : '…'}</span></p>
+                        <span class="form-hint" style="display:block;margin-top:4px">Xero invoice: INV-<span id="order-num-preview">${numericId || '…'}</span></span>
                     </div>
                     <div class="form-field" style="flex:2">
                         <label>PO Number <span class="form-hint">optional</span></label>
@@ -765,26 +775,36 @@ const Orders = (() => {
     }
 
     // ── Action bar buttons — driven by order status ──
+    function xeroInvBadge(order) {
+        if (!order.xeroInvoiceNumber) return '';
+        const url = order.xeroInvoiceId
+            ? `https://go.xero.com/AccountsReceivable/Edit.aspx?InvoiceID=${encodeURIComponent(order.xeroInvoiceId)}`
+            : null;
+        return url
+            ? `<a href="${url}" target="_blank" rel="noopener" class="xero-inv-linked">✓ ${escHtml(order.xeroInvoiceNumber)} ↗</a>`
+            : `<span class="xero-inv-linked">✓ ${escHtml(order.xeroInvoiceNumber)}</span>`;
+    }
+
     function actionButtons(order, xeroConnected) {
-        const print = `<button id="print-slip-btn" class="btn-secondary">Print Packing Slip</button>`;
-        const edit  = `<a href="#orders/${order.id}/edit" class="btn-secondary btn-sm" id="edit-order-btn">Edit</a>`;
+        const print   = `<button id="print-slip-btn" class="btn-secondary">Print Packing Slip</button>`;
+        const address = `<button id="print-address-btn" class="btn-secondary btn-sm">Print Address</button>`;
+        const edit    = `<a href="#orders/${order.id}/edit" class="btn-secondary btn-sm" id="edit-order-btn">Edit</a>`;
+        const del     = `<button id="delete-order-btn" class="btn-danger btn-sm">Delete</button>`;
 
         if (order.status === 'new') {
-            return `${edit}<button class="btn-secondary" disabled title="Print the packing slip first to review it">Send to Xero</button>${print}`;
+            return `${edit}${del}<button class="btn-secondary" disabled title="Print the packing slip first to review it">Send to Xero</button>${address}${print}`;
         }
         if (order.status === 'reviewed') {
             const xeroBtn = xeroConnected
                 ? `<button id="push-xero-btn" class="btn-primary">Send to Xero</button>`
                 : `<span class="xero-not-connected">Xero not connected</span>`;
-            return `${edit}${xeroBtn}${print}`;
+            return `${edit}${del}${xeroBtn}${address}${print}`;
         }
         if (order.status === 'sent_to_xero') {
-            return `${edit}${order.xeroInvoiceNumber ? `<span class="xero-inv-linked">✓ Xero: ${escHtml(order.xeroInvoiceNumber)}</span>` : ''}
-                    <button id="dispatch-btn" class="btn-primary">Mark as Dispatched</button>${print}`;
+            return `${edit}${del}${xeroInvBadge(order)}<button id="dispatch-btn" class="btn-primary">Mark as Dispatched</button>${address}${print}`;
         }
         // dispatched
-        return `${order.xeroInvoiceNumber ? `<span class="xero-inv-linked">✓ Xero: ${escHtml(order.xeroInvoiceNumber)}</span>` : ''}
-                <span class="status-dispatched-tag">✓ Dispatched</span>${print}`;
+        return `${edit}${del}${xeroInvBadge(order)}<span class="status-dispatched-tag">✓ Dispatched</span>${address}${print}`;
     }
 
     function refreshActionBar(order) {
@@ -846,6 +866,7 @@ const Orders = (() => {
                         ${order.xeroInvoiceNumber
                             ? `<div class="slip-inv-row"><span>Invoice No.</span><strong>${escHtml(order.xeroInvoiceNumber)}</strong></div>`
                             : `<div class="slip-inv-row"><span>Order</span><strong>${escHtml(order.id)}</strong></div>`}
+                        <div class="slip-inv-row"><span>Ref</span><strong>${escHtml(order.id)}</strong></div>
                         ${order.poNumber
                             ? `<div class="slip-inv-row"><span>PO</span><strong>${escHtml(order.poNumber)}</strong></div>`
                             : ''}
@@ -923,6 +944,82 @@ const Orders = (() => {
     function wireDetailButtons(order) {
         const orderId = order.id;
 
+        // Delete order
+        document.getElementById('delete-order-btn')?.addEventListener('click', async () => {
+            if (!confirm(`Delete order ${orderId}? This cannot be undone.`)) return;
+            try {
+                await api('/api/orders/' + orderId, { method: 'DELETE' });
+                location.hash = 'orders';
+            } catch (e) {
+                showErrorBanner('Delete failed: ' + e.message);
+            }
+        });
+
+        // Print address sheet
+        document.getElementById('print-address-btn')?.addEventListener('click', () => {
+            const to = order.shipTo?.branch || order.customer.name;
+            const addr = order.shipTo?.address || '';
+            const ref = order.xeroInvoiceNumber || order.id;
+            const po  = order.poNumber ? `PO: ${order.poNumber}` : '';
+            const win = window.open('', '_blank', 'width=794,height=1123');
+            win.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8">
+                <title>Address – ${escHtml(ref)}</title>
+                <style>
+                * { box-sizing: border-box; margin: 0; padding: 0; }
+                body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: white; }
+                .page {
+                    width: 210mm; min-height: 297mm;
+                    padding: 20mm 20mm 15mm;
+                    display: flex; flex-direction: column;
+                }
+                .addr-header {
+                    display: flex; justify-content: space-between; align-items: flex-start;
+                    border-bottom: 2px solid #1e293b; padding-bottom: 8mm; margin-bottom: 10mm;
+                }
+                .addr-from { font-size: 9pt; color: #475569; line-height: 1.6; }
+                .addr-from strong { display: block; font-size: 11pt; color: #1e293b; margin-bottom: 2mm; }
+                .addr-label {
+                    font-size: 9pt; font-weight: 700; text-transform: uppercase;
+                    letter-spacing: 0.12em; color: #94a3b8; margin-bottom: 6mm;
+                }
+                .addr-to { flex: 1; }
+                .addr-name { font-size: 28pt; font-weight: 700; color: #1e293b; line-height: 1.2; margin-bottom: 6mm; }
+                .addr-street { font-size: 20pt; color: #334155; line-height: 1.5; white-space: pre-line; }
+                .addr-refs {
+                    margin-top: auto; padding-top: 10mm; border-top: 1px solid #e2e8f0;
+                    font-size: 10pt; color: #64748b; display: flex; gap: 12mm;
+                }
+                @media print { @page { size: A4; margin: 0; } body { print-color-adjust: exact; } }
+                </style>
+                </head><body>
+                <div class="page">
+                    <div class="addr-header">
+                        <div class="addr-from">
+                            <strong>Enviroware</strong>
+                            93 Tetley Road, Katikati<br>
+                            orders@primetie.co.nz · (07) 549-1716
+                        </div>
+                        <div style="text-align:right; font-size:10pt; color:#64748b">
+                            <strong style="color:#1e293b">${escHtml(ref)}</strong>
+                            ${po ? `<br>${escHtml(po)}` : ''}
+                        </div>
+                    </div>
+                    <div class="addr-label">Deliver to</div>
+                    <div class="addr-to">
+                        <div class="addr-name">${escHtml(to)}</div>
+                        ${addr ? `<div class="addr-street">${escHtml(addr)}</div>` : ''}
+                    </div>
+                    <div class="addr-refs">
+                        <span>Order: <strong>${escHtml(orderId)}</strong></span>
+                        ${po ? `<span>${escHtml(po)}</span>` : ''}
+                    </div>
+                </div>
+                </body></html>`);
+            win.document.close();
+            win.focus();
+            setTimeout(() => { win.print(); }, 400);
+        });
+
         // Print — opens clean popup, advances new → reviewed
         document.getElementById('print-slip-btn')?.addEventListener('click', async () => {
             const slipEl = document.getElementById('packing-slip');
@@ -944,7 +1041,7 @@ const Orders = (() => {
             setTimeout(() => { win.print(); win.close(); }, 400);
 
             // Log the print event and advance new → reviewed
-            logEvent(orderId, 'Printed packing slip');
+            logEvent(orderId, 'Printed packing slip', order.xeroInvoiceNumber || order.id);
             if (order.status === 'new') {
                 api('/api/orders/' + orderId, {
                     method: 'PATCH',
