@@ -47,7 +47,7 @@ export async function onRequestPost({ env, request }) {
             id,
             createdAt:        new Date().toISOString(),
             updatedAt:        new Date().toISOString(),
-            status:           'awaiting',
+            status:           'new',
             source:           body.source || 'extension',
             customer,
             poNumber:         body.poNumber || '',
