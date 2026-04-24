@@ -2171,6 +2171,125 @@ a.xero-inv-linked:hover { background: #d1fae5; border-color: #6ee7b7; }
     color: #94a3b8; font-style: italic; font-weight: 400;
 }
 
+/* ── Shipment cost breakdown v2 (line-item tracker) ── */
+.imp-cost-v2 {
+    border-top: 1px solid #e2e8f0; padding-top: 0.75rem; margin-top: 0.1rem;
+    display: flex; flex-direction: column; gap: 0.5rem;
+}
+.imp-cost-v2-hdr {
+    display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap;
+    margin-bottom: 0.25rem;
+}
+.imp-cost-v2-title {
+    font-size: 0.72rem; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: 0.05em;
+}
+.imp-cost-v2-fxbar {
+    display: flex; gap: 0.5rem; font-size: 0.65rem; color: #94a3b8; flex-wrap: wrap; flex: 1;
+}
+.imp-cost-v2-fxbar span { white-space: nowrap; }
+.imp-cost-v2-fxbar strong { color: #475569; }
+
+.imp-cl-cat { margin-bottom: 0.5rem; }
+.imp-cl-cat-hd {
+    display: flex; align-items: center; gap: 0.4rem;
+    padding: 0.2rem 0; margin-bottom: 0.2rem;
+}
+.imp-cl-cat-name {
+    font-size: 0.72rem; font-weight: 700; color: #334155;
+    text-transform: uppercase; letter-spacing: 0.04em;
+}
+.imp-cl-cat-sum {
+    font-size: 0.7rem; color: #64748b; font-weight: 600; margin-left: 0.25rem;
+}
+.imp-cl-cat-os { color: #d97706; }
+
+.imp-cl-table {
+    width: 100%; border-collapse: collapse; font-size: 0.75rem;
+    margin-bottom: 0.1rem;
+}
+.imp-cl-table thead th {
+    font-size: 0.6rem; font-weight: 700; text-transform: uppercase;
+    letter-spacing: 0.05em; color: #94a3b8; padding: 0.2rem 0.3rem;
+    border-bottom: 1px solid #f1f5f9; text-align: left;
+}
+.imp-cl-th-amt  { width: 160px; }
+.imp-cl-th-nzd  { width: 80px; text-align: right !important; }
+.imp-cl-th-paidvia { width: 110px; }
+.imp-cl-th-chk  { width: 24px; text-align: center !important; }
+
+.imp-cl-row td { padding: 0.2rem 0.3rem; border-bottom: 1px solid #f8fafc; vertical-align: middle; }
+.imp-cl-paid-row td { background: #f0fdf4; }
+.imp-cl-paid-row .imp-cl-inp { color: #64748b; }
+
+.imp-cl-inp {
+    width: 100%; padding: 0.2rem 0.35rem; border: 1px solid transparent;
+    border-radius: 4px; font-size: 0.75rem; font-family: inherit;
+    background: transparent; outline: none; color: #1e293b;
+    transition: border-color 0.12s, background 0.12s;
+}
+.imp-cl-inp:hover { border-color: #e2e8f0; background: white; }
+.imp-cl-inp:focus { border-color: #3b82f6; background: white; }
+
+.imp-cl-td-amt { display: flex; align-items: center; gap: 3px; }
+.imp-cl-num {
+    width: 72px; padding: 0.2rem 0.3rem; border: 1px solid transparent;
+    border-radius: 4px; font-size: 0.75rem; font-family: inherit; text-align: right;
+    background: transparent; outline: none; color: #1e293b;
+    transition: border-color 0.12s, background 0.12s;
+}
+.imp-cl-num:hover { border-color: #e2e8f0; background: white; }
+.imp-cl-num:focus { border-color: #3b82f6; background: white; }
+.imp-cl-ccy {
+    border: 1px solid transparent; border-radius: 4px; font-size: 0.7rem;
+    background: transparent; color: #64748b; padding: 0.15rem 0.1rem;
+    outline: none; cursor: pointer; width: 52px;
+    transition: border-color 0.12s;
+}
+.imp-cl-ccy:hover, .imp-cl-ccy:focus { border-color: #e2e8f0; background: white; }
+
+.imp-cl-paidvia { font-size: 0.72rem; color: #64748b; }
+
+.imp-cl-td-nzd { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.imp-cl-td-nzd span { font-size: 0.75rem; color: #1e293b; font-weight: 600; }
+.imp-cl-nil { color: #e2e8f0 !important; font-weight: 400 !important; }
+.imp-cl-fxtag {
+    display: block; font-size: 0.58rem; color: #94a3b8;
+}
+
+.imp-cl-td-chk { text-align: center; }
+.imp-cl-paid { accent-color: #10b981; cursor: pointer; }
+
+.imp-cl-del {
+    background: none; border: none; color: #cbd5e1;
+    cursor: pointer; font-size: 0.85rem; padding: 0 2px; line-height: 1;
+}
+.imp-cl-del:hover { color: #ef4444; }
+
+.imp-cost-v2-totals {
+    border-top: 2px solid #e2e8f0; padding-top: 0.45rem; margin-top: 0.25rem;
+    display: flex; flex-direction: column; gap: 0.15rem;
+}
+.imp-cv2-row {
+    display: flex; align-items: baseline; gap: 0.5rem;
+    font-size: 0.75rem; color: #64748b;
+}
+.imp-cv2-total { font-size: 0.82rem; color: #1e293b; }
+.imp-cv2-total strong { font-size: 1rem; color: #1e293b; }
+.imp-cv2-paid-row { color: #10b981; }
+.imp-cv2-os-row { color: #d97706; font-weight: 600; }
+.imp-cv2-done-row { color: #10b981; font-size: 0.72rem; }
+.imp-cost-ppkg {
+    font-size: 0.7rem; color: #64748b; background: #f1f5f9;
+    border-radius: 4px; padding: 1px 5px; margin-left: 4px;
+}
+
+.imp-cost-v2-empty {
+    display: flex; flex-direction: column; gap: 0.5rem;
+    align-items: flex-start; padding: 0.35rem 0;
+}
+.imp-cost-v2-empty > span { font-size: 0.75rem; color: #94a3b8; }
+.imp-cost-v2-defaults { display: flex; gap: 0.3rem; flex-wrap: wrap; }
+
 /* ── Nav badge (pending order count) ── */
 .nav-badge {
     background: #ef4444; color: white;

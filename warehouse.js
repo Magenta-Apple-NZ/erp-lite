@@ -595,7 +595,13 @@ const Warehouse = (() => {
 
 
     // ── Render the Imports view ──
+    let importsAC = null; // AbortController for cost-line event delegation
+
     async function renderImports() {
+        if (importsAC) importsAC.abort();
+        importsAC = new AbortController();
+        const acSignal = importsAC.signal;
+
         const body = document.getElementById('wh-body');
         body.innerHTML = '<div class="orders-loading">Loading…</div>';
 
@@ -655,7 +661,120 @@ const Warehouse = (() => {
         let shipView  = 'cards';
         let activeTab = 'overview';
 
+        // Build line-item cost breakdown HTML for a shipment card
+        function buildCostHtml(s) {
+            const lines = s.costLines || [];
+            const CCYS = ['NZD', 'USD', 'EUR', 'AUD', 'CNY', 'BDT'];
+            const DEFAULT_CATS = ['Raw Product', 'Bangladesh Costs', 'Freight', 'Miscellaneous'];
+
+            function lineNzd(l) {
+                const amt = Number(l.amount) || 0;
+                if (!amt) return 0;
+                if (!l.ccy || l.ccy === 'NZD') return amt;
+                const rate = forex[l.ccy];
+                return rate ? amt / rate : amt;
+            }
+
+            const presentCats = [...new Set(lines.map(l => l.cat || 'Miscellaneous'))];
+            const cats = presentCats.length ? presentCats : DEFAULT_CATS;
+
+            const totalNzd      = lines.reduce((t, l) => t + lineNzd(l), 0);
+            const paidNzd       = lines.filter(l => l.paid).reduce((t, l) => t + lineNzd(l), 0);
+            const outstandingNzd = totalNzd - paidNzd;
+            const ppkg = totalNzd > 0 && s.kg > 0 ? (totalNzd / s.kg).toFixed(2) : null;
+
+            const fxBar = ['USD','EUR','CNY','AUD'].filter(c => forex[c])
+                .map(c => `<span>${c}&nbsp;<strong>${forex[c].toFixed(4)}</strong></span>`).join('');
+
+            const catsHtml = cats.map(cat => {
+                const catLines = lines.filter(l => (l.cat || 'Miscellaneous') === cat);
+                const catNzd   = catLines.reduce((t, l) => t + lineNzd(l), 0);
+                const catPaid  = catLines.filter(l => l.paid).reduce((t, l) => t + lineNzd(l), 0);
+
+                const rowsHtml = catLines.map(l => {
+                    const nzd = lineNzd(l);
+                    const liveFx = l.ccy && l.ccy !== 'NZD' && forex[l.ccy];
+                    return `<tr class="imp-cl-row${l.paid ? ' imp-cl-paid-row' : ''}" data-ship-id="${escHtml(s.id)}" data-line-id="${escHtml(l.id)}">
+                        <td><input class="imp-cl-field imp-cl-inp" data-f="desc" value="${escHtml(l.desc || '')}" placeholder="Description…"></td>
+                        <td class="imp-cl-td-amt">
+                            <input class="imp-cl-field imp-cl-num" data-f="amount" type="number" value="${l.amount != null ? l.amount : ''}" placeholder="0" step="0.01" min="0">
+                            <select class="imp-cl-field imp-cl-ccy" data-f="ccy">
+                                ${CCYS.map(c => `<option${c === (l.ccy || 'NZD') ? ' selected' : ''}>${c}</option>`).join('')}
+                            </select>
+                        </td>
+                        <td class="imp-cl-td-nzd">
+                            ${nzd > 0 ? `<span>$${Math.round(nzd).toLocaleString('en-NZ')}</span>` : '<span class="imp-cl-nil">—</span>'}
+                            ${liveFx ? `<span class="imp-cl-fxtag">${forex[l.ccy].toFixed(4)}</span>` : ''}
+                        </td>
+                        <td><input class="imp-cl-field imp-cl-inp imp-cl-paidvia" data-f="paidVia" value="${escHtml(l.paidVia || '')}" placeholder="Paid via…"></td>
+                        <td class="imp-cl-td-chk">
+                            <input type="checkbox" class="imp-cl-paid" data-ship-id="${escHtml(s.id)}" data-line-id="${escHtml(l.id)}" ${l.paid ? 'checked' : ''} title="Paid">
+                        </td>
+                        <td><button class="imp-cl-del" data-ship-id="${escHtml(s.id)}" data-line-id="${escHtml(l.id)}" title="Remove">×</button></td>
+                    </tr>`;
+                }).join('');
+
+                return `<div class="imp-cl-cat">
+                    <div class="imp-cl-cat-hd">
+                        <span class="imp-cl-cat-name">${escHtml(cat)}</span>
+                        ${catNzd > 0 ? `<span class="imp-cl-cat-sum${catNzd > catPaid + 0.5 ? ' imp-cl-cat-os' : ''}">$${Math.round(catNzd).toLocaleString('en-NZ')}</span>` : ''}
+                        <button class="imp-cl-add-line btn-link" data-ship-id="${escHtml(s.id)}" data-cat="${escHtml(cat)}">+ line</button>
+                    </div>
+                    ${catLines.length ? `<table class="imp-cl-table">
+                        <thead><tr>
+                            <th>Description</th>
+                            <th class="imp-cl-th-amt">Amount</th>
+                            <th class="imp-cl-th-nzd">≈&thinsp;NZD</th>
+                            <th class="imp-cl-th-paidvia">Paid Via</th>
+                            <th class="imp-cl-th-chk" title="Paid">✓</th>
+                            <th style="width:18px"></th>
+                        </tr></thead>
+                        <tbody>${rowsHtml}</tbody>
+                    </table>` : ''}
+                </div>`;
+            }).join('');
+
+            const totalsHtml = totalNzd > 0 ? `
+            <div class="imp-cost-v2-totals">
+                <div class="imp-cv2-row imp-cv2-total">
+                    <span>Total</span>
+                    <strong>$${Math.round(totalNzd).toLocaleString('en-NZ')}</strong>
+                    ${ppkg ? `<span class="imp-cost-ppkg">→&thinsp;$${ppkg}/kg</span>` : ''}
+                </div>
+                <div class="imp-cv2-row imp-cv2-paid-row">
+                    <span>Paid</span>
+                    <span>$${Math.round(paidNzd).toLocaleString('en-NZ')}</span>
+                </div>
+                ${outstandingNzd > 0.5
+                    ? `<div class="imp-cv2-row imp-cv2-os-row"><span>Outstanding</span><strong>$${Math.round(outstandingNzd).toLocaleString('en-NZ')}</strong></div>`
+                    : `<div class="imp-cv2-row imp-cv2-done-row"><span>Fully paid ✓</span></div>`}
+            </div>` : '';
+
+            const emptyHtml = !lines.length ? `
+            <div class="imp-cost-v2-empty">
+                <span>No cost lines yet</span>
+                <div class="imp-cost-v2-defaults">
+                    ${DEFAULT_CATS.map(c => `<button class="imp-cl-add-line btn-secondary btn-sm" data-ship-id="${escHtml(s.id)}" data-cat="${escHtml(c)}">+ ${escHtml(c)}</button>`).join('')}
+                </div>
+            </div>` : '';
+
+            return `<div class="imp-cost-v2">
+                <div class="imp-cost-v2-hdr">
+                    <span class="imp-cost-v2-title">Cost Breakdown</span>
+                    ${fxBar ? `<span class="imp-cost-v2-fxbar">${fxBar}</span>` : ''}
+                    <button class="imp-cl-add-cat btn-link" data-ship-id="${escHtml(s.id)}">+ category</button>
+                </div>
+                ${catsHtml}
+                ${totalsHtml}
+                ${emptyHtml}
+            </div>`;
+        }
+
         function rebuild() {
+            const openShipIds = new Set(
+                [...body.querySelectorAll('details[open][data-ship-id]')].map(d => d.dataset.shipId)
+            );
+
             const rows     = computeForecast(config, 18, actuals);
             const closeKey = { avg: 'closeAvg', good: 'closeGood', great: 'closeGreat' }[scenario];
             const openKey  = { avg: 'openAvg',  good: 'openGood',  great: 'openGreat'  }[scenario];
@@ -741,7 +860,7 @@ const Warehouse = (() => {
                     </label>`).join('')}
                 </div>` : '';
                 return `
-                <details class="imp-event-card ${past ? 'imp-event-card--past' : ''}">
+                <details class="imp-event-card ${past ? 'imp-event-card--past' : ''}" data-ship-id="${escHtml(s.id)}">
                     <summary class="imp-event-card-summary">
                         <div>
                             <div class="imp-event-month">${ymLabel(s.ym)}</div>
@@ -769,35 +888,7 @@ const Warehouse = (() => {
                                     value="${s.pricePerKg || ''}" placeholder="e.g. 4.50" step="0.01" min="0">
                             </div>
                         </div>
-                        ${s.pricePerKg ? `<p class="imp-total-cost">Total cost: $${fmt(s.kg * s.pricePerKg)} &nbsp;(${fmtFull(s.kg)} kg &times; $${s.pricePerKg}/kg)</p>` : ''}
-                        <div class="imp-cost-section">
-                            <div class="imp-cost-header">Cost Breakdown <span class="imp-cost-currency">NZD</span></div>
-                            <div class="imp-cost-grid">
-                                <span class="imp-cost-label">Product</span>
-                                <input type="number" class="imp-cost-input imp-url-input" data-ship-id="${escHtml(s.id)}" data-cost="product"
-                                    value="${s.costs?.product ?? ''}" placeholder="—" min="0" step="0.01">
-                                <span class="imp-cost-label">Bangladesh</span>
-                                <input type="number" class="imp-cost-input imp-url-input" data-ship-id="${escHtml(s.id)}" data-cost="bangladesh"
-                                    value="${s.costs?.bangladesh ?? ''}" placeholder="—" min="0" step="0.01">
-                                <span class="imp-cost-label">Freight</span>
-                                <input type="number" class="imp-cost-input imp-url-input" data-ship-id="${escHtml(s.id)}" data-cost="freight"
-                                    value="${s.costs?.freight ?? ''}" placeholder="—" min="0" step="0.01">
-                                <span class="imp-cost-label">Misc</span>
-                                <input type="number" class="imp-cost-input imp-url-input" data-ship-id="${escHtml(s.id)}" data-cost="misc"
-                                    value="${s.costs?.misc ?? ''}" placeholder="—" min="0" step="0.01">
-                            </div>
-                            ${(() => {
-                                const c = s.costs || {};
-                                const total = (c.product || 0) + (c.bangladesh || 0) + (c.freight || 0) + (c.misc || 0);
-                                const ppkg = total > 0 && s.kg > 0 ? (total / s.kg).toFixed(2) : null;
-                                return total > 0
-                                    ? `<p class="imp-cost-total" data-ship-cost-total="${escHtml(s.id)}">
-                                        Total: <strong>$${fmt(total)}</strong>
-                                        &nbsp;&rarr;&nbsp;$${ppkg}/kg
-                                       </p>`
-                                    : `<p class="imp-cost-total imp-cost-total--empty" data-ship-cost-total="${escHtml(s.id)}">Enter costs above to auto-compute price/kg</p>`;
-                            })()}
-                        </div>
+                        ${buildCostHtml(s)}
                         ${!past ? `<button class="imp-ship-del" data-id="${escHtml(s.id)}">Remove shipment</button>` : ''}
                     </div>
                 </details>`;
@@ -951,6 +1042,11 @@ const Warehouse = (() => {
                     </div>
                 </div>` : ''}
             </div>`;
+
+            // Restore open shipment cards after rebuild
+            openShipIds.forEach(id => {
+                body.querySelector(`details[data-ship-id="${id}"]`)?.setAttribute('open', '');
+            });
 
             // ── Tab switching ──
             document.getElementById('imp-tab-overview')?.addEventListener('click', () => { activeTab = 'overview'; rebuild(); });
@@ -1127,54 +1223,93 @@ const Warehouse = (() => {
                 });
             });
 
-            // Auto-save + auto-compute cost breakdown fields
-            body.querySelectorAll('.imp-cost-input').forEach(inp => {
-                inp.addEventListener('change', async () => {
-                    const shipId   = inp.dataset.shipId;
-                    const costKey  = inp.dataset.cost;
-                    const val      = parseFloat(inp.value) || null;
-
-                    const shipments = (config.shipments || []).map(s => {
-                        if (s.id !== shipId) return s;
-                        const costs = { ...(s.costs || {}), [costKey]: val };
-                        const total = (costs.product || 0) + (costs.bangladesh || 0) + (costs.freight || 0) + (costs.misc || 0);
-                        const pricePerKg = total > 0 && s.kg > 0 ? Math.round((total / s.kg) * 100) / 100 : s.pricePerKg;
-                        return { ...s, costs, pricePerKg };
-                    });
-
-                    try {
-                        await api('/api/import/forecast', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ shipments }),
-                        });
-                        config.shipments = shipments;
-
-                        // Update the total display inline without full rebuild
-                        const ship = shipments.find(s => s.id === shipId);
-                        if (ship) {
-                            const c = ship.costs || {};
-                            const total = (c.product || 0) + (c.bangladesh || 0) + (c.freight || 0) + (c.misc || 0);
-                            const ppkg  = total > 0 && ship.kg > 0 ? (total / ship.kg).toFixed(2) : null;
-                            const el = body.querySelector(`[data-ship-cost-total="${shipId}"]`);
-                            if (el) {
-                                if (total > 0) {
-                                    el.className = 'imp-cost-total';
-                                    el.innerHTML = `Total: <strong>$${fmt(total)}</strong> &nbsp;&rarr;&nbsp;$${ppkg}/kg`;
-                                } else {
-                                    el.className = 'imp-cost-total imp-cost-total--empty';
-                                    el.textContent = 'Enter costs above to auto-compute price/kg';
-                                }
-                            }
-                        }
-                    } catch (err) {
-                        showToast('Save failed: ' + err.message);
-                    }
-                });
-            });
         }
 
         rebuild();
+
+        // ── Cost-line event delegation (delegated to avoid re-wiring on each rebuild) ──
+
+        async function costSave() {
+            try {
+                await api('/api/import/forecast', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ shipments: config.shipments }),
+                });
+                rebuild();
+            } catch (err) { showToast('Save failed: ' + err.message); }
+        }
+
+        body.addEventListener('change', async e => {
+            if (acSignal.aborted) return;
+            const field = e.target.closest('.imp-cl-field');
+            if (field) {
+                const row = field.closest('.imp-cl-row');
+                if (!row) return;
+                const { shipId, lineId } = row.dataset;
+                const f = field.dataset.f;
+                const val = field.type === 'number' ? (parseFloat(field.value) || 0)
+                          : field.value;
+                config.shipments = (config.shipments || []).map(s =>
+                    s.id !== shipId ? s : { ...s, costLines: (s.costLines || []).map(l =>
+                        l.id === lineId ? { ...l, [f]: val } : l
+                    )}
+                );
+                await costSave();
+                return;
+            }
+            const cb = e.target.closest('.imp-cl-paid');
+            if (cb) {
+                const { shipId, lineId } = cb.dataset;
+                config.shipments = (config.shipments || []).map(s =>
+                    s.id !== shipId ? s : { ...s, costLines: (s.costLines || []).map(l =>
+                        l.id === lineId ? { ...l, paid: cb.checked } : l
+                    )}
+                );
+                await costSave();
+            }
+        }, { signal: acSignal });
+
+        body.addEventListener('click', async e => {
+            if (acSignal.aborted) return;
+            const del = e.target.closest('.imp-cl-del');
+            if (del) {
+                const { shipId, lineId } = del.dataset;
+                config.shipments = (config.shipments || []).map(s =>
+                    s.id !== shipId ? s : { ...s, costLines: (s.costLines || []).filter(l => l.id !== lineId) }
+                );
+                await costSave();
+                return;
+            }
+            const addLine = e.target.closest('.imp-cl-add-line');
+            if (addLine) {
+                const { shipId } = addLine.dataset;
+                const cat = addLine.dataset.cat;
+                const line = {
+                    id: Date.now().toString(36) + Math.random().toString(36).slice(2, 5),
+                    cat, desc: '', amount: null, ccy: 'NZD', paidVia: '', paid: false,
+                };
+                config.shipments = (config.shipments || []).map(s =>
+                    s.id !== shipId ? s : { ...s, costLines: [...(s.costLines || []), line] }
+                );
+                await costSave();
+                return;
+            }
+            const addCat = e.target.closest('.imp-cl-add-cat');
+            if (addCat) {
+                const { shipId } = addCat.dataset;
+                const name = prompt('Category name:');
+                if (!name?.trim()) return;
+                const line = {
+                    id: Date.now().toString(36) + Math.random().toString(36).slice(2, 5),
+                    cat: name.trim(), desc: '', amount: null, ccy: 'NZD', paidVia: '', paid: false,
+                };
+                config.shipments = (config.shipments || []).map(s =>
+                    s.id !== shipId ? s : { ...s, costLines: [...(s.costLines || []), line] }
+                );
+                await costSave();
+            }
+        }, { signal: acSignal });
     }
 
     return { render, renderImports };
