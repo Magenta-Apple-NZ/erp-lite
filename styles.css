@@ -1598,3 +1598,92 @@ a.xero-inv-linked:hover { background: #d1fae5; border-color: #6ee7b7; }
 
 /* Catalogue section dim tag */
 .cat-dim { color: #cbd5e1 !important; }
+
+/* ═══════════════════════════════════════════════
+   Imports tab
+   ═══════════════════════════════════════════════ */
+
+.imp-layout {
+    display: grid;
+    grid-template-columns: 1fr 260px;
+    gap: 1.25rem;
+    align-items: start;
+}
+@media (max-width: 980px) {
+    .imp-layout { grid-template-columns: 1fr; }
+    .imp-sidebar { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+}
+
+/* Chart */
+.imp-chart-card { margin-bottom: 1.25rem; }
+.imp-chart { width: 100%; height: auto; display: block; margin-top: 0.5rem; overflow: visible; }
+
+/* Scenario toggle */
+.imp-scenario-wrap { display: flex; gap: 2px; background: #f1f5f9; border-radius: 6px; padding: 2px; }
+.imp-scenario-btn {
+    background: none; border: none; border-radius: 5px;
+    padding: 0.3rem 0.7rem; font-size: 0.78rem; font-weight: 500;
+    color: #64748b; cursor: pointer; font-family: inherit;
+    transition: background 0.12s, color 0.12s;
+}
+.imp-scenario-btn:hover { color: #334155; }
+.imp-scenario-btn.active { background: white; color: #2563eb; font-weight: 600; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+
+/* Upcoming import event cards */
+.imp-events { display: flex; flex-direction: column; gap: 0.6rem; }
+.imp-event-card {
+    background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 8px;
+    padding: 0.7rem 0.85rem; position: relative;
+}
+.imp-event-card--past { background: #f8fafc; border-color: #e2e8f0; }
+.imp-event-month { font-size: 0.78rem; font-weight: 700; color: #1e40af; margin-bottom: 2px; }
+.imp-event-card--past .imp-event-month { color: #64748b; }
+.imp-event-qty { font-size: 1.15rem; font-weight: 700; color: #1e293b; margin-bottom: 4px; }
+.imp-event-qty span { font-size: 0.78rem; font-weight: 400; color: #64748b; }
+.imp-acct-tag {
+    display: inline-block; background: #dbeafe; color: #1e40af;
+    font-size: 0.72rem; font-weight: 600; border-radius: 4px;
+    padding: 0.1rem 0.4rem; margin-right: 4px;
+}
+.imp-event-card--past .imp-acct-tag { background: #f1f5f9; color: #64748b; }
+.imp-event-fy {
+    position: absolute; top: 0.5rem; right: 0.6rem;
+    font-size: 0.68rem; font-weight: 700; color: #93c5fd;
+    text-transform: uppercase; letter-spacing: 0.05em;
+}
+
+/* Monthly schedule table */
+.imp-table-wrap { overflow-x: auto; max-height: 480px; overflow-y: auto; }
+.imp-table {
+    width: 100%; border-collapse: collapse;
+    font-size: 0.8rem; min-width: 560px;
+}
+.imp-table th { position: sticky; top: 0; background: white; z-index: 1; }
+.imp-th-month, .imp-table th {
+    text-align: left; font-size: 0.67rem; font-weight: 700;
+    text-transform: uppercase; letter-spacing: 0.06em;
+    color: #64748b; padding: 0.4rem 0.5rem;
+    border-bottom: 2px solid #e2e8f0; white-space: nowrap;
+}
+.imp-th-num { text-align: right !important; }
+.imp-th-incoming { color: #2563eb !important; }
+
+.imp-row td { padding: 0.28rem 0.5rem; border-bottom: 1px solid #f8fafc; }
+.imp-td-period { white-space: nowrap; }
+.imp-td-month { font-weight: 500; white-space: nowrap; }
+.imp-td-num { text-align: right; font-variant-numeric: tabular-nums; }
+.imp-past td { color: #94a3b8; }
+.imp-past .imp-td-month { color: #cbd5e1; }
+.imp-today { background: #fefce8; }
+.imp-today .imp-td-month { font-weight: 700; color: #92400e; }
+.imp-has-import { background: #eff6ff; }
+.imp-has-import .imp-td-month { font-weight: 700; }
+.imp-incoming-val { color: #2563eb; font-weight: 700; }
+.imp-acct-val { color: #7c3aed; font-weight: 600; }
+.imp-stock { font-weight: 600; color: #1e293b; }
+.imp-stocktake { color: #059669; font-weight: 700; }
+.imp-fy-badge {
+    display: inline-block; font-size: 0.65rem; font-weight: 700;
+    background: #f1f5f9; color: #64748b; border-radius: 3px;
+    padding: 0.1rem 0.35rem; white-space: nowrap;
+}

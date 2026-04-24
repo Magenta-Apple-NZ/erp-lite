@@ -1,5 +1,5 @@
 // ── Warehouse module ──
-// Handles #warehouse view — Stocktake tab
+// Handles #warehouse view — Stocktake + Imports tabs
 
 const Warehouse = (() => {
 
@@ -275,6 +275,8 @@ const Warehouse = (() => {
     }
 
     // ── Main render ──
+    let activeTab = 'stocktake';
+
     async function render(container) {
         container.innerHTML = `
         <div class="view-header">
@@ -284,11 +286,23 @@ const Warehouse = (() => {
             </div>
         </div>
         <div class="wh-tabs">
-            <button class="wh-tab active" data-tab="stocktake">Stocktake</button>
+            <button class="wh-tab ${activeTab === 'stocktake' ? 'active' : ''}" data-tab="stocktake">Stocktake</button>
+            <button class="wh-tab ${activeTab === 'imports' ? 'active' : ''}" data-tab="imports">Imports</button>
         </div>
         <div id="wh-body"><div class="orders-loading">Loading…</div></div>`;
 
-        await renderStocktake();
+        container.querySelectorAll('.wh-tab').forEach(btn => {
+            btn.addEventListener('click', async () => {
+                container.querySelectorAll('.wh-tab').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                activeTab = btn.dataset.tab;
+                if (activeTab === 'stocktake') await renderStocktake();
+                else if (activeTab === 'imports') await renderImports();
+            });
+        });
+
+        if (activeTab === 'stocktake') await renderStocktake();
+        else await renderImports();
     }
 
     async function renderStocktake() {
@@ -445,6 +459,390 @@ const Warehouse = (() => {
         if (dateEl) dateEl.value = snap.date;
         const wrap = document.getElementById('stk-table-wrap');
         if (wrap) { wrap.innerHTML = tableHtml(editRows); wireTable(wrap); }
+    }
+
+    // ══════════════════════════════════════════
+    //  IMPORTS TAB
+    // ══════════════════════════════════════════
+
+    // Account code labels (matches stocktake CSV [codes])
+    const ACCT_LABELS = {
+        39: 'Prime Tie (packed)',
+        40: 'Processed Product',
+        41: 'In-process (NZ)',
+        42: 'Shipment 4',
+        43: 'Shipment 5',
+    };
+
+    const MONTH_NAMES = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    const MONTH_IDX = Object.fromEntries(MONTH_NAMES.map((m,i) => [m, i]));
+
+    // ── CSV parser for the Import Schedule format ──
+    // Row 0: prepared date + group labels
+    // Row 1: column headers
+    // Rows 2+: data (Calendar Year and Financial Year are forward-filled)
+    function parseImportCsv(text) {
+        const raw = text.replace(/^﻿/, '').split(/\r?\n/);
+        const lines = raw.map(l => l.trim()).filter((_, i) => i < raw.length);
+
+        // Row 0: get prepared date
+        const dateMatch = lines[0]?.match(/(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})/);
+        let preparedDate = '';
+        if (dateMatch) {
+            const [, d, m, y] = dateMatch;
+            const yr = y.length === 2 ? '20' + y : y;
+            preparedDate = `${yr}-${m.padStart(2,'0')}-${d.padStart(2,'0')}`;
+        }
+
+        // Find header row (contains "Calendar Year" or "Month")
+        let headerIdx = 1;
+        for (let i = 0; i < Math.min(4, lines.length); i++) {
+            if (lines[i].toLowerCase().includes('calendar year') || lines[i].toLowerCase().includes('financial year')) {
+                headerIdx = i;
+                break;
+            }
+        }
+
+        // Parse account codes from header row (last few cols are numeric codes)
+        const headerCols = splitCsvLine(lines[headerIdx]);
+        const accountCodes = headerCols.slice(12).map(h => parseInt(h)).filter(n => !isNaN(n) && n > 0);
+
+        // Build rows with forward-fill
+        let lastCalYear = '', lastFY = '';
+        const rows = [];
+
+        for (let i = headerIdx + 1; i < lines.length; i++) {
+            const line = lines[i];
+            if (!line.trim()) continue;
+            const cols = splitCsvLine(line);
+
+            // Skip if no month
+            const month = cols[2]?.trim();
+            if (!month || !MONTH_NAMES.includes(month)) continue;
+
+            if (cols[0]?.trim()) lastCalYear = cols[0].trim();
+            if (cols[1]?.trim()) lastFY = cols[1].trim();
+
+            const actuals     = parseNum(cols[3]);
+            const salesAvg    = parseNum(cols[4]);
+            const salesGood   = parseNum(cols[5]);
+            const salesGreat  = parseNum(cols[6]);
+            const stockAvg    = parseNum(cols[7]);
+            const stockGood   = parseNum(cols[8]);
+            const stockGreat  = parseNum(cols[9]);
+            const stocktake   = parseNum(cols[11]);
+            const incomingTotal = parseNum(cols[12]);
+
+            // Account code breakdown (cols 13+)
+            const incoming = {};
+            accountCodes.forEach((code, idx) => {
+                const val = parseNum(cols[13 + idx]);
+                if (val) incoming[code] = val;
+            });
+
+            // Determine if this is a start-of-FY marker
+            const fyStart = (cols[10]?.trim().toLowerCase() === 'stock');
+
+            rows.push({
+                calendarYear: lastCalYear,
+                financialYear: lastFY,
+                month,
+                fyStart,
+                actuals,
+                salesAvg, salesGood, salesGreat,
+                stockAvg, stockGood, stockGreat,
+                stocktake,
+                incomingTotal,
+                incoming,
+            });
+        }
+
+        return { preparedDate, accountCodes, rows };
+    }
+
+    // ── Stock trajectory SVG line chart ──
+    function buildImportChart(rows, scenario = 'avg') {
+        const stockKey = { avg: 'stockAvg', good: 'stockGood', great: 'stockGreat' };
+        const now = new Date();
+        const nowKey = `${now.getFullYear()}-${MONTH_NAMES[now.getMonth()]}`;
+
+        // Only rows with actual stock data
+        const validRows = rows.filter(r => r[stockKey[scenario]] > 0 || r.incomingTotal > 0);
+        if (!validRows.length) return '';
+
+        const W = 700, H = 200;
+        const pad = { l: 52, r: 12, t: 14, b: 38 };
+        const chartW = W - pad.l - pad.r;
+        const chartH = H - pad.t - pad.b;
+
+        const vals = validRows.map(r => r[stockKey[scenario]]).filter(v => v > 0);
+        const maxV = Math.max(...vals, 1);
+
+        function xOf(i) { return pad.l + (i / Math.max(validRows.length - 1, 1)) * chartW; }
+        function yOf(v) { return pad.t + chartH - (v / maxV) * chartH; }
+
+        // Import event vertical lines
+        const importLines = validRows.map((r, i) => {
+            if (!r.incomingTotal) return '';
+            const x = xOf(i).toFixed(1);
+            return `<line x1="${x}" y1="${pad.t}" x2="${x}" y2="${pad.t + chartH}" stroke="#3b82f6" stroke-width="1.5" stroke-dasharray="4 3" opacity="0.5"/>
+                    <text x="${x}" y="${(pad.t - 3)}" text-anchor="middle" font-size="8" fill="#3b82f6" font-weight="600">${fmtK(r.incomingTotal)}</text>`;
+        }).join('');
+
+        // Line path
+        const pts = validRows.map((r, i) => {
+            const v = r[stockKey[scenario]];
+            return v > 0 ? `${xOf(i).toFixed(1)},${yOf(v).toFixed(1)}` : null;
+        }).filter(Boolean);
+        const linePath = pts.length > 1 ? `<polyline points="${pts.join(' ')}" fill="none" stroke="#3b82f6" stroke-width="2" stroke-linejoin="round"/>` : '';
+
+        // Dots on import months
+        const dots = validRows.map((r, i) => {
+            if (!r.incomingTotal) return '';
+            const v = r[stockKey[scenario]];
+            if (!v) return '';
+            return `<circle cx="${xOf(i).toFixed(1)}" cy="${yOf(v).toFixed(1)}" r="4" fill="#3b82f6" stroke="white" stroke-width="1.5"/>`;
+        }).join('');
+
+        // Stocktake dots
+        const stkDots = validRows.map((r, i) => {
+            if (!r.stocktake) return '';
+            return `<circle cx="${xOf(i).toFixed(1)}" cy="${yOf(r.stocktake).toFixed(1)}" r="3.5" fill="#059669" stroke="white" stroke-width="1.5">
+                <title>Stocktake: ${fmtK(r.stocktake)} — ${r.month} ${r.calendarYear}</title>
+            </circle>`;
+        }).join('');
+
+        // X axis labels — show every 3rd row
+        const xLabels = validRows.map((r, i) => {
+            if (i % 3 !== 0) return '';
+            const label = `${r.month}'${String(r.calendarYear).slice(-2)}`;
+            const rowKey = `${r.calendarYear}-${r.month}`;
+            const isPast = rowKey < nowKey;
+            return `<text x="${xOf(i).toFixed(1)}" y="${(pad.t + chartH + 13)}" text-anchor="middle" font-size="8.5" fill="${isPast ? '#cbd5e1' : '#64748b'}">${escHtml(label)}</text>`;
+        }).join('');
+
+        // Y axis labels
+        const ySteps = [0, 0.25, 0.5, 0.75, 1];
+        const yLabels = ySteps.map(f => {
+            const val = maxV * f;
+            const y = (pad.t + chartH - f * chartH).toFixed(1);
+            return `<text x="${pad.l - 5}" y="${(parseFloat(y) + 3).toFixed(1)}" text-anchor="end" font-size="8.5" fill="#94a3b8">${fmtK(val)}</text>
+                    <line x1="${pad.l}" y1="${y}" x2="${W - pad.r}" y2="${y}" stroke="#f1f5f9" stroke-width="1"/>`;
+        }).join('');
+
+        // "Now" vertical line
+        const nowIdx = validRows.findIndex(r => `${r.calendarYear}-${r.month}` >= nowKey);
+        const nowLine = nowIdx >= 0 ? `<line x1="${xOf(nowIdx).toFixed(1)}" y1="${pad.t}" x2="${xOf(nowIdx).toFixed(1)}" y2="${pad.t + chartH}" stroke="#94a3b8" stroke-width="1" stroke-dasharray="3 3" opacity="0.6"/>
+            <text x="${xOf(nowIdx).toFixed(1)}" y="${pad.t + chartH + 26}" text-anchor="middle" font-size="8" fill="#94a3b8">Today</text>` : '';
+
+        return `
+        <svg viewBox="0 0 ${W} ${H}" class="imp-chart" xmlns="http://www.w3.org/2000/svg">
+            ${yLabels}${importLines}${linePath}${dots}${stkDots}${xLabels}${nowLine}
+            <text x="${pad.l}" y="${H - 2}" font-size="8" fill="#94a3b8">● Incoming stock &nbsp; ● Stocktake</text>
+        </svg>`;
+    }
+
+    function fmtK(n) {
+        if (n >= 1000) return (Math.round(n / 100) / 10) + 'k';
+        return String(Math.round(n));
+    }
+
+    // ── Render the Imports tab ──
+    async function renderImports() {
+        const body = document.getElementById('wh-body');
+        body.innerHTML = '<div class="orders-loading">Loading…</div>';
+
+        let schedule = null;
+        try { schedule = await api('/api/import'); } catch (e) { /* ok */ }
+
+        let scenario = 'avg';
+
+        function rebuildImports(sched) {
+            if (!sched?.rows?.length) {
+                body.innerHTML = `
+                <div class="cat-section" style="max-width:600px">
+                    <div class="cat-section-head">
+                        <div><h2 class="cat-title">Import Schedule</h2>
+                             <p class="cat-sub">Upload the import schedule CSV to track incoming stock.</p></div>
+                        <div class="cat-actions">
+                            <label class="btn-primary btn-sm cat-upload-lbl">
+                                Import CSV <input type="file" id="imp-csv-file" accept=".csv" style="display:none">
+                            </label>
+                        </div>
+                    </div>
+                    <p class="wh-empty">No schedule uploaded yet.</p>
+                </div>`;
+                wireImportUpload();
+                return;
+            }
+
+            const { preparedDate, accountCodes, rows } = sched;
+            const now = new Date();
+            const nowKey = `${now.getFullYear()}-${MONTH_NAMES[now.getMonth()]}`;
+
+            // Find upcoming imports
+            const upcomingImports = rows.filter(r =>
+                r.incomingTotal > 0 && `${r.calendarYear}-${r.month}` >= nowKey
+            );
+            const pastImports = rows.filter(r =>
+                r.incomingTotal > 0 && `${r.calendarYear}-${r.month}` < nowKey
+            );
+
+            // Scenario toggle labels
+            const scenarioBtns = ['avg','good','great'].map(s =>
+                `<button class="imp-scenario-btn ${scenario === s ? 'active' : ''}" data-s="${s}">${s.charAt(0).toUpperCase() + s.slice(1)}</button>`
+            ).join('');
+
+            // Upcoming import event cards
+            const upcomingCards = upcomingImports.length
+                ? upcomingImports.map(r => {
+                    const acctEntries = Object.entries(r.incoming).map(([code, qty]) =>
+                        `<span class="imp-acct-tag" title="${escHtml(ACCT_LABELS[code] || 'Acct ' + code)}">[${code}] ${fmtK(qty)}</span>`
+                    ).join('');
+                    return `
+                    <div class="imp-event-card">
+                        <div class="imp-event-month">${r.month} ${r.calendarYear}</div>
+                        <div class="imp-event-qty">${fmtK(r.incomingTotal)} <span>units</span></div>
+                        ${acctEntries}
+                        ${r.financialYear ? `<div class="imp-event-fy">${escHtml(r.financialYear)}</div>` : ''}
+                    </div>`;
+                }).join('')
+                : '<p class="wh-empty" style="margin:0">No upcoming imports in schedule.</p>';
+
+            // Full schedule table — show rows around today (6 months back + all future)
+            const tableRows = rows.map(r => {
+                const rowKey = `${r.calendarYear}-${r.month}`;
+                const isPast = rowKey < nowKey;
+                const isToday = rowKey === nowKey;
+                const hasImport = r.incomingTotal > 0;
+                const stockVal = { avg: r.stockAvg, good: r.stockGood, great: r.stockGreat }[scenario];
+                const stocktakeCell = r.stocktake
+                    ? `<td class="imp-td-num imp-stocktake" title="Actual stocktake">${fmtK(r.stocktake)}</td>`
+                    : `<td class="imp-td-num"></td>`;
+                const acctCells = accountCodes.map(code =>
+                    r.incoming[code] ? `<td class="imp-td-num imp-acct-val">${fmtK(r.incoming[code])}</td>`
+                                     : `<td class="imp-td-num"></td>`
+                ).join('');
+
+                return `
+                <tr class="imp-row ${isPast ? 'imp-past' : ''} ${isToday ? 'imp-today' : ''} ${hasImport ? 'imp-has-import' : ''}">
+                    <td class="imp-td-period">${r.financialYear ? `<span class="imp-fy-badge">${escHtml(r.financialYear)}</span>` : ''}</td>
+                    <td class="imp-td-month">${r.month} ${r.calendarYear || ''}</td>
+                    <td class="imp-td-num">${r.actuals ? fmtK(r.actuals) : (isPast ? '—' : '')}</td>
+                    <td class="imp-td-num">${r.salesAvg ? fmtK({ avg: r.salesAvg, good: r.salesGood, great: r.salesGreat }[scenario]) : ''}</td>
+                    <td class="imp-td-num imp-stock">${stockVal ? fmtK(stockVal) : ''}</td>
+                    ${stocktakeCell}
+                    <td class="imp-td-num imp-incoming ${hasImport ? 'imp-incoming-val' : ''}">${hasImport ? fmtK(r.incomingTotal) : ''}</td>
+                    ${acctCells}
+                </tr>`;
+            }).join('');
+
+            const acctHeaders = accountCodes.map(c =>
+                `<th class="imp-th-num" title="${escHtml(ACCT_LABELS[c] || '')}">[${c}]</th>`
+            ).join('');
+
+            body.innerHTML = `
+            <div class="imp-layout">
+                <div class="imp-main">
+                    <div class="cat-section imp-chart-card">
+                        <div class="cat-section-head">
+                            <div>
+                                <h2 class="cat-title">Stock Trajectory</h2>
+                                <p class="cat-sub">Prepared ${preparedDate ? fmtDate(preparedDate) : '—'} · Scenario: <span id="imp-scenario-label">Average</span></p>
+                            </div>
+                            <div class="cat-actions">
+                                <div class="imp-scenario-wrap">${scenarioBtns}</div>
+                                <label class="btn-secondary btn-sm cat-upload-lbl" title="Replace schedule">
+                                    Replace CSV <input type="file" id="imp-csv-file" accept=".csv" style="display:none">
+                                </label>
+                            </div>
+                        </div>
+                        <div id="imp-chart-wrap">${buildImportChart(rows, scenario)}</div>
+                    </div>
+
+                    <div class="cat-section imp-table-card" style="padding-bottom:0">
+                        <h2 class="cat-title" style="margin-bottom:0.75rem">Monthly Schedule</h2>
+                        <div class="imp-table-wrap">
+                            <table class="imp-table">
+                                <thead>
+                                    <tr>
+                                        <th style="width:50px"></th>
+                                        <th class="imp-th-month">Month</th>
+                                        <th class="imp-th-num">Actuals</th>
+                                        <th class="imp-th-num">Est. Sales</th>
+                                        <th class="imp-th-num">Stock</th>
+                                        <th class="imp-th-num">Stocktake</th>
+                                        <th class="imp-th-num imp-th-incoming">Incoming</th>
+                                        ${acctHeaders}
+                                    </tr>
+                                </thead>
+                                <tbody>${tableRows}</tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="imp-sidebar">
+                    <div class="cat-section">
+                        <h3 class="stk-section-title">Upcoming Imports</h3>
+                        <div class="imp-events">${upcomingCards}</div>
+                    </div>
+                    ${pastImports.length ? `
+                    <div class="cat-section">
+                        <h3 class="stk-section-title">Past Imports</h3>
+                        <div class="imp-events imp-events--past">
+                            ${pastImports.map(r => `
+                            <div class="imp-event-card imp-event-card--past">
+                                <div class="imp-event-month">${r.month} ${r.calendarYear}</div>
+                                <div class="imp-event-qty">${fmtK(r.incomingTotal)} <span>units</span></div>
+                                ${Object.entries(r.incoming).map(([c,q]) => `<span class="imp-acct-tag">[${c}] ${fmtK(q)}</span>`).join('')}
+                            </div>`).join('')}
+                        </div>
+                    </div>` : ''}
+                </div>
+            </div>`;
+
+            // Scenario buttons
+            body.querySelectorAll('.imp-scenario-btn').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    scenario = btn.dataset.s;
+                    body.querySelectorAll('.imp-scenario-btn').forEach(b => b.classList.remove('active'));
+                    btn.classList.add('active');
+                    document.getElementById('imp-scenario-label').textContent = btn.textContent;
+                    document.getElementById('imp-chart-wrap').innerHTML = buildImportChart(rows, scenario);
+                    // Re-render table rows with new scenario
+                    const labels = { avg: 'Average', good: 'Good', great: 'Great' };
+                    document.getElementById('imp-scenario-label').textContent = labels[scenario];
+                    rebuildImports(sched); // full re-render to update table
+                });
+            });
+
+            wireImportUpload();
+        }
+
+        function wireImportUpload() {
+            document.getElementById('imp-csv-file')?.addEventListener('change', async e => {
+                const file = e.target.files[0];
+                if (!file) return;
+                e.target.value = '';
+                try {
+                    const parsed = parseImportCsv(await file.text());
+                    if (!parsed.rows.length) { showToast('No rows found — check CSV format'); return; }
+                    await api('/api/import', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(parsed),
+                    });
+                    schedule = parsed;
+                    showToast(`Imported ${parsed.rows.length} months`);
+                    rebuildImports(schedule);
+                } catch (err) {
+                    showToast('Import failed: ' + err.message);
+                }
+            });
+        }
+
+        rebuildImports(schedule);
     }
 
     return { render };
