@@ -148,6 +148,49 @@ const SalesView = (() => {
         return null;
     }
 
+    // Extract per-customer rows from sheet for filter support (Format B long-form sheets only)
+    function extractCustomerRowsFromSheet(headers, rows) {
+        if (!headers.length || !rows.length) return null;
+        const h = headers.map(s => s.toLowerCase().trim().replace(/[\s\-\/]+/g, '_'));
+
+        const custIdx = h.findIndex(c =>
+            c === 'customer' || c === 'client' || c === 'account' ||
+            c === 'customer_name' || c === 'store' || c === 'branch' ||
+            c.includes('customer') || c.includes('client')
+        );
+        const dateIdx = h.findIndex(c =>
+            c.includes('date') || c === 'month' || c === 'created' || c === 'shipped' || c === 'order_date'
+        );
+        const kgIdx = h.findIndex(c =>
+            c === 'kg' || c === 'qty_kg' || c === 'quantity_kg' || c === 'total_kg' ||
+            c === 'weight' || c === 'volume' || c === 'qty' || c === 'quantity'
+        );
+
+        if (custIdx < 0 || dateIdx < 0 || kgIdx < 0) return null;
+
+        const result = [];
+        for (const row of rows) {
+            const customer = String(row[custIdx] || '').trim();
+            const rawDate  = String(row[dateIdx]  || '').trim();
+            const kg = parseFloat(String(row[kgIdx] || '').replace(/[,$\s]/g, ''));
+            if (!customer || !rawDate || isNaN(kg) || kg <= 0) continue;
+
+            let ym = '';
+            if (rawDate.match(/^20\d\d-\d\d/)) {
+                ym = rawDate.slice(0, 7);
+            } else if (rawDate.match(/^\d{1,2}\/\d{1,2}\/\d{4}/)) {
+                const parts = rawDate.split('/');
+                ym = `${parts[2]}-${parts[1].padStart(2, '0')}`;
+            } else if (rawDate.match(/^\d{1,2}\/\d{4}/)) {
+                const [mo, yr] = rawDate.split('/');
+                ym = `${yr}-${mo.padStart(2, '0')}`;
+            }
+            if (!ym || !ym.match(/^20\d\d-\d\d$/)) continue;
+            result.push({ customer, ym, kg });
+        }
+        return result.length ? result : null;
+    }
+
     // Chart builders accept pre-computed {yr: [12 values]} data object
     function buildSalesByMonthChart(data) {
         const years = Object.keys(data).sort();
@@ -430,14 +473,18 @@ const SalesView = (() => {
 
         // ── Derive history from sheet CSV (replaces hardcoded SALES_HISTORY when possible) ──
         const sheetHistory = extractMonthlyFromSheet(headers, rows);
+        const sheetCustomerRows = extractCustomerRowsFromSheet(headers, rows);
         const effectiveHistory = sheetHistory || SALES_HISTORY;
 
-        // ── Extract filter options from orders ──
+        // ── Extract filter options from orders AND sheet (so historical customers appear) ──
         const custSet = new Set(), branchSet = new Set(), prodSet = new Set();
         for (const o of allOrders) {
             if (o.customer?.name) custSet.add(o.customer.name);
             if (o.shipTo?.branch) branchSet.add(o.shipTo.branch);
             for (const l of (o.lines || [])) if (l.name) prodSet.add(l.name);
+        }
+        if (sheetCustomerRows) {
+            for (const r of sheetCustomerRows) if (r.customer) custSet.add(r.customer);
         }
 
         // ── Top Stores (unfiltered) + LY-to-date ──
@@ -493,6 +540,16 @@ const SalesView = (() => {
                 }
                 if (kg > 0) actuals[ym] = (actuals[ym] || 0) + kg;
             }
+
+            // Include filtered historical sheet rows (customer-filterable long-form sheets only)
+            // Skip when filtering by product — sheet data has no product-level breakdown
+            if (sheetCustomerRows && !filterProduct) {
+                for (const r of sheetCustomerRows) {
+                    if (filterCustomer && r.customer !== filterCustomer) continue;
+                    actuals[r.ym] = (actuals[r.ym] || 0) + r.kg;
+                }
+            }
+
             return actuals;
         }
 

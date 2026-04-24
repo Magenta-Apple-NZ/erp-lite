@@ -480,9 +480,8 @@ const Warehouse = (() => {
 
         for (let i = 0; i < months; i++) {
             const ym = `${yr}-${String(mo + 1).padStart(2, '0')}`;
-            const incoming = shipments
-                .filter(s => s.ym === ym)
-                .reduce((sum, s) => sum + (Number(s.kg) || 0), 0);
+            const incomingShips = shipments.filter(s => s.ym === ym);
+            const incoming = incomingShips.reduce((sum, s) => sum + (Number(s.kg) || 0), 0);
 
             const actualSales = actuals[ym] ?? null;
             const avgSales   = actualSales !== null ? actualSales : (Number(monthlyAvg[mo]) || 0);
@@ -497,7 +496,7 @@ const Warehouse = (() => {
             rows.push({
                 ym, yr, mo,
                 label: `${MONTH_NAMES[mo]} '${String(yr).slice(-2)}`,
-                incoming, actualSales, avgSales, goodSales, greatSales,
+                incoming, incomingShips, actualSales, avgSales, goodSales, greatSales,
                 openAvg, openGood, openGreat,
                 closeAvg: runAvg, closeGood: runGood, closeGreat: runGreat,
             });
@@ -1040,6 +1039,7 @@ const Warehouse = (() => {
                 `<button class="imp-scenario-btn ${scenario === s ? 'active' : ''}" data-s="${s}">${{ avg: 'Average', good: 'Good +10%', great: 'Great +20%' }[s]}</button>`
             ).join('');
 
+            let _prevFcstYr = null;
             const tableRows = rows.map(r => {
                 const closing   = r[closeKey];
                 const sales     = r[salesKey];
@@ -1050,13 +1050,24 @@ const Warehouse = (() => {
                     low:      '<span class="fcst-dot fcst-dot--low" title="Less than 2 months supply"></span>',
                     critical: '<span class="fcst-dot fcst-dot--critical" title="Out of stock"></span>',
                 }[status];
-                return `
+                let yearRow = '';
+                if (r.yr !== _prevFcstYr) {
+                    if (_prevFcstYr !== null) yearRow = `<tr class="imp-year-divider"><td colspan="7">${r.yr}</td></tr>`;
+                    _prevFcstYr = r.yr;
+                }
+                const incomingShip = r.incomingShips && r.incomingShips.length ? r.incomingShips[0] : null;
+                const incomingContent = r.incoming
+                    ? (incomingShip
+                        ? `<button class="imp-incoming-link" data-ship-id="${escHtml(incomingShip.id)}" title="${escHtml(incomingShip.campaign || ymLabel(incomingShip.ym))}">${'+' + fmtFull(r.incoming)}</button>`
+                        : '+' + fmtFull(r.incoming))
+                    : '—';
+                return yearRow + `
                 <tr class="imp-row ${r.incoming ? 'imp-has-import' : ''} ${!hasActual && status !== 'ok' ? 'imp-row--' + status : ''}">
                     <td class="imp-td-month">${escHtml(r.label)}</td>
                     <td class="imp-td-num ${hasActual ? 'imp-actual-val' : ''}">${hasActual ? fmtFull(r.actualSales) : '—'}</td>
                     <td class="imp-td-num">${fmtFull(sales)}</td>
                     <td class="imp-td-num">${fmtFull(r[openKey])}</td>
-                    <td class="imp-td-num imp-incoming ${r.incoming ? 'imp-incoming-val' : ''}">${r.incoming ? '+' + fmtFull(r.incoming) : '—'}</td>
+                    <td class="imp-td-num imp-incoming ${r.incoming ? 'imp-incoming-val' : ''}">${incomingContent}</td>
                     <td class="imp-td-num ${closing < 0 ? 'fcst-negative' : ''}">${fmtFull(closing)}</td>
                     <td style="text-align:center;padding:0 0.5rem">${dot}</td>
                 </tr>`;
@@ -1090,9 +1101,10 @@ const Warehouse = (() => {
                 <div class="imp-event-card imp-event-card--nav ${past ? 'imp-event-card--past' : ''}" data-ship-id="${escHtml(s.id)}">
                     <div class="imp-event-card-summary">
                         <div>
-                            <div class="imp-event-month">${ymLabel(s.ym)}</div>
+                            <div class="imp-event-title">${escHtml(s.campaign || ymLabel(s.ym))}</div>
+                            <div class="imp-event-month">${s.campaign ? ymLabel(s.ym) : ''}</div>
                             <div class="imp-event-qty">${fmtFull(s.kg)} kg</div>
-                            ${s.campaign || s.note ? `<div class="imp-event-note">${escHtml(s.campaign || s.note)}</div>` : ''}
+                            ${s.note ? `<div class="imp-event-note">${escHtml(s.note)}</div>` : ''}
                             ${totalNzd > 0 ? `<div class="imp-ship-cost-pill">
                                 $${Math.round(totalNzd).toLocaleString('en-NZ')} NZD &middot;
                                 ${osNzd > 0.5
@@ -1457,6 +1469,13 @@ const Warehouse = (() => {
 
         body.addEventListener('click', async e => {
             if (acSignal.aborted) return;
+
+            // Incoming cell in forecast table → jump to shipment detail
+            const incomingLink = e.target.closest('.imp-incoming-link');
+            if (incomingLink) {
+                const s = config.shipments.find(sh => sh.id === incomingLink.dataset.shipId);
+                if (s) { renderShipDetail(s); return; }
+            }
 
             // Navigate into shipment detail
             const card = e.target.closest('.imp-event-card--nav');

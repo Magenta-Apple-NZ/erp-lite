@@ -1856,10 +1856,25 @@ a.xero-inv-linked:hover { background: #d1fae5; border-color: #6ee7b7; }
 .imp-event-card[open] .imp-event-card-summary { border-bottom: 1px solid #bfdbfe; border-radius: 8px 8px 0 0; }
 .imp-event-card--past[open] .imp-event-card-summary { border-bottom-color: #e2e8f0; }
 
-.imp-event-month { font-size: 0.78rem; font-weight: 700; color: #1e40af; margin-bottom: 2px; }
-.imp-event-card--past .imp-event-month { color: #64748b; }
-.imp-event-qty { font-size: 1.1rem; font-weight: 700; color: #1e293b; margin-bottom: 2px; }
+.imp-event-title { font-size: 0.95rem; font-weight: 700; color: #1e293b; margin-bottom: 1px; }
+.imp-event-card--past .imp-event-title { color: #475569; }
+.imp-event-month { font-size: 0.72rem; font-weight: 600; color: #64748b; margin-bottom: 2px; }
+.imp-event-card--past .imp-event-month { color: #94a3b8; }
+.imp-event-qty { font-size: 1rem; font-weight: 700; color: #1e293b; margin-bottom: 2px; }
 .imp-event-note { font-size: 0.75rem; color: #64748b; margin-top: 1px; }
+
+.imp-year-divider td {
+    padding: 0.35rem 0.5rem; font-size: 0.72rem; font-weight: 700; color: #94a3b8;
+    text-transform: uppercase; letter-spacing: 0.06em; background: #f8fafc;
+    border-top: 1px solid #e2e8f0;
+}
+.imp-incoming-link {
+    background: none; border: none; padding: 0; margin: 0; cursor: pointer;
+    font: inherit; font-weight: 700; color: #2563eb; font-size: inherit;
+    text-decoration: underline; text-decoration-style: dotted;
+    text-underline-offset: 2px;
+}
+.imp-incoming-link:hover { color: #1d4ed8; text-decoration-style: solid; }
 
 .imp-card-badges { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; flex-shrink: 0; }
 .imp-milestone-progress {
