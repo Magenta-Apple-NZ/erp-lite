@@ -54,6 +54,7 @@ export async function onRequestPatch({ env, params, request }) {
         if (updates.packingNotes !== undefined) order.packingNotes = updates.packingNotes;
         if (updates.xeroInvoiceId !== undefined) order.xeroInvoiceId = updates.xeroInvoiceId;
         if (updates.xeroInvoiceNumber !== undefined) order.xeroInvoiceNumber = updates.xeroInvoiceNumber;
+        if (updates.paidAt !== undefined) order.paidAt = updates.paidAt;
 
         // Append event to activity log
         if (updates.event) {

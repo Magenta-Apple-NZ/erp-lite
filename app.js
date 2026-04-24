@@ -759,7 +759,7 @@ function showToast(msg) {
 }
 
 // ── Search ──
-document.getElementById('search').addEventListener('input', e => {
+document.getElementById('search')?.addEventListener('input', e => {
     const query = e.target.value.toLowerCase();
     if (query === '') {
         renderGroups(allGroups);

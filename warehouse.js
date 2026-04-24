@@ -613,6 +613,22 @@ const Warehouse = (() => {
             }
         } catch (e) { /* orders unavailable */ }
 
+        let forex = {};
+        const fxToday = new Date().toISOString().slice(0, 10);
+        try {
+            const cached = localStorage.getItem('imp-fx-' + fxToday);
+            if (cached) {
+                forex = JSON.parse(cached);
+            } else {
+                const res = await fetch('https://api.frankfurter.dev/v1/latest?base=NZD&symbols=USD,EUR,BDT,AUD');
+                if (res.ok) {
+                    const data = await res.json();
+                    forex = data.rates || {};
+                    localStorage.setItem('imp-fx-' + fxToday, JSON.stringify(forex));
+                }
+            }
+        } catch (e) { /* forex optional */ }
+
         let scenario  = 'avg';
         let shipView  = 'cards';
         let activeTab = 'overview';
@@ -622,6 +638,25 @@ const Warehouse = (() => {
             const closeKey = { avg: 'closeAvg', good: 'closeGood', great: 'closeGreat' }[scenario];
             const openKey  = { avg: 'openAvg',  good: 'openGood',  great: 'openGreat'  }[scenario];
             const salesKey = { avg: 'avgSales', good: 'goodSales', great: 'greatSales' }[scenario];
+
+            const FX_LABELS = { USD: 'US Dollar', EUR: 'Euro', BDT: 'Bangladeshi Taka', AUD: 'Aus Dollar' };
+            const fxPanelHtml = Object.keys(forex).length ? `
+            <div class="cat-section imp-fx-panel">
+                <div class="imp-fx-header">
+                    <h2 class="cat-title" style="margin:0">FX Rates</h2>
+                    <span class="imp-fx-base-tag">1 NZD =</span>
+                </div>
+                <div class="imp-fx-grid">
+                    ${['USD', 'EUR', 'BDT', 'AUD'].filter(c => forex[c]).map(c =>
+                        '<div class="imp-fx-tile">' +
+                        '<div class="imp-fx-tile-code">' + c + '</div>' +
+                        '<div class="imp-fx-tile-rate">' + (c === 'BDT' ? forex[c].toFixed(2) : forex[c].toFixed(4)) + '</div>' +
+                        '<div class="imp-fx-tile-name">' + FX_LABELS[c] + '</div>' +
+                        '</div>'
+                    ).join('')}
+                </div>
+                <p class="imp-fx-date">as of ${fxToday}</p>
+            </div>` : '';
 
             const scenarioBtns = ['avg', 'good', 'great'].map(s =>
                 `<button class="imp-scenario-btn ${scenario === s ? 'active' : ''}" data-s="${s}">${{ avg: 'Average', good: 'Good +10%', great: 'Great +20%' }[s]}</button>`
@@ -709,6 +744,8 @@ const Warehouse = (() => {
             </div>
 
             <div id="imp-overview-panel"${activeTab !== 'overview' ? ' style="display:none"' : ''}>
+                <div class="imp-overview-grid">
+                <div class="imp-overview-main">
                 <div class="cat-section imp-chart-card">
                     <div class="cat-section-head">
                         <div>
@@ -771,6 +808,9 @@ const Warehouse = (() => {
                         <button class="btn-primary btn-sm" id="imp-avg-save-btn">Save Averages</button>
                     </div>
                 </details>
+                </div>
+                ${fxPanelHtml ? `<div class="imp-overview-side">${fxPanelHtml}</div>` : ''}
+                </div>
             </div>
 
             <div id="imp-shipments-panel"${activeTab !== 'shipments' ? ' style="display:none"' : ''}>

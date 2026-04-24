@@ -35,12 +35,14 @@ const Orders = (() => {
         reviewed:     'Reviewed',
         sent_to_xero: 'Sent to Xero',
         dispatched:   'Dispatched',
+        paid:         'Paid',
     };
     const STATUS_COLOURS = {
         new:          '#3b82f6',
         reviewed:     '#f59e0b',
         sent_to_xero: '#8b5cf6',
         dispatched:   '#64748b',
+        paid:         '#10b981',
     };
 
     function statusBadge(status) {
@@ -140,6 +142,19 @@ const Orders = (() => {
             </div>
             <a href="#orders/new" class="btn-primary">+ New Order</a>
         </div>
+        <div class="orders-filter-bar">
+            <input type="text" id="filter-customer" placeholder="Customer…" class="orders-filter-input">
+            <input type="text" id="filter-branch" placeholder="Branch…" class="orders-filter-input">
+            <select id="filter-status" class="orders-filter-select">
+                <option value="">All statuses</option>
+                <option value="new">New</option>
+                <option value="reviewed">Reviewed</option>
+                <option value="sent_to_xero">Sent to Xero</option>
+                <option value="dispatched">Dispatched</option>
+                <option value="paid">Paid</option>
+            </select>
+            <button class="btn-secondary btn-sm" id="filter-clear">Clear</button>
+        </div>
         <div id="orders-list-body"><div class="orders-loading">Loading…</div></div>`;
 
         await checkXeroStatus();
@@ -155,98 +170,126 @@ const Orders = (() => {
 
         const body = document.getElementById('orders-list-body');
 
+        function applyFilters() {
+            const cust   = document.getElementById('filter-customer')?.value.toLowerCase().trim() || '';
+            const branch = document.getElementById('filter-branch')?.value.toLowerCase().trim() || '';
+            const status = document.getElementById('filter-status')?.value || '';
+            return orders.filter(o =>
+                (!cust   || (o.customer?.name || '').toLowerCase().includes(cust)) &&
+                (!branch || (o.shipTo?.branch || '').toLowerCase().includes(branch)) &&
+                (!status || o.status === status)
+            );
+        }
+
+        function renderTable() {
+            renderOrdersTable(applyFilters());
+        }
+
+        ['filter-customer', 'filter-branch', 'filter-status'].forEach(id => {
+            const el = document.getElementById(id);
+            el?.addEventListener('input', renderTable);
+            el?.addEventListener('change', renderTable);
+        });
+        document.getElementById('filter-clear')?.addEventListener('click', () => {
+            document.getElementById('filter-customer').value = '';
+            document.getElementById('filter-branch').value = '';
+            document.getElementById('filter-status').value = '';
+            renderTable();
+        });
+
         if (!xeroConnected) {
             body.insertAdjacentHTML('beforebegin', xeroConnectBanner());
         }
 
-        if (orders.length === 0) {
+        function renderOrdersTable(els) {
+            if (!els.length) {
+                body.innerHTML = `
+                <div class="orders-empty">
+                    <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" stroke-width="1.5">
+                        <path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/>
+                        <rect x="9" y="3" width="6" height="4" rx="1"/>
+                        <line x1="9" y1="12" x2="15" y2="12"/>
+                        <line x1="9" y1="16" x2="12" y2="16"/>
+                    </svg>
+                    <p>${orders.length ? 'No orders match the current filter.' : 'No orders yet. <a href="#orders/new">Create the first one.</a>'}</p>
+                </div>`;
+                return;
+            }
             body.innerHTML = `
-            <div class="orders-empty">
-                <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" stroke-width="1.5">
-                    <path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/>
-                    <rect x="9" y="3" width="6" height="4" rx="1"/>
-                    <line x1="9" y1="12" x2="15" y2="12"/>
-                    <line x1="9" y1="16" x2="12" y2="16"/>
-                </svg>
-                <p>No orders yet. <a href="#orders/new">Create the first one.</a></p>
-            </div>`;
-            return;
-        }
-
-        body.innerHTML = `
-        <div class="orders-table-wrap">
-            <table class="orders-table">
-                <thead>
-                    <tr>
-                        <th>Order</th>
-                        <th>Customer</th>
-                        <th>Ship To</th>
-                        <th>PO</th>
-                        <th>Date</th>
-                        <th>Total</th>
-                        <th>Status</th>
-                        <th>Xero</th>
-                        <th></th>
-                    </tr>
-                </thead>
-                <tbody>
-                    ${orders.map(o => {
-                        const xeroUrl = o.xeroInvoiceId
-                            ? `https://go.xero.com/AccountsReceivable/Edit.aspx?InvoiceID=${encodeURIComponent(o.xeroInvoiceId)}`
-                            : null;
-                        return `
-                    <tr class="order-row" data-id="${o.id}">
-                        <td class="order-id">${o.id}</td>
-                        <td>${escHtml(o.customer.name)}</td>
-                        <td class="order-ship-to">${escHtml(o.shipTo?.branch || '—')}</td>
-                        <td class="order-po">${escHtml(o.poNumber || '—')}</td>
-                        <td class="order-date">${fmtDate(o.createdAt)}</td>
-                        <td class="order-total">$${fmt(orderTotal(o))}</td>
-                        <td>${statusBadge(o.status)}</td>
-                        <td class="order-xero">${o.xeroInvoiceNumber
-                            ? `<span class="xero-inv-num">${escHtml(o.xeroInvoiceNumber)}</span>`
-                            : '<span class="xero-pending">—</span>'}</td>
-                        <td class="order-actions-col">
-                            <div class="row-actions">
-                                <a class="row-action-btn" href="#orders/${o.id}/edit" title="Edit order" onclick="event.stopPropagation()">
-                                    <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-                                </a>
-                                <a class="row-action-btn" href="#orders/${o.id}" title="View packing slip" onclick="event.stopPropagation()">
-                                    <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
-                                </a>
-                                ${xeroUrl
-                                    ? `<a class="row-action-btn" href="${xeroUrl}" target="_blank" rel="noopener" title="Open in Xero" onclick="event.stopPropagation()"><svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg></a>`
-                                    : `<span class="row-action-btn row-action-btn--dim" title="Not yet synced to Xero"><svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg></span>`}
-                                <div class="overflow-menu">
-                                    <button class="overflow-trigger btn-sm" title="More actions" onclick="event.stopPropagation();this.closest('.overflow-menu').classList.toggle('open')">•••</button>
-                                    <div class="overflow-dropdown">
-                                        <button class="overflow-item"
-                                            data-pa-to="${escHtml(o.shipTo?.branch || o.customer.name)}"
-                                            data-pa-addr="${escHtml(o.shipTo?.address || '')}"
-                                            data-pa-ref="${escHtml(o.xeroInvoiceNumber || o.id)}"
-                                            data-pa-id="${o.id}"
-                                            data-pa-po="${escHtml(o.poNumber || '')}">Print Address</button>
-                                        <button class="overflow-item overflow-danger" data-delete-order="${o.id}">Delete</button>
+            <div class="orders-table-wrap">
+                <table class="orders-table">
+                    <thead>
+                        <tr>
+                            <th>Order</th>
+                            <th>Customer</th>
+                            <th>Ship To</th>
+                            <th>PO</th>
+                            <th>Date</th>
+                            <th>Total</th>
+                            <th>Status</th>
+                            <th>Xero</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${els.map(o => {
+                            const xeroUrl = o.xeroInvoiceId
+                                ? `https://go.xero.com/AccountsReceivable/Edit.aspx?InvoiceID=${encodeURIComponent(o.xeroInvoiceId)}`
+                                : null;
+                            return `
+                        <tr class="order-row" data-id="${o.id}">
+                            <td class="order-id">${o.id}</td>
+                            <td>${escHtml(o.customer.name)}</td>
+                            <td class="order-ship-to">${escHtml(o.shipTo?.branch || '—')}</td>
+                            <td class="order-po">${escHtml(o.poNumber || '—')}</td>
+                            <td class="order-date">${fmtDate(o.createdAt)}</td>
+                            <td class="order-total">$${fmt(orderTotal(o))}</td>
+                            <td>${statusBadge(o.status)}${o.paidAt ? '<span class="paid-badge" title="Paid">✓ Paid</span>' : ''}</td>
+                            <td class="order-xero">${o.xeroInvoiceNumber
+                                ? `<span class="xero-inv-num">${escHtml(o.xeroInvoiceNumber)}</span>`
+                                : '<span class="xero-pending">—</span>'}</td>
+                            <td class="order-actions-col">
+                                <div class="row-actions">
+                                    <a class="row-action-btn" href="#orders/${o.id}/edit" title="Edit order" onclick="event.stopPropagation()">
+                                        <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                                    </a>
+                                    <a class="row-action-btn" href="#orders/${o.id}" title="View packing slip" onclick="event.stopPropagation()">
+                                        <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+                                    </a>
+                                    ${xeroUrl
+                                        ? `<a class="row-action-btn" href="${xeroUrl}" target="_blank" rel="noopener" title="Open in Xero" onclick="event.stopPropagation()"><svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg></a>`
+                                        : `<span class="row-action-btn row-action-btn--dim" title="Not yet synced to Xero"><svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg></span>`}
+                                    <div class="overflow-menu">
+                                        <button class="overflow-trigger btn-sm" title="More actions" onclick="event.stopPropagation();this.closest('.overflow-menu').classList.toggle('open')">•••</button>
+                                        <div class="overflow-dropdown">
+                                            <button class="overflow-item"
+                                                data-pa-to="${escHtml(o.shipTo?.branch || o.customer.name)}"
+                                                data-pa-addr="${escHtml(o.shipTo?.address || '')}"
+                                                data-pa-ref="${escHtml(o.xeroInvoiceNumber || o.id)}"
+                                                data-pa-id="${o.id}"
+                                                data-pa-po="${escHtml(o.poNumber || '')}">Print Address</button>
+                                            <button class="overflow-item overflow-danger" data-delete-order="${o.id}">Delete</button>
+                                        </div>
                                     </div>
                                 </div>
-                            </div>
-                        </td>
-                    </tr>`;
-                    }).join('')}
-                </tbody>
-            </table>
-        </div>`;
+                            </td>
+                        </tr>`;
+                        }).join('')}
+                    </tbody>
+                </table>
+            </div>`;
+        }
 
-        // Row navigation (delegated — skips overflow menu clicks)
-        body.querySelector('.orders-table-wrap').addEventListener('click', e => {
+        // Delegated events on body — survive re-renders of body.innerHTML
+        body.addEventListener('click', e => {
             const printBtn = e.target.closest('[data-pa-id]');
             if (printBtn) {
                 printAddressPopup({
-                    id:               printBtn.dataset.paId,
-                    shipTo:           { branch: printBtn.dataset.paTo, address: printBtn.dataset.paAddr },
-                    customer:         { name: printBtn.dataset.paTo },
+                    id:                printBtn.dataset.paId,
+                    shipTo:            { branch: printBtn.dataset.paTo, address: printBtn.dataset.paAddr },
+                    customer:          { name: printBtn.dataset.paTo },
                     xeroInvoiceNumber: printBtn.dataset.paRef !== printBtn.dataset.paId ? printBtn.dataset.paRef : null,
-                    poNumber:         printBtn.dataset.paPo || '',
+                    poNumber:          printBtn.dataset.paPo || '',
                 });
                 return;
             }
@@ -255,7 +298,7 @@ const Orders = (() => {
                 const orderId = deleteBtn.dataset.deleteOrder;
                 if (!confirm(`Delete order ${orderId}? This cannot be undone.`)) return;
                 api('/api/orders/' + orderId, { method: 'DELETE' })
-                    .then(() => deleteBtn.closest('tr.order-row')?.remove())
+                    .then(() => { orders = orders.filter(o => o.id !== orderId); renderTable(); })
                     .catch(err => alert('Delete failed: ' + err.message));
                 return;
             }
@@ -263,6 +306,8 @@ const Orders = (() => {
             const row = e.target.closest('tr.order-row');
             if (row) location.hash = 'orders/' + row.dataset.id;
         });
+
+        renderTable();
     }
 
     // ── Customer section HTML (shared by new + edit forms) ──
@@ -736,6 +781,12 @@ const Orders = (() => {
                 tr._catalogItem = item;
                 descEl.value = item.name;
                 skuEl.value = item.id;
+                if (item.isLoose) {
+                    qtyEl.min = 10; qtyEl.step = 10;
+                    if ((parseFloat(qtyEl.value) || 0) < 10) qtyEl.value = 10;
+                } else {
+                    qtyEl.min = 0; qtyEl.step = 'any';
+                }
                 const qty = parseFloat(qtyEl.value) || 1;
                 priceEl.value = (getPriceForQty(item, qty) ?? 0).toFixed(2);
                 updateRow();
@@ -944,6 +995,7 @@ const Orders = (() => {
                 <div class="overflow-dropdown">
                     ${xeroMenuItem}
                     <button class="overflow-item" id="link-xero-btn">Link Xero Invoice…</button>
+                    ${!order.paidAt ? `<button class="overflow-item" id="mark-paid-btn">Mark as Paid</button>` : `<button class="overflow-item overflow-dim" id="mark-paid-btn" disabled>✓ Paid ${order.paidAt.slice(0,10)}</button>`}
                     <button class="overflow-item" id="print-slip-btn">Print Packing Slip</button>
                     <button class="overflow-item" id="print-address-btn">Print Address</button>
                     <button class="overflow-item overflow-danger" id="delete-order-btn">Delete</button>
@@ -1184,6 +1236,27 @@ const Orders = (() => {
                 await Orders.renderDetail(container, orderId);
             } catch (e) {
                 alert('Link failed: ' + e.message);
+            }
+        });
+
+        // Mark as paid
+        document.getElementById('mark-paid-btn')?.addEventListener('click', async () => {
+            if (order.paidAt) return;
+            if (!confirm('Mark this order as paid?')) return;
+            try {
+                const updated = await api('/api/orders/' + orderId, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        paidAt: new Date().toISOString(),
+                        event: { ts: new Date().toISOString(), msg: 'Marked as paid' },
+                    }),
+                });
+                Object.assign(order, updated);
+                showToast('Order marked as paid');
+                await Orders.renderDetail(container, orderId);
+            } catch (e) {
+                showErrorBanner('Error: ' + e.message);
             }
         });
 

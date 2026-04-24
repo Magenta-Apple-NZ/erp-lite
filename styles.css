@@ -928,6 +928,34 @@ li.drag-over { background: #eff6ff; }
 .overflow-item:hover { background: #f1f5f9; color: #1e293b; }
 .overflow-item.overflow-danger { color: #dc2626; }
 .overflow-item.overflow-danger:hover { background: #fef2f2; color: #dc2626; }
+.overflow-item.overflow-dim { color: #94a3b8; cursor: default; }
+.overflow-item.overflow-dim:hover { background: none; }
+
+/* ── Orders filter bar ── */
+.orders-filter-bar {
+    display: flex; gap: 0.5rem; align-items: center;
+    padding: 0.6rem 1.5rem; background: #f8fafc;
+    border-bottom: 1px solid #e2e8f0; flex-wrap: wrap;
+}
+.orders-filter-input {
+    padding: 0.35rem 0.6rem; border: 1px solid #e2e8f0; border-radius: 6px;
+    font-size: 0.8125rem; color: #1e293b; background: white; min-width: 140px;
+    font-family: inherit;
+}
+.orders-filter-input:focus { outline: none; border-color: #3b82f6; }
+.orders-filter-select {
+    padding: 0.35rem 0.6rem; border: 1px solid #e2e8f0; border-radius: 6px;
+    font-size: 0.8125rem; color: #1e293b; background: white;
+    font-family: inherit; cursor: pointer;
+}
+
+/* ── Paid badge ── */
+.paid-badge {
+    display: inline-block; margin-left: 0.4rem;
+    font-size: 0.68rem; font-weight: 700; color: #10b981;
+    background: #d1fae5; border-radius: 10px; padding: 0.1rem 0.4rem;
+    white-space: nowrap;
+}
 
 /* ── Loading / error / empty states ── */
 .orders-loading { padding: 2rem; color: #94a3b8; font-size: 0.9rem; }
@@ -1388,6 +1416,39 @@ a.xero-inv-linked:hover { background: #d1fae5; border-color: #6ee7b7; }
     font-size: 0.73rem;
     color: #475569;
 }
+
+/* ── Price matrix ── */
+.matrix-wrap { overflow-x: auto; margin-top: 0.75rem; }
+.matrix-table {
+    width: 100%; border-collapse: collapse;
+    font-size: 0.8125rem;
+}
+.matrix-table thead th {
+    text-align: left; font-size: 0.67rem; font-weight: 700;
+    text-transform: uppercase; letter-spacing: 0.06em;
+    color: #64748b; padding: 0.4rem 0.5rem;
+    border-bottom: 2px solid #e2e8f0; white-space: nowrap;
+}
+.matrix-th-id { width: 100px; }
+.matrix-th-name { min-width: 200px; }
+.matrix-th-center { width: 52px; text-align: center !important; }
+.matrix-th-price { width: 100px; text-align: right !important; }
+.matrix-row td { padding: 2px 3px; border-bottom: 1px solid #f8fafc; }
+.matrix-cell-input {
+    width: 100%; padding: 0.3rem 0.45rem; border: 1px solid transparent;
+    border-radius: 4px; font-size: 0.8125rem; font-family: inherit;
+    background: transparent; color: #1e293b;
+    transition: border-color 0.12s, background 0.12s;
+}
+.matrix-cell-input:hover { border-color: #e2e8f0; background: white; }
+.matrix-cell-input:focus { border-color: #3b82f6; background: white; outline: none; }
+.matrix-price-input { text-align: right; font-variant-numeric: tabular-nums; }
+.matrix-td-center { text-align: center; }
+.matrix-del {
+    background: none; border: none; cursor: pointer;
+    color: #cbd5e1; font-size: 1rem; padding: 0.2rem 0.4rem; border-radius: 3px;
+}
+.matrix-del:hover { color: #ef4444; background: #fef2f2; }
 
 /* ── Order number field ── */
 .order-num-wrap {
@@ -2004,3 +2065,50 @@ a.xero-inv-linked:hover { background: #d1fae5; border-color: #6ee7b7; }
 .imp-matrix-table td { padding: 0.35rem 0.5rem; border-bottom: 1px solid #f1f5f9; color: #1e293b; }
 .imp-matrix-stage { color: #64748b; font-size: 0.75rem; white-space: nowrap; }
 .imp-matrix-row--arrive td { background: #eff6ff; font-weight: 600; border-top: 1px solid #bfdbfe; }
+
+/* ── Imports overview 2-column layout ── */
+.imp-overview-grid {
+    display: grid;
+    grid-template-columns: 1fr 260px;
+    gap: 1.25rem;
+    align-items: start;
+}
+.imp-overview-main { display: flex; flex-direction: column; gap: 1.25rem; }
+.imp-overview-main .imp-chart-card { margin-bottom: 0; }
+.imp-overview-side { display: flex; flex-direction: column; gap: 1.25rem; }
+
+/* ── Forex rate tiles ── */
+.imp-fx-panel { padding: 1rem 1.1rem !important; }
+.imp-fx-header {
+    display: flex; align-items: baseline; justify-content: space-between;
+    margin-bottom: 0.9rem;
+}
+.imp-fx-base-tag {
+    font-size: 0.75rem; color: #94a3b8; font-style: italic;
+}
+.imp-fx-grid {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 0.6rem;
+}
+.imp-fx-tile {
+    background: #f8fafc; border: 1px solid #e2e8f0;
+    border-radius: 8px; padding: 0.65rem 0.6rem; text-align: center;
+}
+.imp-fx-tile-code {
+    font-size: 0.68rem; font-weight: 800; color: #64748b;
+    text-transform: uppercase; letter-spacing: 0.07em; margin-bottom: 3px;
+}
+.imp-fx-tile-rate {
+    font-size: 1.35rem; font-weight: 700; color: #1e293b;
+    line-height: 1.1; letter-spacing: -0.02em;
+}
+.imp-fx-tile-name {
+    font-size: 0.62rem; color: #94a3b8; margin-top: 4px;
+}
+.imp-fx-date {
+    font-size: 0.68rem; color: #cbd5e1; margin: 0.75rem 0 0;
+    text-align: right;
+}
+
+@media (max-width: 900px) {
+    .imp-overview-grid { grid-template-columns: 1fr; }
+}
