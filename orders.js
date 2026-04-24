@@ -401,36 +401,16 @@ const Orders = (() => {
             : '';
         return `
         <form id="new-order-form" class="order-form" onsubmit="return false">
-            <!-- Customer + PO number in one card -->
+            <!-- Customer + Ship To grouped -->
             <section class="form-section">
-                <h2 class="form-section-title">Customer & Reference</h2>
-                <div class="form-field" style="margin-bottom:0.75rem">
-                    <label>Customer</label>
-                    ${customerSectionHtml(customers, defaults.customer?.name || '', defaults.customer?.xeroContactId || '')}
-                </div>
-                <div class="form-row" style="margin-top:0.5rem">
-                    <div class="form-field" style="flex:1">
-                        <label>Order Number <span class="form-hint">optional — leave blank to auto-assign</span></label>
-                        <div class="order-num-wrap">
-                            <span class="order-num-prefix">PKS-</span>
-                            <input type="text" id="order-number" placeholder="e.g. 1021" pattern="[0-9]*" inputmode="numeric"
-                                value="${escHtml(numericId)}"${defaults.id ? ' readonly style="background:#f8fafc;color:#64748b"' : ''}>
-                        </div>
-                        <span class="form-hint" style="display:block;margin-top:4px">Xero invoice: INV-<span id="order-num-preview">${numericId || '…'}</span></span>
+                <h2 class="form-section-title">Customer & Ship To</h2>
+                <div class="form-row" style="align-items:flex-start">
+                    <div class="form-field" style="flex:1;min-width:0">
+                        <label>Customer</label>
+                        ${customerSectionHtml(customers, defaults.customer?.name || '', defaults.customer?.xeroContactId || '')}
                     </div>
-                    <div class="form-field" style="flex:2">
-                        <label>PO Number <span class="form-hint">optional</span></label>
-                        <input type="text" id="po-number" placeholder="e.g. 1529131-CONF-1776762069025" value="${escHtml(defaults.poNumber || '')}">
-                    </div>
-                </div>
-            </section>
-
-            <!-- Ship To -->
-            <section class="form-section">
-                <h2 class="form-section-title">Ship To</h2>
-                <div class="form-row">
-                    <div class="form-field" style="flex:2">
-                        <label>Branch / location</label>
+                    <div class="form-field" style="flex:1;min-width:0">
+                        <label>Branch / Store</label>
                         ${catalogStores.length ? `
                         <div class="customer-search-wrap">
                             <input type="text" id="ship-branch" placeholder="Search stores…" autocomplete="off" value="${escHtml(defaults.shipTo?.branch || '')}">
@@ -440,9 +420,29 @@ const Orders = (() => {
                     </div>
                 </div>
                 <div class="form-row">
-                    <div class="form-field" style="flex:1">
+                    <div class="form-field">
                         <label>Delivery address <span class="form-hint">optional</span></label>
                         <textarea id="ship-address" rows="3" placeholder="Street address…">${escHtml(defaults.shipTo?.address || '')}</textarea>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Reference -->
+            <section class="form-section">
+                <h2 class="form-section-title">Reference</h2>
+                <div class="form-row">
+                    <div class="form-field" style="flex:1">
+                        <label>Order Number <span class="form-hint">optional — leave blank to auto-assign</span></label>
+                        <div class="order-num-wrap">
+                            <span class="order-num-prefix">PKS-</span>
+                            <input type="text" id="order-number" placeholder="e.g. 1021" pattern="[0-9]*" inputmode="numeric"
+                                value="${escHtml(numericId)}"${defaults.id ? ' readonly style="background:#f8fafc;color:#64748b"' : ''}>
+                        </div>
+                        <span class="form-hint" style="display:block;margin-top:4px">Xero invoice: INV-<span id="order-num-preview">${numericId || '…'}</span></span>
+                    </div>
+                    <div class="form-field" style="flex:1">
+                        <label>PO Number <span class="form-hint">optional</span></label>
+                        <input type="text" id="po-number" placeholder="e.g. PO-12345" value="${escHtml(defaults.poNumber || '')}">
                     </div>
                 </div>
             </section>
@@ -454,7 +454,7 @@ const Orders = (() => {
                     <table class="line-items-table">
                         <thead>
                             <tr>
-                                <th style="flex:1">SKU</th>
+                                <th style="flex:1.5">SKU</th>
                                 <th style="flex:3">Description</th>
                                 <th style="flex:1;text-align:right">Qty</th>
                                 <th style="flex:1;text-align:right">Unit Price</th>
@@ -467,9 +467,17 @@ const Orders = (() => {
                     <button type="button" id="add-line-btn" class="add-line-btn">+ Add line</button>
                 </div>
                 <div class="order-totals">
-                    <div class="totals-row totals-grand">
-                        <span>Total (excl. GST)</span>
+                    <div class="totals-row">
+                        <span>Subtotal (excl. GST)</span>
                         <span id="form-total">$0.00</span>
+                    </div>
+                    <div class="totals-row">
+                        <span>GST (15%)</span>
+                        <span id="form-gst">$0.00</span>
+                    </div>
+                    <div class="totals-row totals-grand totals-gst-border">
+                        <span>Total incl. GST</span>
+                        <span id="form-total-gst">$0.00</span>
                     </div>
                 </div>
             </section>
@@ -612,8 +620,8 @@ const Orders = (() => {
         tr.className = 'line-item-row';
         tr.dataset.idx = idx;
         tr.innerHTML = `
-            <td style="flex:1">
-                <input type="text" class="line-sku" placeholder="e.g. PT-I-10" value="${escHtml(prefill?.sku || '')}">
+            <td style="flex:1.5">
+                <input type="text" class="line-sku" placeholder="e.g. PT-I-10" autocomplete="off" value="${escHtml(prefill?.sku || '')}">
             </td>
             <td style="flex:3">
                 <input type="text" class="line-desc" placeholder="Product / description" required value="${escHtml(prefill?.description || '')}">
@@ -665,8 +673,46 @@ const Orders = (() => {
         });
         tr.querySelector('.line-remove-btn').addEventListener('click', () => { tr.remove(); updateFormTotal(); });
 
-        // Item autocomplete from catalog
+        // Item autocomplete from catalog (shared pick logic)
         if (catalogItems.length) {
+            function pickCatalogItem(item) {
+                tr._catalogItem = item;
+                descEl.value = item.name;
+                skuEl.value = item.id;
+                const qty = parseFloat(qtyEl.value) || 1;
+                priceEl.value = getPriceForQty(item, qty).toFixed(2);
+                updateRow();
+            }
+
+            // SKU field autocomplete
+            const skuDropdown = document.createElement('div');
+            skuDropdown.className = 'customer-dropdown';
+            skuDropdown.style.display = 'none';
+            skuEl.parentNode.style.position = 'relative';
+            skuEl.parentNode.appendChild(skuDropdown);
+
+            skuEl.addEventListener('input', () => {
+                tr._catalogItem = null;
+                const q = skuEl.value.toLowerCase().trim();
+                if (!q) { skuDropdown.style.display = 'none'; return; }
+                const matches = catalogItems.filter(i =>
+                    (i.id && i.id.toLowerCase().includes(q)) || (i.name || '').toLowerCase().includes(q)
+                ).slice(0, 6);
+                if (!matches.length) { skuDropdown.style.display = 'none'; return; }
+                skuDropdown.innerHTML = matches.map(i =>
+                    `<div class="customer-option" data-idx="${catalogItems.indexOf(i)}"><strong>${escHtml(i.id)}</strong><span class="store-city">${escHtml(i.name)}</span></div>`
+                ).join('');
+                skuDropdown.style.display = '';
+            });
+            skuDropdown.addEventListener('mousedown', e => {
+                const opt = e.target.closest('.customer-option');
+                if (!opt) return;
+                const item = catalogItems[parseInt(opt.dataset.idx)];
+                if (item) { pickCatalogItem(item); skuDropdown.style.display = 'none'; }
+            });
+            skuEl.addEventListener('blur', () => setTimeout(() => { skuDropdown.style.display = 'none'; }, 150));
+
+            // Description field autocomplete
             const itemDropdown = document.createElement('div');
             itemDropdown.className = 'customer-dropdown';
             itemDropdown.style.display = 'none';
@@ -686,34 +732,30 @@ const Orders = (() => {
                 ).join('');
                 itemDropdown.style.display = '';
             });
-
             itemDropdown.addEventListener('mousedown', e => {
                 const opt = e.target.closest('.customer-option');
                 if (!opt) return;
                 const item = catalogItems[parseInt(opt.dataset.idx)];
-                if (!item) return;
-                tr._catalogItem = item;
-                descEl.value = item.name;
-                skuEl.value = item.id;
-                const qty = parseFloat(qtyEl.value) || 1;
-                priceEl.value = getPriceForQty(item, qty).toFixed(2);
-                itemDropdown.style.display = 'none';
-                updateRow();
+                if (item) { pickCatalogItem(item); itemDropdown.style.display = 'none'; }
             });
-
             descEl.addEventListener('blur', () => setTimeout(() => { itemDropdown.style.display = 'none'; }, 150));
         }
     }
 
     function updateFormTotal() {
-        let total = 0;
+        let subtotal = 0;
         document.querySelectorAll('.line-item-row').forEach(tr => {
             const qty = parseFloat(tr.querySelector('.line-qty').value) || 0;
             const price = parseFloat(tr.querySelector('.line-price').value) || 0;
-            total += qty * price;
+            subtotal += qty * price;
         });
-        const el = document.getElementById('form-total');
-        if (el) el.textContent = '$' + fmt(total);
+        const gst = subtotal * 0.15;
+        const elSub  = document.getElementById('form-total');
+        const elGst  = document.getElementById('form-gst');
+        const elIncl = document.getElementById('form-total-gst');
+        if (elSub)  elSub.textContent  = '$' + fmt(subtotal);
+        if (elGst)  elGst.textContent  = '$' + fmt(gst);
+        if (elIncl) elIncl.textContent = '$' + fmt(subtotal + gst);
     }
 
     function getLineItems() {

@@ -642,8 +642,8 @@ document.getElementById('search').addEventListener('input', e => {
     }
 });
 
-// ── Reload button ──
-document.getElementById('reload-btn').addEventListener('click', () => { loadConfig(); showToast('Config reloaded'); });
+// ── Reload button — hard reload to pick up new JS/CSS deployments ──
+document.getElementById('reload-btn').addEventListener('click', () => { location.reload(); });
 
 // ── Edit / Export / Reset buttons ──
 document.getElementById('edit-btn').addEventListener('click', toggleEditMode);

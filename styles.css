@@ -1022,7 +1022,7 @@ li.drag-over { background: #eff6ff; }
 .add-line-btn:hover { border-color: #3b82f6; color: #2563eb; }
 
 /* Totals */
-.order-totals { margin-top: 0.75rem; display: flex; flex-direction: column; align-items: flex-end; gap: 0.2rem; }
+.order-totals { margin-top: 0.75rem; display: flex; flex-direction: column; align-items: flex-end; gap: 0.25rem; }
 .totals-row {
     display: flex;
     gap: 2rem;
@@ -1030,7 +1030,8 @@ li.drag-over { background: #eff6ff; }
     color: #64748b;
 }
 .totals-grand { font-weight: 700; font-size: 0.95rem; color: #1e293b; }
-.totals-row span:last-child { min-width: 80px; text-align: right; }
+.totals-gst-border { margin-top: 0.2rem; padding-top: 0.35rem; border-top: 1px solid #e2e8f0; }
+.totals-row span:last-child { min-width: 80px; text-align: right; font-variant-numeric: tabular-nums; }
 
 /* Form actions */
 .form-actions {
