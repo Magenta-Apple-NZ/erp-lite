@@ -55,10 +55,9 @@ export async function onRequestPost({ env, request }) {
 
         if (!lines.length) return errResponse('no valid line items', 400);
 
-        const year = new Date().getFullYear();
         const counter = parseInt(await env.ORDERS_KV.get('order_counter') || '0') + 1;
         await env.ORDERS_KV.put('order_counter', String(counter));
-        const id = `PKS-${year}-${String(counter).padStart(3, '0')}`;
+        const id = `PKS-${String(counter).padStart(4, '0')}`;
 
         const order = {
             id,
