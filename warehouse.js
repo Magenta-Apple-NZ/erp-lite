@@ -445,298 +445,171 @@ const Warehouse = (() => {
     }
 
     // ══════════════════════════════════════════
-    //  IMPORTS TAB
+    //  STOCK FORECAST — Prime Ties
     // ══════════════════════════════════════════
 
-    // Account code labels (matches stocktake CSV [codes])
-    const ACCT_LABELS = {
-        39: 'Prime Tie (packed)',
-        40: 'Processed Product',
-        41: 'In-process (NZ)',
-        42: 'Shipment 4',
-        43: 'Shipment 5',
-    };
-
     const MONTH_NAMES = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-    const MONTH_IDX = Object.fromEntries(MONTH_NAMES.map((m,i) => [m, i]));
 
-    // ── CSV parser for the Import Schedule format ──
-    // Row 0: prepared date + group labels
-    // Row 1: column headers
-    // Rows 2+: data (Calendar Year and Financial Year are forward-filled)
-    function parseImportCsv(text) {
-        const raw = text.replace(/^﻿/, '').split(/\r?\n/);
-        const lines = raw.map(l => l.trim()).filter((_, i) => i < raw.length);
-
-        // Row 0: get prepared date
-        const dateMatch = lines[0]?.match(/(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})/);
-        let preparedDate = '';
-        if (dateMatch) {
-            const [, d, m, y] = dateMatch;
-            const yr = y.length === 2 ? '20' + y : y;
-            preparedDate = `${yr}-${m.padStart(2,'0')}-${d.padStart(2,'0')}`;
-        }
-
-        // Find header row (contains "Calendar Year" or "Month")
-        let headerIdx = 1;
-        for (let i = 0; i < Math.min(4, lines.length); i++) {
-            if (lines[i].toLowerCase().includes('calendar year') || lines[i].toLowerCase().includes('financial year')) {
-                headerIdx = i;
-                break;
-            }
-        }
-
-        // Parse account codes from header row (last few cols are numeric codes)
-        const headerCols = splitCsvLine(lines[headerIdx]);
-        const accountCodes = headerCols.slice(12).map(h => parseInt(h)).filter(n => !isNaN(n) && n > 0);
-
-        // Build rows with forward-fill
-        let lastCalYear = '', lastFY = '';
-        const rows = [];
-
-        for (let i = headerIdx + 1; i < lines.length; i++) {
-            const line = lines[i];
-            if (!line.trim()) continue;
-            const cols = splitCsvLine(line);
-
-            // Skip if no month
-            const month = cols[2]?.trim();
-            if (!month || !MONTH_NAMES.includes(month)) continue;
-
-            if (cols[0]?.trim()) lastCalYear = cols[0].trim();
-            if (cols[1]?.trim()) lastFY = cols[1].trim();
-
-            const actuals     = parseNum(cols[3]);
-            const salesAvg    = parseNum(cols[4]);
-            const salesGood   = parseNum(cols[5]);
-            const salesGreat  = parseNum(cols[6]);
-            const stockAvg    = parseNum(cols[7]);
-            const stockGood   = parseNum(cols[8]);
-            const stockGreat  = parseNum(cols[9]);
-            const stocktake   = parseNum(cols[11]);
-            const incomingTotal = parseNum(cols[12]);
-
-            // Account code breakdown (cols 13+)
-            const incoming = {};
-            accountCodes.forEach((code, idx) => {
-                const val = parseNum(cols[13 + idx]);
-                if (val) incoming[code] = val;
-            });
-
-            // Determine if this is a start-of-FY marker
-            const fyStart = (cols[10]?.trim().toLowerCase() === 'stock');
-
-            rows.push({
-                calendarYear: lastCalYear,
-                financialYear: lastFY,
-                month,
-                fyStart,
-                actuals,
-                salesAvg, salesGood, salesGreat,
-                stockAvg, stockGood, stockGreat,
-                stocktake,
-                incomingTotal,
-                incoming,
-            });
-        }
-
-        return { preparedDate, accountCodes, rows };
+    function fmtKg(n) {
+        const v = Math.round(n);
+        if (Math.abs(v) >= 10000) return (v / 1000).toFixed(0) + 'k';
+        if (Math.abs(v) >= 1000)  return (v / 1000).toFixed(1).replace(/\.0$/, '') + 'k';
+        return String(v);
     }
 
-    // ── Stock trajectory SVG line chart ──
-    function buildImportChart(rows, scenario = 'avg') {
-        const stockKey = { avg: 'stockAvg', good: 'stockGood', great: 'stockGreat' };
+    function ymLabel(ym) {
+        if (!ym) return '';
+        const [y, m] = ym.split('-');
+        return `${MONTH_NAMES[parseInt(m) - 1]} ${y}`;
+    }
+
+    function computeForecast(config, months = 18) {
+        const monthlyAvg = config.monthlyAvg || new Array(12).fill(0);
+        const shipments  = config.shipments  || [];
+        const starting   = config.startingKg ?? 0;
+
         const now = new Date();
-        const nowKey = `${now.getFullYear()}-${MONTH_NAMES[now.getMonth()]}`;
+        let yr = now.getFullYear(), mo = now.getMonth();
 
-        // Only rows with actual stock data
-        const validRows = rows.filter(r => r[stockKey[scenario]] > 0 || r.incomingTotal > 0);
-        if (!validRows.length) return '';
+        const rows = [];
+        let runAvg = starting, runGood = starting, runGreat = starting;
 
-        const W = 700, H = 200;
-        const pad = { l: 52, r: 12, t: 14, b: 38 };
+        for (let i = 0; i < months; i++) {
+            const ym = `${yr}-${String(mo + 1).padStart(2, '0')}`;
+            const incoming = shipments
+                .filter(s => s.ym === ym)
+                .reduce((sum, s) => sum + (Number(s.kg) || 0), 0);
+
+            const avgSales   = Number(monthlyAvg[mo]) || 0;
+            const goodSales  = avgSales * 1.1;
+            const greatSales = avgSales * 1.2;
+
+            const openAvg = runAvg, openGood = runGood, openGreat = runGreat;
+            runAvg   = openAvg   - avgSales   + incoming;
+            runGood  = openGood  - goodSales  + incoming;
+            runGreat = openGreat - greatSales + incoming;
+
+            rows.push({
+                ym, yr, mo,
+                label: `${MONTH_NAMES[mo]} '${String(yr).slice(-2)}`,
+                incoming, avgSales, goodSales, greatSales,
+                openAvg, openGood, openGreat,
+                closeAvg: runAvg, closeGood: runGood, closeGreat: runGreat,
+            });
+
+            mo++;
+            if (mo === 12) { mo = 0; yr++; }
+        }
+        return rows;
+    }
+
+    function buildForecastChart(rows, scenario) {
+        const closeKey = { avg: 'closeAvg', good: 'closeGood', great: 'closeGreat' }[scenario];
+
+        const W = 700, H = 180;
+        const pad = { l: 50, r: 12, t: 18, b: 32 };
         const chartW = W - pad.l - pad.r;
         const chartH = H - pad.t - pad.b;
 
-        const vals = validRows.map(r => r[stockKey[scenario]]).filter(v => v > 0);
-        const maxV = Math.max(...vals, 1);
+        const values = rows.map(r => r[closeKey]);
+        const maxV = Math.max(...values, 1);
+        const minV = Math.min(...values, 0);
+        const range = maxV - minV || 1;
 
-        function xOf(i) { return pad.l + (i / Math.max(validRows.length - 1, 1)) * chartW; }
-        function yOf(v) { return pad.t + chartH - (v / maxV) * chartH; }
+        function xOf(i) { return pad.l + (i / Math.max(rows.length - 1, 1)) * chartW; }
+        function yOf(v) { return pad.t + chartH - ((v - minV) / range) * chartH; }
 
-        // Import event vertical lines
-        const importLines = validRows.map((r, i) => {
-            if (!r.incomingTotal) return '';
+        const zeroY = yOf(0).toFixed(1);
+        const zeroLine = minV < 0
+            ? `<line x1="${pad.l}" y1="${zeroY}" x2="${W - pad.r}" y2="${zeroY}" stroke="#ef4444" stroke-width="1" stroke-dasharray="4 3" opacity="0.7"/>`
+            : '';
+
+        const importLines = rows.map((r, i) => {
+            if (!r.incoming) return '';
             const x = xOf(i).toFixed(1);
-            return `<line x1="${x}" y1="${pad.t}" x2="${x}" y2="${pad.t + chartH}" stroke="#3b82f6" stroke-width="1.5" stroke-dasharray="4 3" opacity="0.5"/>
-                    <text x="${x}" y="${(pad.t - 3)}" text-anchor="middle" font-size="8" fill="#3b82f6" font-weight="600">${fmtK(r.incomingTotal)}</text>`;
+            return `<line x1="${x}" y1="${pad.t}" x2="${x}" y2="${pad.t + chartH}" stroke="#3b82f6" stroke-width="1.5" stroke-dasharray="4 3" opacity="0.4"/>
+                    <text x="${x}" y="${pad.t - 4}" text-anchor="middle" font-size="8" fill="#3b82f6" font-weight="600">+${fmtKg(r.incoming)}</text>`;
         }).join('');
 
-        // Line path
-        const pts = validRows.map((r, i) => {
-            const v = r[stockKey[scenario]];
-            return v > 0 ? `${xOf(i).toFixed(1)},${yOf(v).toFixed(1)}` : null;
-        }).filter(Boolean);
-        const linePath = pts.length > 1 ? `<polyline points="${pts.join(' ')}" fill="none" stroke="#3b82f6" stroke-width="2" stroke-linejoin="round"/>` : '';
+        const pts = rows.map((r, i) => `${xOf(i).toFixed(1)},${yOf(r[closeKey]).toFixed(1)}`).join(' ');
+        const linePath = `<polyline points="${pts}" fill="none" stroke="#3b82f6" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>`;
 
-        // Dots on import months
-        const dots = validRows.map((r, i) => {
-            if (!r.incomingTotal) return '';
-            const v = r[stockKey[scenario]];
-            if (!v) return '';
-            return `<circle cx="${xOf(i).toFixed(1)}" cy="${yOf(v).toFixed(1)}" r="4" fill="#3b82f6" stroke="white" stroke-width="1.5"/>`;
+        const dots = rows.map((r, i) => {
+            if (!r.incoming) return '';
+            return `<circle cx="${xOf(i).toFixed(1)}" cy="${yOf(r[closeKey]).toFixed(1)}" r="4" fill="#3b82f6" stroke="white" stroke-width="1.5"/>`;
         }).join('');
 
-        // Stocktake dots
-        const stkDots = validRows.map((r, i) => {
-            if (!r.stocktake) return '';
-            return `<circle cx="${xOf(i).toFixed(1)}" cy="${yOf(r.stocktake).toFixed(1)}" r="3.5" fill="#059669" stroke="white" stroke-width="1.5">
-                <title>Stocktake: ${fmtK(r.stocktake)} — ${r.month} ${r.calendarYear}</title>
-            </circle>`;
-        }).join('');
-
-        // X axis labels — show every 3rd row
-        const xLabels = validRows.map((r, i) => {
+        const xLabels = rows.map((r, i) => {
             if (i % 3 !== 0) return '';
-            const label = `${r.month}'${String(r.calendarYear).slice(-2)}`;
-            const rowKey = `${r.calendarYear}-${r.month}`;
-            const isPast = rowKey < nowKey;
-            return `<text x="${xOf(i).toFixed(1)}" y="${(pad.t + chartH + 13)}" text-anchor="middle" font-size="8.5" fill="${isPast ? '#cbd5e1' : '#64748b'}">${escHtml(label)}</text>`;
+            return `<text x="${xOf(i).toFixed(1)}" y="${pad.t + chartH + 14}" text-anchor="middle" font-size="8.5" fill="#64748b">${escHtml(r.label)}</text>`;
         }).join('');
 
-        // Y axis labels
-        const ySteps = [0, 0.25, 0.5, 0.75, 1];
-        const yLabels = ySteps.map(f => {
-            const val = maxV * f;
+        const yLabels = [0, 0.25, 0.5, 0.75, 1].map(f => {
+            const val = minV + f * range;
             const y = (pad.t + chartH - f * chartH).toFixed(1);
-            return `<text x="${pad.l - 5}" y="${(parseFloat(y) + 3).toFixed(1)}" text-anchor="end" font-size="8.5" fill="#94a3b8">${fmtK(val)}</text>
+            return `<text x="${pad.l - 4}" y="${(parseFloat(y) + 3).toFixed(1)}" text-anchor="end" font-size="8.5" fill="#94a3b8">${fmtKg(val)}</text>
                     <line x1="${pad.l}" y1="${y}" x2="${W - pad.r}" y2="${y}" stroke="#f1f5f9" stroke-width="1"/>`;
         }).join('');
 
-        // "Now" vertical line
-        const nowIdx = validRows.findIndex(r => `${r.calendarYear}-${r.month}` >= nowKey);
-        const nowLine = nowIdx >= 0 ? `<line x1="${xOf(nowIdx).toFixed(1)}" y1="${pad.t}" x2="${xOf(nowIdx).toFixed(1)}" y2="${pad.t + chartH}" stroke="#94a3b8" stroke-width="1" stroke-dasharray="3 3" opacity="0.6"/>
-            <text x="${xOf(nowIdx).toFixed(1)}" y="${pad.t + chartH + 26}" text-anchor="middle" font-size="8" fill="#94a3b8">Today</text>` : '';
-
         return `
         <svg viewBox="0 0 ${W} ${H}" class="imp-chart" xmlns="http://www.w3.org/2000/svg">
-            ${yLabels}${importLines}${linePath}${dots}${stkDots}${xLabels}${nowLine}
-            <text x="${pad.l}" y="${H - 2}" font-size="8" fill="#94a3b8">● Incoming stock &nbsp; ● Stocktake</text>
+            ${yLabels}${zeroLine}${importLines}${linePath}${dots}${xLabels}
         </svg>`;
     }
 
-    function fmtK(n) {
-        if (n >= 1000) return (Math.round(n / 100) / 10) + 'k';
-        return String(Math.round(n));
-    }
 
-    // ── Render the Imports tab ──
+    // ── Render the Imports view ──
     async function renderImports() {
         const body = document.getElementById('wh-body');
         body.innerHTML = '<div class="orders-loading">Loading…</div>';
 
-        let schedule = null;
-        try { schedule = await api('/api/import'); } catch (e) { /* ok */ }
-
-        // If there's a live sheet URL, fetch fresh data immediately
-        if (schedule?.sheetUrl) {
-            schedule = await fetchLiveSheet(schedule);
-        }
+        let config = {};
+        try { config = (await api('/api/import/forecast')) || {}; } catch (e) { /* ok */ }
 
         let scenario = 'avg';
 
-        async function refreshLive() {
-            const refreshBtn = document.getElementById('imp-refresh-btn');
-            if (refreshBtn) { refreshBtn.disabled = true; refreshBtn.textContent = 'Refreshing…'; }
-            const latest = await fetchLiveSheet(schedule);
-            if (latest !== schedule) {
-                schedule = latest;
-                rebuildImports(schedule);
-            } else {
-                if (refreshBtn) { refreshBtn.disabled = false; refreshBtn.textContent = '↻ Refresh'; }
-            }
-        }
+        function rebuild() {
+            const rows = computeForecast(config);
+            const closeKey = { avg: 'closeAvg', good: 'closeGood', great: 'closeGreat' }[scenario];
+            const openKey  = { avg: 'openAvg',  good: 'openGood',  great: 'openGreat'  }[scenario];
+            const salesKey = { avg: 'avgSales', good: 'goodSales', great: 'greatSales' }[scenario];
 
-        function rebuildImports(sched) {
-            if (!sched?.rows?.length) {
-                const hasUrl = !!sched?.sheetUrl;
-                body.innerHTML = `
-                <div class="cat-section" style="max-width:620px">
-                    <div class="cat-section-head">
-                        <div><h2 class="cat-title">Import Schedule</h2>
-                             <p class="cat-sub">Connect a Google Sheet for live data, or upload a one-off CSV.</p></div>
-                    </div>
-                    ${hasUrl ? `<div class="imp-connect-status imp-connect-error">⚠ Sheet connected but returned no data — check the URL or sheet permissions.</div>` : ''}
-                    ${connectUiHtml(sched?.sheetUrl || '')}
-                </div>`;
-                wireConnectUi(sched);
-                return;
-            }
-
-            const { preparedDate, accountCodes, rows } = sched;
-            const now = new Date();
-            const nowKey = `${now.getFullYear()}-${MONTH_NAMES[now.getMonth()]}`;
-
-            // Find upcoming imports
-            const upcomingImports = rows.filter(r =>
-                r.incomingTotal > 0 && `${r.calendarYear}-${r.month}` >= nowKey
-            );
-            const pastImports = rows.filter(r =>
-                r.incomingTotal > 0 && `${r.calendarYear}-${r.month}` < nowKey
-            );
-
-            // Scenario toggle labels
-            const scenarioBtns = ['avg','good','great'].map(s =>
-                `<button class="imp-scenario-btn ${scenario === s ? 'active' : ''}" data-s="${s}">${s.charAt(0).toUpperCase() + s.slice(1)}</button>`
+            const scenarioBtns = ['avg', 'good', 'great'].map(s =>
+                `<button class="imp-scenario-btn ${scenario === s ? 'active' : ''}" data-s="${s}">${{ avg: 'Average', good: 'Good +10%', great: 'Great +20%' }[s]}</button>`
             ).join('');
 
-            // Upcoming import event cards
-            const upcomingCards = upcomingImports.length
-                ? upcomingImports.map(r => {
-                    const acctEntries = Object.entries(r.incoming).map(([code, qty]) =>
-                        `<span class="imp-acct-tag" title="${escHtml(ACCT_LABELS[code] || 'Acct ' + code)}">[${code}] ${fmtK(qty)}</span>`
-                    ).join('');
-                    return `
-                    <div class="imp-event-card">
-                        <div class="imp-event-month">${r.month} ${r.calendarYear}</div>
-                        <div class="imp-event-qty">${fmtK(r.incomingTotal)} <span>units</span></div>
-                        ${acctEntries}
-                        ${r.financialYear ? `<div class="imp-event-fy">${escHtml(r.financialYear)}</div>` : ''}
-                    </div>`;
-                }).join('')
-                : '<p class="wh-empty" style="margin:0">No upcoming imports in schedule.</p>';
-
-            // Full schedule table — show rows around today (6 months back + all future)
             const tableRows = rows.map(r => {
-                const rowKey = `${r.calendarYear}-${r.month}`;
-                const isPast = rowKey < nowKey;
-                const isToday = rowKey === nowKey;
-                const hasImport = r.incomingTotal > 0;
-                const stockVal = { avg: r.stockAvg, good: r.stockGood, great: r.stockGreat }[scenario];
-                const stocktakeCell = r.stocktake
-                    ? `<td class="imp-td-num imp-stocktake" title="Actual stocktake">${fmtK(r.stocktake)}</td>`
-                    : `<td class="imp-td-num"></td>`;
-                const acctCells = accountCodes.map(code =>
-                    r.incoming[code] ? `<td class="imp-td-num imp-acct-val">${fmtK(r.incoming[code])}</td>`
-                                     : `<td class="imp-td-num"></td>`
-                ).join('');
-
+                const closing = r[closeKey];
+                const sales   = r[salesKey];
+                const status  = closing < 0 ? 'critical' : closing < sales * 0.5 ? 'low' : 'ok';
+                const dot = {
+                    ok:       '<span class="fcst-dot fcst-dot--ok" title="Sufficient stock"></span>',
+                    low:      '<span class="fcst-dot fcst-dot--low" title="Below half a month\'s supply"></span>',
+                    critical: '<span class="fcst-dot fcst-dot--critical" title="Out of stock"></span>',
+                }[status];
                 return `
-                <tr class="imp-row ${isPast ? 'imp-past' : ''} ${isToday ? 'imp-today' : ''} ${hasImport ? 'imp-has-import' : ''}">
-                    <td class="imp-td-period">${r.financialYear ? `<span class="imp-fy-badge">${escHtml(r.financialYear)}</span>` : ''}</td>
-                    <td class="imp-td-month">${r.month} ${r.calendarYear || ''}</td>
-                    <td class="imp-td-num">${r.actuals ? fmtK(r.actuals) : (isPast ? '—' : '')}</td>
-                    <td class="imp-td-num">${r.salesAvg ? fmtK({ avg: r.salesAvg, good: r.salesGood, great: r.salesGreat }[scenario]) : ''}</td>
-                    <td class="imp-td-num imp-stock">${stockVal ? fmtK(stockVal) : ''}</td>
-                    ${stocktakeCell}
-                    <td class="imp-td-num imp-incoming ${hasImport ? 'imp-incoming-val' : ''}">${hasImport ? fmtK(r.incomingTotal) : ''}</td>
-                    ${acctCells}
+                <tr class="imp-row ${r.incoming ? 'imp-has-import' : ''}">
+                    <td class="imp-td-month">${escHtml(r.label)}</td>
+                    <td class="imp-td-num">${fmtKg(sales)} kg</td>
+                    <td class="imp-td-num">${fmtKg(r[openKey])} kg</td>
+                    <td class="imp-td-num imp-incoming ${r.incoming ? 'imp-incoming-val' : ''}">${r.incoming ? '+' + fmtKg(r.incoming) + ' kg' : '—'}</td>
+                    <td class="imp-td-num ${closing < 0 ? 'fcst-negative' : ''}">${fmtKg(closing)} kg</td>
+                    <td style="text-align:center;padding:0 0.5rem">${dot}</td>
                 </tr>`;
             }).join('');
 
-            const acctHeaders = accountCodes.map(c =>
-                `<th class="imp-th-num" title="${escHtml(ACCT_LABELS[c] || '')}">[${c}]</th>`
-            ).join('');
+            const allShips      = (config.shipments || []).slice().sort((a, b) => a.ym.localeCompare(b.ym));
+            const todayYm       = new Date().toISOString().slice(0, 7);
+            const upcomingShips = allShips.filter(s => s.ym >= todayYm);
+            const pastShips     = allShips.filter(s => s.ym < todayYm);
+
+            const shipCard = (s, past) => `
+            <div class="imp-event-card ${past ? 'imp-event-card--past' : ''}">
+                <div class="imp-event-month">${ymLabel(s.ym)}</div>
+                <div class="imp-event-qty">${fmtKg(s.kg)} <span>kg</span></div>
+                ${s.note ? '<div class="imp-event-note">' + escHtml(s.note) + '</div>' : ''}
+                ${!past ? '<button class="imp-ship-del" data-id="' + escHtml(s.id) + '" title="Remove">\xd7</button>' : ''}
+            </div>`;
 
             body.innerHTML = `
             <div class="imp-layout">
@@ -744,354 +617,208 @@ const Warehouse = (() => {
                     <div class="cat-section imp-chart-card">
                         <div class="cat-section-head">
                             <div>
-                                <h2 class="cat-title">Stock Trajectory</h2>
-                                <p class="cat-sub">Prepared ${preparedDate ? fmtDate(preparedDate) : '—'} · Scenario: <span id="imp-scenario-label">Average</span></p>
+                                <h2 class="cat-title">Stock Trajectory &middot; Prime Ties</h2>
+                                <p class="cat-sub">Starting stock: <strong>${fmtKg(config.startingKg ?? 0)} kg</strong>
+                                    <button class="btn-link" id="imp-edit-stock-btn">Edit</button></p>
                             </div>
                             <div class="cat-actions">
                                 <div class="imp-scenario-wrap">${scenarioBtns}</div>
-                                ${sched.sheetUrl
-                                    ? `<button class="btn-secondary btn-sm" id="imp-refresh-btn">↻ Refresh</button>
-                                       <button class="btn-secondary btn-sm" id="imp-settings-btn">⚙ Sheet</button>`
-                                    : `<label class="btn-secondary btn-sm cat-upload-lbl" title="Connect a Google Sheet or upload CSV">
-                                           ⚙ Connect <input type="file" id="imp-csv-file" accept=".csv" style="display:none">
-                                       </label>`}
                             </div>
                         </div>
-                        ${sched.sheetUrl ? `<div class="imp-connect-status">
-                            <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor"><circle cx="6" cy="6" r="5"/></svg>
-                            Live · Google Sheet · Updated ${sched.savedAt ? fmtDateTime(sched.savedAt) : 'just now'}
-                        </div>` : ''}
-                        <div id="imp-chart-wrap">${buildImportChart(rows, scenario)}</div>
+                        <div id="imp-stock-edit" style="display:none;margin-bottom:1rem">
+                            <div class="imp-connect-row">
+                                <label style="font-size:0.8125rem;color:#64748b;white-space:nowrap">Current stock (kg):</label>
+                                <input type="number" id="imp-stock-kg" class="imp-url-input" style="max-width:140px"
+                                    value="${config.startingKg ?? ''}" placeholder="e.g. 5000" min="0" step="any">
+                                <button class="btn-primary btn-sm" id="imp-stock-save-btn">Save</button>
+                                <button class="btn-secondary btn-sm" id="imp-stock-cancel-btn">Cancel</button>
+                            </div>
+                        </div>
+                        <div id="imp-chart-wrap">${buildForecastChart(rows, scenario)}</div>
                     </div>
 
                     <div class="cat-section imp-table-card" style="padding-bottom:0">
-                        <h2 class="cat-title" style="margin-bottom:0.75rem">Monthly Schedule</h2>
+                        <h2 class="cat-title" style="margin-bottom:0.75rem">Monthly Forecast</h2>
                         <div class="imp-table-wrap">
                             <table class="imp-table">
                                 <thead>
                                     <tr>
-                                        <th style="width:50px"></th>
                                         <th class="imp-th-month">Month</th>
-                                        <th class="imp-th-num">Actuals</th>
                                         <th class="imp-th-num">Est. Sales</th>
-                                        <th class="imp-th-num">Stock</th>
-                                        <th class="imp-th-num">Stocktake</th>
+                                        <th class="imp-th-num">Opening</th>
                                         <th class="imp-th-num imp-th-incoming">Incoming</th>
-                                        ${acctHeaders}
+                                        <th class="imp-th-num">Closing</th>
+                                        <th style="width:32px"></th>
                                     </tr>
                                 </thead>
                                 <tbody>${tableRows}</tbody>
                             </table>
                         </div>
                     </div>
+
+                    <details class="cat-section" style="margin-top:1.25rem">
+                        <summary style="cursor:pointer;list-style:none;display:flex;align-items:center;justify-content:space-between;padding-bottom:0.5rem">
+                            <h2 class="cat-title" style="margin:0">Monthly Sales Averages</h2>
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+                        </summary>
+                        <p class="cat-sub" style="margin-bottom:1rem">Average kg sold each month &mdash; the baseline for all three scenarios.</p>
+                        <div class="fcst-avg-grid">
+                            ${MONTH_NAMES.map((m, i) => `
+                            <div class="fcst-avg-cell">
+                                <label class="fcst-avg-label">${m}</label>
+                                <input type="number" class="fcst-avg-input imp-url-input" data-mo="${i}"
+                                    value="${(config.monthlyAvg || [])[i] || ''}" placeholder="0" min="0" step="any">
+                                <span class="fcst-avg-unit">kg</span>
+                            </div>`).join('')}
+                        </div>
+                        <div style="margin-top:1rem">
+                            <button class="btn-primary btn-sm" id="imp-avg-save-btn">Save Averages</button>
+                        </div>
+                    </details>
                 </div>
 
                 <div class="imp-sidebar">
                     <div class="cat-section">
-                        <h3 class="stk-section-title">Upcoming Imports</h3>
-                        <div class="imp-events">${upcomingCards}</div>
+                        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.75rem">
+                            <h3 class="stk-section-title" style="margin:0">Upcoming Shipments</h3>
+                            <button class="btn-primary btn-sm" id="imp-add-ship-btn">+ Add</button>
+                        </div>
+                        <div id="imp-add-ship-form" style="display:none;margin-bottom:1rem;padding:0.75rem;background:#f8fafc;border-radius:6px;border:1px solid #e2e8f0">
+                            <div style="display:flex;flex-direction:column;gap:0.4rem">
+                                <label style="font-size:0.78rem;color:#64748b;font-weight:500">Arrival month</label>
+                                <input type="month" id="ship-ym" class="imp-url-input">
+                                <label style="font-size:0.78rem;color:#64748b;font-weight:500">Volume (kg)</label>
+                                <input type="number" id="ship-kg" class="imp-url-input" placeholder="e.g. 8000" min="0" step="any">
+                                <label style="font-size:0.78rem;color:#64748b;font-weight:500">Note <span style="font-weight:400">(optional)</span></label>
+                                <input type="text" id="ship-note" class="imp-url-input" placeholder="e.g. Container 1">
+                                <div style="display:flex;gap:0.4rem;margin-top:0.25rem">
+                                    <button class="btn-primary btn-sm" id="ship-save-btn">Add Shipment</button>
+                                    <button class="btn-secondary btn-sm" id="ship-cancel-btn">Cancel</button>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="imp-events">
+                            ${upcomingShips.length
+                                ? upcomingShips.map(s => shipCard(s, false)).join('')
+                                : '<p class="wh-empty" style="margin:0">No upcoming shipments.</p>'}
+                        </div>
                     </div>
-                    ${pastImports.length ? `
+                    ${pastShips.length ? `
                     <div class="cat-section">
-                        <h3 class="stk-section-title">Past Imports</h3>
+                        <h3 class="stk-section-title">Past Shipments</h3>
                         <div class="imp-events imp-events--past">
-                            ${pastImports.map(r => `
-                            <div class="imp-event-card imp-event-card--past">
-                                <div class="imp-event-month">${r.month} ${r.calendarYear}</div>
-                                <div class="imp-event-qty">${fmtK(r.incomingTotal)} <span>units</span></div>
-                                ${Object.entries(r.incoming).map(([c,q]) => `<span class="imp-acct-tag">[${c}] ${fmtK(q)}</span>`).join('')}
-                            </div>`).join('')}
+                            ${pastShips.map(s => shipCard(s, true)).join('')}
                         </div>
                     </div>` : ''}
                 </div>
             </div>`;
 
-            // Scenario buttons
             body.querySelectorAll('.imp-scenario-btn').forEach(btn => {
-                btn.addEventListener('click', () => {
-                    scenario = btn.dataset.s;
-                    rebuildImports(sched);
-                });
+                btn.addEventListener('click', () => { scenario = btn.dataset.s; rebuild(); });
             });
 
-            document.getElementById('imp-refresh-btn')?.addEventListener('click', refreshLive);
-
-            document.getElementById('imp-settings-btn')?.addEventListener('click', () => {
-                // Inline settings panel toggle
-                const existing = document.getElementById('imp-settings-panel');
-                if (existing) { existing.remove(); return; }
-                const card = document.querySelector('.imp-chart-card');
-                if (!card) return;
-                const panel = document.createElement('div');
-                panel.id = 'imp-settings-panel';
-                panel.innerHTML = connectUiHtml(sched?.sheetUrl || '');
-                card.insertAdjacentElement('afterend', panel);
-                wireConnectUi(sched);
+            document.getElementById('imp-edit-stock-btn')?.addEventListener('click', () => {
+                document.getElementById('imp-stock-edit').style.display = '';
+                document.getElementById('imp-stock-kg').focus();
             });
-
-            document.getElementById('imp-csv-file')?.addEventListener('change', async e => {
-                const file = e.target.files[0];
-                if (!file) return;
-                e.target.value = '';
+            document.getElementById('imp-stock-cancel-btn')?.addEventListener('click', () => {
+                document.getElementById('imp-stock-edit').style.display = 'none';
+            });
+            document.getElementById('imp-stock-save-btn')?.addEventListener('click', async () => {
+                const kg = parseFloat(document.getElementById('imp-stock-kg').value) || 0;
+                const btn = document.getElementById('imp-stock-save-btn');
+                btn.disabled = true; btn.textContent = 'Saving…';
                 try {
-                    const parsed = parseImportCsv(await file.text());
-                    if (!parsed.rows.length) { showToast('No rows found — check CSV format'); return; }
-                    await api('/api/import', {
+                    await api('/api/import/forecast', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify(parsed),
+                        body: JSON.stringify({ startingKg: kg }),
                     });
-                    schedule = parsed;
-                    showToast(`Loaded ${parsed.rows.length} months`);
-                    rebuildImports(schedule);
+                    config.startingKg = kg;
+                    showToast('Stock updated');
+                    rebuild();
                 } catch (err) {
-                    showToast('Failed: ' + err.message);
+                    showToast('Save failed: ' + err.message);
+                    btn.disabled = false; btn.textContent = 'Save';
                 }
             });
-        }
 
-        rebuildImports(schedule);
-    }
-
-    // ── Connect UI HTML ──
-    function connectUiHtml(currentUrl) {
-        return `
-        <div class="imp-connect-panel">
-            <h3 class="imp-connect-title">Connect Google Sheet</h3>
-            <ol class="imp-connect-steps">
-                <li>Open your spreadsheet in Google Sheets</li>
-                <li>File → Share → <strong>Publish to web</strong></li>
-                <li>Select the correct sheet tab, choose <strong>CSV</strong>, click Publish</li>
-                <li>Copy the URL and paste it below</li>
-            </ol>
-            <div class="imp-connect-row">
-                <input type="url" id="imp-sheet-url" class="imp-url-input"
-                    placeholder="https://docs.google.com/spreadsheets/d/…/pub?…&output=csv"
-                    value="${escHtml(currentUrl)}">
-                <button class="btn-primary btn-sm" id="imp-connect-btn">Connect</button>
-                ${currentUrl ? `<button class="btn-secondary btn-sm" id="imp-disconnect-btn">Disconnect</button>` : ''}
-            </div>
-            <p class="imp-connect-note">The URL is stored privately and only fetched server-side — your sheet does not need to be public to anyone with the link.</p>
-        </div>`;
-    }
-
-    function wireConnectUi(sched) {
-        document.getElementById('imp-connect-btn')?.addEventListener('click', async () => {
-            const url = document.getElementById('imp-sheet-url')?.value.trim();
-            if (!url || !url.startsWith('https://docs.google.com/spreadsheets/')) {
-                showToast('Please paste a valid Google Sheets URL');
-                return;
-            }
-            const btn = document.getElementById('imp-connect-btn');
-            btn.disabled = true; btn.textContent = 'Connecting…';
-            try {
-                // Save the URL first
-                await api('/api/import', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ sheetUrl: url }),
+            document.getElementById('imp-avg-save-btn')?.addEventListener('click', async () => {
+                const monthlyAvg = MONTH_NAMES.map((_, i) => {
+                    const inp = body.querySelector('.fcst-avg-input[data-mo="' + i + '"]');
+                    return parseFloat(inp?.value) || 0;
                 });
-                // Then fetch live
-                const latest = await fetchLiveSheet({ ...sched, sheetUrl: url });
-                schedule = latest;
-                showToast(schedule.rows?.length ? `Connected — ${schedule.rows.length} months loaded` : 'Connected (no rows parsed — check sheet format)');
-                rebuildImports(schedule);
-            } catch (err) {
-                showToast('Connection failed: ' + err.message);
-                btn.disabled = false; btn.textContent = 'Connect';
-            }
-        });
-
-        document.getElementById('imp-disconnect-btn')?.addEventListener('click', async () => {
-            if (!confirm('Remove the connected sheet? Cached data will remain until replaced.')) return;
-            await api('/api/import', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ sheetUrl: null }),
-            });
-            if (schedule) schedule.sheetUrl = null;
-            showToast('Sheet disconnected');
-            rebuildImports(schedule);
-        });
-    }
-
-    // ── Fetch live CSV from the proxy, parse, and save to KV cache ──
-    async function fetchLiveSheet(sched) {
-        if (!sched?.sheetUrl) return sched;
-        try {
-            const resp = await fetch('/api/import/fetch');
-            if (!resp.ok) {
-                const err = await resp.json().catch(() => ({}));
-                throw new Error(err.error || resp.statusText);
-            }
-            const csv = await resp.text();
-            const parsed = parseImportCsv(csv);
-            if (!parsed.rows.length) return sched; // don't clobber cache on empty parse
-            const updated = { ...parsed, sheetUrl: sched.sheetUrl, savedAt: new Date().toISOString() };
-            // Save to KV cache silently
-            api('/api/import', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(updated),
-            }).catch(() => {});
-            return updated;
-        } catch (e) {
-            showToast('Live refresh failed — showing cached data');
-            return sched;
-        }
-    }
-
-    function fmtDateTime(iso) {
-        if (!iso) return '—';
-        return new Date(iso).toLocaleString('en-NZ', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
-    }
-
-    // ══════════════════════════════════════════
-    //  SALES TAB
-    // ══════════════════════════════════════════
-
-    function parseSalesCsv(csv) {
-        const lines = csv.trim().split(/\r?\n/);
-        if (lines.length < 2) return { headers: [], rows: [] };
-        const headers = lines[0].split(',').map(h => h.replace(/^"|"$/g, '').trim());
-        const rows = lines.slice(1).map(line => {
-            const cells = [];
-            let cur = '', inQ = false;
-            for (const ch of line) {
-                if (ch === '"') { inQ = !inQ; }
-                else if (ch === ',' && !inQ) { cells.push(cur.trim()); cur = ''; }
-                else { cur += ch; }
-            }
-            cells.push(cur.trim());
-            return cells;
-        }).filter(r => r.some(c => c));
-        return { headers, rows };
-    }
-
-    function salesConnectUiHtml(currentUrl) {
-        return `
-        <div class="imp-connect-panel">
-            <h3 class="imp-connect-title">Connect Google Sheet</h3>
-            <ol class="imp-connect-steps">
-                <li>Open your spreadsheet in Google Sheets</li>
-                <li>File → Share → <strong>Publish to web</strong></li>
-                <li>Select the correct sheet tab, choose <strong>CSV</strong>, click Publish</li>
-                <li>Copy the URL and paste it below</li>
-            </ol>
-            <div class="imp-connect-row">
-                <input type="url" id="sales-sheet-url" class="imp-url-input"
-                    placeholder="https://docs.google.com/spreadsheets/d/…/pub?…&output=csv"
-                    value="${escHtml(currentUrl)}">
-                <button class="btn-primary btn-sm" id="sales-connect-btn">Connect</button>
-                ${currentUrl ? `<button class="btn-secondary btn-sm" id="sales-disconnect-btn">Disconnect</button>` : ''}
-            </div>
-            <p class="imp-connect-note">The URL is stored privately and only fetched server-side — your sheet does not need to be public.</p>
-        </div>`;
-    }
-
-    function wireSalesConnectUi() {
-        document.getElementById('sales-connect-btn')?.addEventListener('click', async () => {
-            const url = document.getElementById('sales-sheet-url')?.value.trim();
-            if (!url || !url.startsWith('https://docs.google.com/spreadsheets/')) {
-                showToast('Please paste a valid Google Sheets URL');
-                return;
-            }
-            const btn = document.getElementById('sales-connect-btn');
-            btn.disabled = true; btn.textContent = 'Connecting…';
-            try {
-                await api('/api/sales', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ sheetUrl: url }),
-                });
-                showToast('Sheet connected — loading data…');
-                await renderSales();
-            } catch (err) {
-                showToast('Connection failed: ' + err.message);
-                btn.disabled = false; btn.textContent = 'Connect';
-            }
-        });
-
-        document.getElementById('sales-disconnect-btn')?.addEventListener('click', async () => {
-            if (!confirm('Remove the connected sheet?')) return;
-            await api('/api/sales', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ sheetUrl: null }),
-            });
-            showToast('Sheet disconnected');
-            await renderSales();
-        });
-    }
-
-    async function renderSales() {
-        const body = document.getElementById('wh-body');
-        body.innerHTML = '<div class="orders-loading">Loading…</div>';
-
-        let config = null;
-        try { config = await api('/api/sales'); } catch (e) { /* ok */ }
-
-        let headers = [], rows = [];
-        if (config?.sheetUrl) {
-            try {
-                const resp = await fetch('/api/sales/fetch');
-                if (resp.ok) {
-                    const csv = await resp.text();
-                    ({ headers, rows } = parseSalesCsv(csv));
+                const btn = document.getElementById('imp-avg-save-btn');
+                btn.disabled = true; btn.textContent = 'Saving…';
+                try {
+                    await api('/api/import/forecast', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ monthlyAvg }),
+                    });
+                    config.monthlyAvg = monthlyAvg;
+                    showToast('Averages saved');
+                    rebuild();
+                } catch (err) {
+                    showToast('Save failed: ' + err.message);
+                    btn.disabled = false; btn.textContent = 'Save';
                 }
-            } catch (e) { /* show connect panel on error */ }
+            });
+
+            document.getElementById('imp-add-ship-btn')?.addEventListener('click', () => {
+                const form = document.getElementById('imp-add-ship-form');
+                form.style.display = form.style.display === 'none' ? '' : 'none';
+            });
+            document.getElementById('ship-cancel-btn')?.addEventListener('click', () => {
+                document.getElementById('imp-add-ship-form').style.display = 'none';
+            });
+            document.getElementById('ship-save-btn')?.addEventListener('click', async () => {
+                const ym   = document.getElementById('ship-ym').value;
+                const kg   = parseFloat(document.getElementById('ship-kg').value) || 0;
+                const note = document.getElementById('ship-note').value.trim();
+                if (!ym) { showToast('Please select an arrival month'); return; }
+                if (!kg) { showToast('Please enter a volume in kg'); return; }
+                const btn = document.getElementById('ship-save-btn');
+                btn.disabled = true; btn.textContent = 'Adding…';
+                try {
+                    const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+                    const shipments = [...(config.shipments || []), { id, ym, kg, note }];
+                    await api('/api/import/forecast', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ shipments }),
+                    });
+                    config.shipments = shipments;
+                    showToast('Shipment added');
+                    rebuild();
+                } catch (err) {
+                    showToast('Save failed: ' + err.message);
+                    btn.disabled = false; btn.textContent = 'Add Shipment';
+                }
+            });
+
+            body.querySelectorAll('.imp-ship-del').forEach(btn => {
+                btn.addEventListener('click', async () => {
+                    const id = btn.dataset.id;
+                    if (!confirm('Remove this shipment?')) return;
+                    const shipments = (config.shipments || []).filter(s => s.id !== id);
+                    try {
+                        await api('/api/import/forecast', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ shipments }),
+                        });
+                        config.shipments = shipments;
+                        showToast('Shipment removed');
+                        rebuild();
+                    } catch (err) {
+                        showToast('Remove failed: ' + err.message);
+                    }
+                });
+            });
         }
 
-        if (!rows.length) {
-            body.innerHTML = `
-            <div class="cat-section" style="max-width:640px">
-                <div class="cat-section-head">
-                    <div>
-                        <h2 class="cat-title">Sales Data</h2>
-                        <p class="cat-sub">Connect a Google Sheet to view and track sales data.</p>
-                    </div>
-                </div>
-                ${config?.sheetUrl ? '<div class="imp-connect-status imp-connect-error"><svg width="10" height="10" viewBox="0 0 10 10" fill="#dc2626"><circle cx="5" cy="5" r="5"/></svg> Sheet connected but returned no data — check the URL or sheet format.</div>' : ''}
-                ${salesConnectUiHtml(config?.sheetUrl || '')}
-            </div>`;
-            wireSalesConnectUi();
-            return;
-        }
-
-        const sheetUrl = config?.sheetUrl || '';
-        body.innerHTML = `
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem;flex-wrap:wrap;gap:0.5rem">
-            <div class="imp-connect-status">
-                <svg width="10" height="10" viewBox="0 0 10 10" fill="#059669"><circle cx="5" cy="5" r="5"/></svg>
-                Live from Google Sheets &mdash; ${rows.length} row${rows.length !== 1 ? 's' : ''}
-            </div>
-            <div style="display:flex;gap:0.5rem">
-                <button class="btn-secondary btn-sm" id="sales-refresh-btn">↻ Refresh</button>
-                <button class="btn-secondary btn-sm" id="sales-settings-btn">⚙ Settings</button>
-            </div>
-        </div>
-        <div id="sales-settings-panel" style="display:none;margin-bottom:1rem"></div>
-        <div class="sales-table-wrap">
-            <table class="sales-table">
-                <thead><tr>${headers.map(h => `<th>${escHtml(h)}</th>`).join('')}</tr></thead>
-                <tbody>
-                    ${rows.slice(0, 500).map(r =>
-                        `<tr>${headers.map((_, i) => `<td>${escHtml(r[i] ?? '')}</td>`).join('')}</tr>`
-                    ).join('')}
-                </tbody>
-            </table>
-        </div>
-        ${rows.length > 500 ? `<p class="wh-empty" style="text-align:center;margin-top:0.75rem">Showing first 500 of ${rows.length} rows</p>` : ''}`;
-
-        document.getElementById('sales-refresh-btn')?.addEventListener('click', () => renderSales());
-
-        document.getElementById('sales-settings-btn')?.addEventListener('click', () => {
-            const panel = document.getElementById('sales-settings-panel');
-            if (panel.style.display !== 'none') { panel.style.display = 'none'; return; }
-            panel.style.display = '';
-            panel.innerHTML = salesConnectUiHtml(sheetUrl);
-            wireSalesConnectUi();
-        });
+        rebuild();
     }
 
     return { render, renderImports };

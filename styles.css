@@ -1787,6 +1787,43 @@ a.xero-inv-linked:hover { background: #d1fae5; border-color: #6ee7b7; }
     display: flex; gap: 0.35rem; align-items: flex-start;
 }
 
+/* ── Forecast status dots ── */
+.fcst-dot {
+    display: inline-block; width: 10px; height: 10px; border-radius: 50%; vertical-align: middle;
+}
+.fcst-dot--ok       { background: #10b981; }
+.fcst-dot--low      { background: #f59e0b; }
+.fcst-dot--critical { background: #ef4444; }
+.fcst-negative { color: #ef4444; font-weight: 700; }
+
+/* ── Monthly averages grid ── */
+.fcst-avg-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+    gap: 0.5rem;
+}
+.fcst-avg-cell { display: flex; align-items: center; gap: 0.35rem; }
+.fcst-avg-label { font-size: 0.78rem; font-weight: 600; color: #64748b; width: 28px; flex-shrink: 0; }
+.fcst-avg-input { width: 70px !important; text-align: right; padding: 0.3rem 0.4rem !important; }
+.fcst-avg-unit  { font-size: 0.72rem; color: #94a3b8; }
+
+/* ── Shipment card extras ── */
+.imp-event-note { font-size: 0.75rem; color: #64748b; margin-top: 2px; }
+.imp-ship-del {
+    position: absolute; top: 0.45rem; right: 0.5rem;
+    background: none; border: none; cursor: pointer;
+    color: #94a3b8; font-size: 1rem; line-height: 1; padding: 0;
+}
+.imp-ship-del:hover { color: #ef4444; }
+
+/* ── Inline link button ── */
+.btn-link {
+    background: none; border: none; cursor: pointer;
+    color: #3b82f6; font-size: 0.8125rem; font-family: inherit;
+    padding: 0 0.25rem; text-decoration: underline; text-underline-offset: 2px;
+}
+.btn-link:hover { color: #2563eb; }
+
 /* ── FX rates panel (Imports page, light background) ── */
 .fx-rates-panel .currency-date {
     font-size: 0.75rem; color: #94a3b8; margin-bottom: 0.75rem;
