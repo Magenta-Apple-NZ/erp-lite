@@ -731,7 +731,35 @@ const Warehouse = (() => {
                                     value="${s.pricePerKg || ''}" placeholder="e.g. 4.50" step="0.01" min="0">
                             </div>
                         </div>
-                        ${s.pricePerKg ? `<p class="imp-total-cost">Total: $${fmt(s.kg * s.pricePerKg)} &nbsp;(${fmtFull(s.kg)} kg &times; $${s.pricePerKg}/kg)</p>` : ''}
+                        ${s.pricePerKg ? `<p class="imp-total-cost">Total cost: $${fmt(s.kg * s.pricePerKg)} &nbsp;(${fmtFull(s.kg)} kg &times; $${s.pricePerKg}/kg)</p>` : ''}
+                        <div class="imp-cost-section">
+                            <div class="imp-cost-header">Cost Breakdown <span class="imp-cost-currency">NZD</span></div>
+                            <div class="imp-cost-grid">
+                                <span class="imp-cost-label">Product</span>
+                                <input type="number" class="imp-cost-input imp-url-input" data-ship-id="${escHtml(s.id)}" data-cost="product"
+                                    value="${s.costs?.product ?? ''}" placeholder="—" min="0" step="0.01">
+                                <span class="imp-cost-label">Bangladesh</span>
+                                <input type="number" class="imp-cost-input imp-url-input" data-ship-id="${escHtml(s.id)}" data-cost="bangladesh"
+                                    value="${s.costs?.bangladesh ?? ''}" placeholder="—" min="0" step="0.01">
+                                <span class="imp-cost-label">Freight</span>
+                                <input type="number" class="imp-cost-input imp-url-input" data-ship-id="${escHtml(s.id)}" data-cost="freight"
+                                    value="${s.costs?.freight ?? ''}" placeholder="—" min="0" step="0.01">
+                                <span class="imp-cost-label">Misc</span>
+                                <input type="number" class="imp-cost-input imp-url-input" data-ship-id="${escHtml(s.id)}" data-cost="misc"
+                                    value="${s.costs?.misc ?? ''}" placeholder="—" min="0" step="0.01">
+                            </div>
+                            ${(() => {
+                                const c = s.costs || {};
+                                const total = (c.product || 0) + (c.bangladesh || 0) + (c.freight || 0) + (c.misc || 0);
+                                const ppkg = total > 0 && s.kg > 0 ? (total / s.kg).toFixed(2) : null;
+                                return total > 0
+                                    ? `<p class="imp-cost-total" data-ship-cost-total="${escHtml(s.id)}">
+                                        Total: <strong>$${fmt(total)}</strong>
+                                        &nbsp;&rarr;&nbsp;$${ppkg}/kg
+                                       </p>`
+                                    : `<p class="imp-cost-total imp-cost-total--empty" data-ship-cost-total="${escHtml(s.id)}">Enter costs above to auto-compute price/kg</p>`;
+                            })()}
+                        </div>
                         ${!past ? `<button class="imp-ship-del" data-id="${escHtml(s.id)}">Remove shipment</button>` : ''}
                     </div>
                 </details>`;
@@ -1055,6 +1083,52 @@ const Warehouse = (() => {
                             body: JSON.stringify({ shipments }),
                         });
                         config.shipments = shipments;
+                    } catch (err) {
+                        showToast('Save failed: ' + err.message);
+                    }
+                });
+            });
+
+            // Auto-save + auto-compute cost breakdown fields
+            body.querySelectorAll('.imp-cost-input').forEach(inp => {
+                inp.addEventListener('change', async () => {
+                    const shipId   = inp.dataset.shipId;
+                    const costKey  = inp.dataset.cost;
+                    const val      = parseFloat(inp.value) || null;
+
+                    const shipments = (config.shipments || []).map(s => {
+                        if (s.id !== shipId) return s;
+                        const costs = { ...(s.costs || {}), [costKey]: val };
+                        const total = (costs.product || 0) + (costs.bangladesh || 0) + (costs.freight || 0) + (costs.misc || 0);
+                        const pricePerKg = total > 0 && s.kg > 0 ? Math.round((total / s.kg) * 100) / 100 : s.pricePerKg;
+                        return { ...s, costs, pricePerKg };
+                    });
+
+                    try {
+                        await api('/api/import/forecast', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ shipments }),
+                        });
+                        config.shipments = shipments;
+
+                        // Update the total display inline without full rebuild
+                        const ship = shipments.find(s => s.id === shipId);
+                        if (ship) {
+                            const c = ship.costs || {};
+                            const total = (c.product || 0) + (c.bangladesh || 0) + (c.freight || 0) + (c.misc || 0);
+                            const ppkg  = total > 0 && ship.kg > 0 ? (total / ship.kg).toFixed(2) : null;
+                            const el = body.querySelector(`[data-ship-cost-total="${shipId}"]`);
+                            if (el) {
+                                if (total > 0) {
+                                    el.className = 'imp-cost-total';
+                                    el.innerHTML = `Total: <strong>$${fmt(total)}</strong> &nbsp;&rarr;&nbsp;$${ppkg}/kg`;
+                                } else {
+                                    el.className = 'imp-cost-total imp-cost-total--empty';
+                                    el.textContent = 'Enter costs above to auto-compute price/kg';
+                                }
+                            }
+                        }
                     } catch (err) {
                         showToast('Save failed: ' + err.message);
                     }

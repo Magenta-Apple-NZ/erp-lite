@@ -2112,3 +2112,61 @@ a.xero-inv-linked:hover { background: #d1fae5; border-color: #6ee7b7; }
 @media (max-width: 900px) {
     .imp-overview-grid { grid-template-columns: 1fr; }
 }
+
+/* ── Sales History filter bar ── */
+.sales-filter-bar {
+    display: flex; flex-wrap: wrap; gap: 0.4rem;
+    margin-bottom: 1.25rem; align-items: center;
+}
+.sales-filter-sel {
+    padding: 0.35rem 0.55rem; border: 1px solid #e2e8f0;
+    border-radius: 6px; font-size: 0.8125rem; font-family: inherit;
+    color: #1e293b; background: white; cursor: pointer;
+    outline: none; transition: border-color 0.15s;
+}
+.sales-filter-sel:focus { border-color: #3b82f6; }
+
+/* ── Sales annual data table ── */
+.sales-data-tbl { min-width: 300px; }
+.sales-tbl-month {
+    font-weight: 500; color: #475569; white-space: nowrap;
+    padding: 0.3rem 0.5rem;
+}
+.sales-tbl-num {
+    text-align: right; font-variant-numeric: tabular-nums;
+    padding: 0.3rem 0.5rem; color: #1e293b;
+}
+.sales-tbl-total {
+    font-weight: 700; border-top: 2px solid #e2e8f0;
+    color: #1e293b;
+}
+
+/* ── Shipment cost breakdown ── */
+.imp-cost-section {
+    border-top: 1px solid #e2e8f0; padding-top: 0.65rem; margin-top: 0.1rem;
+}
+.imp-cost-header {
+    font-size: 0.72rem; font-weight: 700; color: #64748b;
+    margin-bottom: 0.5rem; display: flex; align-items: center; gap: 0.4rem;
+}
+.imp-cost-currency {
+    font-size: 0.65rem; font-weight: 500; color: #94a3b8;
+    background: #f1f5f9; border-radius: 3px; padding: 1px 5px;
+}
+.imp-cost-grid {
+    display: grid; grid-template-columns: auto 1fr;
+    gap: 0.3rem 0.5rem; align-items: center; margin-bottom: 0.5rem;
+}
+.imp-cost-label {
+    font-size: 0.75rem; color: #64748b; white-space: nowrap;
+}
+.imp-cost-input {
+    min-width: 0 !important; padding: 0.3rem 0.45rem !important;
+    font-size: 0.8rem !important; text-align: right;
+}
+.imp-cost-total {
+    font-size: 0.78rem; color: #1e40af; margin: 0;
+}
+.imp-cost-total--empty {
+    color: #94a3b8; font-style: italic; font-weight: 400;
+}

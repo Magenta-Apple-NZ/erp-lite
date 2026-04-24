@@ -36,21 +36,26 @@ const SalesView = (() => {
     };
     const MO_NAMES = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 
-    function getMergedData(orderActuals) {
+    // Merge static history + order actuals, optionally restricting to visibleYears
+    function getMergedData(orderActuals, visibleYears) {
         const data = {};
-        for (const [yr, vals] of Object.entries(SALES_HISTORY)) data[yr] = [...vals];
+        for (const [yr, vals] of Object.entries(SALES_HISTORY)) {
+            if (!visibleYears || visibleYears.includes(yr)) data[yr] = [...vals];
+        }
         for (const [ym, kg] of Object.entries(orderActuals || {})) {
             const yr = ym.slice(0, 4);
             const mo = parseInt(ym.slice(5)) - 1;
+            if (visibleYears && !visibleYears.includes(yr)) continue;
             if (!data[yr]) data[yr] = new Array(12).fill(null);
             if (data[yr][mo] === null) data[yr][mo] = kg;
         }
         return data;
     }
 
-    function buildSalesByMonthChart(orderActuals) {
-        const data = getMergedData(orderActuals);
+    // Chart builders accept pre-computed {yr: [12 values]} data object
+    function buildSalesByMonthChart(data) {
         const years = Object.keys(data).sort();
+        if (!years.length) return '<p style="color:#94a3b8;font-size:0.875rem;padding:1rem 0">No data for selected filters.</p>';
         const W = 680, H = 210;
         const pad = { l: 46, r: 12, t: 16, b: 36 };
         const chartW = W - pad.l - pad.r;
@@ -58,7 +63,7 @@ const SalesView = (() => {
         const groupW = chartW / 12;
         const nY = years.length;
         const barW = Math.max(Math.floor(groupW / (nY + 1)), 5);
-        const COLORS = ['#94a3b8', '#3b82f6', '#10b981'];
+        const COLORS = ['#94a3b8', '#3b82f6', '#10b981', '#f59e0b', '#8b5cf6'];
 
         const allVals = Object.values(data).flat().filter(v => v !== null && v > 0);
         const maxV = Math.max(...allVals, 1);
@@ -91,16 +96,15 @@ const SalesView = (() => {
         return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto" xmlns="http://www.w3.org/2000/svg">${grid}${bars}${xLabels}${legend}</svg>`;
     }
 
-    function buildCumulativeChart(orderActuals) {
-        const data = getMergedData(orderActuals);
+    function buildCumulativeChart(data) {
         const years = Object.keys(data).sort();
+        if (!years.length) return '';
         const W = 680, H = 210;
         const pad = { l: 46, r: 12, t: 16, b: 36 };
         const chartW = W - pad.l - pad.r;
         const chartH = H - pad.t - pad.b;
-        const COLORS = ['#94a3b8', '#3b82f6', '#10b981'];
+        const COLORS = ['#94a3b8', '#3b82f6', '#10b981', '#f59e0b', '#8b5cf6'];
 
-        // Running total per year, Jan-start
         const cumData = {};
         for (const yr of years) {
             let run = 0;
@@ -134,6 +138,52 @@ const SalesView = (() => {
         ).join('');
 
         return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto" xmlns="http://www.w3.org/2000/svg">${grid}${lines}${xLabels}${legend}</svg>`;
+    }
+
+    function buildDataTable(data) {
+        const years = Object.keys(data).sort();
+        if (!years.length) return '';
+
+        const yearTotals = years.map(yr =>
+            (data[yr] || []).reduce((s, v) => s + (v || 0), 0)
+        );
+
+        const tableRows = MO_NAMES.map((m, mo) => {
+            const cells = years.map(yr => {
+                const v = data[yr]?.[mo];
+                const display = (v !== null && v !== undefined && v > 0)
+                    ? Math.round(v).toLocaleString('en-NZ')
+                    : '<span style="color:#e2e8f0">—</span>';
+                return `<td class="sales-tbl-num">${display}</td>`;
+            }).join('');
+            return `<tr><td class="sales-tbl-month">${m}</td>${cells}</tr>`;
+        }).join('');
+
+        const totalCells = yearTotals.map(t =>
+            `<td class="sales-tbl-num sales-tbl-total">${Math.round(t).toLocaleString('en-NZ')}</td>`
+        ).join('');
+
+        return `
+        <div class="cat-section" style="margin-bottom:1.5rem;padding-bottom:0">
+            <h2 class="cat-title" style="margin-bottom:0.75rem">Annual Summary <span style="font-size:0.78rem;font-weight:400;color:#94a3b8">kg sold</span></h2>
+            <div class="sales-table-wrap">
+                <table class="sales-table sales-data-tbl">
+                    <thead>
+                        <tr>
+                            <th class="sales-tbl-month">Month</th>
+                            ${years.map(yr => `<th class="sales-tbl-num">${yr}</th>`).join('')}
+                        </tr>
+                    </thead>
+                    <tbody>${tableRows}</tbody>
+                    <tfoot>
+                        <tr>
+                            <td style="font-weight:700;padding:0.45rem 0.5rem;border-top:2px solid #e2e8f0">Total</td>
+                            ${totalCells}
+                        </tr>
+                    </tfoot>
+                </table>
+            </div>
+        </div>`;
     }
 
     function parseSalesCsv(csv) {
@@ -182,7 +232,7 @@ const SalesView = (() => {
         </div>`;
     }
 
-    function wireConnectPanel(config) {
+    function wireConnectPanel(config, bodyEl) {
         document.getElementById('sales-connect-btn')?.addEventListener('click', async () => {
             const url = document.getElementById('sales-sheet-url')?.value.trim();
             if (!url || !url.startsWith('https://docs.google.com/spreadsheets/')) {
@@ -201,7 +251,7 @@ const SalesView = (() => {
                 const resp = await fetch('/api/sales/fetch');
                 if (!resp.ok) throw new Error('Sheet fetch failed — check the URL or sheet permissions.');
                 showToast('Sheet connected — loading data…');
-                await renderBody(document.getElementById('sales-body'));
+                await renderBody(bodyEl);
             } catch (err) {
                 showToast('Connection failed: ' + err.message);
                 btn.disabled = false;
@@ -217,56 +267,8 @@ const SalesView = (() => {
                 body: JSON.stringify({ sheetUrl: null }),
             });
             showToast('Sheet disconnected');
-            await renderBody(document.getElementById('sales-body'));
+            await renderBody(bodyEl);
         });
-    }
-
-    function renderChartPlaceholders() {
-        const charts = [
-            {
-                title: 'Sales by Customer',
-                icon: `<svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-                    <rect x="3" y="12" width="4" height="9"/><rect x="10" y="7" width="4" height="14"/><rect x="17" y="3" width="4" height="18"/>
-                </svg>`,
-            },
-            {
-                title: 'Monthly Sales Trend',
-                icon: `<svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-                    <polyline points="3 17 9 11 13 15 21 7"/>
-                    <polyline points="17 7 21 7 21 11"/>
-                </svg>`,
-            },
-            {
-                title: 'Product Volume',
-                icon: `<svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-                    <rect x="3" y="3" width="7" height="9"/><rect x="14" y="3" width="7" height="5"/><rect x="14" y="12" width="7" height="9"/><rect x="3" y="16" width="7" height="5"/>
-                </svg>`,
-            },
-            {
-                title: 'Dispatch Summary',
-                icon: `<svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-                    <rect x="3" y="10" width="4" height="11"/><rect x="10" y="6" width="4" height="15"/><rect x="17" y="2" width="4" height="19"/>
-                    <polyline points="3 7 9 4 15 7 21 4"/>
-                </svg>`,
-            },
-        ];
-
-        const cards = charts.map(c => `
-        <div class="sales-chart-card">
-            <div class="cat-title" style="margin-bottom:0.75rem">${escHtml(c.title)}</div>
-            <div class="sales-chart-placeholder">
-                <div style="color:#cbd5e1;margin-bottom:0.5rem">${c.icon}</div>
-                <span style="font-size:0.8125rem;color:#94a3b8">${escHtml(c.title)}</span>
-            </div>
-        </div>`).join('');
-
-        return `
-        <div class="sales-charts-grid">
-            ${cards}
-        </div>
-        <p style="margin-top:0.75rem;font-size:0.8125rem;color:#94a3b8;text-align:center">
-            Connect your sales Google Sheet to populate these charts.
-        </p>`;
     }
 
     function renderDataTable(headers, rows) {
@@ -296,32 +298,13 @@ const SalesView = (() => {
     async function renderBody(bodyEl) {
         bodyEl.innerHTML = '<div class="orders-loading">Loading…</div>';
 
-        let orderActuals = {}, storeActuals = [];
-        try {
-            const orders = await api('/api/orders');
-            const byStore = {};
-            for (const o of (orders || [])) {
-                const ym = (o.createdAt || '').slice(0, 7);
-                if (!ym) continue;
-                const kg = (o.lines || []).reduce((s, l) => s + (Number(l.quantity) || 0), 0);
-                if (kg > 0) orderActuals[ym] = (orderActuals[ym] || 0) + kg;
-                const store = o.shipTo?.branch || o.customer?.name || '—';
-                if (!byStore[store]) byStore[store] = { kg: 0, orders: 0, lastOrder: '' };
-                byStore[store].kg += kg;
-                byStore[store].orders++;
-                if ((o.createdAt || '') > byStore[store].lastOrder) byStore[store].lastOrder = o.createdAt || '';
-            }
-            storeActuals = Object.entries(byStore)
-                .map(([name, d]) => ({ name, ...d }))
-                .sort((a, b) => b.kg - a.kg)
-                .slice(0, 10);
-        } catch (e) { /* ok */ }
+        let allOrders = [];
+        try { allOrders = (await api('/api/orders')) || []; } catch (e) { /* ok */ }
 
         let config = null;
         try { config = await api('/api/sales'); } catch (e) { /* ok */ }
 
         let headers = [], rows = [], fetchError = null;
-
         if (config?.sheetUrl) {
             try {
                 const resp = await fetch('/api/sales/fetch');
@@ -336,12 +319,134 @@ const SalesView = (() => {
             }
         }
 
-        const isConnected = !!config?.sheetUrl;
+        // ── Extract filter options from orders ──
+        const custSet = new Set(), branchSet = new Set(), prodSet = new Set();
+        for (const o of allOrders) {
+            if (o.customer?.name) custSet.add(o.customer.name);
+            if (o.shipTo?.branch) branchSet.add(o.shipTo.branch);
+            for (const l of (o.lines || [])) if (l.name) prodSet.add(l.name);
+        }
+
+        // ── Top Stores (unfiltered) ──
+        const byStore = {};
+        for (const o of allOrders) {
+            const ym = (o.createdAt || '').slice(0, 7);
+            if (!ym) continue;
+            const kg = (o.lines || []).reduce((s, l) => s + (Number(l.quantity) || 0), 0);
+            const store = o.shipTo?.branch || o.customer?.name || '—';
+            if (!byStore[store]) byStore[store] = { kg: 0, orders: 0, lastOrder: '' };
+            byStore[store].kg += kg;
+            byStore[store].orders++;
+            if ((o.createdAt || '') > byStore[store].lastOrder) byStore[store].lastOrder = o.createdAt || '';
+        }
+        const storeActuals = Object.entries(byStore)
+            .map(([name, d]) => ({ name, ...d }))
+            .sort((a, b) => b.kg - a.kg)
+            .slice(0, 10);
+
+        // ── Filter state ──
+        let filterCustomer = '', filterBranch = '', filterProduct = '';
+        let yearRange = 3;
+        let salesChartMode = 'monthly';
+
+        function getFilteredActuals() {
+            const filtered = allOrders.filter(o => {
+                if (filterCustomer && o.customer?.name !== filterCustomer) return false;
+                if (filterBranch && o.shipTo?.branch !== filterBranch) return false;
+                if (filterProduct && !(o.lines || []).some(l => l.name === filterProduct)) return false;
+                return true;
+            });
+
+            const actuals = {};
+            for (const o of filtered) {
+                const ym = (o.createdAt || '').slice(0, 7);
+                if (!ym) continue;
+                let kg = 0;
+                if (filterProduct) {
+                    for (const l of (o.lines || [])) {
+                        if (l.name === filterProduct) kg += Number(l.quantity) || 0;
+                    }
+                } else {
+                    kg = (o.lines || []).reduce((s, l) => s + (Number(l.quantity) || 0), 0);
+                }
+                if (kg > 0) actuals[ym] = (actuals[ym] || 0) + kg;
+            }
+            return actuals;
+        }
+
+        function computeChartData(actuals) {
+            const isFiltered = filterCustomer || filterBranch || filterProduct;
+
+            // Determine visible years
+            const allYearsSet = new Set([
+                ...(!isFiltered ? Object.keys(SALES_HISTORY) : []),
+                ...Object.keys(actuals).map(ym => ym.slice(0, 4)),
+            ]);
+            const visibleYears = [...allYearsSet].sort().slice(-yearRange);
+
+            if (isFiltered) {
+                // Orders-only data when filters are active
+                const data = {};
+                for (const [ym, kg] of Object.entries(actuals)) {
+                    const yr = ym.slice(0, 4);
+                    const mo = parseInt(ym.slice(5)) - 1;
+                    if (!visibleYears.includes(yr)) continue;
+                    if (!data[yr]) data[yr] = new Array(12).fill(null);
+                    data[yr][mo] = (data[yr][mo] || 0) + kg;
+                }
+                return data;
+            }
+            return getMergedData(actuals, visibleYears);
+        }
+
+        function rebuildCharts() {
+            const actuals = getFilteredActuals();
+            const data    = computeChartData(actuals);
+
+            const chartHtml = salesChartMode === 'cumulative'
+                ? buildCumulativeChart(data)
+                : buildSalesByMonthChart(data);
+
+            const chartArea = document.getElementById('sales-chart-area');
+            if (chartArea) chartArea.innerHTML = chartHtml;
+
+            const tableArea = document.getElementById('sales-data-table');
+            if (tableArea) tableArea.innerHTML = buildDataTable(data);
+        }
+
+        // ── Build filter bar HTML ──
+        const makeOpts = (arr, val, allLabel) =>
+            `<option value="">All ${allLabel}</option>` +
+            arr.map(v => `<option value="${escHtml(v)}"${v === val ? ' selected' : ''}>${escHtml(v)}</option>`).join('');
+
+        const filterBar = `
+        <div class="sales-filter-bar">
+            <select class="sales-filter-sel" id="sf-customer">
+                ${makeOpts([...custSet].sort(), filterCustomer, 'Customers')}
+            </select>
+            <select class="sales-filter-sel" id="sf-branch">
+                ${makeOpts([...branchSet].sort(), filterBranch, 'Branches')}
+            </select>
+            <select class="sales-filter-sel" id="sf-product">
+                ${makeOpts([...prodSet].sort(), filterProduct, 'Products')}
+            </select>
+            <select class="sales-filter-sel" id="sf-range">
+                <option value="3"${yearRange === 3 ? ' selected' : ''}>3 years</option>
+                <option value="4"${yearRange === 4 ? ' selected' : ''}>4 years</option>
+                <option value="5"${yearRange === 5 ? ' selected' : ''}>5 years</option>
+            </select>
+            <button class="btn-secondary btn-sm" id="sf-clear">Clear</button>
+        </div>`;
+
+        // ── Initial data ──
+        const initActuals = getFilteredActuals();
+        const initData    = computeChartData(initActuals);
+
         const hasData = rows.length > 0;
 
-        let salesChartMode = 'monthly';
         const chartsPanel = `
         <div id="sales-charts-panel">
+            ${filterBar}
             <div class="cat-section" style="margin-bottom:1.5rem">
                 <div class="cat-section-head">
                     <div>
@@ -353,31 +458,32 @@ const SalesView = (() => {
                         <button class="imp-view-btn" id="sales-mode-cumulative">Cumulative</button>
                     </div>
                 </div>
-                <div style="margin-top:0.75rem" id="sales-chart-area">${buildSalesByMonthChart(orderActuals)}</div>
+                <div style="margin-top:0.75rem" id="sales-chart-area">${buildSalesByMonthChart(initData)}</div>
             </div>
-        ${storeActuals.length ? `
-        <div class="cat-section" style="margin-bottom:1.5rem">
-            <div class="cat-section-head">
-                <div>
-                    <h2 class="cat-title">Top Stores</h2>
-                    <p class="cat-sub">By kg ordered, all time from Hub orders.</p>
+            <div id="sales-data-table">${buildDataTable(initData)}</div>
+            ${storeActuals.length ? `
+            <div class="cat-section" style="margin-bottom:1.5rem">
+                <div class="cat-section-head">
+                    <div>
+                        <h2 class="cat-title">Top Stores</h2>
+                        <p class="cat-sub">By kg ordered, all time from Hub orders.</p>
+                    </div>
                 </div>
-            </div>
-            <div class="sales-table-wrap" style="margin-top:0.5rem">
-                <table class="sales-table">
-                    <thead><tr><th>#</th><th>Store / Branch</th><th style="text-align:right">kg</th><th style="text-align:right">Orders</th><th style="text-align:right">Last Order</th></tr></thead>
-                    <tbody>
-                        ${storeActuals.map((s, i) => `<tr>
-                            <td style="color:#94a3b8;font-size:0.78rem">${i + 1}</td>
-                            <td>${escHtml(s.name)}</td>
-                            <td style="text-align:right;font-weight:600">${s.kg.toLocaleString('en-NZ')}</td>
-                            <td style="text-align:right;color:#64748b">${s.orders}</td>
-                            <td style="text-align:right;color:#94a3b8;font-size:0.8rem">${s.lastOrder ? s.lastOrder.slice(0,10) : '—'}</td>
-                        </tr>`).join('')}
-                    </tbody>
-                </table>
-            </div>
-        </div>` : ''}
+                <div class="sales-table-wrap" style="margin-top:0.5rem">
+                    <table class="sales-table">
+                        <thead><tr><th>#</th><th>Store / Branch</th><th style="text-align:right">kg</th><th style="text-align:right">Orders</th><th style="text-align:right">Last Order</th></tr></thead>
+                        <tbody>
+                            ${storeActuals.map((s, i) => `<tr>
+                                <td style="color:#94a3b8;font-size:0.78rem">${i + 1}</td>
+                                <td>${escHtml(s.name)}</td>
+                                <td style="text-align:right;font-weight:600">${s.kg.toLocaleString('en-NZ')}</td>
+                                <td style="text-align:right;color:#64748b">${s.orders}</td>
+                                <td style="text-align:right;color:#94a3b8;font-size:0.8rem">${s.lastOrder ? s.lastOrder.slice(0,10) : '—'}</td>
+                            </tr>`).join('')}
+                        </tbody>
+                    </table>
+                </div>
+            </div>` : ''}
         </div>`;
 
         const settingsPanel = `
@@ -427,6 +533,7 @@ const SalesView = (() => {
 
         bodyEl.innerHTML = tabBar + chartsPanel + settingsPanel;
 
+        // ── Tab switching ──
         document.getElementById('sales-tab-charts')?.addEventListener('click', () => {
             document.getElementById('sales-charts-panel').style.display = '';
             document.getElementById('sales-settings-panel').style.display = 'none';
@@ -440,22 +547,35 @@ const SalesView = (() => {
             document.getElementById('sales-tab-charts').classList.remove('active');
         });
 
-        wireConnectPanel(config);
-
+        // ── Chart mode toggle ──
         document.getElementById('sales-mode-monthly')?.addEventListener('click', () => {
             salesChartMode = 'monthly';
-            document.getElementById('sales-chart-area').innerHTML = buildSalesByMonthChart(orderActuals);
             document.getElementById('sales-mode-monthly')?.classList.add('active');
             document.getElementById('sales-mode-cumulative')?.classList.remove('active');
+            rebuildCharts();
         });
         document.getElementById('sales-mode-cumulative')?.addEventListener('click', () => {
             salesChartMode = 'cumulative';
-            document.getElementById('sales-chart-area').innerHTML = buildCumulativeChart(orderActuals);
             document.getElementById('sales-mode-cumulative')?.classList.add('active');
             document.getElementById('sales-mode-monthly')?.classList.remove('active');
+            rebuildCharts();
         });
 
-        document.getElementById('sales-refresh-btn')?.addEventListener('click', () => renderBody(bodyEl));
+        // ── Filters ──
+        document.getElementById('sf-customer')?.addEventListener('change', e => { filterCustomer = e.target.value; rebuildCharts(); });
+        document.getElementById('sf-branch')?.addEventListener('change', e => { filterBranch = e.target.value; rebuildCharts(); });
+        document.getElementById('sf-product')?.addEventListener('change', e => { filterProduct = e.target.value; rebuildCharts(); });
+        document.getElementById('sf-range')?.addEventListener('change', e => { yearRange = parseInt(e.target.value); rebuildCharts(); });
+        document.getElementById('sf-clear')?.addEventListener('click', () => {
+            filterCustomer = ''; filterBranch = ''; filterProduct = ''; yearRange = 3;
+            document.getElementById('sf-customer').value = '';
+            document.getElementById('sf-branch').value = '';
+            document.getElementById('sf-product').value = '';
+            document.getElementById('sf-range').value = '3';
+            rebuildCharts();
+        });
+
+        wireConnectPanel(config, bodyEl);
 
         document.getElementById('sales-webhook-save-btn')?.addEventListener('click', async () => {
             const url = document.getElementById('sales-webhook-url')?.value.trim();
