@@ -21,7 +21,7 @@ export async function onRequestGet({ env }) {
 export async function onRequestPost({ env, request }) {
     try {
         const body = await request.json();
-        const { customer, poNumber, orderNumber, shipTo, lines, packingNotes } = body;
+        const { customer, poNumber, shipTo, lines, packingNotes } = body;
 
         if (!customer?.name) {
             return errResponse('customer.name is required', 400);
@@ -35,16 +35,9 @@ export async function onRequestPost({ env, request }) {
             }
         }
 
-        let id;
-        if (orderNumber && /^\d+$/.test(String(orderNumber).trim())) {
-            id = `PKS-${String(orderNumber).trim()}`;
-            const existing = await env.ORDERS_KV.get('order:' + id);
-            if (existing) return errResponse(`Order number ${id} already exists`, 409);
-        } else {
-            const counter = parseInt(await env.ORDERS_KV.get('order_counter') || '0') + 1;
-            await env.ORDERS_KV.put('order_counter', String(counter));
-            id = `PKS-${String(counter).padStart(4, '0')}`;
-        }
+        const counter = parseInt(await env.ORDERS_KV.get('order_counter') || '0') + 1;
+        await env.ORDERS_KV.put('order_counter', String(counter));
+        const id = `PKS-${String(counter).padStart(4, '0')}`;
 
         const order = {
             id,
