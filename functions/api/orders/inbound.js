@@ -15,25 +15,41 @@ export async function onRequestPost({ env, request }) {
     try {
         const body = await request.json();
 
-        // Accept either the Hub's native format or a Farmlands/extension payload.
-        // Native format:  { customer, poNumber, shipTo, lines, packingNotes, source }
-        // Extension format (Farmlands): { customerName, poNumber, shipTo, items, source }
+        // Accept multiple payload shapes:
+        //   Native Hub:    { customer, poNumber, shipTo (obj), lines, packingNotes, source }
+        //   Extension:     { customerName, poNumber, shipTo (obj), items, source }
+        //   Make/DocuPipe: { po, ship_to (array), line_items, invoice_no, ... }
+
+        // ── Customer ──
         const customer = body.customer ?? {
             xeroContactId: body.xeroContactId || '',
-            name: body.customerName || '',
+            name: body.customerName || body.customer_name || '',
         };
+        // Derive from ship_to[0] (branch/customer name) when not explicitly provided
+        if (!customer.name && Array.isArray(body.ship_to) && body.ship_to[0]) {
+            customer.name = body.ship_to[0];
+        }
+        if (!customer.name) return errResponse('customer name is required (add customerName or ship_to[0])', 400);
 
-        if (!customer.name) return errResponse('customer name is required', 400);
+        // ── shipTo: accept object or address-lines array ──
+        let shipTo = body.shipTo || body.ship_to || {};
+        if (Array.isArray(shipTo)) {
+            shipTo = {
+                branch:  shipTo[0] || '',
+                address: shipTo.slice(1).filter(Boolean).join(', '),
+            };
+        }
 
-        const rawLines = body.lines ?? body.items ?? [];
+        // ── Line items: accept lines / items / line_items ──
+        const rawLines = body.lines ?? body.items ?? body.line_items ?? [];
         if (!rawLines.length) return errResponse('at least one line item is required', 400);
 
         const lines = rawLines.map(l => ({
-            sku:         l.sku || l.itemCode || '',
-            description: l.description || l.name || '',
+            sku:         l.sku || l.itemCode || l.item_code || '',
+            description: l.description || l.name || l.item_description || '',
             quantity:    Number(l.quantity ?? l.qty ?? 1),
-            unitPrice:   Number(l.unitPrice ?? l.price ?? 0),
-            accountCode: l.accountCode || '200',
+            unitPrice:   Number(l.unitPrice ?? l.unit_price ?? l.price ?? 0),
+            accountCode: l.accountCode || l.account_code || '200',
         })).filter(l => l.description);
 
         if (!lines.length) return errResponse('no valid line items', 400);
@@ -48,12 +64,12 @@ export async function onRequestPost({ env, request }) {
             createdAt:        new Date().toISOString(),
             updatedAt:        new Date().toISOString(),
             status:           'new',
-            source:           body.source || 'extension',
+            source:           body.source || 'inbound',
             customer,
-            poNumber:         body.poNumber || '',
-            shipTo:           body.shipTo || {},
+            poNumber:         body.poNumber || body.po || body.invoice_no || '',
+            shipTo,
             lines,
-            packingNotes:     body.packingNotes || body.notes || '',
+            packingNotes:     body.packingNotes || body.packing_notes || body.notes || '',
             xeroInvoiceId:    null,
             xeroInvoiceNumber: null,
         };
