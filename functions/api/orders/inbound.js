@@ -40,16 +40,17 @@ export async function onRequestPost({ env, request }) {
             };
         }
 
-        // ── Line items: accept lines / items / line_items ──
-        const rawLines = body.lines ?? body.items ?? body.line_items ?? [];
+        // ── Line items: accept lines / items / line_items; object or array ──
+        let rawLines = body.lines ?? body.items ?? body.line_items ?? [];
+        if (!Array.isArray(rawLines)) rawLines = [rawLines];
         if (!rawLines.length) return errResponse('at least one line item is required', 400);
 
         const lines = rawLines.map(l => ({
-            sku:         l.sku || l.itemCode || l.item_code || '',
-            description: l.description || l.name || l.item_description || '',
-            quantity:    Number(l.quantity ?? l.qty ?? 1),
-            unitPrice:   Number(l.unitPrice ?? l.unit_price ?? l.price ?? 0),
-            accountCode: l.accountCode || l.account_code || '200',
+            sku:         l.sku || l.itemCode || l.ItemCode || l.item_code || '',
+            description: l.description || l.Description || l.name || l.item_description || '',
+            quantity:    Number(l.quantity ?? l.Quantity ?? l.qty ?? 1),
+            unitPrice:   Number(l.unitPrice ?? l.UnitAmount ?? l.unit_price ?? l.price ?? 0),
+            accountCode: (l.accountCode || l.AccountCode || l.account_code || '200').split(' ')[0],
         })).filter(l => l.description);
 
         if (!lines.length) return errResponse('no valid line items', 400);
