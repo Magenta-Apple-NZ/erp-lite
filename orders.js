@@ -209,6 +209,12 @@ const Orders = (() => {
                                 <div class="overflow-dropdown">
                                     <a class="overflow-item" href="#orders/${o.id}">View Packing Slip</a>
                                     ${xeroUrl ? `<a class="overflow-item" href="${xeroUrl}" target="_blank" rel="noopener">Open in Xero ↗</a>` : ''}
+                                    <button class="overflow-item"
+                                        data-pa-to="${escHtml(o.shipTo?.branch || o.customer.name)}"
+                                        data-pa-addr="${escHtml(o.shipTo?.address || '')}"
+                                        data-pa-ref="${escHtml(o.xeroInvoiceNumber || o.id)}"
+                                        data-pa-id="${o.id}"
+                                        data-pa-po="${escHtml(o.poNumber || '')}">Print Address</button>
                                     <button class="overflow-item overflow-danger" data-delete-order="${o.id}">Delete</button>
                                 </div>
                             </div>
@@ -221,6 +227,17 @@ const Orders = (() => {
 
         // Row navigation (delegated — skips overflow menu clicks)
         body.querySelector('.orders-table-wrap').addEventListener('click', e => {
+            const printBtn = e.target.closest('[data-pa-id]');
+            if (printBtn) {
+                printAddressPopup({
+                    id:               printBtn.dataset.paId,
+                    shipTo:           { branch: printBtn.dataset.paTo, address: printBtn.dataset.paAddr },
+                    customer:         { name: printBtn.dataset.paTo },
+                    xeroInvoiceNumber: printBtn.dataset.paRef !== printBtn.dataset.paId ? printBtn.dataset.paRef : null,
+                    poNumber:         printBtn.dataset.paPo || '',
+                });
+                return;
+            }
             const deleteBtn = e.target.closest('[data-delete-order]');
             if (deleteBtn) {
                 const orderId = deleteBtn.dataset.deleteOrder;
@@ -607,10 +624,10 @@ const Orders = (() => {
     let lineCount = 0;
 
     function getPriceForQty(item, qty) {
-        if (item.pb3Quantity && qty >= item.pb3Quantity) return item.pb3Price;
-        if (item.pb2Quantity && qty >= item.pb2Quantity) return item.pb2Price;
-        if (item.pb1Quantity && qty >= item.pb1Quantity) return item.pb1Price;
-        return item.defaultPrice;
+        if (item.pb3Quantity && qty >= item.pb3Quantity) return item.pb3Price ?? item.defaultPrice ?? 0;
+        if (item.pb2Quantity && qty >= item.pb2Quantity) return item.pb2Price ?? item.defaultPrice ?? 0;
+        if (item.pb1Quantity && qty >= item.pb1Quantity) return item.pb1Price ?? item.defaultPrice ?? 0;
+        return item.defaultPrice ?? 0;
     }
 
     function addLineItem(catalogItems = [], prefill = null) {
@@ -675,14 +692,14 @@ const Orders = (() => {
 
         // Item autocomplete from catalog (shared pick logic)
         if (catalogItems.length) {
-            function pickCatalogItem(item) {
+            const pickCatalogItem = item => {
                 tr._catalogItem = item;
                 descEl.value = item.name;
                 skuEl.value = item.id;
                 const qty = parseFloat(qtyEl.value) || 1;
-                priceEl.value = getPriceForQty(item, qty).toFixed(2);
+                priceEl.value = (getPriceForQty(item, qty) ?? 0).toFixed(2);
                 updateRow();
-            }
+            };
 
             // SKU field autocomplete
             const skuDropdown = document.createElement('div');
@@ -1029,6 +1046,71 @@ const Orders = (() => {
         </div>`;
     }
 
+    function printAddressPopup(order) {
+        const to   = order.shipTo?.branch || order.customer?.name || '';
+        const addr = order.shipTo?.address || '';
+        const ref  = order.xeroInvoiceNumber || order.id;
+        const po   = order.poNumber ? `PO: ${order.poNumber}` : '';
+        // Landscape: 297mm × 210mm — open window at roughly that aspect ratio
+        const win = window.open('', '_blank', 'width=1100,height=780');
+        win.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8">
+            <title>Address – ${escHtml(ref)}</title>
+            <style>
+            * { box-sizing: border-box; margin: 0; padding: 0; }
+            body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: white; }
+            .page {
+                width: 297mm; min-height: 210mm;
+                padding: 16mm 22mm 14mm;
+                display: flex; flex-direction: column;
+            }
+            .addr-header {
+                display: flex; justify-content: space-between; align-items: flex-start;
+                border-bottom: 2px solid #1e293b; padding-bottom: 7mm; margin-bottom: 9mm;
+            }
+            .addr-from { font-size: 9pt; color: #475569; line-height: 1.6; }
+            .addr-from strong { display: block; font-size: 11pt; color: #1e293b; margin-bottom: 2mm; }
+            .addr-label {
+                font-size: 9pt; font-weight: 700; text-transform: uppercase;
+                letter-spacing: 0.12em; color: #94a3b8; margin-bottom: 5mm;
+            }
+            .addr-to { flex: 1; }
+            .addr-name { font-size: 36pt; font-weight: 700; color: #1e293b; line-height: 1.15; margin-bottom: 5mm; }
+            .addr-street { font-size: 22pt; color: #334155; line-height: 1.5; white-space: pre-line; }
+            .addr-refs {
+                margin-top: auto; padding-top: 8mm; border-top: 1px solid #e2e8f0;
+                font-size: 10pt; color: #64748b; display: flex; gap: 12mm;
+            }
+            @media print { @page { size: A4 landscape; margin: 0; } body { print-color-adjust: exact; } }
+            </style>
+            </head><body>
+            <div class="page">
+                <div class="addr-header">
+                    <div class="addr-from">
+                        <strong>Enviroware</strong>
+                        93 Tetley Road, Katikati<br>
+                        orders@primetie.co.nz · (07) 549-1716
+                    </div>
+                    <div style="text-align:right; font-size:10pt; color:#64748b">
+                        <strong style="color:#1e293b">${escHtml(ref)}</strong>
+                        ${po ? `<br>${escHtml(po)}` : ''}
+                    </div>
+                </div>
+                <div class="addr-label">Deliver to</div>
+                <div class="addr-to">
+                    <div class="addr-name">${escHtml(to)}</div>
+                    ${addr ? `<div class="addr-street">${escHtml(addr)}</div>` : ''}
+                </div>
+                <div class="addr-refs">
+                    <span>Order: <strong>${escHtml(order.id)}</strong></span>
+                    ${po ? `<span>${escHtml(po)}</span>` : ''}
+                </div>
+            </div>
+            </body></html>`);
+        win.document.close();
+        win.focus();
+        setTimeout(() => { win.print(); }, 400);
+    }
+
     function wireDetailButtons(order) {
         const orderId = order.id;
 
@@ -1045,67 +1127,7 @@ const Orders = (() => {
 
         // Print address sheet
         document.getElementById('print-address-btn')?.addEventListener('click', () => {
-            const to = order.shipTo?.branch || order.customer.name;
-            const addr = order.shipTo?.address || '';
-            const ref = order.xeroInvoiceNumber || order.id;
-            const po  = order.poNumber ? `PO: ${order.poNumber}` : '';
-            const win = window.open('', '_blank', 'width=794,height=1123');
-            win.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8">
-                <title>Address – ${escHtml(ref)}</title>
-                <style>
-                * { box-sizing: border-box; margin: 0; padding: 0; }
-                body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: white; }
-                .page {
-                    width: 210mm; min-height: 297mm;
-                    padding: 20mm 20mm 15mm;
-                    display: flex; flex-direction: column;
-                }
-                .addr-header {
-                    display: flex; justify-content: space-between; align-items: flex-start;
-                    border-bottom: 2px solid #1e293b; padding-bottom: 8mm; margin-bottom: 10mm;
-                }
-                .addr-from { font-size: 9pt; color: #475569; line-height: 1.6; }
-                .addr-from strong { display: block; font-size: 11pt; color: #1e293b; margin-bottom: 2mm; }
-                .addr-label {
-                    font-size: 9pt; font-weight: 700; text-transform: uppercase;
-                    letter-spacing: 0.12em; color: #94a3b8; margin-bottom: 6mm;
-                }
-                .addr-to { flex: 1; }
-                .addr-name { font-size: 28pt; font-weight: 700; color: #1e293b; line-height: 1.2; margin-bottom: 6mm; }
-                .addr-street { font-size: 20pt; color: #334155; line-height: 1.5; white-space: pre-line; }
-                .addr-refs {
-                    margin-top: auto; padding-top: 10mm; border-top: 1px solid #e2e8f0;
-                    font-size: 10pt; color: #64748b; display: flex; gap: 12mm;
-                }
-                @media print { @page { size: A4; margin: 0; } body { print-color-adjust: exact; } }
-                </style>
-                </head><body>
-                <div class="page">
-                    <div class="addr-header">
-                        <div class="addr-from">
-                            <strong>Enviroware</strong>
-                            93 Tetley Road, Katikati<br>
-                            orders@primetie.co.nz · (07) 549-1716
-                        </div>
-                        <div style="text-align:right; font-size:10pt; color:#64748b">
-                            <strong style="color:#1e293b">${escHtml(ref)}</strong>
-                            ${po ? `<br>${escHtml(po)}` : ''}
-                        </div>
-                    </div>
-                    <div class="addr-label">Deliver to</div>
-                    <div class="addr-to">
-                        <div class="addr-name">${escHtml(to)}</div>
-                        ${addr ? `<div class="addr-street">${escHtml(addr)}</div>` : ''}
-                    </div>
-                    <div class="addr-refs">
-                        <span>Order: <strong>${escHtml(orderId)}</strong></span>
-                        ${po ? `<span>${escHtml(po)}</span>` : ''}
-                    </div>
-                </div>
-                </body></html>`);
-            win.document.close();
-            win.focus();
-            setTimeout(() => { win.print(); }, 400);
+            printAddressPopup(order);
         });
 
         // Print — opens clean popup, advances new → reviewed

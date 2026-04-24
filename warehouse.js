@@ -288,6 +288,7 @@ const Warehouse = (() => {
         <div class="wh-tabs">
             <button class="wh-tab ${activeTab === 'stocktake' ? 'active' : ''}" data-tab="stocktake">Stocktake</button>
             <button class="wh-tab ${activeTab === 'imports' ? 'active' : ''}" data-tab="imports">Imports</button>
+            <button class="wh-tab ${activeTab === 'sales' ? 'active' : ''}" data-tab="sales">Sales</button>
         </div>
         <div id="wh-body"><div class="orders-loading">Loading…</div></div>`;
 
@@ -298,11 +299,13 @@ const Warehouse = (() => {
                 activeTab = btn.dataset.tab;
                 if (activeTab === 'stocktake') await renderStocktake();
                 else if (activeTab === 'imports') await renderImports();
+                else if (activeTab === 'sales') await renderSales();
             });
         });
 
         if (activeTab === 'stocktake') await renderStocktake();
-        else await renderImports();
+        else if (activeTab === 'imports') await renderImports();
+        else await renderSales();
     }
 
     async function renderStocktake() {
@@ -962,6 +965,153 @@ const Warehouse = (() => {
         if (!iso) return '—';
         return new Date(iso).toLocaleString('en-NZ', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
     }
+
+    // ══════════════════════════════════════════
+    //  SALES TAB
+    // ══════════════════════════════════════════
+
+    function parseSalesCsv(csv) {
+        const lines = csv.trim().split(/\r?\n/);
+        if (lines.length < 2) return { headers: [], rows: [] };
+        const headers = lines[0].split(',').map(h => h.replace(/^"|"$/g, '').trim());
+        const rows = lines.slice(1).map(line => {
+            const cells = [];
+            let cur = '', inQ = false;
+            for (const ch of line) {
+                if (ch === '"') { inQ = !inQ; }
+                else if (ch === ',' && !inQ) { cells.push(cur.trim()); cur = ''; }
+                else { cur += ch; }
+            }
+            cells.push(cur.trim());
+            return cells;
+        }).filter(r => r.some(c => c));
+        return { headers, rows };
+    }
+
+    function salesConnectUiHtml(currentUrl) {
+        return `
+        <div class="imp-connect-panel">
+            <h3 class="imp-connect-title">Connect Google Sheet</h3>
+            <ol class="imp-connect-steps">
+                <li>Open your spreadsheet in Google Sheets</li>
+                <li>File → Share → <strong>Publish to web</strong></li>
+                <li>Select the correct sheet tab, choose <strong>CSV</strong>, click Publish</li>
+                <li>Copy the URL and paste it below</li>
+            </ol>
+            <div class="imp-connect-row">
+                <input type="url" id="sales-sheet-url" class="imp-url-input"
+                    placeholder="https://docs.google.com/spreadsheets/d/…/pub?…&output=csv"
+                    value="${escHtml(currentUrl)}">
+                <button class="btn-primary btn-sm" id="sales-connect-btn">Connect</button>
+                ${currentUrl ? `<button class="btn-secondary btn-sm" id="sales-disconnect-btn">Disconnect</button>` : ''}
+            </div>
+            <p class="imp-connect-note">The URL is stored privately and only fetched server-side — your sheet does not need to be public.</p>
+        </div>`;
+    }
+
+    function wireSalesConnectUi() {
+        document.getElementById('sales-connect-btn')?.addEventListener('click', async () => {
+            const url = document.getElementById('sales-sheet-url')?.value.trim();
+            if (!url || !url.startsWith('https://docs.google.com/spreadsheets/')) {
+                showToast('Please paste a valid Google Sheets URL');
+                return;
+            }
+            const btn = document.getElementById('sales-connect-btn');
+            btn.disabled = true; btn.textContent = 'Connecting…';
+            try {
+                await api('/api/sales', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ sheetUrl: url }),
+                });
+                showToast('Sheet connected — loading data…');
+                await renderSales();
+            } catch (err) {
+                showToast('Connection failed: ' + err.message);
+                btn.disabled = false; btn.textContent = 'Connect';
+            }
+        });
+
+        document.getElementById('sales-disconnect-btn')?.addEventListener('click', async () => {
+            if (!confirm('Remove the connected sheet?')) return;
+            await api('/api/sales', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ sheetUrl: null }),
+            });
+            showToast('Sheet disconnected');
+            await renderSales();
+        });
+    }
+
+    async function renderSales() {
+        const body = document.getElementById('wh-body');
+        body.innerHTML = '<div class="orders-loading">Loading…</div>';
+
+        let config = null;
+        try { config = await api('/api/sales'); } catch (e) { /* ok */ }
+
+        let headers = [], rows = [];
+        if (config?.sheetUrl) {
+            try {
+                const resp = await fetch('/api/sales/fetch');
+                if (resp.ok) {
+                    const csv = await resp.text();
+                    ({ headers, rows } = parseSalesCsv(csv));
+                }
+            } catch (e) { /* show connect panel on error */ }
+        }
+
+        if (!rows.length) {
+            body.innerHTML = `
+            <div class="cat-section" style="max-width:640px">
+                <div class="cat-section-head">
+                    <div>
+                        <h2 class="cat-title">Sales Data</h2>
+                        <p class="cat-sub">Connect a Google Sheet to view and track sales data.</p>
+                    </div>
+                </div>
+                ${config?.sheetUrl ? '<div class="imp-connect-status imp-connect-error"><svg width="10" height="10" viewBox="0 0 10 10" fill="#dc2626"><circle cx="5" cy="5" r="5"/></svg> Sheet connected but returned no data — check the URL or sheet format.</div>' : ''}
+                ${salesConnectUiHtml(config?.sheetUrl || '')}
+            </div>`;
+            wireSalesConnectUi();
+            return;
+        }
+
+        const sheetUrl = config?.sheetUrl || '';
+        body.innerHTML = `
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem;flex-wrap:wrap;gap:0.5rem">
+            <div class="imp-connect-status">
+                <svg width="10" height="10" viewBox="0 0 10 10" fill="#059669"><circle cx="5" cy="5" r="5"/></svg>
+                Live from Google Sheets &mdash; ${rows.length} row${rows.length !== 1 ? 's' : ''}
+            </div>
+            <div style="display:flex;gap:0.5rem">
+                <button class="btn-secondary btn-sm" id="sales-refresh-btn">↻ Refresh</button>
+                <button class="btn-secondary btn-sm" id="sales-settings-btn">⚙ Settings</button>
+            </div>
+        </div>
+        <div id="sales-settings-panel" style="display:none;margin-bottom:1rem"></div>
+        <div class="sales-table-wrap">
+            <table class="sales-table">
+                <thead><tr>${headers.map(h => `<th>${escHtml(h)}</th>`).join('')}</tr></thead>
+                <tbody>
+                    ${rows.slice(0, 500).map(r =>
+                        `<tr>${headers.map((_, i) => `<td>${escHtml(r[i] ?? '')}</td>`).join('')}</tr>`
+                    ).join('')}
+                </tbody>
+            </table>
+        </div>
+        ${rows.length > 500 ? `<p class="wh-empty" style="text-align:center;margin-top:0.75rem">Showing first 500 of ${rows.length} rows</p>` : ''}`;
+
+        document.getElementById('sales-refresh-btn')?.addEventListener('click', () => renderSales());
+
+        document.getElementById('sales-settings-btn')?.addEventListener('click', () => {
+            const panel = document.getElementById('sales-settings-panel');
+            if (panel.style.display !== 'none') { panel.style.display = 'none'; return; }
+            panel.style.display = '';
+            panel.innerHTML = salesConnectUiHtml(sheetUrl);
+            wireSalesConnectUi();
+        });
     }
 
     return { render };
