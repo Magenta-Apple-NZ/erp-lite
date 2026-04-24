@@ -539,6 +539,7 @@ function renderDashboardWidgets(config) {
     }
 
     el.innerHTML = actionsHtml + fxHtml +
+        '<div id="db-alerts-container"></div>' +
         '<div class="db-charts-row">' +
         '<div class="db-chart-card" id="db-sales-chart"><span class="db-chart-loading">Loading sales…</span></div>' +
         '<div class="db-chart-card" id="db-orders-chart"><span class="db-chart-loading">Loading orders…</span></div>' +
@@ -601,6 +602,30 @@ function renderDashboardWidgets(config) {
 
         const ordersEl = document.getElementById('db-orders-chart');
         if (ordersEl) ordersEl.innerHTML = drawMiniBar(cntVals, moLabels, '#7c3aed', `Orders · ${cntVals[cntVals.length-1]} this month`, 'orders');
+
+        // Alerts: orders needing attention
+        const eh = s => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        const needsAction = (orders || []).filter(o => o.status === 'new' || o.status === 'reviewed');
+        const badge = document.getElementById('nav-orders-badge');
+        if (badge) { badge.textContent = needsAction.length; badge.style.display = needsAction.length ? '' : 'none'; }
+        const alertsEl = document.getElementById('db-alerts-container');
+        if (alertsEl && needsAction.length > 0) {
+            const statusLabel = s => s === 'new' ? 'New' : 'Awaiting Review';
+            alertsEl.innerHTML = `<div class="db-alerts">
+                <div class="db-alerts-header">
+                    <span class="db-alerts-title">Needs Attention</span>
+                    <span class="db-alerts-count">${needsAction.length} order${needsAction.length !== 1 ? 's' : ''}</span>
+                </div>
+                <div class="db-alerts-list">
+                    ${needsAction.slice(0, 5).map(o => `<a class="db-alert-item" href="#orders/${o.id}">
+                        <span class="db-alert-label">${eh(o.customer?.name || 'Unknown customer')}</span>
+                        <span class="db-alert-status db-alert-status--${o.status}">${statusLabel(o.status)}</span>
+                        <span class="db-alert-meta">${(o.createdAt || '').slice(0, 10)}</span>
+                    </a>`).join('')}
+                    ${needsAction.length > 5 ? `<span class="db-alert-more">+${needsAction.length - 5} more — <a href="#orders">view all</a></span>` : ''}
+                </div>
+            </div>`;
+        }
     }).catch(() => {
         ['db-sales-chart','db-orders-chart'].forEach(id => {
             const el2 = document.getElementById(id);
@@ -800,7 +825,7 @@ document.addEventListener('keydown', e => {
 });
 
 // ── Hash router ──
-const VIEWS = ['view-dashboard', 'view-orders', 'view-orders-new', 'view-orders-detail', 'view-orders-edit', 'view-warehouse', 'view-admin', 'view-imports', 'view-sales'];
+const VIEWS = ['view-dashboard', 'view-orders', 'view-orders-new', 'view-orders-detail', 'view-orders-edit', 'view-warehouse', 'view-admin', 'view-imports', 'view-sales', 'view-calendar'];
 
 function setActiveView(viewId) {
     VIEWS.forEach(id => {
@@ -889,6 +914,13 @@ async function handleRoute() {
         return;
     }
 
+    if (hash === 'calendar') {
+        setActiveView('view-calendar');
+        setActiveNav('nav-calendar');
+        await CalendarView.render(document.getElementById('calendar-container'));
+        return;
+    }
+
     // Unknown hash — fall back to dashboard
     location.hash = '';
 }
@@ -907,6 +939,11 @@ if (ordersNavItem) {
     ordersNavItem.classList.remove('nav-item--soon');
     ordersNavItem.id = 'nav-orders';
     ordersNavItem.querySelector('.nav-soon-badge')?.remove();
+    const ordersBadge = document.createElement('span');
+    ordersBadge.className = 'nav-badge';
+    ordersBadge.id = 'nav-orders-badge';
+    ordersBadge.style.display = 'none';
+    ordersNavItem.appendChild(ordersBadge);
     ordersNavItem.addEventListener('click', e => {
         e.preventDefault();
         location.hash = 'orders';
@@ -951,6 +988,18 @@ if (salesNavItem) {
     salesNavItem.addEventListener('click', e => {
         e.preventDefault();
         location.hash = 'sales';
+    });
+}
+
+// Make Calendar nav item active
+const calendarNavItem = document.querySelector('.nav-item--soon[data-phase="Calendar"]');
+if (calendarNavItem) {
+    calendarNavItem.classList.remove('nav-item--soon');
+    calendarNavItem.id = 'nav-calendar';
+    calendarNavItem.querySelector('.nav-soon-badge')?.remove();
+    calendarNavItem.addEventListener('click', e => {
+        e.preventDefault();
+        location.hash = 'calendar';
     });
 }
 

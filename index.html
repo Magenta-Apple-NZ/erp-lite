@@ -34,6 +34,8 @@
                 Dashboard
             </a>
 
+            <span class="nav-section-label">Business</span>
+
             <a class="nav-item nav-item--soon" href="#" data-phase="Phase 1">
                 <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
                     <path d="M5 2h7a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V5l2-3z"/>
@@ -70,6 +72,19 @@
                     <polyline points="11 4 15 4 15 8"/>
                 </svg>
                 Sales History
+                <span class="nav-soon-badge">Soon</span>
+            </a>
+
+            <a class="nav-item nav-item--soon" href="#" data-phase="Calendar">
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+                    <rect x="1.5" y="2.5" width="13" height="12" rx="1.5"/>
+                    <line x1="1.5" y1="6.5" x2="14.5" y2="6.5"/>
+                    <line x1="5" y1="1" x2="5" y2="4"/>
+                    <line x1="11" y1="1" x2="11" y2="4"/>
+                    <line x1="4.5" y1="10" x2="6.5" y2="10"/>
+                    <line x1="9.5" y1="10" x2="11.5" y2="10"/>
+                </svg>
+                Calendar
                 <span class="nav-soon-badge">Soon</span>
             </a>
 
@@ -177,6 +192,11 @@
             <div class="orders-view-inner" id="sales-container"></div>
         </div>
 
+        <!-- ── View: Calendar ── -->
+        <div id="view-calendar" class="app-view" style="display:none">
+            <div class="orders-view-inner" id="calendar-container"></div>
+        </div>
+
     </div>
 
 </div>
@@ -226,6 +246,7 @@
 <script src="warehouse.js"></script>
 <script src="imports.js"></script>
 <script src="sales.js"></script>
+<script src="calendar.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

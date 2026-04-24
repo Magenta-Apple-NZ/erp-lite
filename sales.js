@@ -80,7 +80,7 @@ const SalesView = (() => {
                 if (!val) return '';
                 const x = (pad.l + mo * groupW + (groupW - barW * nY) / 2 + yi * barW).toFixed(1);
                 const bh = ((val / maxV) * chartH).toFixed(1);
-                return `<rect x="${x}" y="${yOf(val)}" width="${barW - 1}" height="${bh}" fill="${COLORS[yi] || '#94a3b8'}" rx="1" opacity="0.9"/>`;
+                return `<rect x="${x}" y="${yOf(val)}" width="${barW - 1}" height="${bh}" fill="${COLORS[yi] || '#94a3b8'}" rx="1" opacity="0.9"><title>${MO_NAMES[mo]} ${yr}: ${Math.round(val).toLocaleString('en-NZ')} kg</title></rect>`;
             })
         ).join('');
 
@@ -346,7 +346,7 @@ const SalesView = (() => {
 
         // ── Filter state ──
         let filterCustomer = '', filterBranch = '', filterProduct = '';
-        let yearRange = 3;
+        let yearRange = 'all';
         let salesChartMode = 'monthly';
 
         function getFilteredActuals() {
@@ -382,7 +382,7 @@ const SalesView = (() => {
                 ...(!isFiltered ? Object.keys(SALES_HISTORY) : []),
                 ...Object.keys(actuals).map(ym => ym.slice(0, 4)),
             ]);
-            const visibleYears = [...allYearsSet].sort().slice(-yearRange);
+            const visibleYears = yearRange === 'all' ? [...allYearsSet].sort() : [...allYearsSet].sort().slice(-yearRange);
 
             if (isFiltered) {
                 // Orders-only data when filters are active
@@ -431,6 +431,7 @@ const SalesView = (() => {
                 ${makeOpts([...prodSet].sort(), filterProduct, 'Products')}
             </select>
             <select class="sales-filter-sel" id="sf-range">
+                <option value="all"${yearRange === 'all' ? ' selected' : ''}>All years</option>
                 <option value="3"${yearRange === 3 ? ' selected' : ''}>3 years</option>
                 <option value="4"${yearRange === 4 ? ' selected' : ''}>4 years</option>
                 <option value="5"${yearRange === 5 ? ' selected' : ''}>5 years</option>
@@ -565,13 +566,17 @@ const SalesView = (() => {
         document.getElementById('sf-customer')?.addEventListener('change', e => { filterCustomer = e.target.value; rebuildCharts(); });
         document.getElementById('sf-branch')?.addEventListener('change', e => { filterBranch = e.target.value; rebuildCharts(); });
         document.getElementById('sf-product')?.addEventListener('change', e => { filterProduct = e.target.value; rebuildCharts(); });
-        document.getElementById('sf-range')?.addEventListener('change', e => { yearRange = parseInt(e.target.value); rebuildCharts(); });
+        document.getElementById('sf-range')?.addEventListener('change', e => {
+            const v = e.target.value;
+            yearRange = v === 'all' ? 'all' : parseInt(v);
+            rebuildCharts();
+        });
         document.getElementById('sf-clear')?.addEventListener('click', () => {
-            filterCustomer = ''; filterBranch = ''; filterProduct = ''; yearRange = 3;
+            filterCustomer = ''; filterBranch = ''; filterProduct = ''; yearRange = 'all';
             document.getElementById('sf-customer').value = '';
             document.getElementById('sf-branch').value = '';
             document.getElementById('sf-product').value = '';
-            document.getElementById('sf-range').value = '3';
+            document.getElementById('sf-range').value = 'all';
             rebuildCharts();
         });
 

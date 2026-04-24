@@ -61,9 +61,9 @@ const Admin = (() => {
     }
 
     function itemsToCsv(items) {
-        const headers = ['Id', 'Name', 'Loose', 'Unit Price', '150+ kg', '500+ kg', '2000+ kg'];
+        const headers = ['Id', 'Name', 'Unit Price', '150+ kg', '500+ kg', '2000+ kg'];
         const rows = items.map(i => [
-            i.id || '', i.name || '', i.isLoose ? 'TRUE' : 'FALSE',
+            i.id || '', i.name || '',
             i.defaultPrice ?? '', i.pb1Price ?? '', i.pb2Price ?? '', i.pb3Price ?? '',
         ].map(quoteField).join(','));
         return [headers.join(','), ...rows].join('\n');
@@ -97,9 +97,6 @@ const Admin = (() => {
         <tr class="matrix-row">
             <td><input type="text" class="matrix-id matrix-cell-input" value="${escHtml(item.id || '')}" placeholder="PT-I-10"></td>
             <td><input type="text" class="matrix-name matrix-cell-input" value="${escHtml(item.name || '')}" placeholder="Product name"></td>
-            <td class="matrix-td-center" title="Loose = 1kg units, min order 10kg, +10kg increments">
-                <input type="checkbox" class="matrix-loose" ${item.isLoose ? 'checked' : ''}>
-            </td>
             <td><input type="number" class="matrix-p0 matrix-cell-input matrix-price-input" value="${p(item.defaultPrice)}" placeholder="0.00" min="0" step="0.01"></td>
             <td><input type="number" class="matrix-p150 matrix-cell-input matrix-price-input" value="${p(item.pb1Price)}" placeholder="—" min="0" step="0.01"></td>
             <td><input type="number" class="matrix-p500 matrix-cell-input matrix-price-input" value="${p(item.pb2Price)}" placeholder="—" min="0" step="0.01"></td>
@@ -115,7 +112,7 @@ const Admin = (() => {
             <div class="cat-section-head">
                 <div>
                     <h2 class="cat-title">Price Matrix</h2>
-                    <p class="cat-sub">Prices per kg at each quantity break point. <strong>Loose</strong> = 1kg units (min order 10 kg, +10 kg steps).</p>
+                    <p class="cat-sub">Prices per kg at each quantity break point.</p>
                 </div>
                 <div class="cat-actions">
                     <button class="btn-secondary btn-sm" id="matrix-add-btn">+ Add Product</button>
@@ -129,7 +126,6 @@ const Admin = (() => {
                         <tr>
                             <th class="matrix-th-id">ID</th>
                             <th class="matrix-th-name">Product Name</th>
-                            <th class="matrix-th-center" title="1kg units — min 10kg, +10kg steps">Loose</th>
                             <th class="matrix-th-price">&lt; 150 kg</th>
                             <th class="matrix-th-price">150+ kg</th>
                             <th class="matrix-th-price">500+ kg</th>
@@ -160,7 +156,6 @@ const Admin = (() => {
             const updated = rows.map(tr => ({
                 id:           tr.querySelector('.matrix-id').value.trim(),
                 name:         tr.querySelector('.matrix-name').value.trim(),
-                isLoose:      tr.querySelector('.matrix-loose').checked,
                 defaultPrice: parseFloat(tr.querySelector('.matrix-p0').value) || 0,
                 pb1Quantity:  150,
                 pb1Price:     parseFloat(tr.querySelector('.matrix-p150').value) || null,

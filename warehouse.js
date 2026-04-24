@@ -620,7 +620,7 @@ const Warehouse = (() => {
             if (cached) {
                 forex = JSON.parse(cached);
             } else {
-                const res = await fetch('https://api.frankfurter.dev/v1/latest?base=NZD&symbols=USD,EUR,BDT,AUD');
+                const res = await fetch('https://api.frankfurter.dev/v1/latest?base=NZD&symbols=USD,EUR,CNY,AUD');
                 if (res.ok) {
                     const data = await res.json();
                     forex = data.rates || {};
@@ -628,6 +628,28 @@ const Warehouse = (() => {
                 }
             }
         } catch (e) { /* forex optional */ }
+
+        let fxHistory = {};
+        try {
+            const histMonthKey = 'imp-fx-hist-' + new Date().toISOString().slice(0, 7);
+            const cachedHist = localStorage.getItem(histMonthKey);
+            if (cachedHist) {
+                fxHistory = JSON.parse(cachedHist);
+            } else {
+                const now2 = new Date();
+                const start2 = new Date(now2);
+                start2.setMonth(start2.getMonth() - 13);
+                const histRes = await fetch(
+                    'https://api.frankfurter.dev/v1/' +
+                    start2.toISOString().slice(0, 10) + '..' + now2.toISOString().slice(0, 10) +
+                    '?base=NZD&symbols=USD,EUR,CNY,AUD'
+                );
+                if (histRes.ok) {
+                    fxHistory = await histRes.json();
+                    localStorage.setItem(histMonthKey, JSON.stringify(fxHistory));
+                }
+            }
+        } catch (e) { /* sparklines optional */ }
 
         let scenario  = 'avg';
         let shipView  = 'cards';
@@ -639,7 +661,22 @@ const Warehouse = (() => {
             const openKey  = { avg: 'openAvg',  good: 'openGood',  great: 'openGreat'  }[scenario];
             const salesKey = { avg: 'avgSales', good: 'goodSales', great: 'greatSales' }[scenario];
 
-            const FX_LABELS = { USD: 'US Dollar', EUR: 'Euro', BDT: 'Bangladeshi Taka', AUD: 'Aus Dollar' };
+            const FX_LABELS = { USD: 'US Dollar', EUR: 'Euro', CNY: 'Chinese Yuan', AUD: 'Aus Dollar' };
+            const fxSparkline = code => {
+                if (!fxHistory?.rates) return '';
+                try {
+                    const byMonth = {};
+                    Object.keys(fxHistory.rates).sort().forEach(d => {
+                        const month = d.slice(0, 7);
+                        const rate = fxHistory.rates[d]?.[code];
+                        if (rate !== undefined) byMonth[month] = rate;
+                    });
+                    const values = Object.values(byMonth);
+                    const months = Object.keys(byMonth);
+                    if (values.length < 2 || typeof drawSparkline !== 'function') return '';
+                    return drawSparkline(values, months);
+                } catch (e) { return ''; }
+            };
             const fxPanelHtml = Object.keys(forex).length ? `
             <div class="cat-section imp-fx-panel">
                 <div class="imp-fx-header">
@@ -647,11 +684,12 @@ const Warehouse = (() => {
                     <span class="imp-fx-base-tag">1 NZD =</span>
                 </div>
                 <div class="imp-fx-grid">
-                    ${['USD', 'EUR', 'BDT', 'AUD'].filter(c => forex[c]).map(c =>
+                    ${['USD', 'EUR', 'CNY', 'AUD'].filter(c => forex[c]).map(c =>
                         '<div class="imp-fx-tile">' +
                         '<div class="imp-fx-tile-code">' + c + '</div>' +
-                        '<div class="imp-fx-tile-rate">' + (c === 'BDT' ? forex[c].toFixed(2) : forex[c].toFixed(4)) + '</div>' +
+                        '<div class="imp-fx-tile-rate">' + forex[c].toFixed(4) + '</div>' +
                         '<div class="imp-fx-tile-name">' + FX_LABELS[c] + '</div>' +
+                        fxSparkline(c) +
                         '</div>'
                     ).join('')}
                 </div>
