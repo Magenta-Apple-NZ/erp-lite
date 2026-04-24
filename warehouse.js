@@ -463,7 +463,7 @@ const Warehouse = (() => {
         return `${MONTH_NAMES[parseInt(m) - 1]} ${y}`;
     }
 
-    function computeForecast(config, months = 18) {
+    function computeForecast(config, months = 18, actuals = {}) {
         const monthlyAvg = config.monthlyAvg || new Array(12).fill(0);
         const shipments  = config.shipments  || [];
         const starting   = config.startingKg ?? 0;
@@ -480,9 +480,10 @@ const Warehouse = (() => {
                 .filter(s => s.ym === ym)
                 .reduce((sum, s) => sum + (Number(s.kg) || 0), 0);
 
-            const avgSales   = Number(monthlyAvg[mo]) || 0;
-            const goodSales  = avgSales * 1.1;
-            const greatSales = avgSales * 1.2;
+            const actualSales = actuals[ym] ?? null;
+            const avgSales   = actualSales !== null ? actualSales : (Number(monthlyAvg[mo]) || 0);
+            const goodSales  = actualSales !== null ? actualSales : avgSales * 1.1;
+            const greatSales = actualSales !== null ? actualSales : avgSales * 1.2;
 
             const openAvg = runAvg, openGood = runGood, openGreat = runGreat;
             runAvg   = openAvg   - avgSales   + incoming;
@@ -492,7 +493,7 @@ const Warehouse = (() => {
             rows.push({
                 ym, yr, mo,
                 label: `${MONTH_NAMES[mo]} '${String(yr).slice(-2)}`,
-                incoming, avgSales, goodSales, greatSales,
+                incoming, actualSales, avgSales, goodSales, greatSales,
                 openAvg, openGood, openGreat,
                 closeAvg: runAvg, closeGood: runGood, closeGreat: runGreat,
             });
@@ -566,10 +567,21 @@ const Warehouse = (() => {
         let config = {};
         try { config = (await api('/api/import/forecast')) || {}; } catch (e) { /* ok */ }
 
+        let actuals = {};
+        try {
+            const orders = await api('/api/orders');
+            for (const o of (orders || [])) {
+                const ym = (o.createdAt || '').slice(0, 7);
+                if (!ym) continue;
+                const kg = (o.lines || []).reduce((s, l) => s + (Number(l.quantity) || 0), 0);
+                if (kg > 0) actuals[ym] = (actuals[ym] || 0) + kg;
+            }
+        } catch (e) { /* orders unavailable */ }
+
         let scenario = 'avg';
 
         function rebuild() {
-            const rows = computeForecast(config);
+            const rows = computeForecast(config, 18, actuals);
             const closeKey = { avg: 'closeAvg', good: 'closeGood', great: 'closeGreat' }[scenario];
             const openKey  = { avg: 'openAvg',  good: 'openGood',  great: 'openGreat'  }[scenario];
             const salesKey = { avg: 'avgSales', good: 'goodSales', great: 'greatSales' }[scenario];
@@ -579,8 +591,9 @@ const Warehouse = (() => {
             ).join('');
 
             const tableRows = rows.map(r => {
-                const closing = r[closeKey];
-                const sales   = r[salesKey];
+                const closing   = r[closeKey];
+                const sales     = r[salesKey];
+                const hasActual = r.actualSales !== null;
                 const status  = closing < 0 ? 'critical' : closing < sales * 0.5 ? 'low' : 'ok';
                 const dot = {
                     ok:       '<span class="fcst-dot fcst-dot--ok" title="Sufficient stock"></span>',
@@ -590,6 +603,7 @@ const Warehouse = (() => {
                 return `
                 <tr class="imp-row ${r.incoming ? 'imp-has-import' : ''}">
                     <td class="imp-td-month">${escHtml(r.label)}</td>
+                    <td class="imp-td-num ${hasActual ? 'imp-actual-val' : ''}">${hasActual ? fmtKg(r.actualSales) + ' kg' : '—'}</td>
                     <td class="imp-td-num">${fmtKg(sales)} kg</td>
                     <td class="imp-td-num">${fmtKg(r[openKey])} kg</td>
                     <td class="imp-td-num imp-incoming ${r.incoming ? 'imp-incoming-val' : ''}">${r.incoming ? '+' + fmtKg(r.incoming) + ' kg' : '—'}</td>
@@ -603,13 +617,28 @@ const Warehouse = (() => {
             const upcomingShips = allShips.filter(s => s.ym >= todayYm);
             const pastShips     = allShips.filter(s => s.ym < todayYm);
 
-            const shipCard = (s, past) => `
-            <div class="imp-event-card ${past ? 'imp-event-card--past' : ''}">
-                <div class="imp-event-month">${ymLabel(s.ym)}</div>
-                <div class="imp-event-qty">${fmtKg(s.kg)} <span>kg</span></div>
-                ${s.note ? '<div class="imp-event-note">' + escHtml(s.note) + '</div>' : ''}
-                ${!past ? '<button class="imp-ship-del" data-id="' + escHtml(s.id) + '" title="Remove">\xd7</button>' : ''}
-            </div>`;
+            const shipCard = (s, past) => {
+                const milestones = s.milestones || [];
+                const doneCount  = milestones.filter(m => m.done).length;
+                const mHtml = milestones.length ? `
+                <div class="imp-milestones">
+                    ${milestones.map((m, i) => `
+                    <label class="imp-milestone${m.done ? ' imp-milestone--done' : ''}">
+                        <input type="checkbox" class="imp-milestone-check"
+                            data-ship-id="${escHtml(s.id)}" data-idx="${i}" ${m.done ? 'checked' : ''}>
+                        <span class="imp-milestone-label">${escHtml(m.label)}</span>
+                        ${m.date ? `<span class="imp-milestone-date">${escHtml(m.date)}</span>` : ''}
+                    </label>`).join('')}
+                </div>` : '';
+                return `
+                <div class="imp-event-card ${past ? 'imp-event-card--past' : ''}">
+                    <div class="imp-event-month">${ymLabel(s.ym)}</div>
+                    <div class="imp-event-qty">${fmtKg(s.kg)} <span>kg</span></div>
+                    ${s.note ? `<div class="imp-event-note">${escHtml(s.note)}${milestones.length ? ` &mdash; ${doneCount}/${milestones.length}` : ''}</div>` : ''}
+                    ${mHtml}
+                    ${!past ? `<button class="imp-ship-del" data-id="${escHtml(s.id)}" title="Remove">\xd7</button>` : ''}
+                </div>`;
+            };
 
             body.innerHTML = `
             <div class="imp-layout">
@@ -644,6 +673,7 @@ const Warehouse = (() => {
                                 <thead>
                                     <tr>
                                         <th class="imp-th-month">Month</th>
+                                        <th class="imp-th-num">Actual</th>
                                         <th class="imp-th-num">Est. Sales</th>
                                         <th class="imp-th-num">Opening</th>
                                         <th class="imp-th-num imp-th-incoming">Incoming</th>
@@ -813,6 +843,46 @@ const Warehouse = (() => {
                         rebuild();
                     } catch (err) {
                         showToast('Remove failed: ' + err.message);
+                    }
+                });
+            });
+
+            body.querySelectorAll('.imp-milestone-check').forEach(cb => {
+                cb.addEventListener('change', async () => {
+                    const shipId = cb.dataset.shipId;
+                    const idx    = parseInt(cb.dataset.idx);
+                    const done   = cb.checked;
+                    const today  = new Date().toISOString().slice(0, 10);
+                    const shipments = (config.shipments || []).map(s => {
+                        if (s.id !== shipId) return s;
+                        const milestones = (s.milestones || []).map((m, i) =>
+                            i === idx ? { ...m, done, date: done && !m.date ? today : m.date } : m
+                        );
+                        return { ...s, milestones };
+                    });
+                    try {
+                        await api('/api/import/forecast', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ shipments }),
+                        });
+                        config.shipments = shipments;
+                        const lbl = cb.closest('.imp-milestone');
+                        if (lbl) {
+                            lbl.classList.toggle('imp-milestone--done', done);
+                            if (done) {
+                                let ds = lbl.querySelector('.imp-milestone-date');
+                                if (!ds) {
+                                    ds = document.createElement('span');
+                                    ds.className = 'imp-milestone-date';
+                                    lbl.appendChild(ds);
+                                }
+                                ds.textContent = today;
+                            }
+                        }
+                    } catch (err) {
+                        showToast('Save failed: ' + err.message);
+                        cb.checked = !done;
                     }
                 });
             });

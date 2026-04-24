@@ -21,6 +21,72 @@ const SalesView = (() => {
         setTimeout(() => t.classList.remove('show'), 3000);
     }
 
+    function fmtKg(n) {
+        const v = Math.round(n);
+        if (Math.abs(v) >= 10000) return (v / 1000).toFixed(0) + 'k';
+        if (Math.abs(v) >= 1000)  return (v / 1000).toFixed(1).replace(/\.0$/, '') + 'k';
+        return String(v);
+    }
+
+    // Historical actuals from FY25/FY26 CSV [Jan..Dec], null = no data that month
+    const SALES_HISTORY = {
+        2024: [null, null, null, 110, 4740, 2131, 7840, 4214, 972, 80, 80, 990],
+        2025: [640, 580, 870, 2560, 2180, 5530, 6690, 8890, 1350, 50, 110, 860],
+        2026: [1450, 360, 2700, null, null, null, null, null, null, null, null, null],
+    };
+    const MO_NAMES = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
+    function buildSalesByMonthChart(orderActuals) {
+        const data = {};
+        for (const [yr, vals] of Object.entries(SALES_HISTORY)) data[yr] = [...vals];
+        for (const [ym, kg] of Object.entries(orderActuals || {})) {
+            const yr = ym.slice(0, 4);
+            const mo = parseInt(ym.slice(5)) - 1;
+            if (!data[yr]) data[yr] = new Array(12).fill(null);
+            if (data[yr][mo] === null) data[yr][mo] = kg;
+        }
+
+        const years = Object.keys(data).sort();
+        const W = 680, H = 210;
+        const pad = { l: 46, r: 12, t: 16, b: 36 };
+        const chartW = W - pad.l - pad.r;
+        const chartH = H - pad.t - pad.b;
+        const groupW = chartW / 12;
+        const nY = years.length;
+        const barW = Math.max(Math.floor(groupW / (nY + 1)), 5);
+        const COLORS = ['#94a3b8', '#3b82f6', '#10b981'];
+
+        const allVals = Object.values(data).flat().filter(v => v !== null && v > 0);
+        const maxV = Math.max(...allVals, 1);
+        function yOf(v) { return (pad.t + chartH - (v / maxV) * chartH).toFixed(1); }
+
+        const grid = [0, 0.25, 0.5, 0.75, 1].map(f => {
+            const v = f * maxV, y = yOf(v);
+            return `<text x="${pad.l - 4}" y="${(parseFloat(y) + 3).toFixed(1)}" text-anchor="end" font-size="8" fill="#94a3b8">${fmtKg(v)}</text>
+                    <line x1="${pad.l}" y1="${y}" x2="${W - pad.r}" y2="${y}" stroke="#f1f5f9" stroke-width="1"/>`;
+        }).join('');
+
+        const bars = years.flatMap((yr, yi) =>
+            (data[yr] || []).map((val, mo) => {
+                if (!val) return '';
+                const x = (pad.l + mo * groupW + (groupW - barW * nY) / 2 + yi * barW).toFixed(1);
+                const bh = ((val / maxV) * chartH).toFixed(1);
+                return `<rect x="${x}" y="${yOf(val)}" width="${barW - 1}" height="${bh}" fill="${COLORS[yi] || '#94a3b8'}" rx="1" opacity="0.9"/>`;
+            })
+        ).join('');
+
+        const xLabels = MO_NAMES.map((m, i) =>
+            `<text x="${(pad.l + (i + 0.5) * groupW).toFixed(1)}" y="${pad.t + chartH + 14}" text-anchor="middle" font-size="8.5" fill="#64748b">${m}</text>`
+        ).join('');
+
+        const legend = years.map((yr, i) =>
+            `<rect x="${pad.l + i * 58}" y="${H - 11}" width="10" height="7" fill="${COLORS[i] || '#94a3b8'}" rx="1"/>
+             <text x="${pad.l + i * 58 + 13}" y="${H - 4}" font-size="8.5" fill="#475569">${yr}</text>`
+        ).join('');
+
+        return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto" xmlns="http://www.w3.org/2000/svg">${grid}${bars}${xLabels}${legend}</svg>`;
+    }
+
     function parseSalesCsv(csv) {
         const lines = csv.trim().split(/\r?\n/);
         if (lines.length < 2) return { headers: [], rows: [] };
@@ -181,6 +247,17 @@ const SalesView = (() => {
     async function renderBody(bodyEl) {
         bodyEl.innerHTML = '<div class="orders-loading">Loading…</div>';
 
+        let orderActuals = {};
+        try {
+            const orders = await api('/api/orders');
+            for (const o of (orders || [])) {
+                const ym = (o.createdAt || '').slice(0, 7);
+                if (!ym) continue;
+                const kg = (o.lines || []).reduce((s, l) => s + (Number(l.quantity) || 0), 0);
+                if (kg > 0) orderActuals[ym] = (orderActuals[ym] || 0) + kg;
+            }
+        } catch (e) { /* ok */ }
+
         let config = null;
         try { config = await api('/api/sales'); } catch (e) { /* ok */ }
 
@@ -222,16 +299,11 @@ const SalesView = (() => {
         <div class="cat-section" style="margin-bottom:1.5rem">
             <div class="cat-section-head">
                 <div>
-                    <h2 class="cat-title">Charts</h2>
-                    <p class="cat-sub">Visual summaries of your sales data.</p>
+                    <h2 class="cat-title">Sales by Month</h2>
+                    <p class="cat-sub">Historical kg sold by calendar year. Recent hub orders overlaid automatically.</p>
                 </div>
-                ${hasData ? `<div class="cat-actions">
-                    <button class="btn-secondary btn-sm" id="sales-refresh-btn">↻ Refresh</button>
-                </div>` : ''}
             </div>
-            ${hasData
-                ? renderChartPlaceholders()
-                : `<p class="wh-empty">Connect your sales Google Sheet to populate these charts.</p>`}
+            <div style="margin-top:0.75rem">${buildSalesByMonthChart(orderActuals)}</div>
         </div>`;
 
         const webhookSection = `

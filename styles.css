@@ -1874,3 +1874,14 @@ a.xero-inv-linked:hover { background: #d1fae5; border-color: #6ee7b7; }
     border-radius: 6px;
     background: white;
 }
+
+/* Milestone tracker in shipment cards */
+.imp-milestones { margin-top: 0.6rem; border-top: 1px solid #e2e8f0; padding-top: 0.5rem; display: flex; flex-direction: column; gap: 0.3rem; }
+.imp-milestone { display: flex; align-items: center; gap: 0.4rem; font-size: 0.75rem; color: #475569; cursor: pointer; line-height: 1.4; }
+.imp-milestone--done .imp-milestone-label { text-decoration: line-through; color: #94a3b8; }
+.imp-milestone-check { cursor: pointer; flex-shrink: 0; accent-color: #10b981; }
+.imp-milestone-label { flex: 1; }
+.imp-milestone-date { font-size: 0.7rem; color: #94a3b8; white-space: nowrap; }
+
+/* Actual sales column in forecast table */
+.imp-actual-val { color: #0f172a; font-weight: 600; }
