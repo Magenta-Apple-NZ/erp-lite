@@ -1006,7 +1006,8 @@ const Orders = (() => {
     }
 
     function refreshActionBar(order) {
-        document.getElementById('status-badge-wrap').innerHTML = statusBadge(order.status);
+        const sel = document.getElementById('order-status-sel');
+        if (sel) sel.value = order.status;
         document.getElementById('action-btns').innerHTML = actionButtons(order, xeroConnected);
         wireDetailButtons(order);
     }
@@ -1034,7 +1035,9 @@ const Orders = (() => {
         <div class="order-actions no-print">
             <div class="order-actions-left">
                 <a href="#orders" class="btn-secondary btn-sm">← Orders</a>
-                <span id="status-badge-wrap">${statusBadge(order.status)}</span>
+                <select id="order-status-sel" class="order-status-sel">
+                    ${Object.entries(STATUS_LABELS).map(([k, v]) => `<option value="${k}"${order.status === k ? ' selected' : ''}>${v}</option>`).join('')}
+                </select>
             </div>
             <div class="order-actions-right" id="action-btns">
                 ${actionButtons(order, xeroConnected)}
@@ -1207,6 +1210,31 @@ const Orders = (() => {
     function wireDetailButtons(order) {
         const orderId = order.id;
 
+        // Status override dropdown — guard against duplicate listeners since the select
+        // persists across refreshActionBar() calls (it's outside #action-btns).
+        const statusSel = document.getElementById('order-status-sel');
+        if (statusSel && !statusSel._wired) {
+            statusSel._wired = true;
+            statusSel.addEventListener('change', async e => {
+                const newStatus = e.target.value;
+                const prev = order.status;
+                try {
+                    await api('/api/orders/' + orderId, {
+                        method: 'PATCH',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ status: newStatus, event: { ts: new Date().toISOString(), msg: `Status set to ${STATUS_LABELS[newStatus]}` } }),
+                    });
+                    order.status = newStatus;
+                    // Only rebuild action buttons — status-sel already has its listener
+                    document.getElementById('action-btns').innerHTML = actionButtons(order, xeroConnected);
+                    wireDetailButtons(order); // safe: _wired prevents re-adding status listener
+                } catch (err) {
+                    showErrorBanner('Could not update status: ' + err.message);
+                    e.target.value = prev;
+                }
+            });
+        }
+
         // Link to existing Xero invoice (manual reconciliation)
         document.getElementById('link-xero-btn')?.addEventListener('click', async () => {
             const input = prompt(
@@ -1333,12 +1361,17 @@ const Orders = (() => {
                 if (invRow) invRow.textContent = result.invoiceNumber;
                 order.status = 'sent_to_xero';
                 order.xeroInvoiceNumber = result.invoiceNumber;
+                // Update status select to reflect new status
+                const sel = document.getElementById('order-status-sel');
+                if (sel) sel.value = 'sent_to_xero';
                 refreshActionBar(order);
                 logEvent(orderId, 'Sent to Xero', result.invoiceNumber);
                 showToast('Invoice created in Xero: ' + result.invoiceNumber);
             } catch (e) {
                 console.error('Xero push failed:', e);
-                showErrorBanner('Xero push failed: ' + e.message);
+                const msg = e.message || 'Unknown error — check browser console';
+                showErrorBanner('Xero push failed: ' + msg);
+                showToast('Xero push failed: ' + msg);
                 btn.disabled = false;
                 btn.textContent = 'Send to Xero';
             }

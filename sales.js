@@ -36,6 +36,34 @@ const SalesView = (() => {
     };
     const MO_NAMES = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 
+    // Background prefetch cache — populated on dashboard load, consumed once on first render
+    let _prefetchP = null;
+
+    function prefetch() {
+        if (_prefetchP) return;
+        _prefetchP = (async () => {
+            let allOrders = [], config = null, headers = [], rows = [], fetchError = null;
+            try {
+                [allOrders, config] = await Promise.all([
+                    fetch('/api/orders').then(r => r.ok ? r.json() : []).catch(() => []),
+                    fetch('/api/sales').then(r => r.ok ? r.json() : null).catch(() => null),
+                ]);
+                if (config?.sheetUrl) {
+                    try {
+                        const resp = await fetch('/api/sales/fetch');
+                        if (resp.ok) {
+                            const csv = await resp.text();
+                            ({ headers, rows } = parseSalesCsv(csv));
+                        } else {
+                            fetchError = 'Sheet returned an error — check the URL or sheet permissions.';
+                        }
+                    } catch (e) { fetchError = e.message; }
+                }
+            } catch (e) { /* prefetch optional */ }
+            return { allOrders: allOrders || [], config, headers, rows, fetchError };
+        })();
+    }
+
     // Merge history + order actuals, optionally restricting to visibleYears
     function getMergedData(orderActuals, visibleYears, historyData = SALES_HISTORY) {
         const data = {};
@@ -148,7 +176,7 @@ const SalesView = (() => {
                 if (!val) return '';
                 const x = (pad.l + mo * groupW + (groupW - barW * nY) / 2 + yi * barW).toFixed(1);
                 const bh = ((val / maxV) * chartH).toFixed(1);
-                return `<rect x="${x}" y="${yOf(val)}" width="${barW - 1}" height="${bh}" fill="${COLORS[yi] || '#94a3b8'}" rx="1" opacity="0.9"><title>${MO_NAMES[mo]} ${yr}: ${Math.round(val).toLocaleString('en-NZ')} kg</title></rect>`;
+                return `<rect x="${x}" y="${yOf(val)}" width="${barW - 1}" height="${bh}" fill="${COLORS[yi] || '#94a3b8'}" rx="1" opacity="0.9" class="chart-bar"><title>${MO_NAMES[mo]} ${yr}: ${Math.round(val).toLocaleString('en-NZ')} kg</title></rect>`;
             })
         ).join('');
 
@@ -196,6 +224,17 @@ const SalesView = (() => {
             return pts ? `<polyline points="${pts}" fill="none" stroke="${COLORS[yi] || '#94a3b8'}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" opacity="0.9"/>` : '';
         }).join('');
 
+        const dotsHtml = years.map((yr, yi) => {
+            const color = COLORS[yi] || '#94a3b8';
+            return cumData[yr].map((v, mo) => {
+                if (v === null) return '';
+                const cx = xOf(mo), cy = yOf(v);
+                return `<g class="chart-pt"><title>${MO_NAMES[mo]} ${yr}: ${Math.round(v).toLocaleString('en-NZ')} kg</title>` +
+                    `<rect x="${(parseFloat(cx) - 7).toFixed(1)}" y="${(parseFloat(cy) - 7).toFixed(1)}" width="14" height="14" fill="transparent"/>` +
+                    `<circle cx="${cx}" cy="${cy}" r="3.5" fill="${color}" stroke="white" stroke-width="1.5" class="chart-dot"/></g>`;
+            }).join('');
+        }).join('');
+
         const xLabels = MO_NAMES.map((m, i) =>
             `<text x="${xOf(i)}" y="${pad.t + chartH + 14}" text-anchor="middle" font-size="8.5" fill="#64748b">${m}</text>`
         ).join('');
@@ -205,7 +244,7 @@ const SalesView = (() => {
              <text x="${pad.l + i * 58 + 19}" y="${H - 3}" font-size="8.5" fill="#475569">${yr}</text>`
         ).join('');
 
-        return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto" xmlns="http://www.w3.org/2000/svg">${grid}${lines}${xLabels}${legend}</svg>`;
+        return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto" xmlns="http://www.w3.org/2000/svg">${grid}${lines}${dotsHtml}${xLabels}${legend}</svg>`;
     }
 
     function buildDataTable(data) {
@@ -366,24 +405,26 @@ const SalesView = (() => {
     async function renderBody(bodyEl) {
         bodyEl.innerHTML = '<div class="orders-loading">Loading…</div>';
 
-        let allOrders = [];
-        try { allOrders = (await api('/api/orders')) || []; } catch (e) { /* ok */ }
+        let allOrders = [], config = null, headers = [], rows = [], fetchError = null;
 
-        let config = null;
-        try { config = await api('/api/sales'); } catch (e) { /* ok */ }
-
-        let headers = [], rows = [], fetchError = null;
-        if (config?.sheetUrl) {
-            try {
-                const resp = await fetch('/api/sales/fetch');
-                if (resp.ok) {
-                    const csv = await resp.text();
-                    ({ headers, rows } = parseSalesCsv(csv));
-                } else {
-                    fetchError = 'Sheet returned an error — check the URL or sheet permissions.';
+        if (_prefetchP) {
+            try { ({ allOrders, config, headers, rows, fetchError } = await _prefetchP); } catch (e) {}
+            _prefetchP = null; // consume once — next visit fetches fresh
+        } else {
+            try { allOrders = (await api('/api/orders')) || []; } catch (e) { /* ok */ }
+            try { config = await api('/api/sales'); } catch (e) { /* ok */ }
+            if (config?.sheetUrl) {
+                try {
+                    const resp = await fetch('/api/sales/fetch');
+                    if (resp.ok) {
+                        const csv = await resp.text();
+                        ({ headers, rows } = parseSalesCsv(csv));
+                    } else {
+                        fetchError = 'Sheet returned an error — check the URL or sheet permissions.';
+                    }
+                } catch (e) {
+                    fetchError = e.message;
                 }
-            } catch (e) {
-                fetchError = e.message;
             }
         }
 
@@ -458,22 +499,22 @@ const SalesView = (() => {
         function computeChartData(actuals) {
             const isFiltered = filterCustomer || filterBranch || filterProduct;
 
-            // Determine visible years
+            // Always include historical years so the x-axis range stays consistent when filtering
             const allYearsSet = new Set([
-                ...(!isFiltered ? Object.keys(effectiveHistory) : []),
+                ...Object.keys(effectiveHistory),
                 ...Object.keys(actuals).map(ym => ym.slice(0, 4)),
             ]);
             const visibleYears = yearRange === 'all' ? [...allYearsSet].sort() : [...allYearsSet].sort().slice(-yearRange);
 
             if (isFiltered) {
-                // Orders-only data when filters are active
+                // Orders-only data when filters are active — seed all years with null arrays
+                // so historical year columns still appear even when a customer has no orders in them
                 const data = {};
+                for (const yr of visibleYears) data[yr] = new Array(12).fill(null);
                 for (const [ym, kg] of Object.entries(actuals)) {
                     const yr = ym.slice(0, 4);
                     const mo = parseInt(ym.slice(5)) - 1;
-                    if (!visibleYears.includes(yr)) continue;
-                    if (!data[yr]) data[yr] = new Array(12).fill(null);
-                    data[yr][mo] = (data[yr][mo] || 0) + kg;
+                    if (data[yr]) data[yr][mo] = (data[yr][mo] || 0) + kg;
                 }
                 return data;
             }
@@ -695,5 +736,5 @@ const SalesView = (() => {
         await renderBody(document.getElementById('sales-body'));
     }
 
-    return { render };
+    return { render, prefetch };
 })();

@@ -562,6 +562,15 @@ const Warehouse = (() => {
             return `<polyline points="${pts}" fill="none" stroke="${color}" stroke-width="${sel ? 2.5 : 1.5}" stroke-dasharray="${dash}" stroke-linejoin="round" stroke-linecap="round" opacity="${sel ? 1 : 0.2}"/>`;
         }).join('');
 
+        // Hover dots at every data point for the selected series
+        const allDots = rows.map((r, i) => {
+            const val = r[selClose];
+            return `<g class="chart-pt"><title>${escHtml(r.label)}: ${fmtFull(val)} kg</title>` +
+                `<rect x="${(xOf(i) - 7).toFixed(1)}" y="${(yOf(val) - 7).toFixed(1)}" width="14" height="14" fill="transparent"/>` +
+                `<circle cx="${xOf(i).toFixed(1)}" cy="${yOf(val).toFixed(1)}" r="3.5" fill="${SERIES[scenario].color}" stroke="white" stroke-width="1.5" class="chart-dot"/></g>`;
+        }).join('');
+
+        // Fixed dots at import arrival points (always visible)
         const dots = rows.map((r, i) => {
             if (!r.incoming) return '';
             return `<circle cx="${xOf(i).toFixed(1)}" cy="${yOf(r[selClose]).toFixed(1)}" r="4" fill="${SERIES[scenario].color}" stroke="white" stroke-width="1.5"/>`;
@@ -589,10 +598,34 @@ const Warehouse = (() => {
 
         return `
         <svg viewBox="0 0 ${W} ${H}" class="imp-chart" xmlns="http://www.w3.org/2000/svg">
-            ${yLabels}${zeroLine}${negFill}${importLines}${seriesLines}${dots}${xLabels}${legend}
+            ${yLabels}${zeroLine}${negFill}${importLines}${seriesLines}${allDots}${dots}${xLabels}${legend}
         </svg>`;
     }
 
+
+    // ── Imports prefetch cache — populated on dashboard load, consumed once on first render ──
+    let _importsPrefetchP = null;
+
+    function prefetchImports() {
+        if (_importsPrefetchP) return;
+        _importsPrefetchP = (async () => {
+            let config = {}, actuals = {};
+            try {
+                const [configData, ordersData] = await Promise.all([
+                    fetch('/api/import/forecast').then(r => r.ok ? r.json() : {}).catch(() => ({})),
+                    fetch('/api/orders').then(r => r.ok ? r.json() : []).catch(() => []),
+                ]);
+                config = configData || {};
+                for (const o of (ordersData || [])) {
+                    const ym = (o.createdAt || '').slice(0, 7);
+                    if (!ym) continue;
+                    const kg = (o.lines || []).reduce((s, l) => s + (Number(l.quantity) || 0), 0);
+                    if (kg > 0) actuals[ym] = (actuals[ym] || 0) + kg;
+                }
+            } catch (e) { /* prefetch optional */ }
+            return { config, actuals };
+        })();
+    }
 
     // ── Render the Imports view ──
     let importsAC = null; // AbortController for cost-line event delegation
@@ -605,19 +638,22 @@ const Warehouse = (() => {
         const body = document.getElementById('wh-body');
         body.innerHTML = '<div class="orders-loading">Loading…</div>';
 
-        let config = {};
-        try { config = (await api('/api/import/forecast')) || {}; } catch (e) { /* ok */ }
-
-        let actuals = {};
-        try {
-            const orders = await api('/api/orders');
-            for (const o of (orders || [])) {
-                const ym = (o.createdAt || '').slice(0, 7);
-                if (!ym) continue;
-                const kg = (o.lines || []).reduce((s, l) => s + (Number(l.quantity) || 0), 0);
-                if (kg > 0) actuals[ym] = (actuals[ym] || 0) + kg;
-            }
-        } catch (e) { /* orders unavailable */ }
+        let config = {}, actuals = {};
+        if (_importsPrefetchP) {
+            try { ({ config, actuals } = await _importsPrefetchP); } catch (e) {}
+            _importsPrefetchP = null; // consume once — next visit fetches fresh
+        } else {
+            try { config = (await api('/api/import/forecast')) || {}; } catch (e) { /* ok */ }
+            try {
+                const orders = await api('/api/orders');
+                for (const o of (orders || [])) {
+                    const ym = (o.createdAt || '').slice(0, 7);
+                    if (!ym) continue;
+                    const kg = (o.lines || []).reduce((s, l) => s + (Number(l.quantity) || 0), 0);
+                    if (kg > 0) actuals[ym] = (actuals[ym] || 0) + kg;
+                }
+            } catch (e) { /* orders unavailable */ }
+        }
 
         let forex = {};
         const fxToday = new Date().toISOString().slice(0, 10);
@@ -656,6 +692,31 @@ const Warehouse = (() => {
                 }
             }
         } catch (e) { /* sparklines optional */ }
+
+        // BDT historical data from jsDelivr currency API (monthly, ~13 points)
+        let bdtHistory = {};
+        try {
+            const bdtMonthKey = 'imp-fx-bdt-' + new Date().toISOString().slice(0, 7);
+            const cachedBdt = localStorage.getItem(bdtMonthKey);
+            if (cachedBdt) {
+                bdtHistory = JSON.parse(cachedBdt);
+            } else {
+                const dates = [];
+                for (let i = 12; i >= 0; i--) {
+                    const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() - i);
+                    dates.push(d.toISOString().slice(0, 10));
+                }
+                const results = await Promise.all(dates.map(d =>
+                    fetch('https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@' + d + '/v1/currencies/nzd.json')
+                        .then(r => r.ok ? r.json() : null)
+                        .then(j => j?.nzd?.bdt ? { month: d.slice(0, 7), rate: j.nzd.bdt } : null)
+                        .catch(() => null)
+                ));
+                results.forEach(r => { if (r) bdtHistory[r.month] = r.rate; });
+                if (Object.keys(bdtHistory).length > 0)
+                    localStorage.setItem(bdtMonthKey, JSON.stringify(bdtHistory));
+            }
+        } catch (e) { /* BDT sparkline optional */ }
 
         let scenario  = 'avg';
         let shipView  = 'cards';
@@ -934,8 +995,14 @@ const Warehouse = (() => {
             const FX_LABELS = { USD: 'US Dollar', EUR: 'Euro', CNY: 'Chinese Yuan', AUD: 'Aus Dollar', BDT: 'Bangladeshi Taka' };
             const FX_DISPLAY = ['USD', 'EUR', 'CNY', 'AUD', 'BDT'];
             const fxSparkline = code => {
-                if (!fxHistory?.rates) return '';
                 try {
+                    if (code === 'BDT') {
+                        const months = Object.keys(bdtHistory).sort();
+                        const values = months.map(m => bdtHistory[m]);
+                        if (values.length < 2 || typeof drawSparkline !== 'function') return '';
+                        return drawSparkline(values, months);
+                    }
+                    if (!fxHistory?.rates) return '';
                     const byMonth = {};
                     Object.keys(fxHistory.rates).sort().forEach(d => {
                         const month = d.slice(0, 7);
@@ -957,9 +1024,11 @@ const Warehouse = (() => {
                 <div class="imp-fx-grid">
                     ${FX_DISPLAY.filter(c => forex[c]).map(c =>
                         '<div class="imp-fx-tile">' +
+                        '<div class="imp-fx-tile-label">' +
                         '<div class="imp-fx-tile-code">' + c + '</div>' +
-                        '<div class="imp-fx-tile-rate">' + forex[c].toFixed(4) + '</div>' +
                         '<div class="imp-fx-tile-name">' + FX_LABELS[c] + '</div>' +
+                        '</div>' +
+                        '<div class="imp-fx-tile-rate">' + forex[c].toFixed(4) + '</div>' +
                         fxSparkline(c) +
                         '</div>'
                     ).join('')}
@@ -1491,5 +1560,5 @@ const Warehouse = (() => {
         }, { signal: acSignal });
     }
 
-    return { render, renderImports };
+    return { render, renderImports, prefetchImports };
 })();

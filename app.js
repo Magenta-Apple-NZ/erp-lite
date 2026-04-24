@@ -748,18 +748,23 @@ function drawSparkline(values, months) {
     const chartH = H - LBLH;
     const min = Math.min(...values), max = Math.max(...values);
     const range = max - min || 0.0001;
-    const pts = values.map((v, i) => {
-        const x = PAD + (i / (values.length - 1)) * (W - PAD * 2);
-        const y = PAD + (1 - (v - min) / range) * (chartH - PAD * 2);
-        return x.toFixed(1) + ',' + y.toFixed(1);
-    }).join(' ');
+    const coords = values.map((v, i) => ({
+        x: PAD + (i / (values.length - 1)) * (W - PAD * 2),
+        y: PAD + (1 - (v - min) / range) * (chartH - PAD * 2),
+        v,
+    }));
+    const pts = coords.map(c => c.x.toFixed(1) + ',' + c.y.toFixed(1)).join(' ');
     const trending = values[values.length - 1] >= values[0] ? 'up' : 'down';
     const stripW = (W - PAD * 2) / Math.max(values.length - 1, 1);
-    const strips = values.map((v, i) => {
-        const x = PAD + (i / (values.length - 1)) * (W - PAD * 2);
+    const points = coords.map((c, i) => {
         const ym = months?.[i] || '';
         const mo = ym ? MO[parseInt(ym.slice(5)) - 1] + ' ' + ym.slice(0, 4) : '';
-        return '<rect x="' + (x - stripW / 2).toFixed(1) + '" y="0" width="' + stripW.toFixed(1) + '" height="' + chartH + '" fill="transparent"><title>' + (mo ? mo + ': ' : '') + v.toFixed(4) + '</title></rect>';
+        const lbl = (mo ? mo + ': ' : '') + c.v.toFixed(4);
+        return '<g class="sparkline-pt">' +
+            '<title>' + lbl + '</title>' +
+            '<rect x="' + (c.x - stripW / 2).toFixed(1) + '" y="0" width="' + stripW.toFixed(1) + '" height="' + chartH + '" fill="transparent"/>' +
+            '<circle cx="' + c.x.toFixed(1) + '" cy="' + c.y.toFixed(1) + '" r="2" class="sparkline-dot"/>' +
+            '</g>';
     }).join('');
     const firstMo = months?.[0] ? MO[parseInt(months[0].slice(5)) - 1] + ' ' + months[0].slice(2, 4) : '';
     const lastMo  = months?.[months.length - 1] ? MO[parseInt(months[months.length - 1].slice(5)) - 1] + ' ' + months[months.length - 1].slice(2, 4) : '';
@@ -767,7 +772,7 @@ function drawSparkline(values, months) {
     const label = '<text x="' + (W / 2) + '" y="' + H + '" text-anchor="middle" font-size="6.5" fill="#94a3b8">' + rangeLabel + '</text>';
     return '<svg viewBox="0 0 ' + W + ' ' + (H + 2) + '" class="sparkline sparkline-' + trending + '" preserveAspectRatio="none">' +
         '<polyline points="' + pts + '" fill="none" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round"/>' +
-        strips + label +
+        points + label +
         '</svg>';
 }
 
@@ -852,6 +857,9 @@ async function handleRoute() {
     if (!hash || hash === 'dashboard') {
         setActiveView('view-dashboard');
         setActiveNav('nav-dashboard');
+        // Silently prefetch data-heavy tabs so they open instantly
+        SalesView?.prefetch?.();
+        Warehouse?.prefetchImports?.();
         return;
     }
 
