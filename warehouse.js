@@ -613,11 +613,12 @@ const Warehouse = (() => {
             }
         } catch (e) { /* orders unavailable */ }
 
-        let scenario = 'avg';
-        let shipView = 'cards';
+        let scenario  = 'avg';
+        let shipView  = 'cards';
+        let activeTab = 'overview';
 
         function rebuild() {
-            const rows = computeForecast(config, 18, actuals);
+            const rows     = computeForecast(config, 18, actuals);
             const closeKey = { avg: 'closeAvg', good: 'closeGood', great: 'closeGreat' }[scenario];
             const openKey  = { avg: 'openAvg',  good: 'openGood',  great: 'openGreat'  }[scenario];
             const salesKey = { avg: 'avgSales', good: 'goodSales', great: 'greatSales' }[scenario];
@@ -630,14 +631,14 @@ const Warehouse = (() => {
                 const closing   = r[closeKey];
                 const sales     = r[salesKey];
                 const hasActual = r.actualSales !== null;
-                const status  = closing < 0 ? 'critical' : closing < sales * 0.5 ? 'low' : 'ok';
+                const status  = closing < 0 ? 'critical' : closing < sales * 2 ? 'low' : 'ok';
                 const dot = {
                     ok:       '<span class="fcst-dot fcst-dot--ok" title="Sufficient stock"></span>',
-                    low:      '<span class="fcst-dot fcst-dot--low" title="Below half a month\'s supply"></span>',
+                    low:      '<span class="fcst-dot fcst-dot--low" title="Less than 2 months supply"></span>',
                     critical: '<span class="fcst-dot fcst-dot--critical" title="Out of stock"></span>',
                 }[status];
                 return `
-                <tr class="imp-row ${r.incoming ? 'imp-has-import' : ''}">
+                <tr class="imp-row ${r.incoming ? 'imp-has-import' : ''} ${!hasActual && status !== 'ok' ? 'imp-row--' + status : ''}">
                     <td class="imp-td-month">${escHtml(r.label)}</td>
                     <td class="imp-td-num ${hasActual ? 'imp-actual-val' : ''}">${hasActual ? fmtFull(r.actualSales) : '—'}</td>
                     <td class="imp-td-num">${fmtFull(sales)}</td>
@@ -667,141 +668,187 @@ const Warehouse = (() => {
                     </label>`).join('')}
                 </div>` : '';
                 return `
-                <div class="imp-event-card ${past ? 'imp-event-card--past' : ''}">
-                    <div class="imp-event-month">${ymLabel(s.ym)}</div>
-                    <div class="imp-event-qty">${fmtFull(s.kg)}</div>
-                    ${s.note ? `<div class="imp-event-note">${escHtml(s.note)}${milestones.length ? ` &mdash; ${doneCount}/${milestones.length}` : ''}</div>` : ''}
-                    ${mHtml}
-                    ${!past ? `<button class="imp-ship-del" data-id="${escHtml(s.id)}" title="Remove">\xd7</button>` : ''}
-                </div>`;
+                <details class="imp-event-card ${past ? 'imp-event-card--past' : ''}">
+                    <summary class="imp-event-card-summary">
+                        <div>
+                            <div class="imp-event-month">${ymLabel(s.ym)}</div>
+                            <div class="imp-event-qty">${fmtFull(s.kg)} kg</div>
+                            ${s.campaign || s.note ? `<div class="imp-event-note">${escHtml(s.campaign || s.note)}</div>` : ''}
+                        </div>
+                        <div class="imp-card-badges">
+                            ${milestones.length ? `<span class="imp-milestone-progress">${doneCount}/${milestones.length}</span>` : ''}
+                            ${s.pricePerKg ? `<span class="imp-price-badge">$${s.pricePerKg}/kg</span>` : ''}
+                        </div>
+                    </summary>
+                    <div class="imp-event-card-detail">
+                        ${mHtml}
+                        <div class="imp-pricing-grid">
+                            <div class="imp-pricing-field">
+                                <label class="imp-field-label">Campaign / Ref</label>
+                                <input type="text" class="imp-detail-input imp-url-input"
+                                    data-ship-id="${escHtml(s.id)}" data-field="campaign"
+                                    value="${escHtml(s.campaign || '')}" placeholder="e.g. Batch 41">
+                            </div>
+                            <div class="imp-pricing-field">
+                                <label class="imp-field-label">Price / kg</label>
+                                <input type="number" class="imp-detail-input imp-url-input"
+                                    data-ship-id="${escHtml(s.id)}" data-field="pricePerKg"
+                                    value="${s.pricePerKg || ''}" placeholder="e.g. 4.50" step="0.01" min="0">
+                            </div>
+                        </div>
+                        ${s.pricePerKg ? `<p class="imp-total-cost">Total: $${fmt(s.kg * s.pricePerKg)} &nbsp;(${fmtFull(s.kg)} kg &times; $${s.pricePerKg}/kg)</p>` : ''}
+                        ${!past ? `<button class="imp-ship-del" data-id="${escHtml(s.id)}">Remove shipment</button>` : ''}
+                    </div>
+                </details>`;
             };
 
             body.innerHTML = `
-            <div class="imp-layout">
-                <div class="imp-main">
-                    <div class="cat-section imp-chart-card">
-                        <div class="cat-section-head">
+            <div class="imp-tabs">
+                <button class="imp-view-btn ${activeTab === 'overview' ? 'active' : ''}" id="imp-tab-overview">Overview</button>
+                <button class="imp-view-btn ${activeTab === 'shipments' ? 'active' : ''}" id="imp-tab-shipments">Shipments${allShips.length ? ` (${allShips.length})` : ''}</button>
+            </div>
+
+            <div id="imp-overview-panel"${activeTab !== 'overview' ? ' style="display:none"' : ''}>
+                <div class="cat-section imp-chart-card">
+                    <div class="cat-section-head">
+                        <div>
+                            <h2 class="cat-title">Stock Trajectory &middot; Prime Ties <span class="fcst-version">v${config.version || 1}</span></h2>
+                            <p class="cat-sub">Starting stock: <strong>${fmtFull(config.startingKg ?? 0)}</strong>
+                                <button class="btn-link" id="imp-edit-stock-btn">Edit</button></p>
+                        </div>
+                        <div class="cat-actions">
+                            <div class="imp-scenario-wrap">${scenarioBtns}</div>
+                        </div>
+                    </div>
+                    <div id="imp-stock-edit" style="display:none;margin-bottom:1rem">
+                        <div class="imp-connect-row">
+                            <label style="font-size:0.8125rem;color:#64748b;white-space:nowrap">Current stock (kg):</label>
+                            <input type="number" id="imp-stock-kg" class="imp-url-input" style="max-width:140px"
+                                value="${config.startingKg ?? ''}" placeholder="e.g. 5000" min="0" step="any">
+                            <button class="btn-primary btn-sm" id="imp-stock-save-btn">Save</button>
+                            <button class="btn-secondary btn-sm" id="imp-stock-cancel-btn">Cancel</button>
+                        </div>
+                    </div>
+                    <div id="imp-chart-wrap">${buildForecastChart(rows, scenario)}</div>
+                </div>
+
+                <div class="cat-section imp-table-card" style="padding-bottom:0">
+                    <h2 class="cat-title" style="margin-bottom:0.75rem">Monthly Forecast</h2>
+                    <div class="imp-table-wrap">
+                        <table class="imp-table">
+                            <thead>
+                                <tr>
+                                    <th class="imp-th-month">Month</th>
+                                    <th class="imp-th-num">Actual</th>
+                                    <th class="imp-th-num">Est. Sales</th>
+                                    <th class="imp-th-num">Opening</th>
+                                    <th class="imp-th-num imp-th-incoming">Incoming</th>
+                                    <th class="imp-th-num">Closing</th>
+                                    <th style="width:32px"></th>
+                                </tr>
+                            </thead>
+                            <tbody>${tableRows}</tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <details class="cat-section" style="margin-top:1.25rem">
+                    <summary style="cursor:pointer;list-style:none;display:flex;align-items:center;justify-content:space-between;padding-bottom:0.5rem">
+                        <h2 class="cat-title" style="margin:0">Monthly Sales Averages</h2>
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+                    </summary>
+                    <p class="cat-sub" style="margin-bottom:1rem">Average kg sold each month &mdash; the baseline for all three scenarios.</p>
+                    <div class="fcst-avg-grid">
+                        ${MONTH_NAMES.map((m, i) => `
+                        <div class="fcst-avg-cell">
+                            <label class="fcst-avg-label">${m}</label>
+                            <input type="number" class="fcst-avg-input imp-url-input" data-mo="${i}"
+                                value="${(config.monthlyAvg || [])[i] || ''}" placeholder="0" min="0" step="any">
+                            <span class="fcst-avg-unit">kg</span>
+                        </div>`).join('')}
+                    </div>
+                    <div style="margin-top:1rem">
+                        <button class="btn-primary btn-sm" id="imp-avg-save-btn">Save Averages</button>
+                    </div>
+                </details>
+            </div>
+
+            <div id="imp-shipments-panel"${activeTab !== 'shipments' ? ' style="display:none"' : ''}>
+                <div class="cat-section">
+                    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.75rem;gap:0.75rem">
+                        <h3 class="stk-section-title" style="margin:0">Upcoming Shipments</h3>
+                        <div style="display:flex;gap:0.35rem;align-items:center">
+                            <button class="imp-view-btn ${shipView === 'cards' ? 'active' : ''}" id="imp-view-cards">Cards</button>
+                            <button class="imp-view-btn ${shipView === 'matrix' ? 'active' : ''}" id="imp-view-matrix">Matrix</button>
+                            <button class="btn-primary btn-sm" id="imp-add-ship-btn">+ Add</button>
+                        </div>
+                    </div>
+                    <div id="imp-add-ship-form" style="display:none;margin-bottom:1rem;padding:0.75rem;background:#f8fafc;border-radius:6px;border:1px solid #e2e8f0">
+                        <div class="imp-add-form-grid">
                             <div>
-                                <h2 class="cat-title">Stock Trajectory &middot; Prime Ties <span class="fcst-version">v${config.version || 1}</span></h2>
-                                <p class="cat-sub">Starting stock: <strong>${fmtFull(config.startingKg ?? 0)}</strong>
-                                    <button class="btn-link" id="imp-edit-stock-btn">Edit</button></p>
-                            </div>
-                            <div class="cat-actions">
-                                <div class="imp-scenario-wrap">${scenarioBtns}</div>
-                            </div>
-                        </div>
-                        <div id="imp-stock-edit" style="display:none;margin-bottom:1rem">
-                            <div class="imp-connect-row">
-                                <label style="font-size:0.8125rem;color:#64748b;white-space:nowrap">Current stock (kg):</label>
-                                <input type="number" id="imp-stock-kg" class="imp-url-input" style="max-width:140px"
-                                    value="${config.startingKg ?? ''}" placeholder="e.g. 5000" min="0" step="any">
-                                <button class="btn-primary btn-sm" id="imp-stock-save-btn">Save</button>
-                                <button class="btn-secondary btn-sm" id="imp-stock-cancel-btn">Cancel</button>
-                            </div>
-                        </div>
-                        <div id="imp-chart-wrap">${buildForecastChart(rows, scenario)}</div>
-                    </div>
-
-                    <div class="cat-section imp-table-card" style="padding-bottom:0">
-                        <h2 class="cat-title" style="margin-bottom:0.75rem">Monthly Forecast</h2>
-                        <div class="imp-table-wrap">
-                            <table class="imp-table">
-                                <thead>
-                                    <tr>
-                                        <th class="imp-th-month">Month</th>
-                                        <th class="imp-th-num">Actual</th>
-                                        <th class="imp-th-num">Est. Sales</th>
-                                        <th class="imp-th-num">Opening</th>
-                                        <th class="imp-th-num imp-th-incoming">Incoming</th>
-                                        <th class="imp-th-num">Closing</th>
-                                        <th style="width:32px"></th>
-                                    </tr>
-                                </thead>
-                                <tbody>${tableRows}</tbody>
-                            </table>
-                        </div>
-                    </div>
-
-                    <details class="cat-section" style="margin-top:1.25rem">
-                        <summary style="cursor:pointer;list-style:none;display:flex;align-items:center;justify-content:space-between;padding-bottom:0.5rem">
-                            <h2 class="cat-title" style="margin:0">Monthly Sales Averages</h2>
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
-                        </summary>
-                        <p class="cat-sub" style="margin-bottom:1rem">Average kg sold each month &mdash; the baseline for all three scenarios.</p>
-                        <div class="fcst-avg-grid">
-                            ${MONTH_NAMES.map((m, i) => `
-                            <div class="fcst-avg-cell">
-                                <label class="fcst-avg-label">${m}</label>
-                                <input type="number" class="fcst-avg-input imp-url-input" data-mo="${i}"
-                                    value="${(config.monthlyAvg || [])[i] || ''}" placeholder="0" min="0" step="any">
-                                <span class="fcst-avg-unit">kg</span>
-                            </div>`).join('')}
-                        </div>
-                        <div style="margin-top:1rem">
-                            <button class="btn-primary btn-sm" id="imp-avg-save-btn">Save Averages</button>
-                        </div>
-                    </details>
-                </div>
-
-                <div class="imp-sidebar">
-                    <div class="cat-section">
-                        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.75rem">
-                            <h3 class="stk-section-title" style="margin:0">Upcoming Shipments</h3>
-                            <div style="display:flex;gap:0.35rem;align-items:center">
-                                <button class="imp-view-btn ${shipView === 'cards' ? 'active' : ''}" id="imp-view-cards">Cards</button>
-                                <button class="imp-view-btn ${shipView === 'matrix' ? 'active' : ''}" id="imp-view-matrix">Matrix</button>
-                                <button class="btn-primary btn-sm" id="imp-add-ship-btn">+ Add</button>
-                            </div>
-                        </div>
-                        <div id="imp-add-ship-form" style="display:none;margin-bottom:1rem;padding:0.75rem;background:#f8fafc;border-radius:6px;border:1px solid #e2e8f0">
-                            <div style="display:flex;flex-direction:column;gap:0.4rem">
-                                <label style="font-size:0.78rem;color:#64748b;font-weight:500">Arrival month</label>
+                                <label class="imp-field-label">Arrival month</label>
                                 <input type="month" id="ship-ym" class="imp-url-input">
-                                <label style="font-size:0.78rem;color:#64748b;font-weight:500">Volume (kg)</label>
+                            </div>
+                            <div>
+                                <label class="imp-field-label">Volume (kg)</label>
                                 <input type="number" id="ship-kg" class="imp-url-input" placeholder="e.g. 8000" min="0" step="any">
-                                <label style="font-size:0.78rem;color:#64748b;font-weight:500">Note <span style="font-weight:400">(optional)</span></label>
+                            </div>
+                            <div>
+                                <label class="imp-field-label">Campaign / Ref</label>
+                                <input type="text" id="ship-campaign" class="imp-url-input" placeholder="e.g. Batch 41">
+                            </div>
+                            <div>
+                                <label class="imp-field-label">Price / kg <span style="font-weight:400;color:#94a3b8">(optional)</span></label>
+                                <input type="number" id="ship-price" class="imp-url-input" placeholder="e.g. 4.50" step="0.01" min="0">
+                            </div>
+                            <div style="grid-column:1/-1">
+                                <label class="imp-field-label">Note <span style="font-weight:400;color:#94a3b8">(optional)</span></label>
                                 <input type="text" id="ship-note" class="imp-url-input" placeholder="e.g. Container 1">
-                                <div style="display:flex;gap:0.4rem;margin-top:0.25rem">
-                                    <button class="btn-primary btn-sm" id="ship-save-btn">Add Shipment</button>
-                                    <button class="btn-secondary btn-sm" id="ship-cancel-btn">Cancel</button>
-                                </div>
                             </div>
                         </div>
-                        ${shipView === 'matrix' ? (() => {
-                            const allLabels = [...new Set(upcomingShips.flatMap(s => (s.milestones || []).map(m => m.label)))];
-                            const cols = upcomingShips.map(s => `<th>${escHtml(s.note || ymLabel(s.ym))}<br><small style="font-weight:400;color:#64748b">${ymLabel(s.ym)}</small></th>`).join('');
-                            const rows2 = allLabels.map(lbl => {
-                                const cells = upcomingShips.map(s => {
-                                    const m = (s.milestones || []).find(m => m.label === lbl);
-                                    return `<td>${m?.done ? escHtml(m.date || '✓') : '<span style="color:#cbd5e1">—</span>'}</td>`;
-                                }).join('');
-                                return `<tr><td class="imp-matrix-stage">${escHtml(lbl)}</td>${cells}</tr>`;
-                            }).join('');
-                            const arriveRow = upcomingShips.map(s => `<td style="font-weight:600;color:#1e40af">${ymLabel(s.ym)}</td>`).join('');
-                            return `<div class="imp-matrix-wrap">
-                                <table class="imp-matrix-table">
-                                    <thead><tr><th>Milestone</th>${cols}</tr></thead>
-                                    <tbody>
-                                        ${rows2}
-                                        <tr class="imp-matrix-row--arrive"><td class="imp-matrix-stage">Arrival</td>${arriveRow}</tr>
-                                    </tbody>
-                                </table>
-                            </div>`;
-                        })() : `<div class="imp-events">
-                            ${upcomingShips.length
-                                ? upcomingShips.map(s => shipCard(s, false)).join('')
-                                : '<p class="wh-empty" style="margin:0">No upcoming shipments.</p>'}
-                        </div>`}
-                    </div>
-                    ${pastShips.length ? `
-                    <div class="cat-section">
-                        <h3 class="stk-section-title">Past Shipments</h3>
-                        <div class="imp-events imp-events--past">
-                            ${pastShips.map(s => shipCard(s, true)).join('')}
+                        <div style="display:flex;gap:0.4rem;margin-top:0.5rem">
+                            <button class="btn-primary btn-sm" id="ship-save-btn">Add Shipment</button>
+                            <button class="btn-secondary btn-sm" id="ship-cancel-btn">Cancel</button>
                         </div>
-                    </div>` : ''}
+                    </div>
+                    ${shipView === 'matrix' ? (() => {
+                        const allLabels = [...new Set(upcomingShips.flatMap(s => (s.milestones || []).map(m => m.label)))];
+                        const cols = upcomingShips.map(s => `<th>${escHtml(s.campaign || s.note || ymLabel(s.ym))}<br><small style="font-weight:400;color:#64748b">${ymLabel(s.ym)}</small></th>`).join('');
+                        const rows2 = allLabels.map(lbl => {
+                            const cells = upcomingShips.map(s => {
+                                const m = (s.milestones || []).find(m => m.label === lbl);
+                                return `<td>${m?.done ? escHtml(m.date || '✓') : '<span style="color:#cbd5e1">—</span>'}</td>`;
+                            }).join('');
+                            return `<tr><td class="imp-matrix-stage">${escHtml(lbl)}</td>${cells}</tr>`;
+                        }).join('');
+                        const arriveRow = upcomingShips.map(s => `<td style="font-weight:600;color:#1e40af">${ymLabel(s.ym)}</td>`).join('');
+                        return `<div class="imp-matrix-wrap">
+                            <table class="imp-matrix-table">
+                                <thead><tr><th>Milestone</th>${cols}</tr></thead>
+                                <tbody>
+                                    ${rows2}
+                                    <tr class="imp-matrix-row--arrive"><td class="imp-matrix-stage">Arrival</td>${arriveRow}</tr>
+                                </tbody>
+                            </table>
+                        </div>`;
+                    })() : `<div class="imp-events-grid">
+                        ${upcomingShips.length
+                            ? upcomingShips.map(s => shipCard(s, false)).join('')
+                            : '<p class="wh-empty" style="margin:0">No upcoming shipments.</p>'}
+                    </div>`}
                 </div>
+                ${pastShips.length ? `
+                <div class="cat-section">
+                    <h3 class="stk-section-title">Past Shipments</h3>
+                    <div class="imp-events-grid imp-events-grid--past">
+                        ${pastShips.map(s => shipCard(s, true)).join('')}
+                    </div>
+                </div>` : ''}
             </div>`;
+
+            // ── Tab switching ──
+            document.getElementById('imp-tab-overview')?.addEventListener('click', () => { activeTab = 'overview'; rebuild(); });
+            document.getElementById('imp-tab-shipments')?.addEventListener('click', () => { activeTab = 'shipments'; rebuild(); });
 
             body.querySelectorAll('.imp-scenario-btn').forEach(btn => {
                 btn.addEventListener('click', () => { scenario = btn.dataset.s; rebuild(); });
@@ -866,16 +913,18 @@ const Warehouse = (() => {
                 document.getElementById('imp-add-ship-form').style.display = 'none';
             });
             document.getElementById('ship-save-btn')?.addEventListener('click', async () => {
-                const ym   = document.getElementById('ship-ym').value;
-                const kg   = parseFloat(document.getElementById('ship-kg').value) || 0;
-                const note = document.getElementById('ship-note').value.trim();
+                const ym         = document.getElementById('ship-ym').value;
+                const kg         = parseFloat(document.getElementById('ship-kg').value) || 0;
+                const note       = document.getElementById('ship-note').value.trim();
+                const campaign   = document.getElementById('ship-campaign').value.trim();
+                const pricePerKg = parseFloat(document.getElementById('ship-price').value) || null;
                 if (!ym) { showToast('Please select an arrival month'); return; }
                 if (!kg) { showToast('Please enter a volume in kg'); return; }
                 const btn = document.getElementById('ship-save-btn');
                 btn.disabled = true; btn.textContent = 'Adding…';
                 try {
                     const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
-                    const shipments = [...(config.shipments || []), { id, ym, kg, note }];
+                    const shipments = [...(config.shipments || []), { id, ym, kg, note, campaign, pricePerKg }];
                     await api('/api/import/forecast', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
@@ -946,6 +995,28 @@ const Warehouse = (() => {
                     } catch (err) {
                         showToast('Save failed: ' + err.message);
                         cb.checked = !done;
+                    }
+                });
+            });
+
+            // Auto-save shipment detail fields on change
+            body.querySelectorAll('.imp-detail-input').forEach(inp => {
+                inp.addEventListener('change', async () => {
+                    const shipId = inp.dataset.shipId;
+                    const field  = inp.dataset.field;
+                    const val    = inp.type === 'number' ? (parseFloat(inp.value) || null) : inp.value.trim() || null;
+                    const shipments = (config.shipments || []).map(s =>
+                        s.id === shipId ? { ...s, [field]: val } : s
+                    );
+                    try {
+                        await api('/api/import/forecast', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ shipments }),
+                        });
+                        config.shipments = shipments;
+                    } catch (err) {
+                        showToast('Save failed: ' + err.message);
                     }
                 });
             });
