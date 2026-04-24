@@ -46,6 +46,8 @@ export async function onRequestPost({ env, request }) {
         if (body.startingKg !== undefined) existing.startingKg = body.startingKg;
         if (body.monthlyAvg !== undefined) existing.monthlyAvg = body.monthlyAvg;
         if (body.shipments  !== undefined) existing.shipments  = body.shipments;
+        existing.version  = (existing.version || 1) + 1;
+        existing.savedAt  = new Date().toISOString();
         await env.ORDERS_KV.put(KEY, JSON.stringify(existing));
         return jsonResponse({ ok: true });
     } catch (e) {

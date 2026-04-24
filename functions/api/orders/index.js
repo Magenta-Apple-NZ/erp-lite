@@ -35,9 +35,18 @@ export async function onRequestPost({ env, request }) {
             }
         }
 
-        const counter = parseInt(await env.ORDERS_KV.get('order_counter') || '0') + 1;
-        await env.ORDERS_KV.put('order_counter', String(counter));
-        const id = `PKS-${String(counter).padStart(4, '0')}`;
+        // Allow explicit numeric override (e.g. retrospective Xero reconciliation)
+        let id;
+        const numOverride = body.orderNumber ? String(body.orderNumber).trim().replace(/^PKS-/i, '') : '';
+        if (numOverride && /^\d+$/.test(numOverride)) {
+            id = `PKS-${numOverride.padStart(4, '0')}`;
+            const conflict = await env.ORDERS_KV.get('order:' + id);
+            if (conflict) return errResponse(`Order ${id} already exists`, 409);
+        } else {
+            const counter = parseInt(await env.ORDERS_KV.get('order_counter') || '0') + 1;
+            await env.ORDERS_KV.put('order_counter', String(counter));
+            id = `PKS-${String(counter).padStart(4, '0')}`;
+        }
 
         const order = {
             id,

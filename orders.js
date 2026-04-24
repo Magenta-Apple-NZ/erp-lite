@@ -357,10 +357,22 @@ const Orders = (() => {
         try { catalogStores = await api('/api/catalog/stores'); } catch (e) { /* optional */ }
         try { catalogItems = await api('/api/catalog/items'); } catch (e) { /* optional */ }
 
+        // Compute next sequential PKS ID for pre-population
+        let nextOrderNum = '';
+        try {
+            const allOrders = await api('/api/orders');
+            let max = 0;
+            for (const o of (allOrders || [])) {
+                const m = (o.id || '').match(/^PKS-(\d+)$/);
+                if (m) max = Math.max(max, parseInt(m[1]));
+            }
+            nextOrderNum = String(max + 1).padStart(4, '0');
+        } catch (e) { /* non-critical */ }
+
         const body = document.getElementById('new-order-body');
         if (!xeroConnected) body.insertAdjacentHTML('beforebegin', xeroConnectBanner());
 
-        body.innerHTML = orderFormHtml({ customers, catalogStores, submitLabel: 'Create Order' });
+        body.innerHTML = orderFormHtml({ customers, catalogStores, submitLabel: 'Create Order', nextOrderNum });
 
         wireOrderForm({ customers, catalogStores, catalogItems });
         document.getElementById('submit-order-btn').addEventListener('click', () => submitNewOrder());
@@ -411,11 +423,11 @@ const Orders = (() => {
     }
 
     // ── Shared order form HTML ──
-    function orderFormHtml({ customers, catalogStores, submitLabel, defaults = {} }) {
+    function orderFormHtml({ customers, catalogStores, submitLabel, defaults = {}, nextOrderNum = '' }) {
         // Strip the prefix to show just the numeric portion in the input
         const numericId = defaults.id
             ? defaults.id.replace(/^(?:PKS|ORD)-(?:\d{4}-)?/, '')
-            : '';
+            : nextOrderNum;
         return `
         <form id="new-order-form" class="order-form" onsubmit="return false">
             <!-- Customer + Ship To grouped -->
@@ -624,10 +636,11 @@ const Orders = (() => {
     let lineCount = 0;
 
     function getPriceForQty(item, qty) {
-        if (item.pb3Quantity && qty >= item.pb3Quantity) return item.pb3Price ?? item.defaultPrice ?? 0;
-        if (item.pb2Quantity && qty >= item.pb2Quantity) return item.pb2Price ?? item.defaultPrice ?? 0;
-        if (item.pb1Quantity && qty >= item.pb1Quantity) return item.pb1Price ?? item.defaultPrice ?? 0;
-        return item.defaultPrice ?? 0;
+        const base = item.defaultPrice ?? item.unitPrice ?? 0;
+        if (item.pb3Quantity && qty >= item.pb3Quantity) return item.pb3Price ?? base;
+        if (item.pb2Quantity && qty >= item.pb2Quantity) return item.pb2Price ?? base;
+        if (item.pb1Quantity && qty >= item.pb1Quantity) return item.pb1Price ?? base;
+        return base;
     }
 
     function addLineItem(catalogItems = [], prefill = null) {

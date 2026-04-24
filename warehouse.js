@@ -457,6 +457,10 @@ const Warehouse = (() => {
         return String(v);
     }
 
+    function fmtFull(n) {
+        return Math.round(n).toLocaleString('en-NZ');
+    }
+
     function ymLabel(ym) {
         if (!ym) return '';
         const [y, m] = ym.split('-');
@@ -505,39 +509,62 @@ const Warehouse = (() => {
     }
 
     function buildForecastChart(rows, scenario) {
-        const closeKey = { avg: 'closeAvg', good: 'closeGood', great: 'closeGreat' }[scenario];
+        const SERIES = {
+            avg:   { close: 'closeAvg',   color: '#3b82f6', dash: '',    label: 'Average' },
+            good:  { close: 'closeGood',  color: '#10b981', dash: '5 3', label: 'Good'    },
+            great: { close: 'closeGreat', color: '#8b5cf6', dash: '5 3', label: 'Great'   },
+        };
 
-        const W = 700, H = 180;
-        const pad = { l: 50, r: 12, t: 18, b: 32 };
+        const W = 700, H = 205;
+        const pad = { l: 52, r: 12, t: 18, b: 50 };
         const chartW = W - pad.l - pad.r;
         const chartH = H - pad.t - pad.b;
 
-        const values = rows.map(r => r[closeKey]);
-        const maxV = Math.max(...values, 1);
-        const minV = Math.min(...values, 0);
+        const allValues = rows.flatMap(r => [r.closeAvg, r.closeGood, r.closeGreat]);
+        const maxV = Math.max(...allValues, 1);
+        const minV = Math.min(...allValues, 0);
         const range = maxV - minV || 1;
 
         function xOf(i) { return pad.l + (i / Math.max(rows.length - 1, 1)) * chartW; }
         function yOf(v) { return pad.t + chartH - ((v - minV) / range) * chartH; }
 
-        const zeroY = yOf(0).toFixed(1);
+        const zeroY = yOf(0);
         const zeroLine = minV < 0
-            ? `<line x1="${pad.l}" y1="${zeroY}" x2="${W - pad.r}" y2="${zeroY}" stroke="#ef4444" stroke-width="1" stroke-dasharray="4 3" opacity="0.7"/>`
+            ? `<line x1="${pad.l}" y1="${zeroY.toFixed(1)}" x2="${W - pad.r}" y2="${zeroY.toFixed(1)}" stroke="#ef4444" stroke-width="2" opacity="0.9"/>`
             : '';
 
+        // Bold red fill below zero for selected series
+        const selClose = SERIES[scenario].close;
+        let negFill = '';
+        if (minV < 0) {
+            const polyPts = [
+                `${xOf(0).toFixed(1)},${zeroY.toFixed(1)}`,
+                ...rows.map((r, i) => `${xOf(i).toFixed(1)},${yOf(Math.min(r[selClose], 0)).toFixed(1)}`),
+                `${xOf(rows.length - 1).toFixed(1)},${zeroY.toFixed(1)}`,
+            ].join(' ');
+            negFill = `<polygon points="${polyPts}" fill="#ef4444" opacity="0.18"/>`;
+        }
+
+        // Container arrival lines
         const importLines = rows.map((r, i) => {
             if (!r.incoming) return '';
             const x = xOf(i).toFixed(1);
-            return `<line x1="${x}" y1="${pad.t}" x2="${x}" y2="${pad.t + chartH}" stroke="#3b82f6" stroke-width="1.5" stroke-dasharray="4 3" opacity="0.4"/>
-                    <text x="${x}" y="${pad.t - 4}" text-anchor="middle" font-size="8" fill="#3b82f6" font-weight="600">+${fmtKg(r.incoming)}</text>`;
+            return `<line x1="${x}" y1="${pad.t}" x2="${x}" y2="${pad.t + chartH}" stroke="#64748b" stroke-width="1" stroke-dasharray="4 3" opacity="0.3"/>
+                    <text x="${x}" y="${pad.t - 4}" text-anchor="middle" font-size="8" fill="#64748b">+${fmtFull(r.incoming)}</text>`;
         }).join('');
 
-        const pts = rows.map((r, i) => `${xOf(i).toFixed(1)},${yOf(r[closeKey]).toFixed(1)}`).join(' ');
-        const linePath = `<polyline points="${pts}" fill="none" stroke="#3b82f6" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>`;
+        // Draw dimmed series first, highlighted last (on top)
+        const drawOrder = Object.keys(SERIES).filter(s => s !== scenario).concat(scenario);
+        const seriesLines = drawOrder.map(s => {
+            const { close, color, dash } = SERIES[s];
+            const sel = s === scenario;
+            const pts = rows.map((r, i) => `${xOf(i).toFixed(1)},${yOf(r[close]).toFixed(1)}`).join(' ');
+            return `<polyline points="${pts}" fill="none" stroke="${color}" stroke-width="${sel ? 2.5 : 1.5}" stroke-dasharray="${dash}" stroke-linejoin="round" stroke-linecap="round" opacity="${sel ? 1 : 0.2}"/>`;
+        }).join('');
 
         const dots = rows.map((r, i) => {
             if (!r.incoming) return '';
-            return `<circle cx="${xOf(i).toFixed(1)}" cy="${yOf(r[closeKey]).toFixed(1)}" r="4" fill="#3b82f6" stroke="white" stroke-width="1.5"/>`;
+            return `<circle cx="${xOf(i).toFixed(1)}" cy="${yOf(r[selClose]).toFixed(1)}" r="4" fill="${SERIES[scenario].color}" stroke="white" stroke-width="1.5"/>`;
         }).join('');
 
         const xLabels = rows.map((r, i) => {
@@ -552,9 +579,17 @@ const Warehouse = (() => {
                     <line x1="${pad.l}" y1="${y}" x2="${W - pad.r}" y2="${y}" stroke="#f1f5f9" stroke-width="1"/>`;
         }).join('');
 
+        const legendY = H - 14;
+        const legend = Object.entries(SERIES).map(([s, { label, color, dash }], i) => {
+            const sel = s === scenario;
+            const x = pad.l + i * 100;
+            return `<line x1="${x}" y1="${legendY}" x2="${x + 20}" y2="${legendY}" stroke="${color}" stroke-width="${sel ? 2.5 : 1.5}" stroke-dasharray="${dash}" opacity="${sel ? 1 : 0.35}"/>
+                    <text x="${x + 24}" y="${legendY + 4}" font-size="8.5" fill="${sel ? '#1e293b' : '#94a3b8'}" font-weight="${sel ? 600 : 400}">${label}</text>`;
+        }).join('');
+
         return `
         <svg viewBox="0 0 ${W} ${H}" class="imp-chart" xmlns="http://www.w3.org/2000/svg">
-            ${yLabels}${zeroLine}${importLines}${linePath}${dots}${xLabels}
+            ${yLabels}${zeroLine}${negFill}${importLines}${seriesLines}${dots}${xLabels}${legend}
         </svg>`;
     }
 
@@ -579,6 +614,7 @@ const Warehouse = (() => {
         } catch (e) { /* orders unavailable */ }
 
         let scenario = 'avg';
+        let shipView = 'cards';
 
         function rebuild() {
             const rows = computeForecast(config, 18, actuals);
@@ -603,11 +639,11 @@ const Warehouse = (() => {
                 return `
                 <tr class="imp-row ${r.incoming ? 'imp-has-import' : ''}">
                     <td class="imp-td-month">${escHtml(r.label)}</td>
-                    <td class="imp-td-num ${hasActual ? 'imp-actual-val' : ''}">${hasActual ? fmtKg(r.actualSales) + ' kg' : '—'}</td>
-                    <td class="imp-td-num">${fmtKg(sales)} kg</td>
-                    <td class="imp-td-num">${fmtKg(r[openKey])} kg</td>
-                    <td class="imp-td-num imp-incoming ${r.incoming ? 'imp-incoming-val' : ''}">${r.incoming ? '+' + fmtKg(r.incoming) + ' kg' : '—'}</td>
-                    <td class="imp-td-num ${closing < 0 ? 'fcst-negative' : ''}">${fmtKg(closing)} kg</td>
+                    <td class="imp-td-num ${hasActual ? 'imp-actual-val' : ''}">${hasActual ? fmtFull(r.actualSales) : '—'}</td>
+                    <td class="imp-td-num">${fmtFull(sales)}</td>
+                    <td class="imp-td-num">${fmtFull(r[openKey])}</td>
+                    <td class="imp-td-num imp-incoming ${r.incoming ? 'imp-incoming-val' : ''}">${r.incoming ? '+' + fmtFull(r.incoming) : '—'}</td>
+                    <td class="imp-td-num ${closing < 0 ? 'fcst-negative' : ''}">${fmtFull(closing)}</td>
                     <td style="text-align:center;padding:0 0.5rem">${dot}</td>
                 </tr>`;
             }).join('');
@@ -633,7 +669,7 @@ const Warehouse = (() => {
                 return `
                 <div class="imp-event-card ${past ? 'imp-event-card--past' : ''}">
                     <div class="imp-event-month">${ymLabel(s.ym)}</div>
-                    <div class="imp-event-qty">${fmtKg(s.kg)} <span>kg</span></div>
+                    <div class="imp-event-qty">${fmtFull(s.kg)}</div>
                     ${s.note ? `<div class="imp-event-note">${escHtml(s.note)}${milestones.length ? ` &mdash; ${doneCount}/${milestones.length}` : ''}</div>` : ''}
                     ${mHtml}
                     ${!past ? `<button class="imp-ship-del" data-id="${escHtml(s.id)}" title="Remove">\xd7</button>` : ''}
@@ -646,8 +682,8 @@ const Warehouse = (() => {
                     <div class="cat-section imp-chart-card">
                         <div class="cat-section-head">
                             <div>
-                                <h2 class="cat-title">Stock Trajectory &middot; Prime Ties</h2>
-                                <p class="cat-sub">Starting stock: <strong>${fmtKg(config.startingKg ?? 0)} kg</strong>
+                                <h2 class="cat-title">Stock Trajectory &middot; Prime Ties <span class="fcst-version">v${config.version || 1}</span></h2>
+                                <p class="cat-sub">Starting stock: <strong>${fmtFull(config.startingKg ?? 0)}</strong>
                                     <button class="btn-link" id="imp-edit-stock-btn">Edit</button></p>
                             </div>
                             <div class="cat-actions">
@@ -711,7 +747,11 @@ const Warehouse = (() => {
                     <div class="cat-section">
                         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.75rem">
                             <h3 class="stk-section-title" style="margin:0">Upcoming Shipments</h3>
-                            <button class="btn-primary btn-sm" id="imp-add-ship-btn">+ Add</button>
+                            <div style="display:flex;gap:0.35rem;align-items:center">
+                                <button class="imp-view-btn ${shipView === 'cards' ? 'active' : ''}" id="imp-view-cards">Cards</button>
+                                <button class="imp-view-btn ${shipView === 'matrix' ? 'active' : ''}" id="imp-view-matrix">Matrix</button>
+                                <button class="btn-primary btn-sm" id="imp-add-ship-btn">+ Add</button>
+                            </div>
                         </div>
                         <div id="imp-add-ship-form" style="display:none;margin-bottom:1rem;padding:0.75rem;background:#f8fafc;border-radius:6px;border:1px solid #e2e8f0">
                             <div style="display:flex;flex-direction:column;gap:0.4rem">
@@ -727,11 +767,31 @@ const Warehouse = (() => {
                                 </div>
                             </div>
                         </div>
-                        <div class="imp-events">
+                        ${shipView === 'matrix' ? (() => {
+                            const allLabels = [...new Set(upcomingShips.flatMap(s => (s.milestones || []).map(m => m.label)))];
+                            const cols = upcomingShips.map(s => `<th>${escHtml(s.note || ymLabel(s.ym))}<br><small style="font-weight:400;color:#64748b">${ymLabel(s.ym)}</small></th>`).join('');
+                            const rows2 = allLabels.map(lbl => {
+                                const cells = upcomingShips.map(s => {
+                                    const m = (s.milestones || []).find(m => m.label === lbl);
+                                    return `<td>${m?.done ? escHtml(m.date || '✓') : '<span style="color:#cbd5e1">—</span>'}</td>`;
+                                }).join('');
+                                return `<tr><td class="imp-matrix-stage">${escHtml(lbl)}</td>${cells}</tr>`;
+                            }).join('');
+                            const arriveRow = upcomingShips.map(s => `<td style="font-weight:600;color:#1e40af">${ymLabel(s.ym)}</td>`).join('');
+                            return `<div class="imp-matrix-wrap">
+                                <table class="imp-matrix-table">
+                                    <thead><tr><th>Milestone</th>${cols}</tr></thead>
+                                    <tbody>
+                                        ${rows2}
+                                        <tr class="imp-matrix-row--arrive"><td class="imp-matrix-stage">Arrival</td>${arriveRow}</tr>
+                                    </tbody>
+                                </table>
+                            </div>`;
+                        })() : `<div class="imp-events">
                             ${upcomingShips.length
                                 ? upcomingShips.map(s => shipCard(s, false)).join('')
                                 : '<p class="wh-empty" style="margin:0">No upcoming shipments.</p>'}
-                        </div>
+                        </div>`}
                     </div>
                     ${pastShips.length ? `
                     <div class="cat-section">
@@ -746,6 +806,9 @@ const Warehouse = (() => {
             body.querySelectorAll('.imp-scenario-btn').forEach(btn => {
                 btn.addEventListener('click', () => { scenario = btn.dataset.s; rebuild(); });
             });
+
+            document.getElementById('imp-view-cards')?.addEventListener('click', () => { shipView = 'cards'; rebuild(); });
+            document.getElementById('imp-view-matrix')?.addEventListener('click', () => { shipView = 'matrix'; rebuild(); });
 
             document.getElementById('imp-edit-stock-btn')?.addEventListener('click', () => {
                 document.getElementById('imp-stock-edit').style.display = '';

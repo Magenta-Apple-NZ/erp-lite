@@ -36,7 +36,7 @@ const SalesView = (() => {
     };
     const MO_NAMES = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 
-    function buildSalesByMonthChart(orderActuals) {
+    function getMergedData(orderActuals) {
         const data = {};
         for (const [yr, vals] of Object.entries(SALES_HISTORY)) data[yr] = [...vals];
         for (const [ym, kg] of Object.entries(orderActuals || {})) {
@@ -45,7 +45,11 @@ const SalesView = (() => {
             if (!data[yr]) data[yr] = new Array(12).fill(null);
             if (data[yr][mo] === null) data[yr][mo] = kg;
         }
+        return data;
+    }
 
+    function buildSalesByMonthChart(orderActuals) {
+        const data = getMergedData(orderActuals);
         const years = Object.keys(data).sort();
         const W = 680, H = 210;
         const pad = { l: 46, r: 12, t: 16, b: 36 };
@@ -85,6 +89,51 @@ const SalesView = (() => {
         ).join('');
 
         return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto" xmlns="http://www.w3.org/2000/svg">${grid}${bars}${xLabels}${legend}</svg>`;
+    }
+
+    function buildCumulativeChart(orderActuals) {
+        const data = getMergedData(orderActuals);
+        const years = Object.keys(data).sort();
+        const W = 680, H = 210;
+        const pad = { l: 46, r: 12, t: 16, b: 36 };
+        const chartW = W - pad.l - pad.r;
+        const chartH = H - pad.t - pad.b;
+        const COLORS = ['#94a3b8', '#3b82f6', '#10b981'];
+
+        // Running total per year, Jan-start
+        const cumData = {};
+        for (const yr of years) {
+            let run = 0;
+            cumData[yr] = (data[yr] || []).map(v => { run += (v || 0); return v !== null ? run : null; });
+        }
+
+        const allVals = Object.values(cumData).flat().filter(v => v !== null);
+        const maxV = Math.max(...allVals, 1);
+        function xOf(mo) { return (pad.l + (mo / 11) * chartW).toFixed(1); }
+        function yOf(v) { return (pad.t + chartH - (v / maxV) * chartH).toFixed(1); }
+
+        const grid = [0, 0.25, 0.5, 0.75, 1].map(f => {
+            const v = f * maxV, y = yOf(v);
+            return `<text x="${pad.l - 4}" y="${(parseFloat(y) + 3).toFixed(1)}" text-anchor="end" font-size="8" fill="#94a3b8">${fmtKg(v)}</text>
+                    <line x1="${pad.l}" y1="${y}" x2="${W - pad.r}" y2="${y}" stroke="#f1f5f9" stroke-width="1"/>`;
+        }).join('');
+
+        const lines = years.map((yr, yi) => {
+            const vals = cumData[yr];
+            const pts = vals.map((v, mo) => v !== null ? `${xOf(mo)},${yOf(v)}` : null).filter(Boolean).join(' ');
+            return pts ? `<polyline points="${pts}" fill="none" stroke="${COLORS[yi] || '#94a3b8'}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" opacity="0.9"/>` : '';
+        }).join('');
+
+        const xLabels = MO_NAMES.map((m, i) =>
+            `<text x="${xOf(i)}" y="${pad.t + chartH + 14}" text-anchor="middle" font-size="8.5" fill="#64748b">${m}</text>`
+        ).join('');
+
+        const legend = years.map((yr, i) =>
+            `<line x1="${pad.l + i * 58}" y1="${H - 7}" x2="${pad.l + i * 58 + 16}" y2="${H - 7}" stroke="${COLORS[i] || '#94a3b8'}" stroke-width="2"/>
+             <text x="${pad.l + i * 58 + 19}" y="${H - 3}" font-size="8.5" fill="#475569">${yr}</text>`
+        ).join('');
+
+        return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto" xmlns="http://www.w3.org/2000/svg">${grid}${lines}${xLabels}${legend}</svg>`;
     }
 
     function parseSalesCsv(csv) {
@@ -295,16 +344,22 @@ const SalesView = (() => {
             ${renderConnectPanel(config)}
         </div>`;
 
-        const chartsSection = `
+        let salesChartMode = 'monthly';
+        const renderChartsSection = () => `
         <div class="cat-section" style="margin-bottom:1.5rem">
             <div class="cat-section-head">
                 <div>
                     <h2 class="cat-title">Sales by Month</h2>
-                    <p class="cat-sub">Historical kg sold by calendar year. Recent hub orders overlaid automatically.</p>
+                    <p class="cat-sub">Historical kg by calendar year. Hub orders overlaid automatically.</p>
+                </div>
+                <div class="cat-actions">
+                    <button class="imp-view-btn ${salesChartMode === 'monthly' ? 'active' : ''}" id="sales-mode-monthly">Monthly</button>
+                    <button class="imp-view-btn ${salesChartMode === 'cumulative' ? 'active' : ''}" id="sales-mode-cumulative">Cumulative</button>
                 </div>
             </div>
-            <div style="margin-top:0.75rem">${buildSalesByMonthChart(orderActuals)}</div>
+            <div style="margin-top:0.75rem" id="sales-chart-area">${salesChartMode === 'cumulative' ? buildCumulativeChart(orderActuals) : buildSalesByMonthChart(orderActuals)}</div>
         </div>`;
+        const chartsSection = renderChartsSection();
 
         const webhookSection = `
         <details class="cat-section sales-webhook-details" style="margin-top:1.5rem">
@@ -332,6 +387,22 @@ const SalesView = (() => {
         bodyEl.innerHTML = connectSection + chartsSection + (hasData ? renderDataTable(headers, rows) : '') + webhookSection;
 
         wireConnectPanel(config);
+
+        const wireChartToggle = () => {
+            document.getElementById('sales-mode-monthly')?.addEventListener('click', () => {
+                salesChartMode = 'monthly';
+                document.getElementById('sales-chart-area').innerHTML = buildSalesByMonthChart(orderActuals);
+                document.getElementById('sales-mode-monthly')?.classList.add('active');
+                document.getElementById('sales-mode-cumulative')?.classList.remove('active');
+            });
+            document.getElementById('sales-mode-cumulative')?.addEventListener('click', () => {
+                salesChartMode = 'cumulative';
+                document.getElementById('sales-chart-area').innerHTML = buildCumulativeChart(orderActuals);
+                document.getElementById('sales-mode-cumulative')?.classList.add('active');
+                document.getElementById('sales-mode-monthly')?.classList.remove('active');
+            });
+        };
+        wireChartToggle();
 
         document.getElementById('sales-refresh-btn')?.addEventListener('click', () => renderBody(bodyEl));
 

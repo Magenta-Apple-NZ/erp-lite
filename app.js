@@ -564,9 +564,9 @@ function fetchAndRenderSparklines(base, targets) {
         targets.forEach(code => {
             const pairEl = document.getElementById('currency-pair-' + code);
             if (!pairEl) return;
-            const values = extractMonthlyRates(histData, code);
+            const { values, months } = extractMonthlyRates(histData, code);
             if (values.length < 2) return;
-            pairEl.insertAdjacentHTML('beforeend', drawSparkline(values));
+            pairEl.insertAdjacentHTML('beforeend', drawSparkline(values, months));
         });
     };
 
@@ -593,21 +593,32 @@ function extractMonthlyRates(histData, code) {
         const month = d.slice(0, 7);
         if (histData.rates[d][code] !== undefined) byMonth[month] = histData.rates[d][code];
     });
-    return Object.values(byMonth);
+    return { values: Object.values(byMonth), months: Object.keys(byMonth) };
 }
 
-function drawSparkline(values) {
-    const W = 100, H = 22, PAD = 2;
+function drawSparkline(values, months) {
+    const MO = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    const W = 100, H = 30, PAD = 2, LBLH = 9;
+    const chartH = H - LBLH;
     const min = Math.min(...values), max = Math.max(...values);
     const range = max - min || 0.0001;
     const pts = values.map((v, i) => {
         const x = PAD + (i / (values.length - 1)) * (W - PAD * 2);
-        const y = H - PAD - ((v - min) / range) * (H - PAD * 2);
+        const y = PAD + (1 - (v - min) / range) * (chartH - PAD * 2);
         return x.toFixed(1) + ',' + y.toFixed(1);
     }).join(' ');
     const trending = values[values.length - 1] >= values[0] ? 'up' : 'down';
-    return '<svg viewBox="0 0 ' + W + ' ' + H + '" class="sparkline sparkline-' + trending + '" preserveAspectRatio="none">' +
+    const stripW = (W - PAD * 2) / Math.max(values.length - 1, 1);
+    const strips = values.map((v, i) => {
+        const x = PAD + (i / (values.length - 1)) * (W - PAD * 2);
+        const ym = months?.[i] || '';
+        const mo = ym ? MO[parseInt(ym.slice(5)) - 1] + ' ' + ym.slice(0, 4) : '';
+        return '<rect x="' + (x - stripW / 2).toFixed(1) + '" y="0" width="' + stripW.toFixed(1) + '" height="' + chartH + '" fill="transparent"><title>' + (mo ? mo + ': ' : '') + v.toFixed(4) + '</title></rect>';
+    }).join('');
+    const label = '<text x="' + (W / 2) + '" y="' + H + '" text-anchor="middle" font-size="6.5" fill="#94a3b8">Last 13 months</text>';
+    return '<svg viewBox="0 0 ' + W + ' ' + (H + 2) + '" class="sparkline sparkline-' + trending + '" preserveAspectRatio="none">' +
         '<polyline points="' + pts + '" fill="none" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round"/>' +
+        strips + label +
         '</svg>';
 }
 
