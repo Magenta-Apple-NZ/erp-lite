@@ -565,8 +565,8 @@ const Warehouse = (() => {
         // Hover dots at every data point for the selected series
         const allDots = rows.map((r, i) => {
             const val = r[selClose];
-            return `<g class="chart-pt"><title>${escHtml(r.label)}: ${fmtFull(val)} kg</title>` +
-                `<rect x="${(xOf(i) - 7).toFixed(1)}" y="${(yOf(val) - 7).toFixed(1)}" width="14" height="14" fill="transparent"/>` +
+            return `<g class="chart-pt" pointer-events="all"><title>${escHtml(r.label)}: ${fmtFull(val)} kg</title>` +
+                `<rect x="${(xOf(i) - 7).toFixed(1)}" y="${(yOf(val) - 7).toFixed(1)}" width="14" height="14" fill="transparent" pointer-events="all"/>` +
                 `<circle cx="${xOf(i).toFixed(1)}" cy="${yOf(val).toFixed(1)}" r="3.5" fill="${SERIES[scenario].color}" stroke="white" stroke-width="1.5" class="chart-dot"/></g>`;
         }).join('');
 
@@ -1024,11 +1024,11 @@ const Warehouse = (() => {
                 <div class="imp-fx-grid">
                     ${FX_DISPLAY.filter(c => forex[c]).map(c =>
                         '<div class="imp-fx-tile">' +
-                        '<div class="imp-fx-tile-label">' +
+                        '<div class="imp-fx-tile-header">' +
                         '<div class="imp-fx-tile-code">' + c + '</div>' +
-                        '<div class="imp-fx-tile-name">' + FX_LABELS[c] + '</div>' +
-                        '</div>' +
                         '<div class="imp-fx-tile-rate">' + forex[c].toFixed(4) + '</div>' +
+                        '</div>' +
+                        '<div class="imp-fx-tile-name">' + FX_LABELS[c] + '</div>' +
                         fxSparkline(c) +
                         '</div>'
                     ).join('')}

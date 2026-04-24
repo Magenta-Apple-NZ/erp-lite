@@ -760,9 +760,9 @@ function drawSparkline(values, months) {
         const ym = months?.[i] || '';
         const mo = ym ? MO[parseInt(ym.slice(5)) - 1] + ' ' + ym.slice(0, 4) : '';
         const lbl = (mo ? mo + ': ' : '') + c.v.toFixed(4);
-        return '<g class="sparkline-pt">' +
+        return '<g class="sparkline-pt" pointer-events="all">' +
             '<title>' + lbl + '</title>' +
-            '<rect x="' + (c.x - stripW / 2).toFixed(1) + '" y="0" width="' + stripW.toFixed(1) + '" height="' + chartH + '" fill="transparent"/>' +
+            '<rect x="' + (c.x - stripW / 2).toFixed(1) + '" y="0" width="' + stripW.toFixed(1) + '" height="' + chartH + '" fill="transparent" pointer-events="all"/>' +
             '<circle cx="' + c.x.toFixed(1) + '" cy="' + c.y.toFixed(1) + '" r="2" class="sparkline-dot"/>' +
             '</g>';
     }).join('');

@@ -229,8 +229,8 @@ const SalesView = (() => {
             return cumData[yr].map((v, mo) => {
                 if (v === null) return '';
                 const cx = xOf(mo), cy = yOf(v);
-                return `<g class="chart-pt"><title>${MO_NAMES[mo]} ${yr}: ${Math.round(v).toLocaleString('en-NZ')} kg</title>` +
-                    `<rect x="${(parseFloat(cx) - 7).toFixed(1)}" y="${(parseFloat(cy) - 7).toFixed(1)}" width="14" height="14" fill="transparent"/>` +
+                return `<g class="chart-pt" pointer-events="all"><title>${MO_NAMES[mo]} ${yr}: ${Math.round(v).toLocaleString('en-NZ')} kg</title>` +
+                    `<rect x="${(parseFloat(cx) - 7).toFixed(1)}" y="${(parseFloat(cy) - 7).toFixed(1)}" width="14" height="14" fill="transparent" pointer-events="all"/>` +
                     `<circle cx="${cx}" cy="${cy}" r="3.5" fill="${color}" stroke="white" stroke-width="1.5" class="chart-dot"/></g>`;
             }).join('');
         }).join('');

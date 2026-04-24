@@ -2113,20 +2113,21 @@ a.xero-inv-linked:hover { background: #d1fae5; border-color: #6ee7b7; }
 }
 .imp-fx-tile {
     background: #f8fafc; border: 1px solid #e2e8f0;
-    border-radius: 8px; padding: 0.55rem 0.85rem;
-    display: flex; align-items: center; gap: 0.75rem;
+    border-radius: 8px; padding: 0.6rem 0.85rem 0.5rem;
 }
-.imp-fx-tile-label { flex: 0 0 auto; min-width: 88px; }
+.imp-fx-tile-header {
+    display: flex; justify-content: space-between; align-items: baseline;
+}
 .imp-fx-tile-code {
     font-size: 0.72rem; font-weight: 800; color: #1e293b;
     text-transform: uppercase; letter-spacing: 0.07em;
 }
 .imp-fx-tile-rate {
-    font-size: 1.1rem; font-weight: 700; color: #1e293b;
-    letter-spacing: -0.02em; flex: 0 0 auto; min-width: 62px; text-align: right;
+    font-size: 1.05rem; font-weight: 700; color: #1e293b;
+    letter-spacing: -0.02em;
 }
 .imp-fx-tile-name {
-    font-size: 0.61rem; color: #94a3b8; margin-top: 2px;
+    font-size: 0.61rem; color: #94a3b8; margin-top: 1px;
 }
 .imp-fx-date {
     font-size: 0.68rem; color: #cbd5e1; margin: 0.75rem 0 0;
@@ -2360,8 +2361,7 @@ a.xero-inv-linked:hover { background: #d1fae5; border-color: #6ee7b7; }
 
 /* ── FX tile sparklines ── */
 .imp-fx-tile .sparkline {
-    display: block; flex: 1 1 auto; min-width: 0; width: auto;
-    height: 36px; overflow: visible;
+    display: block; width: 100%; height: 34px; margin-top: 0.35rem; overflow: visible;
 }
 .imp-fx-tile .sparkline-up polyline   { stroke: #10b981; }
 .imp-fx-tile .sparkline-down polyline { stroke: #ef4444; }
@@ -2375,7 +2375,7 @@ a.xero-inv-linked:hover { background: #d1fae5; border-color: #6ee7b7; }
 /* ── SVG chart hover interactions ── */
 .chart-bar { cursor: pointer; transition: opacity 0.08s, filter 0.08s; }
 .chart-bar:hover { opacity: 1 !important; filter: brightness(1.14); }
-.chart-dot { opacity: 0; transition: opacity 0.1s; }
+.chart-dot { opacity: 0.15; transition: opacity 0.15s; }
 .chart-pt:hover .chart-dot { opacity: 1; }
 
 /* ── Order status dropdown ── */
@@ -2387,57 +2387,78 @@ a.xero-inv-linked:hover { background: #d1fae5; border-color: #6ee7b7; }
 }
 .order-status-sel:focus { border-color: #3b82f6; }
 
-/* ── Calendar view ── */
-.cal-grid { display: flex; flex-direction: column; gap: 0.85rem; margin-top: 1rem; }
-
-.cal-year-row { display: flex; gap: 0.75rem; align-items: stretch; }
-.cal-year-label {
-    font-size: 0.75rem; font-weight: 700; color: #64748b;
-    writing-mode: vertical-lr; transform: rotate(180deg);
-    display: flex; align-items: center; justify-content: center;
-    min-width: 22px; flex-shrink: 0;
+/* ── Calendar view (monthly, current year focus) ── */
+.cal-year-header {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 0.9rem;
 }
+.cal-year-title { font-size: 1.35rem; font-weight: 700; color: #1e293b; margin: 0; }
+.cal-gcal-status--on { font-size: 0.78rem; color: #10b981; font-weight: 600; }
 
-.cal-months-grid {
-    flex: 1; display: grid;
-    grid-template-columns: repeat(12, 1fr);
-    gap: 0.3rem;
+.cal-legend {
+    display: flex; flex-wrap: wrap; gap: 0.45rem; margin-bottom: 1.1rem;
 }
+.cal-legend-item {
+    font-size: 0.7rem; font-weight: 600; padding: 2px 8px;
+    border-radius: 4px; display: flex; align-items: center; gap: 4px;
+}
+.cal-legend-item::before {
+    content: ''; width: 7px; height: 7px; border-radius: 50%; display: inline-block;
+}
+.cal-legend-item--holiday { background: #eff6ff; color: #1d4ed8; }
+.cal-legend-item--holiday::before { background: #3b82f6; }
+.cal-legend-item--tax { background: #fff7ed; color: #c2410c; }
+.cal-legend-item--tax::before { background: #f97316; }
+.cal-legend-item--shipment { background: #f0fdf4; color: #15803d; }
+.cal-legend-item--shipment::before { background: #22c55e; }
+.cal-legend-item--gcal { background: #f5f3ff; color: #6d28d9; }
+.cal-legend-item--gcal::before { background: #8b5cf6; }
 
-.cal-month-cell {
-    border: 1px solid #e2e8f0; border-radius: 6px;
-    padding: 0.35rem 0.3rem; min-height: 56px;
-    background: white; display: flex; flex-direction: column; gap: 3px;
+.cal-months-4col {
+    display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.85rem;
 }
-.cal-month-cell--today     { background: #fefce8; border-color: #fbbf24; }
-.cal-month-cell--past      { background: #f8fafc; opacity: 0.6; }
-.cal-month-cell--has-ship  { border-color: #93c5fd; background: #eff6ff; }
-.cal-month-cell--today.cal-month-cell--has-ship { background: #fef9c3; border-color: #f59e0b; }
+.cal-month-card {
+    background: white; border: 1px solid #e2e8f0; border-radius: 10px;
+    padding: 0.85rem; display: flex; flex-direction: column; gap: 0.5rem;
+}
+.cal-month-card--current { border-color: #3b82f6; box-shadow: 0 0 0 2px rgba(59,130,246,0.12); }
+.cal-month-card--past { opacity: 0.65; }
 
-.cal-month-label {
-    font-size: 0.58rem; font-weight: 700; color: #94a3b8;
-    text-transform: uppercase; letter-spacing: 0.04em;
+.cal-month-header {
+    display: flex; align-items: center; justify-content: space-between; gap: 0.5rem;
 }
-.cal-month-content { display: flex; flex-direction: column; gap: 2px; flex: 1; }
+.cal-month-name { font-size: 0.875rem; font-weight: 700; color: #1e293b; }
+.cal-today-badge {
+    font-size: 0.65rem; font-weight: 600; color: #2563eb;
+    background: #dbeafe; padding: 1px 7px; border-radius: 10px; white-space: nowrap;
+}
+.cal-month-events { display: flex; flex-direction: column; gap: 3px; }
+.cal-no-events { font-size: 0.7rem; color: #cbd5e1; font-style: italic; }
 
-.cal-ship-badge {
-    background: #1e40af; color: white;
-    border-radius: 3px; padding: 1px 4px;
-    font-size: 0.58rem; font-weight: 700; line-height: 1.5;
-    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-    display: flex; align-items: center; gap: 2px;
+.cal-ev {
+    display: flex; align-items: baseline; gap: 5px;
+    padding: 2px 5px; border-radius: 4px; line-height: 1.35;
 }
-.cal-ship-badge--past { background: #94a3b8; }
+.cal-ev-day {
+    font-size: 0.65rem; font-weight: 700; min-width: 18px;
+    flex-shrink: 0; font-variant-numeric: tabular-nums; text-align: right;
+}
+.cal-ev-label {
+    font-size: 0.68rem; font-weight: 500; overflow: hidden;
+    text-overflow: ellipsis; white-space: nowrap;
+}
+.cal-ev--holiday  { background: #eff6ff; color: #1d4ed8; }
+.cal-ev--tax      { background: #fff7ed; color: #c2410c; }
+.cal-ev--shipment { background: #f0fdf4; color: #15803d; }
+.cal-ev--gcal     { background: #f5f3ff; color: #6d28d9; }
 
-.cal-milestone-flag {
-    font-size: 0.55rem; color: #fbbf24; flex-shrink: 0;
-}
+.cal-pending-section { margin-top: 1.5rem; }
 
-@media (max-width: 1100px) {
-    .cal-months-grid { grid-template-columns: repeat(6, 1fr); }
+@media (max-width: 1000px) {
+    .cal-months-4col { grid-template-columns: repeat(3, 1fr); }
 }
-@media (max-width: 700px) {
-    .cal-months-grid { grid-template-columns: repeat(4, 1fr); }
+@media (max-width: 680px) {
+    .cal-months-4col { grid-template-columns: repeat(2, 1fr); }
 }
 
 /* ── Shipment card: clickable nav style ── */
