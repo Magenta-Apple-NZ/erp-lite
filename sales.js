@@ -327,17 +327,27 @@ const SalesView = (() => {
             for (const l of (o.lines || [])) if (l.name) prodSet.add(l.name);
         }
 
-        // ── Top Stores (unfiltered) ──
+        // ── Top Stores (unfiltered) + LY-to-date ──
+        const today = new Date();
+        const curYr  = today.getFullYear().toString();
+        const prevYr = (today.getFullYear() - 1).toString();
+        const todayMd = (today.getMonth() + 1).toString().padStart(2, '0') + '-' + today.getDate().toString().padStart(2, '0');
+        const cutCur  = curYr  + '-' + todayMd;
+        const cutPrev = prevYr + '-' + todayMd;
+
         const byStore = {};
         for (const o of allOrders) {
-            const ym = (o.createdAt || '').slice(0, 7);
-            if (!ym) continue;
+            const created = o.createdAt || '';
+            if (!created) continue;
             const kg = (o.lines || []).reduce((s, l) => s + (Number(l.quantity) || 0), 0);
             const store = o.shipTo?.branch || o.customer?.name || '—';
-            if (!byStore[store]) byStore[store] = { kg: 0, orders: 0, lastOrder: '' };
+            if (!byStore[store]) byStore[store] = { kg: 0, orders: 0, lastOrder: '', curYtd: 0, prevYtd: 0 };
             byStore[store].kg += kg;
             byStore[store].orders++;
-            if ((o.createdAt || '') > byStore[store].lastOrder) byStore[store].lastOrder = o.createdAt || '';
+            if (created > byStore[store].lastOrder) byStore[store].lastOrder = created;
+            const d10 = created.slice(0, 10);
+            if (created.startsWith(curYr)  && d10 <= cutCur)  byStore[store].curYtd  += kg;
+            if (created.startsWith(prevYr) && d10 <= cutPrev) byStore[store].prevYtd += kg;
         }
         const storeActuals = Object.entries(byStore)
             .map(([name, d]) => ({ name, ...d }))
@@ -347,7 +357,6 @@ const SalesView = (() => {
         // ── Filter state ──
         let filterCustomer = '', filterBranch = '', filterProduct = '';
         let yearRange = 'all';
-        let salesChartMode = 'monthly';
 
         function getFilteredActuals() {
             const filtered = allOrders.filter(o => {
@@ -403,12 +412,11 @@ const SalesView = (() => {
             const actuals = getFilteredActuals();
             const data    = computeChartData(actuals);
 
-            const chartHtml = salesChartMode === 'cumulative'
-                ? buildCumulativeChart(data)
-                : buildSalesByMonthChart(data);
+            const monthlyArea = document.getElementById('sales-chart-area');
+            if (monthlyArea) monthlyArea.innerHTML = buildSalesByMonthChart(data);
 
-            const chartArea = document.getElementById('sales-chart-area');
-            if (chartArea) chartArea.innerHTML = chartHtml;
+            const cumulativeArea = document.getElementById('sales-chart-area-cumulative');
+            if (cumulativeArea) cumulativeArea.innerHTML = buildCumulativeChart(data);
 
             const tableArea = document.getElementById('sales-data-table');
             if (tableArea) tableArea.innerHTML = buildDataTable(data);
@@ -448,18 +456,17 @@ const SalesView = (() => {
         const chartsPanel = `
         <div id="sales-charts-panel">
             ${filterBar}
-            <div class="cat-section" style="margin-bottom:1.5rem">
-                <div class="cat-section-head">
-                    <div>
-                        <h2 class="cat-title">Sales by Month</h2>
-                        <p class="cat-sub">Historical kg by calendar year. Hub orders overlaid automatically.</p>
-                    </div>
-                    <div class="cat-actions">
-                        <button class="imp-view-btn active" id="sales-mode-monthly">Monthly</button>
-                        <button class="imp-view-btn" id="sales-mode-cumulative">Cumulative</button>
-                    </div>
+            <div class="sales-charts-row">
+                <div class="cat-section sales-chart-block">
+                    <h2 class="cat-title" style="margin-bottom:0.4rem">Sales by Month</h2>
+                    <p class="cat-sub" style="margin-bottom:0.75rem">kg sold per month by year.</p>
+                    <div id="sales-chart-area">${buildSalesByMonthChart(initData)}</div>
                 </div>
-                <div style="margin-top:0.75rem" id="sales-chart-area">${buildSalesByMonthChart(initData)}</div>
+                <div class="cat-section sales-chart-block">
+                    <h2 class="cat-title" style="margin-bottom:0.4rem">Cumulative Sales</h2>
+                    <p class="cat-sub" style="margin-bottom:0.75rem">Running total kg by year.</p>
+                    <div id="sales-chart-area-cumulative">${buildCumulativeChart(initData)}</div>
+                </div>
             </div>
             <div id="sales-data-table">${buildDataTable(initData)}</div>
             ${storeActuals.length ? `
@@ -467,20 +474,27 @@ const SalesView = (() => {
                 <div class="cat-section-head">
                     <div>
                         <h2 class="cat-title">Top Stores</h2>
-                        <p class="cat-sub">By kg ordered, all time from Hub orders.</p>
+                        <p class="cat-sub">By kg ordered, all time. LY% = current year vs same period last year.</p>
                     </div>
                 </div>
                 <div class="sales-table-wrap" style="margin-top:0.5rem">
                     <table class="sales-table">
-                        <thead><tr><th>#</th><th>Store / Branch</th><th style="text-align:right">kg</th><th style="text-align:right">Orders</th><th style="text-align:right">Last Order</th></tr></thead>
+                        <thead><tr><th>#</th><th>Store / Branch</th><th style="text-align:right">kg</th><th style="text-align:right">Orders</th><th style="text-align:right">LY%</th><th style="text-align:right">Last Order</th></tr></thead>
                         <tbody>
-                            ${storeActuals.map((s, i) => `<tr>
-                                <td style="color:#94a3b8;font-size:0.78rem">${i + 1}</td>
-                                <td>${escHtml(s.name)}</td>
-                                <td style="text-align:right;font-weight:600">${s.kg.toLocaleString('en-NZ')}</td>
-                                <td style="text-align:right;color:#64748b">${s.orders}</td>
-                                <td style="text-align:right;color:#94a3b8;font-size:0.8rem">${s.lastOrder ? s.lastOrder.slice(0,10) : '—'}</td>
-                            </tr>`).join('')}
+                            ${storeActuals.map((s, i) => {
+                                const pct = s.prevYtd > 0 ? Math.round((s.curYtd / s.prevYtd - 1) * 100) : null;
+                                const pctBadge = pct !== null
+                                    ? `<span class="sales-ytd-pct ${pct >= 0 ? 'sales-ytd-up' : 'sales-ytd-dn'}">${pct >= 0 ? '+' : ''}${pct}%</span>`
+                                    : `<span style="color:#e2e8f0">—</span>`;
+                                return `<tr>
+                                    <td style="color:#94a3b8;font-size:0.78rem">${i + 1}</td>
+                                    <td>${escHtml(s.name)}</td>
+                                    <td style="text-align:right;font-weight:600">${s.kg.toLocaleString('en-NZ')}</td>
+                                    <td style="text-align:right;color:#64748b">${s.orders}</td>
+                                    <td style="text-align:right">${pctBadge}</td>
+                                    <td style="text-align:right;color:#94a3b8;font-size:0.8rem">${s.lastOrder ? s.lastOrder.slice(0,10) : '—'}</td>
+                                </tr>`;
+                            }).join('')}
                         </tbody>
                     </table>
                 </div>
@@ -546,20 +560,6 @@ const SalesView = (() => {
             document.getElementById('sales-settings-panel').style.display = '';
             document.getElementById('sales-tab-settings').classList.add('active');
             document.getElementById('sales-tab-charts').classList.remove('active');
-        });
-
-        // ── Chart mode toggle ──
-        document.getElementById('sales-mode-monthly')?.addEventListener('click', () => {
-            salesChartMode = 'monthly';
-            document.getElementById('sales-mode-monthly')?.classList.add('active');
-            document.getElementById('sales-mode-cumulative')?.classList.remove('active');
-            rebuildCharts();
-        });
-        document.getElementById('sales-mode-cumulative')?.addEventListener('click', () => {
-            salesChartMode = 'cumulative';
-            document.getElementById('sales-mode-cumulative')?.classList.add('active');
-            document.getElementById('sales-mode-monthly')?.classList.remove('active');
-            rebuildCharts();
         });
 
         // ── Filters ──

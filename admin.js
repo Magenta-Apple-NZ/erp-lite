@@ -43,8 +43,8 @@ const Admin = (() => {
             });
     }
 
-    const STORE_HEADERS = ['Account ID', 'Customer', 'Branch', 'Street Address', 'City', 'Postcode', 'Phone'];
-    const STORE_EXAMPLE = ['ACC001', 'Farmlands Co-operative', 'New Plymouth', '35 Hudson Road', 'New Plymouth', '4312', '06 759 0000'];
+    const STORE_HEADERS = ['Customer Code', 'Customer', 'Branch', 'City', 'Street Address', 'Postcode', 'Phone'];
+    const STORE_EXAMPLE = ['FF-Te-Puke', 'Fruitfed', 'Fruitfed - Te Puke', 'Te Puke', '1 Jellicoe Street', '3119', '07 533 1234'];
 
     function downloadCsv(csv, filename) {
         const a = document.createElement('a');
@@ -70,10 +70,10 @@ const Admin = (() => {
     }
 
     function storesToCsv(stores) {
-        const headers = ['Account ID', 'Customer', 'Branch', 'Street Address', 'City', 'Postcode', 'Phone'];
+        const headers = ['Customer Code', 'Customer', 'Branch', 'City', 'Street Address', 'Postcode', 'Phone'];
         const rows = stores.map(s => [
-            s.accountId || '', s.customer || '', s.branch || '',
-            s.streetAddress || '', s.city || '', s.postcode || '', s.phone || '',
+            s.customerCode || '', s.customer || '', s.branch || '',
+            s.city || '', s.streetAddress || '', s.postcode || '', s.phone || '',
         ].map(quoteField).join(','));
         return [headers.join(','), ...rows].join('\n');
     }
@@ -81,7 +81,7 @@ const Admin = (() => {
     function storesTableRows(stores) {
         return stores.slice(0, 20).map(s => `
             <tr>
-                <td class="cat-mono">${escHtml(s.accountId || '')}</td>
+                <td class="cat-mono">${escHtml(s.customerCode || '')}</td>
                 <td>${escHtml(s.customer || s.name || '')}</td>
                 <td>${escHtml(s.branch || '')}</td>
                 <td>${escHtml(s.city || '')}</td>
@@ -208,14 +208,14 @@ const Admin = (() => {
             </div>
             <div id="stores-preview" style="display:${stores.length ? '' : 'none'}">
                 <table class="cat-table">
-                    <thead><tr><th>Account ID</th><th>Customer</th><th>Branch</th><th>City</th><th>Postcode</th></tr></thead>
+                    <thead><tr><th>Code</th><th>Customer</th><th>Branch</th><th>City</th><th>Postcode</th></tr></thead>
                     <tbody id="stores-tbody">${storesTableRows(stores)}</tbody>
                 </table>
                 <div class="cat-save-row">
                     <button class="btn-primary btn-sm" id="stores-save-btn" style="display:none">Save to Hub</button>
                 </div>
             </div>
-            <p class="cat-format">Expected columns: <code>Account ID, Customer, Branch, Street Address, City, Postcode, Phone</code></p>
+            <p class="cat-format">Expected columns: <code>Customer Code, Customer, Branch, City, Street Address, Postcode, Phone</code></p>
         </div>`;
 
         document.getElementById('stores-tpl-btn').addEventListener('click', () => {
@@ -233,11 +233,11 @@ const Admin = (() => {
             e.target.value = '';
             const rows = parseCsv(await file.text());
             const parsed = rows.map(r => ({
-                accountId:     r.account_id || r.accountid || r.id || '',
+                customerCode:  r.customer_code || r.customercode || r.code || r.account_id || r.accountid || '',
                 customer:      r.customer || r.customer_name || r.company || '',
                 branch:        r.branch || r.branch_name || r.store || r.name || '',
-                streetAddress: r.street_address || r.streetaddress || r.address || r.street || '',
                 city:          r.city || r.town || '',
+                streetAddress: r.street_address || r.streetaddress || r.address || r.street || '',
                 postcode:      r.postcode || r.post_code || r.zip || '',
                 phone:         r.phone || r.telephone || r.tel || '',
             })).filter(s => s.customer || s.branch);

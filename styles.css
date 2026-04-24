@@ -32,14 +32,30 @@ body {
 
 .sidebar-brand {
     display: flex;
-    align-items: center;
-    gap: 0.6rem;
-    padding: 1.1rem 1rem 1rem;
-    font-size: 0.92rem;
-    font-weight: 700;
-    letter-spacing: -0.02em;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.5rem;
+    padding: 1rem 1rem 0.75rem;
     color: white;
     flex-shrink: 0;
+}
+
+.sidebar-logo {
+    width: 130px;
+    max-width: 100%;
+    object-fit: contain;
+    filter: brightness(0) invert(1);
+    opacity: 0.82;
+}
+
+.sidebar-brand-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.8rem;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    color: rgba(255,255,255,0.55);
 }
 
 /* ── Sidebar nav ── */
@@ -2394,3 +2410,28 @@ a.xero-inv-linked:hover { background: #d1fae5; border-color: #6ee7b7; }
 @media (max-width: 700px) {
     .cal-months-grid { grid-template-columns: repeat(4, 1fr); }
 }
+
+/* ── Sales: two-chart row ── */
+.sales-charts-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+}
+.sales-chart-block {
+    margin-bottom: 0 !important;
+}
+@media (max-width: 900px) {
+    .sales-charts-row { grid-template-columns: 1fr; }
+}
+
+/* ── Sales: LY% badge ── */
+.sales-ytd-pct {
+    display: inline-block;
+    font-size: 0.75rem;
+    font-weight: 700;
+    padding: 1px 5px;
+    border-radius: 3px;
+}
+.sales-ytd-up { background: #dcfce7; color: #15803d; }
+.sales-ytd-dn { background: #fee2e2; color: #dc2626; }

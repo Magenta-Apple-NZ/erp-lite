@@ -626,7 +626,7 @@ const Warehouse = (() => {
             if (cached) {
                 forex = JSON.parse(cached);
             } else {
-                const res = await fetch('https://api.frankfurter.dev/v1/latest?base=NZD&symbols=USD,EUR,CNY,AUD');
+                const res = await fetch('https://open.er-api.com/v6/latest/NZD');
                 if (res.ok) {
                     const data = await res.json();
                     forex = data.rates || {};
@@ -683,7 +683,7 @@ const Warehouse = (() => {
             const outstandingNzd = totalNzd - paidNzd;
             const ppkg = totalNzd > 0 && s.kg > 0 ? (totalNzd / s.kg).toFixed(2) : null;
 
-            const fxBar = ['USD','EUR','CNY','AUD'].filter(c => forex[c])
+            const fxBar = ['USD','EUR','CNY','AUD','BDT'].filter(c => forex[c])
                 .map(c => `<span>${c}&nbsp;<strong>${forex[c].toFixed(4)}</strong></span>`).join('');
 
             const catsHtml = cats.map(cat => {
@@ -780,7 +780,8 @@ const Warehouse = (() => {
             const openKey  = { avg: 'openAvg',  good: 'openGood',  great: 'openGreat'  }[scenario];
             const salesKey = { avg: 'avgSales', good: 'goodSales', great: 'greatSales' }[scenario];
 
-            const FX_LABELS = { USD: 'US Dollar', EUR: 'Euro', CNY: 'Chinese Yuan', AUD: 'Aus Dollar' };
+            const FX_LABELS = { USD: 'US Dollar', EUR: 'Euro', CNY: 'Chinese Yuan', AUD: 'Aus Dollar', BDT: 'Bangladeshi Taka' };
+            const FX_DISPLAY = ['USD', 'EUR', 'CNY', 'AUD', 'BDT'];
             const fxSparkline = code => {
                 if (!fxHistory?.rates) return '';
                 try {
@@ -803,7 +804,7 @@ const Warehouse = (() => {
                     <span class="imp-fx-base-tag">1 NZD =</span>
                 </div>
                 <div class="imp-fx-grid">
-                    ${['USD', 'EUR', 'CNY', 'AUD'].filter(c => forex[c]).map(c =>
+                    ${FX_DISPLAY.filter(c => forex[c]).map(c =>
                         '<div class="imp-fx-tile">' +
                         '<div class="imp-fx-tile-code">' + c + '</div>' +
                         '<div class="imp-fx-tile-rate">' + forex[c].toFixed(4) + '</div>' +
