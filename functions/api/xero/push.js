@@ -37,18 +37,38 @@ export async function onRequestPost({ env, request }) {
             InvoiceNumber: invoiceNumber,
             Reference: order.id,
             Contact: { ContactID: order.customer.xeroContactId },
-            LineItems: order.lines.map(l => ({
-                Description: l.description,
-                Quantity: l.quantity,
-                UnitAmount: l.unitPrice,
-                AccountCode: l.accountCode || '200',
-            })),
+            LineItems: order.lines.map(l => {
+                const item = {
+                    Description: l.description,
+                    Quantity: l.quantity,
+                    UnitAmount: l.unitPrice,
+                };
+                if (l.sku) {
+                    item.ItemCode = l.sku;
+                } else if (l.accountCode) {
+                    item.AccountCode = l.accountCode;
+                }
+                return item;
+            }),
         };
 
         if (order.shipTo?.branch || order.shipTo?.address) {
             const deliveryNote = [order.shipTo.branch, order.shipTo.address]
                 .filter(Boolean).join(' — ');
             invoice.DeliveryAddress = deliveryNote;
+        }
+
+        // Text-only notes line: ship-to summary + packing notes
+        const noteParts = [];
+        if (order.shipTo?.branch) noteParts.push(`Ship to: ${order.shipTo.branch}`);
+        if (order.shipTo?.address) noteParts.push(order.shipTo.address);
+        if (order.packingNotes) noteParts.push(order.packingNotes);
+        if (noteParts.length) {
+            invoice.LineItems.push({
+                Description: noteParts.join('\n'),
+                Quantity: 0,
+                UnitAmount: 0,
+            });
         }
 
         const resp = await fetch('https://api.xero.com/api.xro/2.0/Invoices', {

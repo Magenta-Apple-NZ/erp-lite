@@ -15,6 +15,19 @@ const Orders = (() => {
         { key: 'horicentre',  label: 'HortiCentre',   xeroName: 'HortiCentre Ltd', xeroCode: 'C1030' },
     ];
 
+    // Close overflow menus when clicking outside; close on item click (capture so it fires before any stopPropagation)
+    document.addEventListener('click', e => {
+        const trigger = e.target.closest('.overflow-trigger');
+        if (trigger) {
+            // Close every OTHER open menu; this one is toggled by its inline onclick
+            document.querySelectorAll('.overflow-menu.open').forEach(m => {
+                if (m !== trigger.closest('.overflow-menu')) m.classList.remove('open');
+            });
+        } else {
+            document.querySelectorAll('.overflow-menu.open').forEach(m => m.classList.remove('open'));
+        }
+    }, true);
+
     // ── Status helpers ──
     const STATUS_LABELS = {
         new:          'New',
@@ -175,8 +188,12 @@ const Orders = (() => {
                     </tr>
                 </thead>
                 <tbody>
-                    ${orders.map(o => `
-                    <tr class="order-row" data-id="${o.id}" onclick="location.hash='orders/${o.id}'">
+                    ${orders.map(o => {
+                        const xeroUrl = o.xeroInvoiceId
+                            ? `https://go.xero.com/AccountsReceivable/Edit.aspx?InvoiceID=${encodeURIComponent(o.xeroInvoiceId)}`
+                            : null;
+                        return `
+                    <tr class="order-row" data-id="${o.id}">
                         <td class="order-id">${o.id}</td>
                         <td>${escHtml(o.customer.name)}</td>
                         <td class="order-ship-to">${escHtml(o.shipTo?.branch || '—')}</td>
@@ -187,15 +204,36 @@ const Orders = (() => {
                             ? `<span class="xero-inv-num">${escHtml(o.xeroInvoiceNumber)}</span>`
                             : '<span class="xero-pending">—</span>'}</td>
                         <td class="order-actions-col">
-                            <button class="slip-shortcut-btn" title="View packing slip" onclick="event.stopPropagation();location.hash='orders/${o.id}'">
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
-                                Slip
-                            </button>
+                            <div class="overflow-menu">
+                                <button class="overflow-trigger btn-sm" title="More actions" onclick="event.stopPropagation();this.closest('.overflow-menu').classList.toggle('open')">•••</button>
+                                <div class="overflow-dropdown">
+                                    <a class="overflow-item" href="#orders/${o.id}">View Packing Slip</a>
+                                    ${xeroUrl ? `<a class="overflow-item" href="${xeroUrl}" target="_blank" rel="noopener">Open in Xero ↗</a>` : ''}
+                                    <button class="overflow-item overflow-danger" data-delete-order="${o.id}">Delete</button>
+                                </div>
+                            </div>
                         </td>
-                    </tr>`).join('')}
+                    </tr>`;
+                    }).join('')}
                 </tbody>
             </table>
         </div>`;
+
+        // Row navigation (delegated — skips overflow menu clicks)
+        body.querySelector('.orders-table-wrap').addEventListener('click', e => {
+            const deleteBtn = e.target.closest('[data-delete-order]');
+            if (deleteBtn) {
+                const orderId = deleteBtn.dataset.deleteOrder;
+                if (!confirm(`Delete order ${orderId}? This cannot be undone.`)) return;
+                api('/api/orders/' + orderId, { method: 'DELETE' })
+                    .then(() => deleteBtn.closest('tr.order-row')?.remove())
+                    .catch(err => alert('Delete failed: ' + err.message));
+                return;
+            }
+            if (e.target.closest('.overflow-menu')) return;
+            const row = e.target.closest('tr.order-row');
+            if (row) location.hash = 'orders/' + row.dataset.id;
+        });
     }
 
     // ── Customer section HTML (shared by new + edit forms) ──
@@ -775,36 +813,44 @@ const Orders = (() => {
     }
 
     // ── Action bar buttons — driven by order status ──
-    function xeroInvBadge(order) {
-        if (!order.xeroInvoiceNumber) return '';
-        const url = order.xeroInvoiceId
-            ? `https://go.xero.com/AccountsReceivable/Edit.aspx?InvoiceID=${encodeURIComponent(order.xeroInvoiceId)}`
-            : null;
-        return url
-            ? `<a href="${url}" target="_blank" rel="noopener" class="xero-inv-linked">✓ ${escHtml(order.xeroInvoiceNumber)} ↗</a>`
-            : `<span class="xero-inv-linked">✓ ${escHtml(order.xeroInvoiceNumber)}</span>`;
-    }
-
     function actionButtons(order, xeroConnected) {
-        const print   = `<button id="print-slip-btn" class="btn-secondary">Print Packing Slip</button>`;
-        const address = `<button id="print-address-btn" class="btn-secondary btn-sm">Print Address</button>`;
-        const edit    = `<a href="#orders/${order.id}/edit" class="btn-secondary btn-sm" id="edit-order-btn">Edit</a>`;
-        const del     = `<button id="delete-order-btn" class="btn-danger btn-sm">Delete</button>`;
+        const edit = `<a href="#orders/${order.id}/edit" class="btn-secondary btn-sm" id="edit-order-btn">Edit</a>`;
+
+        let primaryAction = '';
+        let xeroMenuItem  = '';
 
         if (order.status === 'new') {
-            return `${edit}${del}<button class="btn-secondary" disabled title="Print the packing slip first to review it">Send to Xero</button>${address}${print}`;
-        }
-        if (order.status === 'reviewed') {
-            const xeroBtn = xeroConnected
+            primaryAction = `<button class="btn-secondary btn-sm" disabled title="Print the packing slip first to review it">Send to Xero</button>`;
+        } else if (order.status === 'reviewed') {
+            primaryAction = xeroConnected
                 ? `<button id="push-xero-btn" class="btn-primary">Send to Xero</button>`
                 : `<span class="xero-not-connected">Xero not connected</span>`;
-            return `${edit}${del}${xeroBtn}${address}${print}`;
+        } else if (order.status === 'sent_to_xero') {
+            primaryAction = `<button id="dispatch-btn" class="btn-primary">Mark as Dispatched</button>`;
+            if (order.xeroInvoiceId) {
+                const url = `https://go.xero.com/AccountsReceivable/Edit.aspx?InvoiceID=${encodeURIComponent(order.xeroInvoiceId)}`;
+                xeroMenuItem = `<a href="${url}" target="_blank" rel="noopener" class="overflow-item">✓ ${escHtml(order.xeroInvoiceNumber)} — View in Xero ↗</a>`;
+            }
+        } else {
+            primaryAction = `<span class="status-dispatched-tag">✓ Dispatched</span>`;
+            if (order.xeroInvoiceId) {
+                const url = `https://go.xero.com/AccountsReceivable/Edit.aspx?InvoiceID=${encodeURIComponent(order.xeroInvoiceId)}`;
+                xeroMenuItem = `<a href="${url}" target="_blank" rel="noopener" class="overflow-item">✓ ${escHtml(order.xeroInvoiceNumber)} — View in Xero ↗</a>`;
+            }
         }
-        if (order.status === 'sent_to_xero') {
-            return `${edit}${del}${xeroInvBadge(order)}<button id="dispatch-btn" class="btn-primary">Mark as Dispatched</button>${address}${print}`;
-        }
-        // dispatched
-        return `${edit}${del}${xeroInvBadge(order)}<span class="status-dispatched-tag">✓ Dispatched</span>${address}${print}`;
+
+        const menu = `
+            <div class="overflow-menu">
+                <button class="overflow-trigger btn-secondary btn-sm" title="More actions" onclick="event.stopPropagation();this.closest('.overflow-menu').classList.toggle('open')">•••</button>
+                <div class="overflow-dropdown">
+                    ${xeroMenuItem}
+                    <button class="overflow-item" id="print-slip-btn">Print Packing Slip</button>
+                    <button class="overflow-item" id="print-address-btn">Print Address</button>
+                    <button class="overflow-item overflow-danger" id="delete-order-btn">Delete</button>
+                </div>
+            </div>`;
+
+        return `${edit}${primaryAction}${menu}`;
     }
 
     function refreshActionBar(order) {
