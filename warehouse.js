@@ -275,8 +275,6 @@ const Warehouse = (() => {
     }
 
     // ── Main render ──
-    let activeTab = 'stocktake';
-
     async function render(container) {
         container.innerHTML = `
         <div class="view-header">
@@ -285,27 +283,9 @@ const Warehouse = (() => {
                 <p class="view-subtitle">Track stock on hand and value over time.</p>
             </div>
         </div>
-        <div class="wh-tabs">
-            <button class="wh-tab ${activeTab === 'stocktake' ? 'active' : ''}" data-tab="stocktake">Stocktake</button>
-            <button class="wh-tab ${activeTab === 'imports' ? 'active' : ''}" data-tab="imports">Imports</button>
-            <button class="wh-tab ${activeTab === 'sales' ? 'active' : ''}" data-tab="sales">Sales</button>
-        </div>
         <div id="wh-body"><div class="orders-loading">Loading…</div></div>`;
 
-        container.querySelectorAll('.wh-tab').forEach(btn => {
-            btn.addEventListener('click', async () => {
-                container.querySelectorAll('.wh-tab').forEach(b => b.classList.remove('active'));
-                btn.classList.add('active');
-                activeTab = btn.dataset.tab;
-                if (activeTab === 'stocktake') await renderStocktake();
-                else if (activeTab === 'imports') await renderImports();
-                else if (activeTab === 'sales') await renderSales();
-            });
-        });
-
-        if (activeTab === 'stocktake') await renderStocktake();
-        else if (activeTab === 'imports') await renderImports();
-        else await renderSales();
+        await renderStocktake();
     }
 
     async function renderStocktake() {
@@ -1114,5 +1094,5 @@ const Warehouse = (() => {
         });
     }
 
-    return { render };
+    return { render, renderImports };
 })();

@@ -72,6 +72,15 @@
                 <span class="nav-soon-badge">Soon</span>
             </a>
 
+            <a class="nav-item nav-item--soon" href="#" data-phase="Sales">
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+                    <polyline points="1 12 5 7 9 10 13 4 15 6"/>
+                    <polyline points="11 4 15 4 15 8"/>
+                </svg>
+                Sales History
+                <span class="nav-soon-badge">Soon</span>
+            </a>
+
             <a class="nav-item" href="#" id="nav-admin">
                 <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
                     <circle cx="8" cy="8" r="2"/>
@@ -80,11 +89,6 @@
                 Catalogue
             </a>
         </nav>
-
-        <div class="sidebar-currencies">
-            <span class="nav-section-label">FX Rates</span>
-            <div id="header-currencies"></div>
-        </div>
 
         <div class="sidebar-admin">
             <span class="nav-section-label">Admin</span>
@@ -170,6 +174,16 @@
             <div class="orders-view-inner" id="admin-container"></div>
         </div>
 
+        <!-- ── View: Imports ── -->
+        <div id="view-imports" class="app-view" style="display:none">
+            <div class="orders-view-inner" id="imports-container"></div>
+        </div>
+
+        <!-- ── View: Sales History ── -->
+        <div id="view-sales" class="app-view" style="display:none">
+            <div class="orders-view-inner" id="sales-container"></div>
+        </div>
+
     </div>
 
 </div>
@@ -217,6 +231,8 @@
 <script src="orders.js"></script>
 <script src="admin.js"></script>
 <script src="warehouse.js"></script>
+<script src="imports.js"></script>
+<script src="sales.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

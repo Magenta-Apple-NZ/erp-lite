@@ -37,7 +37,7 @@ function applyConfig(config) {
     pinnedItems = JSON.parse(JSON.stringify(config.pinned || []));
     renderPinned(pinnedItems);
     renderGroups(allGroups);
-    if (config.currencies) renderHeaderCurrencies(config.currencies);
+    // FX rates now live on the Imports page
     updateTimestamp();
 }
 
@@ -665,7 +665,7 @@ document.addEventListener('keydown', e => {
 });
 
 // ── Hash router ──
-const VIEWS = ['view-dashboard', 'view-orders', 'view-orders-new', 'view-orders-detail', 'view-orders-edit', 'view-warehouse', 'view-admin'];
+const VIEWS = ['view-dashboard', 'view-orders', 'view-orders-new', 'view-orders-detail', 'view-orders-edit', 'view-warehouse', 'view-admin', 'view-imports', 'view-sales'];
 
 function setActiveView(viewId) {
     VIEWS.forEach(id => {
@@ -740,6 +740,20 @@ async function handleRoute() {
         return;
     }
 
+    if (hash === 'imports') {
+        setActiveView('view-imports');
+        setActiveNav('nav-imports');
+        await ImportsView.render(document.getElementById('imports-container'));
+        return;
+    }
+
+    if (hash === 'sales') {
+        setActiveView('view-sales');
+        setActiveNav('nav-sales');
+        await SalesView.render(document.getElementById('sales-container'));
+        return;
+    }
+
     // Unknown hash — fall back to dashboard
     location.hash = '';
 }
@@ -780,6 +794,30 @@ document.getElementById('nav-admin')?.addEventListener('click', e => {
     e.preventDefault();
     location.hash = 'admin';
 });
+
+// Make Imports nav item active (Phase 5)
+const importsNavItem = document.querySelector('.nav-item--soon[data-phase="Phase 5"]');
+if (importsNavItem) {
+    importsNavItem.classList.remove('nav-item--soon');
+    importsNavItem.id = 'nav-imports';
+    importsNavItem.querySelector('.nav-soon-badge')?.remove();
+    importsNavItem.addEventListener('click', e => {
+        e.preventDefault();
+        location.hash = 'imports';
+    });
+}
+
+// Make Sales History nav item active
+const salesNavItem = document.querySelector('.nav-item--soon[data-phase="Sales"]');
+if (salesNavItem) {
+    salesNavItem.classList.remove('nav-item--soon');
+    salesNavItem.id = 'nav-sales';
+    salesNavItem.querySelector('.nav-soon-badge')?.remove();
+    salesNavItem.addEventListener('click', e => {
+        e.preventDefault();
+        location.hash = 'sales';
+    });
+}
 
 // Remaining coming-soon nav items
 document.querySelectorAll('.nav-item--soon').forEach(el => {
