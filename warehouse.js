@@ -660,6 +660,7 @@ const Warehouse = (() => {
         let scenario  = 'avg';
         let shipView  = 'cards';
         let activeTab = 'overview';
+        let currentDetailShipId = null;
 
         // Build line-item cost breakdown HTML for a shipment card
         function buildCostHtml(s) {
@@ -770,10 +771,160 @@ const Warehouse = (() => {
             </div>`;
         }
 
+        function renderShipDetail(s) {
+            currentDetailShipId = s.id;
+            const lines = s.costLines || [];
+            function lineNzdD(l) {
+                const amt = Number(l.amount) || 0;
+                if (!amt) return 0;
+                if (!l.ccy || l.ccy === 'NZD') return amt;
+                const rate = forex[l.ccy];
+                return rate ? amt / rate : amt;
+            }
+            const totalNzd = lines.reduce((t, l) => t + lineNzdD(l), 0);
+            const paidNzd  = lines.filter(l => l.paid).reduce((t, l) => t + lineNzdD(l), 0);
+            const osNzd    = totalNzd - paidNzd;
+            const paidPct  = totalNzd > 0 ? Math.round(paidNzd / totalNzd * 100) : 0;
+            const ppkg     = totalNzd > 0 && s.kg > 0 ? (totalNzd / s.kg).toFixed(2) : null;
+
+            const STATUS_META = {
+                planning:    { l: 'Planning',    c: '#94a3b8' },
+                ordered:     { l: 'Ordered',     c: '#3b82f6' },
+                'in-transit':{ l: 'In Transit',  c: '#f59e0b' },
+                customs:     { l: 'Customs',     c: '#8b5cf6' },
+                delivered:   { l: 'Delivered',   c: '#10b981' },
+            };
+            const curStatus  = s.status || 'planning';
+            const statusMeta = STATUS_META[curStatus] || { l: curStatus, c: '#94a3b8' };
+
+            const QUICK_COSTS = [
+                { cat: 'Raw Product',      desc: 'Product cost',       ccy: 'EUR' },
+                { cat: 'Bangladesh Costs', desc: 'Processing fee',     ccy: 'BDT' },
+                { cat: 'Bangladesh Costs', desc: 'Agent commission',   ccy: 'USD' },
+                { cat: 'Freight',          desc: 'Sea freight',        ccy: 'USD' },
+                { cat: 'Freight',          desc: 'Port charges (THC)', ccy: 'USD' },
+                { cat: 'Freight',          desc: 'Marine insurance',   ccy: 'USD' },
+                { cat: 'Miscellaneous',    desc: 'Customs duty',       ccy: 'NZD' },
+                { cat: 'Miscellaneous',    desc: 'Biosecurity levy',   ccy: 'NZD' },
+            ];
+
+            const milestones = s.milestones || [];
+
+            body.innerHTML = `
+            <div class="ship-detail-view">
+                <div class="ship-detail-topbar">
+                    <button class="ship-detail-back">← Shipments</button>
+                    <div class="ship-status-wrap">
+                        <span class="ship-status-dot" style="background:${statusMeta.c}"></span>
+                        <select class="ship-status-sel" data-ship-id="${escHtml(s.id)}" data-field="status">
+                            ${Object.entries(STATUS_META).map(([v,{l}]) =>
+                                `<option value="${v}"${curStatus===v?' selected':''}>${l}</option>`
+                            ).join('')}
+                        </select>
+                    </div>
+                </div>
+
+                <div class="ship-detail-hdr">
+                    <h1 class="ship-detail-title">${escHtml(s.campaign || ymLabel(s.ym))}</h1>
+                    <p class="ship-detail-meta">${ymLabel(s.ym)} &middot; ${fmtFull(s.kg)} kg${s.pricePerKg ? ` &middot; $${s.pricePerKg}/kg listed` : ''}</p>
+                </div>
+
+                <div class="ship-sum-row">
+                    <div class="ship-sum-card">
+                        <div class="ship-sum-val">$${Math.round(totalNzd).toLocaleString('en-NZ')}</div>
+                        <div class="ship-sum-lbl">Total Cost (NZD)</div>
+                    </div>
+                    <div class="ship-sum-card">
+                        <div class="ship-sum-val">${ppkg ? '$'+ppkg : '—'}</div>
+                        <div class="ship-sum-lbl">Cost / kg</div>
+                    </div>
+                    <div class="ship-sum-card ship-sum-card--paid">
+                        <div class="ship-sum-val">$${Math.round(paidNzd).toLocaleString('en-NZ')}</div>
+                        <div class="ship-sum-lbl">Paid (${paidPct}%)</div>
+                    </div>
+                    <div class="ship-sum-card ${osNzd > 0.5 ? 'ship-sum-card--os' : 'ship-sum-card--clear'}">
+                        <div class="ship-sum-val">${osNzd > 0.5 ? '$'+Math.round(osNzd).toLocaleString('en-NZ') : '✓ Clear'}</div>
+                        <div class="ship-sum-lbl">${osNzd > 0.5 ? 'Outstanding' : 'Fully Paid'}</div>
+                    </div>
+                </div>
+
+                <div class="ship-det-section">
+                    <div class="ship-det-hd">
+                        <h3 class="ship-det-title">Milestones</h3>
+                        <button class="btn-link ship-add-milestone" data-ship-id="${escHtml(s.id)}">+ Add</button>
+                    </div>
+                    <div class="imp-milestones">
+                        ${milestones.length
+                            ? milestones.map((m, i) => `
+                            <label class="imp-milestone${m.done?' imp-milestone--done':''}">
+                                <input type="checkbox" class="imp-milestone-check"
+                                    data-ship-id="${escHtml(s.id)}" data-idx="${i}" ${m.done?'checked':''}>
+                                <span class="imp-milestone-label">${escHtml(m.label)}</span>
+                                ${m.date?`<span class="imp-milestone-date">${escHtml(m.date)}</span>`:''}
+                            </label>`).join('')
+                            : '<p class="wh-empty" style="margin:0.25rem 0">No milestones — click + Add to create one.</p>'
+                        }
+                    </div>
+                </div>
+
+                <div class="ship-det-section">
+                    <div class="ship-det-hd">
+                        <h3 class="ship-det-title">Cost Breakdown</h3>
+                    </div>
+                    ${buildCostHtml(s)}
+                    <div class="ship-quick-costs">
+                        <span class="ship-qc-label">Quick add:</span>
+                        ${QUICK_COSTS.map(q=>`<button class="ship-quick-cost btn-secondary btn-sm"
+                            data-ship-id="${escHtml(s.id)}" data-cat="${escHtml(q.cat)}"
+                            data-desc="${escHtml(q.desc)}" data-ccy="${escHtml(q.ccy)}">${escHtml(q.desc)}</button>`).join('')}
+                    </div>
+                </div>
+
+                <div class="ship-det-section">
+                    <div class="ship-det-hd"><h3 class="ship-det-title">Shipment Details</h3></div>
+                    <div class="imp-pricing-grid">
+                        <div class="imp-pricing-field">
+                            <label class="imp-field-label">Campaign / Ref</label>
+                            <input type="text" class="imp-detail-input imp-url-input"
+                                data-ship-id="${escHtml(s.id)}" data-field="campaign"
+                                value="${escHtml(s.campaign||'')}" placeholder="e.g. Batch 41">
+                        </div>
+                        <div class="imp-pricing-field">
+                            <label class="imp-field-label">Arrival month</label>
+                            <input type="month" class="imp-detail-input imp-url-input"
+                                data-ship-id="${escHtml(s.id)}" data-field="ym"
+                                value="${escHtml(s.ym||'')}">
+                        </div>
+                        <div class="imp-pricing-field">
+                            <label class="imp-field-label">Volume (kg)</label>
+                            <input type="number" class="imp-detail-input imp-url-input"
+                                data-ship-id="${escHtml(s.id)}" data-field="kg"
+                                value="${s.kg||''}" placeholder="12000" step="any" min="0">
+                        </div>
+                        <div class="imp-pricing-field">
+                            <label class="imp-field-label">Listed price / kg</label>
+                            <input type="number" class="imp-detail-input imp-url-input"
+                                data-ship-id="${escHtml(s.id)}" data-field="pricePerKg"
+                                value="${s.pricePerKg||''}" placeholder="4.50" step="0.01" min="0">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="ship-det-section">
+                    <div class="ship-det-hd"><h3 class="ship-det-title">Notes</h3></div>
+                    <textarea class="ship-notes-ta" rows="5"
+                        data-ship-id="${escHtml(s.id)}" data-field="notes"
+                        placeholder="Internal notes, contacts, terms, tracking references…">${escHtml(s.notes||'')}</textarea>
+                </div>
+
+                <div class="ship-det-danger">
+                    <button class="imp-ship-del" data-id="${escHtml(s.id)}">Remove shipment</button>
+                </div>
+            </div>`;
+        }
+
         function rebuild() {
-            const openShipIds = new Set(
-                [...body.querySelectorAll('details[open][data-ship-id]')].map(d => d.dataset.shipId)
-            );
+            currentDetailShipId = null;
 
             const rows     = computeForecast(config, 18, actuals);
             const closeKey = { avg: 'closeAvg', good: 'closeGood', great: 'closeGreat' }[scenario];
@@ -847,52 +998,46 @@ const Warehouse = (() => {
             const upcomingShips = allShips.filter(s => s.ym >= todayYm);
             const pastShips     = allShips.filter(s => s.ym < todayYm);
 
+            const SHIP_STATUS_COLORS = { planning:'#94a3b8', ordered:'#3b82f6', 'in-transit':'#f59e0b', customs:'#8b5cf6', delivered:'#10b981' };
+            const SHIP_STATUS_LABELS = { planning:'Planning', ordered:'Ordered', 'in-transit':'In Transit', customs:'Customs', delivered:'Delivered' };
+
             const shipCard = (s, past) => {
                 const milestones = s.milestones || [];
                 const doneCount  = milestones.filter(m => m.done).length;
-                const mHtml = milestones.length ? `
-                <div class="imp-milestones">
-                    ${milestones.map((m, i) => `
-                    <label class="imp-milestone${m.done ? ' imp-milestone--done' : ''}">
-                        <input type="checkbox" class="imp-milestone-check"
-                            data-ship-id="${escHtml(s.id)}" data-idx="${i}" ${m.done ? 'checked' : ''}>
-                        <span class="imp-milestone-label">${escHtml(m.label)}</span>
-                        ${m.date ? `<span class="imp-milestone-date">${escHtml(m.date)}</span>` : ''}
-                    </label>`).join('')}
-                </div>` : '';
+                const lines      = s.costLines || [];
+                const lineNzdC   = l => {
+                    const amt = Number(l.amount) || 0;
+                    if (!amt) return 0;
+                    if (!l.ccy || l.ccy === 'NZD') return amt;
+                    const rate = forex[l.ccy];
+                    return rate ? amt / rate : amt;
+                };
+                const totalNzd = lines.reduce((t, l) => t + lineNzdC(l), 0);
+                const paidNzd  = lines.filter(l => l.paid).reduce((t, l) => t + lineNzdC(l), 0);
+                const osNzd    = totalNzd - paidNzd;
+                const status   = s.status || (past ? 'delivered' : 'planning');
+                const sc       = SHIP_STATUS_COLORS[status] || '#94a3b8';
                 return `
-                <details class="imp-event-card ${past ? 'imp-event-card--past' : ''}" data-ship-id="${escHtml(s.id)}">
-                    <summary class="imp-event-card-summary">
+                <div class="imp-event-card imp-event-card--nav ${past ? 'imp-event-card--past' : ''}" data-ship-id="${escHtml(s.id)}">
+                    <div class="imp-event-card-summary">
                         <div>
                             <div class="imp-event-month">${ymLabel(s.ym)}</div>
                             <div class="imp-event-qty">${fmtFull(s.kg)} kg</div>
                             ${s.campaign || s.note ? `<div class="imp-event-note">${escHtml(s.campaign || s.note)}</div>` : ''}
+                            ${totalNzd > 0 ? `<div class="imp-ship-cost-pill">
+                                $${Math.round(totalNzd).toLocaleString('en-NZ')} NZD &middot;
+                                ${osNzd > 0.5
+                                    ? `<span class="imp-ship-os">$${Math.round(osNzd).toLocaleString('en-NZ')} outstanding</span>`
+                                    : '<span class="imp-ship-paid-ok">paid ✓</span>'}
+                            </div>` : ''}
                         </div>
                         <div class="imp-card-badges">
                             ${milestones.length ? `<span class="imp-milestone-progress">${doneCount}/${milestones.length}</span>` : ''}
-                            ${s.pricePerKg ? `<span class="imp-price-badge">$${s.pricePerKg}/kg</span>` : ''}
+                            <span class="imp-ship-status-badge" style="color:${sc};background:${sc}18;border-color:${sc}30">${SHIP_STATUS_LABELS[status]||status}</span>
                         </div>
-                    </summary>
-                    <div class="imp-event-card-detail">
-                        ${mHtml}
-                        <div class="imp-pricing-grid">
-                            <div class="imp-pricing-field">
-                                <label class="imp-field-label">Campaign / Ref</label>
-                                <input type="text" class="imp-detail-input imp-url-input"
-                                    data-ship-id="${escHtml(s.id)}" data-field="campaign"
-                                    value="${escHtml(s.campaign || '')}" placeholder="e.g. Batch 41">
-                            </div>
-                            <div class="imp-pricing-field">
-                                <label class="imp-field-label">Price / kg</label>
-                                <input type="number" class="imp-detail-input imp-url-input"
-                                    data-ship-id="${escHtml(s.id)}" data-field="pricePerKg"
-                                    value="${s.pricePerKg || ''}" placeholder="e.g. 4.50" step="0.01" min="0">
-                            </div>
-                        </div>
-                        ${buildCostHtml(s)}
-                        ${!past ? `<button class="imp-ship-del" data-id="${escHtml(s.id)}">Remove shipment</button>` : ''}
                     </div>
-                </details>`;
+                    <svg class="imp-card-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#cbd5e1" stroke-width="2" stroke-linecap="round"><polyline points="9 18 15 12 9 6"/></svg>
+                </div>`;
             };
 
             body.innerHTML = `
@@ -1044,11 +1189,6 @@ const Warehouse = (() => {
                 </div>` : ''}
             </div>`;
 
-            // Restore open shipment cards after rebuild
-            openShipIds.forEach(id => {
-                body.querySelector(`details[data-ship-id="${id}"]`)?.setAttribute('open', '');
-            });
-
             // ── Tab switching ──
             document.getElementById('imp-tab-overview')?.addEventListener('click', () => { activeTab = 'overview'; rebuild(); });
             document.getElementById('imp-tab-shipments')?.addEventListener('click', () => { activeTab = 'shipments'; rebuild(); });
@@ -1142,88 +1282,6 @@ const Warehouse = (() => {
                 }
             });
 
-            body.querySelectorAll('.imp-ship-del').forEach(btn => {
-                btn.addEventListener('click', async () => {
-                    const id = btn.dataset.id;
-                    if (!confirm('Remove this shipment?')) return;
-                    const shipments = (config.shipments || []).filter(s => s.id !== id);
-                    try {
-                        await api('/api/import/forecast', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ shipments }),
-                        });
-                        config.shipments = shipments;
-                        showToast('Shipment removed');
-                        rebuild();
-                    } catch (err) {
-                        showToast('Remove failed: ' + err.message);
-                    }
-                });
-            });
-
-            body.querySelectorAll('.imp-milestone-check').forEach(cb => {
-                cb.addEventListener('change', async () => {
-                    const shipId = cb.dataset.shipId;
-                    const idx    = parseInt(cb.dataset.idx);
-                    const done   = cb.checked;
-                    const today  = new Date().toISOString().slice(0, 10);
-                    const shipments = (config.shipments || []).map(s => {
-                        if (s.id !== shipId) return s;
-                        const milestones = (s.milestones || []).map((m, i) =>
-                            i === idx ? { ...m, done, date: done && !m.date ? today : m.date } : m
-                        );
-                        return { ...s, milestones };
-                    });
-                    try {
-                        await api('/api/import/forecast', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ shipments }),
-                        });
-                        config.shipments = shipments;
-                        const lbl = cb.closest('.imp-milestone');
-                        if (lbl) {
-                            lbl.classList.toggle('imp-milestone--done', done);
-                            if (done) {
-                                let ds = lbl.querySelector('.imp-milestone-date');
-                                if (!ds) {
-                                    ds = document.createElement('span');
-                                    ds.className = 'imp-milestone-date';
-                                    lbl.appendChild(ds);
-                                }
-                                ds.textContent = today;
-                            }
-                        }
-                    } catch (err) {
-                        showToast('Save failed: ' + err.message);
-                        cb.checked = !done;
-                    }
-                });
-            });
-
-            // Auto-save shipment detail fields on change
-            body.querySelectorAll('.imp-detail-input').forEach(inp => {
-                inp.addEventListener('change', async () => {
-                    const shipId = inp.dataset.shipId;
-                    const field  = inp.dataset.field;
-                    const val    = inp.type === 'number' ? (parseFloat(inp.value) || null) : inp.value.trim() || null;
-                    const shipments = (config.shipments || []).map(s =>
-                        s.id === shipId ? { ...s, [field]: val } : s
-                    );
-                    try {
-                        await api('/api/import/forecast', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ shipments }),
-                        });
-                        config.shipments = shipments;
-                    } catch (err) {
-                        showToast('Save failed: ' + err.message);
-                    }
-                });
-            });
-
         }
 
         rebuild();
@@ -1237,20 +1295,36 @@ const Warehouse = (() => {
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ shipments: config.shipments }),
                 });
-                rebuild();
+                if (currentDetailShipId) {
+                    const updated = config.shipments.find(sh => sh.id === currentDetailShipId);
+                    if (updated) renderShipDetail(updated);
+                } else {
+                    rebuild();
+                }
+            } catch (err) { showToast('Save failed: ' + err.message); }
+        }
+
+        async function quietSave() {
+            try {
+                await api('/api/import/forecast', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ shipments: config.shipments }),
+                });
             } catch (err) { showToast('Save failed: ' + err.message); }
         }
 
         body.addEventListener('change', async e => {
             if (acSignal.aborted) return;
+
+            // Cost line field
             const field = e.target.closest('.imp-cl-field');
             if (field) {
                 const row = field.closest('.imp-cl-row');
                 if (!row) return;
                 const { shipId, lineId } = row.dataset;
                 const f = field.dataset.f;
-                const val = field.type === 'number' ? (parseFloat(field.value) || 0)
-                          : field.value;
+                const val = field.type === 'number' ? (parseFloat(field.value) || 0) : field.value;
                 config.shipments = (config.shipments || []).map(s =>
                     s.id !== shipId ? s : { ...s, costLines: (s.costLines || []).map(l =>
                         l.id === lineId ? { ...l, [f]: val } : l
@@ -1259,20 +1333,124 @@ const Warehouse = (() => {
                 await costSave();
                 return;
             }
-            const cb = e.target.closest('.imp-cl-paid');
-            if (cb) {
-                const { shipId, lineId } = cb.dataset;
+
+            // Cost line paid checkbox
+            const paidCb = e.target.closest('.imp-cl-paid');
+            if (paidCb) {
+                const { shipId, lineId } = paidCb.dataset;
                 config.shipments = (config.shipments || []).map(s =>
                     s.id !== shipId ? s : { ...s, costLines: (s.costLines || []).map(l =>
-                        l.id === lineId ? { ...l, paid: cb.checked } : l
+                        l.id === lineId ? { ...l, paid: paidCb.checked } : l
                     )}
                 );
                 await costSave();
+                return;
+            }
+
+            // Milestone checkbox
+            if (e.target.matches('.imp-milestone-check')) {
+                const { shipId } = e.target.dataset;
+                const idx   = parseInt(e.target.dataset.idx);
+                const done  = e.target.checked;
+                const today = new Date().toISOString().slice(0, 10);
+                config.shipments = (config.shipments || []).map(s => {
+                    if (s.id !== shipId) return s;
+                    const milestones = (s.milestones || []).map((m, i) =>
+                        i === idx ? { ...m, done, date: done && !m.date ? today : m.date } : m
+                    );
+                    return { ...s, milestones };
+                });
+                await costSave();
+                return;
+            }
+
+            // Shipment detail field or notes — quiet save (no re-render)
+            if (e.target.matches('.imp-detail-input, .ship-notes-ta')) {
+                const { shipId, field: f } = e.target.dataset;
+                const val = e.target.type === 'number' ? (parseFloat(e.target.value) || null) : e.target.value.trim() || null;
+                config.shipments = (config.shipments || []).map(s => s.id === shipId ? { ...s, [f]: val } : s);
+                await quietSave();
+                return;
+            }
+
+            // Status select — quiet save + update dot color
+            if (e.target.matches('.ship-status-sel')) {
+                const { shipId } = e.target.dataset;
+                const status = e.target.value;
+                const STATUS_COLORS = { planning:'#94a3b8', ordered:'#3b82f6', 'in-transit':'#f59e0b', customs:'#8b5cf6', delivered:'#10b981' };
+                config.shipments = (config.shipments || []).map(s => s.id === shipId ? { ...s, status } : s);
+                await quietSave();
+                const dot = body.querySelector('.ship-status-dot');
+                if (dot) dot.style.background = STATUS_COLORS[status] || '#94a3b8';
+                return;
             }
         }, { signal: acSignal });
 
         body.addEventListener('click', async e => {
             if (acSignal.aborted) return;
+
+            // Navigate into shipment detail
+            const card = e.target.closest('.imp-event-card--nav');
+            if (card && !e.target.closest('button, input, select, label, a')) {
+                const s = config.shipments.find(sh => sh.id === card.dataset.shipId);
+                if (s) { renderShipDetail(s); return; }
+            }
+
+            // Back to shipment list
+            if (e.target.closest('.ship-detail-back')) {
+                activeTab = 'shipments';
+                rebuild();
+                return;
+            }
+
+            // Delete shipment (from detail view or list)
+            const delShip = e.target.closest('.imp-ship-del');
+            if (delShip) {
+                const id = delShip.dataset.id;
+                if (!confirm('Remove this shipment? This cannot be undone.')) return;
+                config.shipments = (config.shipments || []).filter(s => s.id !== id);
+                try {
+                    await api('/api/import/forecast', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ shipments: config.shipments }),
+                    });
+                    showToast('Shipment removed');
+                    rebuild();
+                } catch (err) { showToast('Remove failed: ' + err.message); }
+                return;
+            }
+
+            // Quick-add cost line from shortcut button
+            const qc = e.target.closest('.ship-quick-cost');
+            if (qc) {
+                const { shipId, cat, desc, ccy } = qc.dataset;
+                const line = {
+                    id: Date.now().toString(36) + Math.random().toString(36).slice(2, 5),
+                    cat, desc, amount: null, ccy, paidVia: '', paid: false,
+                };
+                config.shipments = (config.shipments || []).map(s =>
+                    s.id !== shipId ? s : { ...s, costLines: [...(s.costLines || []), line] }
+                );
+                await costSave();
+                return;
+            }
+
+            // Add milestone
+            const addMile = e.target.closest('.ship-add-milestone');
+            if (addMile) {
+                const { shipId } = addMile.dataset;
+                const label = prompt('Milestone name (e.g. "Place order", "Customs clearance"):');
+                if (!label?.trim()) return;
+                config.shipments = (config.shipments || []).map(s => {
+                    if (s.id !== shipId) return s;
+                    return { ...s, milestones: [...(s.milestones || []), { label: label.trim(), done: false, date: '' }] };
+                });
+                await costSave();
+                return;
+            }
+
+            // Cost line delete
             const del = e.target.closest('.imp-cl-del');
             if (del) {
                 const { shipId, lineId } = del.dataset;

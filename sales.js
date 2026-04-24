@@ -36,10 +36,10 @@ const SalesView = (() => {
     };
     const MO_NAMES = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 
-    // Merge static history + order actuals, optionally restricting to visibleYears
-    function getMergedData(orderActuals, visibleYears) {
+    // Merge history + order actuals, optionally restricting to visibleYears
+    function getMergedData(orderActuals, visibleYears, historyData = SALES_HISTORY) {
         const data = {};
-        for (const [yr, vals] of Object.entries(SALES_HISTORY)) {
+        for (const [yr, vals] of Object.entries(historyData)) {
             if (!visibleYears || visibleYears.includes(yr)) data[yr] = [...vals];
         }
         for (const [ym, kg] of Object.entries(orderActuals || {})) {
@@ -50,6 +50,74 @@ const SalesView = (() => {
             if (data[yr][mo] === null) data[yr][mo] = kg;
         }
         return data;
+    }
+
+    // Try to extract { year: [12 monthly kg values] } from a connected Google Sheet
+    function extractMonthlyFromSheet(headers, rows) {
+        if (!headers.length || !rows.length) return null;
+        const h = headers.map(s => s.toLowerCase().trim().replace(/[\s\-\/]+/g, '_'));
+
+        // Format A: wide table with Year column + month columns (Jan, February, jan, etc.)
+        const yearIdx = h.findIndex(c => c === 'year' || c === 'yr');
+        const MO_ABBR = ['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'];
+        const MO_FULL = ['january','february','march','april','may','june','july','august','september','october','november','december'];
+        const monthIdxs = MO_ABBR.map((abbr, i) =>
+            h.findIndex(c => c === abbr || c === MO_FULL[i] || c.startsWith(abbr + '_') || c.startsWith(abbr + '-'))
+        );
+
+        if (yearIdx >= 0 && monthIdxs.filter(i => i >= 0).length >= 6) {
+            const result = {};
+            for (const row of rows) {
+                const yr = String(row[yearIdx] || '').trim();
+                if (!yr.match(/^20\d\d$/)) continue;
+                result[yr] = monthIdxs.map(mi => {
+                    if (mi < 0) return null;
+                    const v = parseFloat(String(row[mi] || '').replace(/[,$\s]/g, ''));
+                    return isNaN(v) ? null : v;
+                });
+            }
+            return Object.keys(result).length ? result : null;
+        }
+
+        // Format B: long format — date column + kg/quantity column
+        const dateIdx = h.findIndex(c =>
+            c.includes('date') || c === 'month' || c === 'created' || c === 'shipped' || c === 'order_date'
+        );
+        const kgIdx = h.findIndex(c =>
+            c === 'kg' || c === 'qty_kg' || c === 'quantity_kg' || c === 'total_kg' ||
+            c === 'weight' || c === 'volume' || c === 'qty' || c === 'quantity'
+        );
+        if (dateIdx >= 0 && kgIdx >= 0) {
+            const byYm = {};
+            for (const row of rows) {
+                const rawDate = String(row[dateIdx] || '').trim();
+                const kg = parseFloat(String(row[kgIdx] || '').replace(/[,$\s]/g, ''));
+                if (!rawDate || isNaN(kg) || kg <= 0) continue;
+                let ym = '';
+                if (rawDate.match(/^20\d\d-\d\d/)) {
+                    ym = rawDate.slice(0, 7);
+                } else if (rawDate.match(/^\d{1,2}\/\d{1,2}\/\d{4}/)) {
+                    // NZ/AU format: DD/MM/YYYY
+                    const parts = rawDate.split('/');
+                    ym = `${parts[2]}-${parts[1].padStart(2, '0')}`;
+                } else if (rawDate.match(/^\d{1,2}\/\d{4}/)) {
+                    const [mo, yr] = rawDate.split('/');
+                    ym = `${yr}-${mo.padStart(2, '0')}`;
+                }
+                if (!ym || !ym.match(/^20\d\d-\d\d$/)) continue;
+                byYm[ym] = (byYm[ym] || 0) + kg;
+            }
+            if (!Object.keys(byYm).length) return null;
+            const result = {};
+            for (const [ym, kg] of Object.entries(byYm)) {
+                const yr = ym.slice(0, 4);
+                const mo = parseInt(ym.slice(5)) - 1;
+                if (!result[yr]) result[yr] = new Array(12).fill(null);
+                result[yr][mo] = (result[yr][mo] || 0) + kg;
+            }
+            return result;
+        }
+        return null;
     }
 
     // Chart builders accept pre-computed {yr: [12 values]} data object
@@ -319,6 +387,10 @@ const SalesView = (() => {
             }
         }
 
+        // ── Derive history from sheet CSV (replaces hardcoded SALES_HISTORY when possible) ──
+        const sheetHistory = extractMonthlyFromSheet(headers, rows);
+        const effectiveHistory = sheetHistory || SALES_HISTORY;
+
         // ── Extract filter options from orders ──
         const custSet = new Set(), branchSet = new Set(), prodSet = new Set();
         for (const o of allOrders) {
@@ -388,7 +460,7 @@ const SalesView = (() => {
 
             // Determine visible years
             const allYearsSet = new Set([
-                ...(!isFiltered ? Object.keys(SALES_HISTORY) : []),
+                ...(!isFiltered ? Object.keys(effectiveHistory) : []),
                 ...Object.keys(actuals).map(ym => ym.slice(0, 4)),
             ]);
             const visibleYears = yearRange === 'all' ? [...allYearsSet].sort() : [...allYearsSet].sort().slice(-yearRange);
@@ -405,7 +477,7 @@ const SalesView = (() => {
                 }
                 return data;
             }
-            return getMergedData(actuals, visibleYears);
+            return getMergedData(actuals, visibleYears, effectiveHistory);
         }
 
         function rebuildCharts() {
@@ -501,18 +573,25 @@ const SalesView = (() => {
             </div>` : ''}
         </div>`;
 
+        const sheetYears = sheetHistory ? Object.keys(sheetHistory).sort() : [];
         const settingsPanel = `
         <div id="sales-settings-panel" style="display:none">
             <div class="cat-section" style="max-width:640px;margin-bottom:1.5rem">
                 <div class="cat-section-head">
                     <div>
                         <h2 class="cat-title">Connect Sales Sheet</h2>
-                        <p class="cat-sub">Publish your Google Sheet as CSV and paste the link below.</p>
+                        <p class="cat-sub">Publish your Google Sheet as CSV and paste the link below. Monthly kg totals feed directly into the charts.</p>
                     </div>
                 </div>
                 ${fetchError ? `<div class="imp-connect-status imp-connect-error">
                     <svg width="10" height="10" viewBox="0 0 10 10" fill="#dc2626"><circle cx="5" cy="5" r="5"/></svg>
                     ${escHtml(fetchError)}
+                </div>` : ''}
+                ${sheetHistory ? `<div class="imp-connect-status" style="margin-bottom:0.75rem">
+                    <svg width="10" height="10" viewBox="0 0 10 10" fill="#10b981"><circle cx="5" cy="5" r="5"/></svg>
+                    Sheet data merged — ${sheetYears.length} year${sheetYears.length !== 1 ? 's' : ''} detected (${sheetYears.join(', ')})
+                </div>` : config?.sheetUrl && !fetchError && rows.length ? `<div style="font-size:0.8125rem;color:#94a3b8;margin-bottom:0.75rem">
+                    Sheet loaded but monthly columns not detected — expected: <code>Year, Jan, Feb…Dec</code> or a date+kg long format.
                 </div>` : ''}
                 ${renderConnectPanel(config)}
             </div>

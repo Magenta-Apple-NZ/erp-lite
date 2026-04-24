@@ -2411,6 +2411,135 @@ a.xero-inv-linked:hover { background: #d1fae5; border-color: #6ee7b7; }
     .cal-months-grid { grid-template-columns: repeat(4, 1fr); }
 }
 
+/* ── Shipment card: clickable nav style ── */
+.imp-event-card--nav {
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    transition: box-shadow 0.12s, border-color 0.12s;
+}
+.imp-event-card--nav:hover { box-shadow: 0 2px 12px rgba(59,130,246,0.12); border-color: #93c5fd; }
+.imp-card-chevron { flex-shrink: 0; margin-left: auto; }
+
+.imp-ship-status-badge {
+    font-size: 0.7rem; font-weight: 600; padding: 2px 7px;
+    border-radius: 10px; border: 1px solid; white-space: nowrap;
+}
+.imp-ship-cost-pill {
+    font-size: 0.75rem; color: #64748b; margin-top: 3px;
+}
+.imp-ship-os  { color: #f59e0b; font-weight: 600; }
+.imp-ship-paid-ok { color: #10b981; font-weight: 600; }
+
+/* ── Shipment full-window detail ── */
+.ship-detail-view {
+    padding: 0 0 3rem;
+    max-width: 860px;
+}
+.ship-detail-topbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.5rem 0 1rem;
+    border-bottom: 1px solid #e2e8f0;
+    margin-bottom: 1.25rem;
+}
+.ship-detail-back {
+    background: none; border: none; cursor: pointer;
+    color: #3b82f6; font-size: 0.875rem; font-weight: 500;
+    padding: 0.25rem 0;
+    display: flex; align-items: center; gap: 0.25rem;
+}
+.ship-detail-back:hover { color: #1d4ed8; }
+.ship-status-wrap {
+    display: flex; align-items: center; gap: 0.5rem;
+}
+.ship-status-dot {
+    width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0;
+    transition: background 0.2s;
+}
+.ship-status-sel {
+    border: 1px solid #e2e8f0; border-radius: 6px;
+    padding: 0.3rem 0.6rem; font-size: 0.8125rem;
+    background: white; cursor: pointer;
+}
+.ship-detail-hdr { margin-bottom: 1.25rem; }
+.ship-detail-title {
+    font-size: 1.5rem; font-weight: 700; color: #0f172a;
+    margin: 0 0 0.25rem;
+}
+.ship-detail-meta { font-size: 0.875rem; color: #64748b; margin: 0; }
+
+/* ── Summary cards row ── */
+.ship-sum-row {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 0.75rem;
+    margin-bottom: 1.75rem;
+}
+@media (max-width: 700px) { .ship-sum-row { grid-template-columns: repeat(2, 1fr); } }
+.ship-sum-card {
+    background: white; border: 1px solid #e2e8f0;
+    border-radius: 8px; padding: 1rem;
+}
+.ship-sum-card--paid  { border-color: #bbf7d0; background: #f0fdf4; }
+.ship-sum-card--os    { border-color: #fde68a; background: #fffbeb; }
+.ship-sum-card--clear { border-color: #bbf7d0; background: #f0fdf4; }
+.ship-sum-val {
+    font-size: 1.375rem; font-weight: 700; color: #0f172a; line-height: 1.1;
+}
+.ship-sum-lbl {
+    font-size: 0.7rem; color: #94a3b8; text-transform: uppercase;
+    letter-spacing: 0.05em; margin-top: 0.25rem;
+}
+
+/* ── Detail sections ── */
+.ship-det-section {
+    background: white; border: 1px solid #e2e8f0;
+    border-radius: 8px; padding: 1.25rem;
+    margin-bottom: 0.75rem;
+}
+.ship-det-hd {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 0.75rem;
+}
+.ship-det-title {
+    font-size: 0.8125rem; font-weight: 700; text-transform: uppercase;
+    letter-spacing: 0.06em; color: #475569; margin: 0;
+}
+
+/* ── Quick-add cost shortcuts ── */
+.ship-quick-costs {
+    display: flex; flex-wrap: wrap; align-items: center;
+    gap: 0.4rem; margin-top: 1rem; padding-top: 0.75rem;
+    border-top: 1px solid #f1f5f9;
+}
+.ship-qc-label {
+    font-size: 0.7rem; color: #94a3b8; text-transform: uppercase;
+    letter-spacing: 0.05em; flex-basis: 100%; margin-bottom: 0.15rem;
+}
+
+/* ── Notes textarea ── */
+.ship-notes-ta {
+    width: 100%; box-sizing: border-box;
+    border: 1px solid #e2e8f0; border-radius: 6px;
+    padding: 0.6rem 0.75rem; font-size: 0.8125rem;
+    font-family: inherit; resize: vertical;
+    color: #1e293b; background: #f8fafc;
+    transition: border-color 0.15s;
+}
+.ship-notes-ta:focus { outline: none; border-color: #3b82f6; background: white; }
+
+/* ── Danger zone ── */
+.ship-det-danger { margin-top: 1.5rem; padding-top: 1rem; border-top: 1px solid #fee2e2; }
+.ship-det-danger .imp-ship-del {
+    background: none; border: 1px solid #fca5a5; color: #dc2626;
+    border-radius: 6px; padding: 0.4rem 0.9rem; font-size: 0.8125rem;
+    cursor: pointer;
+}
+.ship-det-danger .imp-ship-del:hover { background: #fee2e2; }
+
 /* ── Sales: two-chart row ── */
 .sales-charts-row {
     display: grid;
