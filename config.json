@@ -70,44 +70,6 @@
       ]
     },
     {
-      "name": "Accounting",
-      "colour": "#7c3aed",
-      "items": [
-        {
-          "label": "Xero Dashboard",
-          "type": "link",
-          "url": "https://go.xero.com/app/!8QbL4/dashboard"
-        },
-        {
-          "label": "MYOB (legacy)",
-          "type": "link",
-          "url": "https://id.myob.com/u/login/password?state=hKFo2SBNaGh2bnlETHBxZHVHR3YtQlc5VEprYUxKSGY5ekN5MqFur3VuaXZlcnNhbC1sb2dpbqN0aWTZIEItY2x6cVJqbkJ4RGIzaFJFcmE5RGRLUUZqRi10dWFPo2NpZNkgVVYxOHMzWXpscU9pRWhybFR3NTNTdHVWMUVFN0RVU2E",
-          "tag": "transition"
-        }
-      ]
-    },
-    {
-      "name": "Suppliers",
-      "colour": "#ea580c",
-      "items": [
-        {
-          "label": "Farmlands",
-          "type": "link",
-          "url": "https://websupplier.apac.f4f.com/websupplier/Login.action"
-        },
-        {
-          "label": "PGG Wrightson Orders",
-          "type": "link",
-          "url": "https://mail.google.com/mail/u/0/#label/.Purchase+Orders%2FPGG+Wrightson"
-        },
-        {
-          "label": "Horticentre Orders",
-          "type": "link",
-          "url": "https://mail.google.com/mail/u/0/#label/.Purchase+Orders%2FHorticentre"
-        }
-      ]
-    },
-    {
       "name": "Inventory & Stock",
       "colour": "#0891b2",
       "items": [

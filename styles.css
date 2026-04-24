@@ -762,7 +762,7 @@ li.drag-over { background: #eff6ff; }
 
 .orders-view-inner {
     padding: 1.5rem;
-    max-width: 1100px;
+    max-width: 1600px;
     width: 100%;
     flex: 1;
 }
@@ -846,6 +846,7 @@ li.drag-over { background: #eff6ff; }
 .order-row:hover td { background: #f8fafc; }
 .order-id { font-family: ui-monospace, monospace; font-weight: 600; color: #1e293b; white-space: nowrap; }
 .order-ship-to { color: #64748b; }
+.order-po { color: #94a3b8; font-size: 0.8125rem; white-space: nowrap; }
 .order-date { color: #64748b; white-space: nowrap; }
 .order-total { font-weight: 600; white-space: nowrap; }
 .order-xero { white-space: nowrap; }

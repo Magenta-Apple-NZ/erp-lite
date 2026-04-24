@@ -181,6 +181,7 @@ const Orders = (() => {
                         <th>Order</th>
                         <th>Customer</th>
                         <th>Ship To</th>
+                        <th>PO</th>
                         <th>Date</th>
                         <th>Total</th>
                         <th>Status</th>
@@ -198,6 +199,7 @@ const Orders = (() => {
                         <td class="order-id">${o.id}</td>
                         <td>${escHtml(o.customer.name)}</td>
                         <td class="order-ship-to">${escHtml(o.shipTo?.branch || '—')}</td>
+                        <td class="order-po">${escHtml(o.poNumber || '—')}</td>
                         <td class="order-date">${fmtDate(o.createdAt)}</td>
                         <td class="order-total">$${fmt(orderTotal(o))}</td>
                         <td>${statusBadge(o.status)}</td>

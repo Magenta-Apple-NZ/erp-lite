@@ -355,7 +355,6 @@ const SalesView = (() => {
                 </div>
                 <div style="margin-top:0.75rem" id="sales-chart-area">${buildSalesByMonthChart(orderActuals)}</div>
             </div>
-        </div>
         ${storeActuals.length ? `
         <div class="cat-section" style="margin-bottom:1.5rem">
             <div class="cat-section-head">
@@ -379,6 +378,7 @@ const SalesView = (() => {
                 </table>
             </div>
         </div>` : ''}
+        </div>`;
 
         const settingsPanel = `
         <div id="sales-settings-panel" style="display:none">

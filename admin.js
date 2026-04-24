@@ -44,7 +44,7 @@ const Admin = (() => {
             });
     }
 
-    const ITEM_HEADERS  = ['Id', 'Name', 'Default Price', 'PB1 Quantity', 'PB1 Price', 'PB2 Quantity', 'PB2 Price', 'PB3 Quantity', 'PB3 Price'];
+    const ITEM_HEADERS  = ['Id', 'Name', 'Unit Price', 'PB1 Quantity', 'PB1 Price', 'PB2 Quantity', 'PB2 Price', 'PB3 Quantity', 'PB3 Price'];
     const ITEM_EXAMPLE  = ['PT-I-10', 'Prime Vine Tie Loose 10kg', '119.00', '50', '109.00', '100', '99.00', '', ''];
     const STORE_HEADERS = ['Account ID', 'Customer', 'Branch', 'Street Address', 'City', 'Postcode', 'Phone'];
     const STORE_EXAMPLE = ['ACC001', 'Farmlands Co-operative', 'New Plymouth', '35 Hudson Road', 'New Plymouth', '4312', '06 759 0000'];
@@ -69,7 +69,7 @@ const Admin = (() => {
     }
 
     function itemsToCsv(items) {
-        const headers = ['Id', 'Name', 'Default Price', 'PB1 Quantity', 'PB1 Price', 'PB2 Quantity', 'PB2 Price', 'PB3 Quantity', 'PB3 Price'];
+        const headers = ['Id', 'Name', 'Unit Price', 'PB1 Quantity', 'PB1 Price', 'PB2 Quantity', 'PB2 Price', 'PB3 Quantity', 'PB3 Price'];
         const rows = items.map(i => [
             i.id || '', i.name || '', i.defaultPrice ?? '', i.pb1Quantity ?? '', i.pb1Price ?? '',
             i.pb2Quantity ?? '', i.pb2Price ?? '', i.pb3Quantity ?? '', i.pb3Price ?? '',
@@ -162,7 +162,7 @@ const Admin = (() => {
                     <button class="btn-primary btn-sm" id="items-save-btn" style="display:none">Save to Hub</button>
                 </div>
             </div>
-            <p class="cat-format">Expected columns: <code>Id, Name, Default Price, PB1 Quantity, PB1 Price, PB2 Quantity, PB2 Price, PB3 Quantity, PB3 Price</code></p>
+            <p class="cat-format">Expected columns: <code>Id, Name, Unit Price, PB1 Quantity, PB1 Price, PB2 Quantity, PB2 Price, PB3 Quantity, PB3 Price</code></p>
         </div>
 
         <!-- ── Store Locations ── -->
@@ -227,7 +227,7 @@ const Admin = (() => {
                 pb3Price:     parseFloat(r.pb3_price || r.pb3price || '') || null,
             })).filter(i => i.name);
 
-            if (!parsed.length) { showToast('No valid rows — check CSV headers match: Id, Name, Default Price…'); return; }
+            if (!parsed.length) { showToast('No valid rows — check CSV headers match: Id, Name, Unit Price…'); return; }
             document.getElementById('items-tbody').innerHTML = itemsTableRows(parsed);
             document.getElementById('items-preview').style.display = '';
             const existing = items.length;
