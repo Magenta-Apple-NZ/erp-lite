@@ -665,7 +665,7 @@ document.addEventListener('keydown', e => {
 });
 
 // ── Hash router ──
-const VIEWS = ['view-dashboard', 'view-orders', 'view-orders-new', 'view-orders-detail', 'view-orders-edit', 'view-admin'];
+const VIEWS = ['view-dashboard', 'view-orders', 'view-orders-new', 'view-orders-detail', 'view-orders-edit', 'view-warehouse', 'view-admin'];
 
 function setActiveView(viewId) {
     VIEWS.forEach(id => {
@@ -726,6 +726,13 @@ async function handleRoute() {
         return;
     }
 
+    if (hash === 'warehouse') {
+        setActiveView('view-warehouse');
+        setActiveNav('nav-warehouse');
+        await Warehouse.render(document.getElementById('warehouse-container'));
+        return;
+    }
+
     if (hash === 'admin') {
         setActiveView('view-admin');
         setActiveNav('nav-admin');
@@ -754,6 +761,18 @@ if (ordersNavItem) {
     ordersNavItem.addEventListener('click', e => {
         e.preventDefault();
         location.hash = 'orders';
+    });
+}
+
+// Make Warehouse nav item active (it was nav-item--soon Phase 2)
+const warehouseNavItem = document.querySelector('.nav-item--soon[data-phase="Phase 2"]');
+if (warehouseNavItem) {
+    warehouseNavItem.classList.remove('nav-item--soon');
+    warehouseNavItem.id = 'nav-warehouse';
+    warehouseNavItem.querySelector('.nav-soon-badge')?.remove();
+    warehouseNavItem.addEventListener('click', e => {
+        e.preventDefault();
+        location.hash = 'warehouse';
     });
 }
 

@@ -51,12 +51,39 @@ const Admin = (() => {
 
     function downloadTemplate(headers, example, filename) {
         const csv = [headers.join(','), example.join(',')].join('\n');
+        downloadCsv(csv, filename);
+    }
+
+    function downloadCsv(csv, filename) {
         const a = document.createElement('a');
         a.href = 'data:text/csv;charset=utf-8,' + encodeURIComponent(csv);
         a.download = filename;
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
+    }
+
+    function quoteField(v) {
+        const s = String(v ?? '');
+        return s.includes(',') || s.includes('"') || s.includes('\n') ? `"${s.replace(/"/g, '""')}"` : s;
+    }
+
+    function itemsToCsv(items) {
+        const headers = ['Id', 'Name', 'Default Price', 'PB1 Quantity', 'PB1 Price', 'PB2 Quantity', 'PB2 Price', 'PB3 Quantity', 'PB3 Price'];
+        const rows = items.map(i => [
+            i.id || '', i.name || '', i.defaultPrice ?? '', i.pb1Quantity ?? '', i.pb1Price ?? '',
+            i.pb2Quantity ?? '', i.pb2Price ?? '', i.pb3Quantity ?? '', i.pb3Price ?? '',
+        ].map(quoteField).join(','));
+        return [headers.join(','), ...rows].join('\n');
+    }
+
+    function storesToCsv(stores) {
+        const headers = ['Account ID', 'Customer', 'Branch', 'Street Address', 'City', 'Postcode', 'Phone'];
+        const rows = stores.map(s => [
+            s.accountId || '', s.customer || '', s.branch || '',
+            s.streetAddress || '', s.city || '', s.postcode || '', s.phone || '',
+        ].map(quoteField).join(','));
+        return [headers.join(','), ...rows].join('\n');
     }
 
     function pbCell(qty, price) {
@@ -119,6 +146,7 @@ const Admin = (() => {
                 </div>
                 <div class="cat-actions">
                     <button class="btn-secondary btn-sm" id="items-tpl-btn">Download template</button>
+                    <button class="btn-secondary btn-sm" id="items-dl-btn" ${items.length ? '' : 'disabled'}>Download current CSV</button>
                     <label class="btn-primary btn-sm cat-upload-lbl">
                         Upload CSV
                         <input type="file" id="items-file" accept=".csv" style="display:none">
@@ -146,6 +174,7 @@ const Admin = (() => {
                 </div>
                 <div class="cat-actions">
                     <button class="btn-secondary btn-sm" id="stores-tpl-btn">Download template</button>
+                    <button class="btn-secondary btn-sm" id="stores-dl-btn" ${stores.length ? '' : 'disabled'}>Download current CSV</button>
                     <label class="btn-primary btn-sm cat-upload-lbl">
                         Upload CSV
                         <input type="file" id="stores-file" accept=".csv" style="display:none">
@@ -169,6 +198,16 @@ const Admin = (() => {
             downloadTemplate(ITEM_HEADERS, ITEM_EXAMPLE, 'items-template.csv'));
         document.getElementById('stores-tpl-btn').addEventListener('click', () =>
             downloadTemplate(STORE_HEADERS, STORE_EXAMPLE, 'stores-template.csv'));
+
+        // ── Current data downloads ──
+        document.getElementById('items-dl-btn').addEventListener('click', () => {
+            if (!items.length) return;
+            downloadCsv(itemsToCsv(items), `items-${new Date().toISOString().slice(0,10)}.csv`);
+        });
+        document.getElementById('stores-dl-btn').addEventListener('click', () => {
+            if (!stores.length) return;
+            downloadCsv(storesToCsv(stores), `stores-${new Date().toISOString().slice(0,10)}.csv`);
+        });
 
         // ── Items CSV upload ──
         document.getElementById('items-file').addEventListener('change', async e => {
