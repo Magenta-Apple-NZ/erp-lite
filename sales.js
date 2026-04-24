@@ -329,80 +329,98 @@ const SalesView = (() => {
         const isConnected = !!config?.sheetUrl;
         const hasData = rows.length > 0;
 
-        const connectSection = `
-        <div class="cat-section" style="max-width:640px;margin-bottom:1.5rem">
-            <div class="cat-section-head">
-                <div>
-                    <h2 class="cat-title">Connect Sales Sheet</h2>
-                    <p class="cat-sub">Publish your Google Sheet as CSV and paste the link below.</p>
-                </div>
-            </div>
-            ${fetchError ? `<div class="imp-connect-status imp-connect-error">
-                <svg width="10" height="10" viewBox="0 0 10 10" fill="#dc2626"><circle cx="5" cy="5" r="5"/></svg>
-                ${escHtml(fetchError)}
-            </div>` : ''}
-            ${renderConnectPanel(config)}
-        </div>`;
-
         let salesChartMode = 'monthly';
-        const renderChartsSection = () => `
-        <div class="cat-section" style="margin-bottom:1.5rem">
-            <div class="cat-section-head">
-                <div>
-                    <h2 class="cat-title">Sales by Month</h2>
-                    <p class="cat-sub">Historical kg by calendar year. Hub orders overlaid automatically.</p>
+        const chartsPanel = `
+        <div id="sales-charts-panel">
+            <div class="cat-section" style="margin-bottom:1.5rem">
+                <div class="cat-section-head">
+                    <div>
+                        <h2 class="cat-title">Sales by Month</h2>
+                        <p class="cat-sub">Historical kg by calendar year. Hub orders overlaid automatically.</p>
+                    </div>
+                    <div class="cat-actions">
+                        <button class="imp-view-btn active" id="sales-mode-monthly">Monthly</button>
+                        <button class="imp-view-btn" id="sales-mode-cumulative">Cumulative</button>
+                    </div>
                 </div>
-                <div class="cat-actions">
-                    <button class="imp-view-btn ${salesChartMode === 'monthly' ? 'active' : ''}" id="sales-mode-monthly">Monthly</button>
-                    <button class="imp-view-btn ${salesChartMode === 'cumulative' ? 'active' : ''}" id="sales-mode-cumulative">Cumulative</button>
-                </div>
+                <div style="margin-top:0.75rem" id="sales-chart-area">${buildSalesByMonthChart(orderActuals)}</div>
             </div>
-            <div style="margin-top:0.75rem" id="sales-chart-area">${salesChartMode === 'cumulative' ? buildCumulativeChart(orderActuals) : buildSalesByMonthChart(orderActuals)}</div>
         </div>`;
-        const chartsSection = renderChartsSection();
 
-        const webhookSection = `
-        <details class="cat-section sales-webhook-details" style="margin-top:1.5rem">
-            <summary class="cat-section-head" style="cursor:pointer;list-style:none;display:flex;align-items:center;justify-content:space-between">
-                <div>
-                    <h2 class="cat-title" style="margin:0">Order Write-back</h2>
-                    <p class="cat-sub">Configure a webhook to automatically write new orders to your sales sheet.</p>
+        const settingsPanel = `
+        <div id="sales-settings-panel" style="display:none">
+            <div class="cat-section" style="max-width:640px;margin-bottom:1.5rem">
+                <div class="cat-section-head">
+                    <div>
+                        <h2 class="cat-title">Connect Sales Sheet</h2>
+                        <p class="cat-sub">Publish your Google Sheet as CSV and paste the link below.</p>
+                    </div>
                 </div>
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
-            </summary>
-            <div style="margin-top:1rem">
-                <p style="font-size:0.875rem;color:#64748b;margin-bottom:1rem">
-                    When an order is created, the Hub will POST order data to this URL.
-                    Configure the receiving end (e.g.&nbsp;Zapier) to write a row to your sheet.
-                </p>
-                <div class="imp-connect-row" style="margin-bottom:0.5rem">
-                    <input type="url" id="sales-webhook-url" class="imp-url-input"
-                        placeholder="https://hooks.zapier.com/hooks/catch/…"
-                        value="${escHtml(config?.webhookUrl || '')}">
-                    <button class="btn-primary btn-sm" id="sales-webhook-save-btn">Save</button>
-                </div>
+                ${fetchError ? `<div class="imp-connect-status imp-connect-error">
+                    <svg width="10" height="10" viewBox="0 0 10 10" fill="#dc2626"><circle cx="5" cy="5" r="5"/></svg>
+                    ${escHtml(fetchError)}
+                </div>` : ''}
+                ${renderConnectPanel(config)}
             </div>
-        </details>`;
+            ${hasData ? renderDataTable(headers, rows) : ''}
+            <details class="cat-section sales-webhook-details" style="margin-top:1.5rem">
+                <summary class="cat-section-head" style="cursor:pointer;list-style:none;display:flex;align-items:center;justify-content:space-between">
+                    <div>
+                        <h2 class="cat-title" style="margin:0">Order Write-back</h2>
+                        <p class="cat-sub">Configure a webhook to automatically write new orders to your sales sheet.</p>
+                    </div>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+                </summary>
+                <div style="margin-top:1rem">
+                    <p style="font-size:0.875rem;color:#64748b;margin-bottom:1rem">
+                        When an order is created, the Hub will POST order data to this URL.
+                        Configure the receiving end (e.g.&nbsp;Zapier) to write a row to your sheet.
+                    </p>
+                    <div class="imp-connect-row" style="margin-bottom:0.5rem">
+                        <input type="url" id="sales-webhook-url" class="imp-url-input"
+                            placeholder="https://hooks.zapier.com/hooks/catch/…"
+                            value="${escHtml(config?.webhookUrl || '')}">
+                        <button class="btn-primary btn-sm" id="sales-webhook-save-btn">Save</button>
+                    </div>
+                </div>
+            </details>
+        </div>`;
 
-        bodyEl.innerHTML = connectSection + chartsSection + (hasData ? renderDataTable(headers, rows) : '') + webhookSection;
+        const tabBar = `
+        <div style="display:flex;gap:0.4rem;margin-bottom:1.25rem">
+            <button class="imp-view-btn active" id="sales-tab-charts">Charts</button>
+            <button class="imp-view-btn" id="sales-tab-settings">Settings</button>
+        </div>`;
+
+        bodyEl.innerHTML = tabBar + chartsPanel + settingsPanel;
+
+        document.getElementById('sales-tab-charts')?.addEventListener('click', () => {
+            document.getElementById('sales-charts-panel').style.display = '';
+            document.getElementById('sales-settings-panel').style.display = 'none';
+            document.getElementById('sales-tab-charts').classList.add('active');
+            document.getElementById('sales-tab-settings').classList.remove('active');
+        });
+        document.getElementById('sales-tab-settings')?.addEventListener('click', () => {
+            document.getElementById('sales-charts-panel').style.display = 'none';
+            document.getElementById('sales-settings-panel').style.display = '';
+            document.getElementById('sales-tab-settings').classList.add('active');
+            document.getElementById('sales-tab-charts').classList.remove('active');
+        });
 
         wireConnectPanel(config);
 
-        const wireChartToggle = () => {
-            document.getElementById('sales-mode-monthly')?.addEventListener('click', () => {
-                salesChartMode = 'monthly';
-                document.getElementById('sales-chart-area').innerHTML = buildSalesByMonthChart(orderActuals);
-                document.getElementById('sales-mode-monthly')?.classList.add('active');
-                document.getElementById('sales-mode-cumulative')?.classList.remove('active');
-            });
-            document.getElementById('sales-mode-cumulative')?.addEventListener('click', () => {
-                salesChartMode = 'cumulative';
-                document.getElementById('sales-chart-area').innerHTML = buildCumulativeChart(orderActuals);
-                document.getElementById('sales-mode-cumulative')?.classList.add('active');
-                document.getElementById('sales-mode-monthly')?.classList.remove('active');
-            });
-        };
-        wireChartToggle();
+        document.getElementById('sales-mode-monthly')?.addEventListener('click', () => {
+            salesChartMode = 'monthly';
+            document.getElementById('sales-chart-area').innerHTML = buildSalesByMonthChart(orderActuals);
+            document.getElementById('sales-mode-monthly')?.classList.add('active');
+            document.getElementById('sales-mode-cumulative')?.classList.remove('active');
+        });
+        document.getElementById('sales-mode-cumulative')?.addEventListener('click', () => {
+            salesChartMode = 'cumulative';
+            document.getElementById('sales-chart-area').innerHTML = buildCumulativeChart(orderActuals);
+            document.getElementById('sales-mode-cumulative')?.classList.add('active');
+            document.getElementById('sales-mode-monthly')?.classList.remove('active');
+        });
 
         document.getElementById('sales-refresh-btn')?.addEventListener('click', () => renderBody(bodyEl));
 
@@ -432,7 +450,7 @@ const SalesView = (() => {
         <div class="view-header">
             <div>
                 <h1 class="view-title">Sales History</h1>
-                <p class="view-subtitle">Track sales data from your Google Sheet.</p>
+                <p class="view-subtitle">Historical sales by month and year.</p>
             </div>
         </div>
         <div id="sales-body"></div>`;

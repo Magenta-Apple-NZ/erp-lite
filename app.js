@@ -37,7 +37,7 @@ function applyConfig(config) {
     pinnedItems = JSON.parse(JSON.stringify(config.pinned || []));
     renderPinned(pinnedItems);
     renderGroups(allGroups);
-    // FX rates now live on the Imports page
+    renderDashboardWidgets(config);
     updateTimestamp();
 }
 
@@ -482,10 +482,64 @@ function setupItemDropZone(list, gIdx) {
 // ── Open item ──
 function openItem(item) {
     if (item.type === 'link') {
-        window.open(item.url, '_blank');
+        if (item.url && item.url.startsWith('#')) {
+            location.hash = item.url.slice(1);
+        } else {
+            window.open(item.url, '_blank');
+        }
     } else if (item.type === 'file' || item.type === 'folder') {
         window.open('file://' + item.path);
     }
+}
+
+function renderDashboardWidgets(config) {
+    const el = document.getElementById('db-widgets');
+    if (!el) return;
+
+    const QUICK_ACTIONS = [
+        { label: 'Create New Order', hash: 'orders/new',
+          icon: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>' },
+        { label: 'All Orders', hash: 'orders',
+          icon: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>' },
+        { label: 'Stock Forecast', hash: 'imports',
+          icon: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>' },
+        { label: 'Sales History', hash: 'sales',
+          icon: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>' },
+    ];
+
+    const actionsHtml = `<div class="db-quick-actions">${QUICK_ACTIONS.map(a =>
+        `<a class="db-quick-card" href="#${a.hash}">${a.icon}<span>${a.label}</span></a>`
+    ).join('')}</div>`;
+
+    // Forex from today's cache (populated when Imports tab is visited)
+    let fxHtml = '';
+    const currencies = config?.currencies;
+    if (currencies?.base && Array.isArray(currencies?.targets)) {
+        const buildFx = data => {
+            if (!data?.rates) return '';
+            const pairs = currencies.targets
+                .filter(c => data.rates[c] !== undefined)
+                .map(c => `<span class="db-fx-pair"><span class="db-fx-code">${c}</span><span class="db-fx-rate">${data.rates[c].toFixed(4)}</span></span>`)
+                .join('');
+            return `<div class="db-forex-bar"><span class="db-fx-label">${currencies.base}</span>${pairs}<span class="db-fx-date">${data.date}</span></div>`;
+        };
+
+        const today = new Date().toISOString().split('T')[0];
+        const cached = localStorage.getItem('hub-fx-' + today);
+        if (cached) {
+            fxHtml = buildFx(JSON.parse(cached));
+        } else {
+            const url = 'https://api.frankfurter.dev/v1/latest?base=' + currencies.base + '&symbols=' + currencies.targets.join(',');
+            fetch(url).then(r => r.json()).then(data => {
+                localStorage.setItem('hub-fx-' + today, JSON.stringify(data));
+                const fxEl = document.getElementById('db-forex-bar');
+                if (fxEl) fxEl.outerHTML = buildFx(data);
+            }).catch(() => {});
+            fxHtml = '<div class="db-forex-bar" id="db-forex-bar"><span class="db-fx-label" style="opacity:0.4">Loading rates…</span></div>';
+        }
+    }
+
+    el.innerHTML = actionsHtml + fxHtml;
 }
 
 // ── Season logic ──

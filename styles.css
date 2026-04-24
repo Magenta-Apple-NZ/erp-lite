@@ -244,6 +244,33 @@ body {
     flex-shrink: 0;
 }
 
+/* ── Dashboard widgets ── */
+#db-widgets { padding: 1rem 1.5rem 0; }
+.db-quick-actions { display: flex; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 1rem; }
+.db-quick-card {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.4rem 0.9rem;
+    background: #fff;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    text-decoration: none;
+    color: #1e293b;
+    font-size: 0.82rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: border-color 0.12s, box-shadow 0.12s;
+}
+.db-quick-card:hover { border-color: #1d4ed8; box-shadow: 0 0 0 3px rgba(29,78,216,0.08); color: #1d4ed8; }
+.db-quick-card svg { flex-shrink: 0; opacity: 0.7; }
+.db-forex-bar { display: flex; align-items: center; gap: 0.85rem; flex-wrap: wrap; margin-bottom: 0.5rem; font-size: 0.8rem; }
+.db-fx-label { font-weight: 700; color: #475569; font-size: 0.72rem; letter-spacing: 0.04em; }
+.db-fx-pair { display: inline-flex; align-items: center; gap: 0.25rem; }
+.db-fx-code { font-size: 0.7rem; font-weight: 600; color: #94a3b8; }
+.db-fx-rate { font-weight: 600; color: #1e293b; font-variant-numeric: tabular-nums; }
+.db-fx-date { margin-left: auto; font-size: 0.7rem; color: #94a3b8; }
+
 /* ── Pinned section ── */
 .pinned-section {
     padding: 1rem 1.5rem 0.25rem;
@@ -827,6 +854,23 @@ li.drag-over { background: #eff6ff; }
 }
 .xero-pending { color: #cbd5e1; }
 .order-actions-col { width: 1px; white-space: nowrap; padding-right: 0.5rem !important; }
+.row-actions { display: inline-flex; align-items: center; gap: 0.15rem; }
+.row-action-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border-radius: 6px;
+    color: #64748b;
+    text-decoration: none;
+    transition: background 0.12s, color 0.12s;
+    cursor: pointer;
+    border: none;
+    background: none;
+}
+.row-action-btn:hover { background: #f1f5f9; color: #1e293b; }
+.row-action-btn--dim { opacity: 0.3; cursor: default; pointer-events: none; }
 
 /* ── Overflow / context menu ── */
 .overflow-menu { position: relative; display: inline-flex; }

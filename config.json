@@ -53,11 +53,6 @@
       "colour": "#2563eb",
       "items": [
         {
-          "label": "Packing Slip Generator",
-          "type": "link",
-          "url": "https://enviroware-packing-slip.onrender.com"
-        },
-        {
           "label": "Dispatch Tally",
           "type": "link",
           "url": "https://docs.google.com/spreadsheets/d/1UlNjWUBaGlJfQal-rFidtP4meeWTaNB5vrAKBJrEfF8/edit?gid=0#gid=0"
