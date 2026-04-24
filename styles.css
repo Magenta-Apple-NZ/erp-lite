@@ -1017,6 +1017,8 @@ li.drag-over { background: #eff6ff; }
 }
 .form-hint { font-weight: 400; color: #94a3b8; margin-left: 0.25rem; }
 .form-field input, .form-field textarea, .form-field select {
+    width: 100%;
+    box-sizing: border-box;
     padding: 0.52rem 0.75rem;
     border: 1px solid #e2e8f0;
     border-radius: 6px;
@@ -1035,7 +1037,7 @@ li.drag-over { background: #eff6ff; }
 .required { color: #ef4444; }
 
 /* Customer typeahead */
-.customer-search-wrap { position: relative; }
+.customer-search-wrap { position: relative; width: 100%; }
 .customer-dropdown {
     position: absolute;
     top: 100%;
