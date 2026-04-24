@@ -715,6 +715,7 @@ const SalesView = (() => {
         </div>`;
 
         bodyEl.innerHTML = tabBar + chartsPanel + settingsPanel;
+        if (typeof initCharts === 'function') initCharts(bodyEl);
 
         // ── Tab switching ──
         document.getElementById('sales-tab-charts')?.addEventListener('click', () => {
