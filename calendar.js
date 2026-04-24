@@ -1,40 +1,28 @@
 // ── Calendar module ──
-// Current-year monthly view: NZ holidays, tax dates, shipments, Google Calendar
+// Two-pane layout: 60% focused month detail, 40% scrollable month sidebar
 
 const CalendarView = (() => {
 
     const MONTH_NAMES = ['January','February','March','April','May','June',
                          'July','August','September','October','November','December'];
     const MONTH_SHORT = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    const DAY_SHORT   = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 
-    // NZ Public Holidays — hardcoded for 2025 and 2026
     const NZ_HOLIDAYS = {
-        '2025-01-01': "New Year's Day",
-        '2025-01-02': 'Day after New Year',
-        '2025-02-06': 'Waitangi Day',
-        '2025-04-18': 'Good Friday',
-        '2025-04-21': 'Easter Monday',
-        '2025-04-25': 'Anzac Day',
-        '2025-06-02': "King's Birthday",
-        '2025-06-20': 'Matariki',
-        '2025-10-27': 'Labour Day',
-        '2025-12-25': 'Christmas Day',
+        '2025-01-01': "New Year's Day",       '2025-01-02': 'Day after New Year',
+        '2025-02-06': 'Waitangi Day',          '2025-04-18': 'Good Friday',
+        '2025-04-21': 'Easter Monday',         '2025-04-25': 'Anzac Day',
+        '2025-06-02': "King's Birthday",       '2025-06-20': 'Matariki',
+        '2025-10-27': 'Labour Day',            '2025-12-25': 'Christmas Day',
         '2025-12-26': 'Boxing Day',
-        '2026-01-01': "New Year's Day",
-        '2026-01-02': 'Day after New Year',
-        '2026-02-06': 'Waitangi Day',
-        '2026-04-03': 'Good Friday',
-        '2026-04-06': 'Easter Monday',
-        '2026-04-27': 'Anzac Day (observed)',
-        '2026-06-01': "King's Birthday",
-        '2026-06-26': 'Matariki',
-        '2026-10-26': 'Labour Day',
-        '2026-12-25': 'Christmas Day',
+        '2026-01-01': "New Year's Day",        '2026-01-02': 'Day after New Year',
+        '2026-02-06': 'Waitangi Day',          '2026-04-03': 'Good Friday',
+        '2026-04-06': 'Easter Monday',         '2026-04-27': 'Anzac Day (observed)',
+        '2026-06-01': "King's Birthday",       '2026-06-26': 'Matariki',
+        '2026-10-26': 'Labour Day',            '2026-12-25': 'Christmas Day',
         '2026-12-28': 'Boxing Day (observed)',
     };
 
-    // NZ key tax dates — GST bi-monthly (28th of month after period end),
-    // Provisional Tax (3 instalments), Income Tax Return (7 Jul)
     const NZ_TAX = {
         '2025-02-28': ['GST Return due'],
         '2025-04-28': ['GST Return due'],
@@ -52,6 +40,13 @@ const CalendarView = (() => {
         '2026-08-28': ['GST Return due', 'Provisional Tax (1st)'],
         '2026-10-28': ['GST Return due'],
         '2026-12-28': ['GST Return due'],
+    };
+
+    const TYPE_LABELS = {
+        holiday:  'Public Holidays',
+        tax:      'Tax Dates',
+        shipment: 'Shipments',
+        gcal:     'Google Calendar',
     };
 
     function escHtml(str) {
@@ -79,17 +74,13 @@ const CalendarView = (() => {
             </div>
         </div>
         <div id="cal-body"><div class="orders-loading">Loading…</div></div>`;
-
-        renderCalendar();
+        loadAndRender();
     }
 
-    async function renderCalendar() {
+    async function loadAndRender() {
         const body = document.getElementById('cal-body');
-        const now = new Date();
-        const currentYear = now.getFullYear();
-        const yearStr = String(currentYear);
+        const now  = new Date();
 
-        // Fetch shipment config + GCal status in parallel
         let config = {}, gcalConnected = false, gcalEvents = [];
         try {
             const [configData, statusData] = await Promise.all([
@@ -97,147 +88,216 @@ const CalendarView = (() => {
                 fetch('/api/calendar/status').then(r => r.ok ? r.json() : {}).catch(() => ({})),
             ]);
             config = configData || {};
-            gcalConnected = !!(statusData && statusData.connected);
+            gcalConnected = !!(statusData?.connected);
 
             if (gcalConnected) {
-                const tMin = new Date(currentYear, 0, 1).toISOString();
-                const tMax = new Date(currentYear, 11, 31, 23, 59, 59).toISOString();
-                gcalEvents = await fetch(`/api/calendar/events?timeMin=${encodeURIComponent(tMin)}&timeMax=${encodeURIComponent(tMax)}`)
+                const yr = now.getFullYear();
+                const tMin = encodeURIComponent(new Date(yr, 0, 1).toISOString());
+                const tMax = encodeURIComponent(new Date(yr, 11, 31, 23, 59, 59).toISOString());
+                gcalEvents = await fetch(`/api/calendar/events?timeMin=${tMin}&timeMax=${tMax}`)
                     .then(r => r.ok ? r.json() : []).catch(() => []);
             }
         } catch (e) { /* render with what we have */ }
 
-        // Build event map: 'YYYY-MM-DD' → [{type, label}]
+        // Build full event map across all dates
         const eventsByDate = {};
 
-        // NZ public holidays for current year
-        for (const [date, label] of Object.entries(NZ_HOLIDAYS)) {
-            if (date.startsWith(yearStr)) addEvent(eventsByDate, date, { type: 'holiday', label });
-        }
+        for (const [date, label] of Object.entries(NZ_HOLIDAYS))
+            addEvent(eventsByDate, date, { type: 'holiday', label });
 
-        // NZ tax dates for current year
-        for (const [date, labels] of Object.entries(NZ_TAX)) {
-            if (date.startsWith(yearStr)) {
-                for (const label of labels) addEvent(eventsByDate, date, { type: 'tax', label });
-            }
-        }
+        for (const [date, labels] of Object.entries(NZ_TAX))
+            for (const label of labels) addEvent(eventsByDate, date, { type: 'tax', label });
 
-        // Shipments for current year (use arrival date if set, else 1st of month)
         for (const s of (config.shipments || [])) {
-            if (!s.ym || !s.ym.startsWith(yearStr)) continue;
-            const date = s.arrivalDate || (s.ym + '-01');
+            const date = (s.arrivalDate || (s.ym + '-01')).slice(0, 10);
             const label = s.campaign || (s.kg ? fmtKg(s.kg) + ' kg' : 'Shipment');
-            addEvent(eventsByDate, date.slice(0, 10), { type: 'shipment', label });
+            addEvent(eventsByDate, date, { type: 'shipment', label });
         }
 
-        // Google Calendar events
         for (const ev of gcalEvents) {
             const date = (ev.start?.date || ev.start?.dateTime || '').slice(0, 10);
-            if (!date || !date.startsWith(yearStr)) continue;
-            const label = ev.summary || 'Event';
-            addEvent(eventsByDate, date, { type: 'gcal', label });
+            if (date) addEvent(eventsByDate, date, { type: 'gcal', label: ev.summary || 'Event' });
         }
 
-        // Render 12 month cards (4×3)
-        const monthCards = [];
-        for (let mo = 0; mo < 12; mo++) {
-            monthCards.push(renderMonthCard(currentYear, mo, now, eventsByDate));
+        // Session state — persists while the view is open
+        const state = {
+            focusMo: now.getMonth(),
+            focusYr: now.getFullYear(),
+            toggles: new Set(['holiday', 'tax', 'shipment', ...(gcalConnected ? ['gcal'] : [])]),
+        };
+
+        const availableTypes = ['holiday', 'tax', 'shipment', ...(gcalConnected ? ['gcal'] : [])];
+
+        function visibleEvents(date) {
+            return (eventsByDate[date] || []).filter(ev => state.toggles.has(ev.type));
         }
 
-        // Pending milestones from shipment config
-        const shipments = config.shipments || [];
-        const pending = shipments
-            .flatMap(s => (s.milestones || [])
-                .filter(m => !m.done)
-                .map(m => ({ ship: s, label: m.label, date: m.date }))
-            )
-            .sort((a, b) => (a.date || '').localeCompare(b.date || ''))
-            .slice(0, 15);
+        // ── Rebuild both panes ──
+        function rebuild() {
+            // Scaffold
+            body.innerHTML = `
+            <div class="cal-layout">
+                <div class="cal-detail-pane" id="cal-detail-pane"></div>
+                <div class="cal-sidebar-pane" id="cal-sidebar-pane"></div>
+            </div>`;
+            buildDetail();
+            buildSidebar();
+        }
 
-        const pendingHtml = pending.length ? `
-        <div class="cal-pending-section">
-            <div class="cat-section">
-                <div class="cat-section-head">
-                    <div>
-                        <h2 class="cat-title">Pending Milestones</h2>
-                        <p class="cat-sub">Unresolved tasks across all shipments.</p>
-                    </div>
-                </div>
-                <table class="sales-table" style="margin-top:0.5rem">
-                    <thead><tr><th>Milestone</th><th>Shipment</th><th>Due</th></tr></thead>
-                    <tbody>
-                        ${pending.map(item => `<tr>
-                            <td>${escHtml(item.label)}</td>
-                            <td style="color:#64748b">${escHtml(item.ship.campaign || item.ship.ym)}</td>
-                            <td style="color:#94a3b8;font-size:0.8rem">${item.date || '—'}</td>
-                        </tr>`).join('')}
-                    </tbody>
-                </table>
-            </div>
-        </div>` : '';
+        // ── Detail pane (60%) ──
+        function buildDetail() {
+            const pane = document.getElementById('cal-detail-pane');
+            const { focusMo, focusYr } = state;
+            const daysInMonth = new Date(focusYr, focusMo + 1, 0).getDate();
+            const firstDow    = new Date(focusYr, focusMo, 1).getDay();
+            const isThisMonth = focusYr === now.getFullYear() && focusMo === now.getMonth();
 
-        const gcalStatusHtml = gcalConnected
-            ? '<span class="cal-gcal-status--on">● Google Calendar connected</span>'
-            : '<a href="/api/calendar/auth" class="btn-primary btn-sm">Connect Google Calendar</a>';
+            // Toggle bar
+            const togglesHtml = availableTypes.map(t =>
+                `<button class="cal-toggle-btn${state.toggles.has(t) ? ' active' : ''}" data-toggle="${t}">
+                    <span class="cal-td cal-td--${t}"></span>${escHtml(TYPE_LABELS[t])}
+                </button>`
+            ).join('');
 
-        body.innerHTML = `
-        <div class="cat-section">
-            <div class="cal-year-header">
-                <h2 class="cal-year-title">${currentYear}</h2>
-                <div>${gcalStatusHtml}</div>
-            </div>
-            <div class="cal-legend">
-                <span class="cal-legend-item cal-legend-item--holiday">Public Holiday</span>
-                <span class="cal-legend-item cal-legend-item--tax">Tax Date</span>
-                <span class="cal-legend-item cal-legend-item--shipment">Shipment</span>
-                ${gcalConnected ? '<span class="cal-legend-item cal-legend-item--gcal">Google Calendar</span>' : ''}
-            </div>
-            <div class="cal-months-4col">
-                ${monthCards.join('')}
-            </div>
-        </div>
-        ${pendingHtml}`;
-    }
+            const gcalBtn = gcalConnected
+                ? `<span class="cal-gcal-status--on" style="font-size:0.75rem">● Connected</span>`
+                : `<a href="/api/calendar/auth" class="btn-sm btn-primary" style="white-space:nowrap">Connect Google Calendar</a>`;
 
-    function renderMonthCard(year, mo, now, eventsByDate) {
-        const isCurrentMonth = year === now.getFullYear() && mo === now.getMonth();
-        const isPastMonth = year < now.getFullYear() || (year === now.getFullYear() && mo < now.getMonth());
-        const daysInMonth = new Date(year, mo + 1, 0).getDate();
+            // Day grid cells
+            const totalCells = Math.ceil((firstDow + daysInMonth) / 7) * 7;
+            let dayCells = DAY_SHORT.map(d => `<div class="cal-day-hdr">${d}</div>`).join('');
+            for (let i = 0; i < totalCells; i++) {
+                const d = i - firstDow + 1;
+                if (d < 1 || d > daysInMonth) {
+                    dayCells += '<div class="cal-day cal-day--empty"></div>';
+                    continue;
+                }
+                const date = `${focusYr}-${String(focusMo + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+                const evs  = visibleEvents(date);
+                const isToday = isThisMonth && d === now.getDate();
+                const isPast  = focusYr < now.getFullYear() ||
+                    (focusYr === now.getFullYear() && focusMo < now.getMonth()) ||
+                    (isThisMonth && d < now.getDate());
 
-        // Collect all events for this month sorted by day
-        const monthEvents = [];
-        for (let d = 1; d <= daysInMonth; d++) {
-            const date = `${year}-${String(mo + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
-            if (eventsByDate[date]) {
-                for (const ev of eventsByDate[date]) monthEvents.push({ day: d, ...ev });
+                const shown    = evs.slice(0, 2);
+                const overflow = evs.length - shown.length;
+                const chips    = shown.map(ev =>
+                    `<div class="cal-day-ev cal-day-ev--${ev.type}" title="${escHtml(ev.label)}">${escHtml(ev.label)}</div>`
+                ).join('') + (overflow > 0 ? `<div class="cal-day-more">+${overflow}</div>` : '');
+
+                dayCells += `<div class="cal-day${isToday ? ' cal-day--today' : ''}${isPast ? ' cal-day--past' : ''}">
+                    <span class="cal-day-num${isToday ? ' cal-day-num--today' : ''}">${d}</span>
+                    ${chips}
+                </div>`;
             }
+
+            // Month event list (scrollable, below grid)
+            const monthEvs = [];
+            for (let d = 1; d <= daysInMonth; d++) {
+                const date = `${focusYr}-${String(focusMo + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+                for (const ev of visibleEvents(date)) monthEvs.push({ d, ...ev });
+            }
+            const evListHtml = monthEvs.length
+                ? monthEvs.map(ev =>
+                    `<div class="cal-ev cal-ev--${ev.type}">
+                        <span class="cal-ev-day">${ev.d}</span>
+                        <span class="cal-ev-label">${escHtml(ev.label)}</span>
+                    </div>`
+                ).join('')
+                : '<span class="cal-no-events">No events this month</span>';
+
+            pane.innerHTML = `
+            <div class="cal-detail-head">
+                <div class="cal-detail-nav">
+                    <button class="cal-nav-btn" id="cal-prev">&#8249;</button>
+                    <h2 class="cal-detail-title">${MONTH_NAMES[focusMo]} ${focusYr}</h2>
+                    <button class="cal-nav-btn" id="cal-next">&#8250;</button>
+                </div>
+                <div class="cal-controls-row">
+                    <div class="cal-toggles">${togglesHtml}</div>
+                    <div>${gcalBtn}</div>
+                </div>
+            </div>
+            <div class="cal-day-grid">${dayCells}</div>
+            <div class="cal-month-ev-list">${evListHtml}</div>`;
+
+            // Nav buttons
+            pane.querySelector('#cal-prev').addEventListener('click', () => {
+                state.focusMo--;
+                if (state.focusMo < 0) { state.focusMo = 11; state.focusYr--; }
+                rebuild();
+            });
+            pane.querySelector('#cal-next').addEventListener('click', () => {
+                state.focusMo++;
+                if (state.focusMo > 11) { state.focusMo = 0; state.focusYr++; }
+                rebuild();
+            });
+
+            // Toggle buttons
+            pane.querySelectorAll('.cal-toggle-btn').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    const t = btn.dataset.toggle;
+                    if (state.toggles.has(t)) state.toggles.delete(t);
+                    else state.toggles.add(t);
+                    rebuild();
+                });
+            });
         }
 
-        const eventsHtml = monthEvents.length
-            ? monthEvents.map(ev =>
-                `<div class="cal-ev cal-ev--${escHtml(ev.type)}">` +
-                `<span class="cal-ev-day">${ev.day}</span>` +
-                `<span class="cal-ev-label" title="${escHtml(ev.label)}">${escHtml(ev.label)}</span>` +
-                `</div>`
-            ).join('')
-            : '<span class="cal-no-events">No events</span>';
+        // ── Sidebar pane (40%, scrollable) ──
+        function buildSidebar() {
+            const pane = document.getElementById('cal-sidebar-pane');
+            const { focusMo, focusYr } = state;
+            const yr = focusYr;
 
-        const todayBadge = isCurrentMonth
-            ? `<span class="cal-today-badge">${now.getDate()} ${MONTH_SHORT[mo]}</span>`
-            : '';
+            const cards = MONTH_NAMES.map((name, mo) => {
+                const isSelected = mo === focusMo && yr === focusYr;
+                const isNow      = mo === now.getMonth() && yr === now.getFullYear();
+                const dim        = new Date(yr, mo + 1, 0).getDate();
+                const typesSeen  = new Set();
+                for (let d = 1; d <= dim; d++) {
+                    const date = `${yr}-${String(mo + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+                    for (const ev of (eventsByDate[date] || [])) {
+                        if (state.toggles.has(ev.type)) typesSeen.add(ev.type);
+                    }
+                }
+                const dots = [...typesSeen].map(t =>
+                    `<span class="cal-sd-dot cal-sd-dot--${t}"></span>`
+                ).join('');
 
-        const cardClass = ['cal-month-card',
-            isCurrentMonth ? 'cal-month-card--current' : '',
-            isPastMonth    ? 'cal-month-card--past'    : '',
-        ].filter(Boolean).join(' ');
+                return `<button class="cal-sidebar-mo${isSelected ? ' selected' : ''}${isNow ? ' is-now' : ''}"
+                            data-mo="${mo}" data-yr="${yr}">
+                    <span class="cal-sd-name">${MONTH_SHORT[mo]}</span>
+                    <span class="cal-sd-dots">${dots}</span>
+                    ${isNow ? '<span class="cal-sd-now">Today</span>' : ''}
+                </button>`;
+            });
 
-        return `<div class="${cardClass}">
-            <div class="cal-month-header">
-                <span class="cal-month-name">${MONTH_NAMES[mo]}</span>
-                ${todayBadge}
-            </div>
-            <div class="cal-month-events">${eventsHtml}</div>
-        </div>`;
+            pane.innerHTML = `
+            <div class="cal-sidebar-yr">${yr}</div>
+            ${cards.join('')}`;
+
+            pane.querySelectorAll('.cal-sidebar-mo').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    state.focusMo = parseInt(btn.dataset.mo);
+                    state.focusYr = parseInt(btn.dataset.yr);
+                    rebuild();
+                    // Scroll selected into view after rebuild
+                    setTimeout(() => {
+                        document.querySelector('.cal-sidebar-mo.selected')
+                            ?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+                    }, 0);
+                });
+            });
+
+            // Scroll current selection into view on first load
+            setTimeout(() => {
+                pane.querySelector('.cal-sidebar-mo.selected')
+                    ?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+            }, 0);
+        }
+
+        rebuild();
     }
 
     return { render };

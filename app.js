@@ -605,7 +605,7 @@ function renderDashboardWidgets(config) {
 
         // Alerts: orders needing attention
         const eh = s => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-        const needsAction = (orders || []).filter(o => o.status === 'new' || o.status === 'reviewed');
+        const needsAction = (orders || []).filter(o => o.status === 'new');
         const badge = document.getElementById('nav-orders-badge');
         if (badge) { badge.textContent = needsAction.length; badge.style.display = needsAction.length ? '' : 'none'; }
         const alertsEl = document.getElementById('db-alerts-container');
@@ -1018,6 +1018,23 @@ document.querySelectorAll('.nav-item--soon').forEach(el => {
         const label = el.textContent.replace(/\s*Soon\s*/gi, '').trim();
         showToast(label + ' — ' + el.dataset.phase + ', coming soon');
     });
+});
+
+// ── SVG chart dot hover ──
+// CSS :hover on <g> elements inside dynamically-inserted SVG is unreliable;
+// JS delegation is the robust alternative.
+document.addEventListener('mouseover', e => {
+    const pt = e.target.closest('.chart-pt, .sparkline-pt');
+    if (!pt) return;
+    const dot = pt.querySelector('.chart-dot, .sparkline-dot');
+    if (dot) dot.style.opacity = '1';
+});
+document.addEventListener('mouseout', e => {
+    const pt = e.target.closest('.chart-pt, .sparkline-pt');
+    if (!pt) return;
+    if (pt.contains(e.relatedTarget)) return; // still inside group
+    const dot = pt.querySelector('.chart-dot, .sparkline-dot');
+    if (dot) dot.style.opacity = '';
 });
 
 // ── Init ──
