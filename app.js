@@ -511,7 +511,7 @@ function renderDashboardWidgets(config) {
         `<a class="db-quick-card" href="#${a.hash}">${a.icon}<span>${a.label}</span></a>`
     ).join('')}</div>`;
 
-    // Forex from today's cache (populated when Imports tab is visited)
+    // Forex from today's cache (or fetch live)
     let fxHtml = '';
     const currencies = config?.currencies;
     if (currencies?.base && Array.isArray(currencies?.targets)) {
@@ -523,7 +523,6 @@ function renderDashboardWidgets(config) {
                 .join('');
             return `<div class="db-forex-bar"><span class="db-fx-label">${currencies.base}</span>${pairs}<span class="db-fx-date">${data.date}</span></div>`;
         };
-
         const today = new Date().toISOString().split('T')[0];
         const cached = localStorage.getItem('hub-fx-' + today);
         if (cached) {
@@ -539,7 +538,75 @@ function renderDashboardWidgets(config) {
         }
     }
 
-    el.innerHTML = actionsHtml + fxHtml;
+    el.innerHTML = actionsHtml + fxHtml +
+        '<div class="db-charts-row">' +
+        '<div class="db-chart-card" id="db-sales-chart"><span class="db-chart-loading">Loading sales…</span></div>' +
+        '<div class="db-chart-card" id="db-orders-chart"><span class="db-chart-loading">Loading orders…</span></div>' +
+        '</div>';
+
+    // Async: load orders and draw mini charts
+    fetch('/api/orders').then(r => r.ok ? r.json() : []).then(orders => {
+        const MO = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+        const now = new Date();
+        // Build last 6 months
+        const months = [];
+        for (let i = 5; i >= 0; i--) {
+            const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+            months.push(d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0'));
+        }
+        const kgByMonth = {}, cntByMonth = {};
+        months.forEach(m => { kgByMonth[m] = 0; cntByMonth[m] = 0; });
+        (orders || []).forEach(o => {
+            const ym = (o.createdAt || '').slice(0, 7);
+            if (!kgByMonth.hasOwnProperty(ym)) return;
+            const kg = (o.lines || []).reduce((s, l) => s + (Number(l.quantity) || 0), 0);
+            kgByMonth[ym] += kg;
+            cntByMonth[ym]++;
+        });
+
+        const drawMiniBar = (vals, labels, colour, title, unit) => {
+            const W = 260, H = 80, padL = 28, padB = 18, padT = 8, padR = 8;
+            const cW = W - padL - padR, cH = H - padT - padB;
+            const maxV = Math.max(...vals, 1);
+            const barW = Math.max(Math.floor(cW / vals.length) - 4, 6);
+            const bars = vals.map((v, i) => {
+                const bh = Math.max(Math.round((v / maxV) * cH), v > 0 ? 2 : 0);
+                const x = padL + (i / vals.length) * cW + (cW / vals.length - barW) / 2;
+                const y = padT + cH - bh;
+                return `<rect x="${x.toFixed(1)}" y="${y}" width="${barW}" height="${bh}" fill="${colour}" rx="2" opacity="0.85"/>`;
+            }).join('');
+            const xLabels = labels.map((l, i) => {
+                const x = padL + (i / vals.length) * cW + cW / vals.length / 2;
+                return `<text x="${x.toFixed(1)}" y="${H - 2}" text-anchor="middle" font-size="7.5" fill="#94a3b8">${l}</text>`;
+            }).join('');
+            const yMax = `<text x="${padL - 2}" y="${padT + 6}" text-anchor="end" font-size="7" fill="#94a3b8">${maxV >= 1000 ? (maxV/1000).toFixed(0)+'k' : maxV}</text>`;
+            return `<div class="db-chart-inner">
+                <div class="db-chart-title">${title}</div>
+                <svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto" xmlns="http://www.w3.org/2000/svg">
+                    <line x1="${padL}" y1="${padT}" x2="${padL}" y2="${padT+cH}" stroke="#e2e8f0" stroke-width="1"/>
+                    <line x1="${padL}" y1="${padT+cH}" x2="${W-padR}" y2="${padT+cH}" stroke="#e2e8f0" stroke-width="1"/>
+                    ${bars}${xLabels}${yMax}
+                </svg>
+            </div>`;
+        };
+
+        const moLabels = months.map(m => MO[parseInt(m.slice(5)) - 1]);
+        const kgVals = months.map(m => kgByMonth[m]);
+        const cntVals = months.map(m => cntByMonth[m]);
+        const totalKg = kgVals.reduce((a, b) => a + b, 0);
+        const thisMonthKg = kgVals[kgVals.length - 1];
+
+        const salesEl = document.getElementById('db-sales-chart');
+        if (salesEl) salesEl.innerHTML = drawMiniBar(kgVals, moLabels, '#2563eb', `Sales (kg) · ${thisMonthKg > 0 ? thisMonthKg.toLocaleString('en-NZ') + ' kg this month' : 'last 6 months'}`, 'kg');
+
+        const ordersEl = document.getElementById('db-orders-chart');
+        if (ordersEl) ordersEl.innerHTML = drawMiniBar(cntVals, moLabels, '#7c3aed', `Orders · ${cntVals[cntVals.length-1]} this month`, 'orders');
+    }).catch(() => {
+        ['db-sales-chart','db-orders-chart'].forEach(id => {
+            const el2 = document.getElementById(id);
+            if (el2) el2.innerHTML = '';
+        });
+    });
 }
 
 // ── Season logic ──
@@ -669,7 +736,10 @@ function drawSparkline(values, months) {
         const mo = ym ? MO[parseInt(ym.slice(5)) - 1] + ' ' + ym.slice(0, 4) : '';
         return '<rect x="' + (x - stripW / 2).toFixed(1) + '" y="0" width="' + stripW.toFixed(1) + '" height="' + chartH + '" fill="transparent"><title>' + (mo ? mo + ': ' : '') + v.toFixed(4) + '</title></rect>';
     }).join('');
-    const label = '<text x="' + (W / 2) + '" y="' + H + '" text-anchor="middle" font-size="6.5" fill="#94a3b8">Last 13 months</text>';
+    const firstMo = months?.[0] ? MO[parseInt(months[0].slice(5)) - 1] + ' ' + months[0].slice(2, 4) : '';
+    const lastMo  = months?.[months.length - 1] ? MO[parseInt(months[months.length - 1].slice(5)) - 1] + ' ' + months[months.length - 1].slice(2, 4) : '';
+    const rangeLabel = (firstMo && lastMo && firstMo !== lastMo) ? firstMo + ' – ' + lastMo : 'Trend';
+    const label = '<text x="' + (W / 2) + '" y="' + H + '" text-anchor="middle" font-size="6.5" fill="#94a3b8">' + rangeLabel + '</text>';
     return '<svg viewBox="0 0 ' + W + ' ' + (H + 2) + '" class="sparkline sparkline-' + trending + '" preserveAspectRatio="none">' +
         '<polyline points="' + pts + '" fill="none" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round"/>' +
         strips + label +

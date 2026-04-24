@@ -13,6 +13,7 @@ const Orders = (() => {
         { key: 'farmlands',   label: 'Farmlands',     xeroName: 'Farmlands',      xeroCode: 'C1010' },
         { key: 'pgg',         label: 'PGG Wrightson', xeroName: 'PGG Wrightson',  xeroCode: 'C1020' },
         { key: 'horicentre',  label: 'HortiCentre',   xeroName: 'HortiCentre Ltd', xeroCode: 'C1030' },
+        { key: 'cash',        label: 'Cash Sale',     xeroName: 'Cash Sale',       xeroCode: '' },
     ];
 
     // Close overflow menus when clicking outside; close on item click (capture so it fires before any stopPropagation)
@@ -443,10 +444,6 @@ const Orders = (() => {
             <section class="form-section">
                 <h2 class="form-section-title">Customer & Ship To</h2>
                 <div class="form-row" style="align-items:flex-start">
-                    <div class="form-field" style="flex:1;min-width:0">
-                        <label>Customer</label>
-                        ${customerSectionHtml(customers, defaults.customer?.name || '', defaults.customer?.xeroContactId || '')}
-                    </div>
                     <div class="form-field" style="flex:2;min-width:0">
                         <label>Branch / Store</label>
                         ${catalogStores.length ? `
@@ -455,6 +452,10 @@ const Orders = (() => {
                             <div id="store-dropdown" class="customer-dropdown" style="display:none"></div>
                         </div>` : `
                         <input type="text" id="ship-branch" placeholder="e.g. Martinborough Branch" value="${escHtml(defaults.shipTo?.branch || '')}">`}
+                    </div>
+                    <div class="form-field" style="flex:1;min-width:0">
+                        <label>Customer</label>
+                        ${customerSectionHtml(customers, defaults.customer?.name || '', defaults.customer?.xeroContactId || '')}
                     </div>
                 </div>
                 <div class="form-row">
@@ -626,13 +627,27 @@ const Orders = (() => {
             if (!opt) return;
             input.value = opt.dataset.name;
             document.getElementById('ship-address').value = opt.dataset.addr;
-            // Auto-fill customer if "Other" is selected and field is empty
-            const customerSearch = document.getElementById('customer-search');
-            const customerNameVal = document.getElementById('customer-name-val');
-            const checkedPreset = document.querySelector('input[name="customer-preset"]:checked');
-            if (customerSearch && (!customerSearch.value || checkedPreset?.value === 'other') && opt.dataset.customer) {
-                customerSearch.value = opt.dataset.customer;
-                if (customerNameVal) customerNameVal.value = opt.dataset.customer;
+            const storeCustName = opt.dataset.customer || '';
+            if (storeCustName) {
+                // Try to match a preset radio button first
+                const preset = CUSTOMER_PRESETS.find(p =>
+                    storeCustName.toLowerCase() === p.xeroName.toLowerCase() ||
+                    storeCustName.toLowerCase().includes(p.label.toLowerCase())
+                );
+                const radioToCheck = document.querySelector(
+                    `input[name="customer-preset"][value="${preset ? preset.key : 'other'}"]`
+                );
+                if (radioToCheck && !radioToCheck.checked) {
+                    radioToCheck.checked = true;
+                    radioToCheck.dispatchEvent(new Event('change', { bubbles: true }));
+                }
+                // If matched "other", also fill the text field
+                if (!preset) {
+                    const customerSearch = document.getElementById('customer-search');
+                    const customerNameVal = document.getElementById('customer-name-val');
+                    if (customerSearch) customerSearch.value = storeCustName;
+                    if (customerNameVal) customerNameVal.value = storeCustName;
+                }
             }
             dropdown.style.display = 'none';
         });
@@ -645,10 +660,11 @@ const Orders = (() => {
     let lineCount = 0;
 
     function getPriceForQty(item, qty) {
-        const base = item.defaultPrice ?? item.unitPrice ?? 0;
-        if (item.pb3Quantity && qty >= item.pb3Quantity) return item.pb3Price ?? base;
-        if (item.pb2Quantity && qty >= item.pb2Quantity) return item.pb2Price ?? base;
-        if (item.pb1Quantity && qty >= item.pb1Quantity) return item.pb1Price ?? base;
+        // Use || (not ??) so a stored 0 falls through to the next field rather than returning 0
+        const base = item.defaultPrice || item.unitPrice || item.price || 0;
+        if (item.pb3Quantity && qty >= item.pb3Quantity) return item.pb3Price || base;
+        if (item.pb2Quantity && qty >= item.pb2Quantity) return item.pb2Price || base;
+        if (item.pb1Quantity && qty >= item.pb1Quantity) return item.pb1Price || base;
         return base;
     }
 
@@ -925,6 +941,7 @@ const Orders = (() => {
                 <button class="overflow-trigger btn-secondary btn-sm" title="More actions" onclick="event.stopPropagation();this.closest('.overflow-menu').classList.toggle('open')">•••</button>
                 <div class="overflow-dropdown">
                     ${xeroMenuItem}
+                    <button class="overflow-item" id="link-xero-btn">Link Xero Invoice…</button>
                     <button class="overflow-item" id="print-slip-btn">Print Packing Slip</button>
                     <button class="overflow-item" id="print-address-btn">Print Address</button>
                     <button class="overflow-item overflow-danger" id="delete-order-btn">Delete</button>
@@ -1135,6 +1152,38 @@ const Orders = (() => {
 
     function wireDetailButtons(order) {
         const orderId = order.id;
+
+        // Link to existing Xero invoice (manual reconciliation)
+        document.getElementById('link-xero-btn')?.addEventListener('click', async () => {
+            const input = prompt(
+                'Paste the Xero invoice URL or InvoiceID GUID.\n\n' +
+                'URL format: https://go.xero.com/AccountsReceivable/Edit.aspx?InvoiceID=xxxxxxxx-...\n' +
+                'Invoice number (e.g. INV-1042) is optional — enter it on the next prompt.',
+                order.xeroInvoiceId || ''
+            );
+            if (input === null) return;
+            // Extract UUID from URL or use raw input
+            const guidMatch = input.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i);
+            const invoiceId = guidMatch ? guidMatch[0] : input.trim();
+            if (!invoiceId) return;
+            const invoiceNum = prompt('Invoice number (e.g. INV-1042):', order.xeroInvoiceNumber || '') || null;
+            try {
+                const updated = await api('/api/orders/' + orderId, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        xeroInvoiceId: invoiceId,
+                        xeroInvoiceNumber: invoiceNum,
+                        status: order.status === 'new' ? 'reviewed' : order.status,
+                        event: { ts: new Date().toISOString(), msg: `Linked to Xero invoice ${invoiceNum || invoiceId}` },
+                    }),
+                });
+                Object.assign(order, updated);
+                await Orders.renderDetail(container, orderId);
+            } catch (e) {
+                alert('Link failed: ' + e.message);
+            }
+        });
 
         // Delete order
         document.getElementById('delete-order-btn')?.addEventListener('click', async () => {

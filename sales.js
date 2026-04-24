@@ -296,15 +296,25 @@ const SalesView = (() => {
     async function renderBody(bodyEl) {
         bodyEl.innerHTML = '<div class="orders-loading">Loading…</div>';
 
-        let orderActuals = {};
+        let orderActuals = {}, storeActuals = [];
         try {
             const orders = await api('/api/orders');
+            const byStore = {};
             for (const o of (orders || [])) {
                 const ym = (o.createdAt || '').slice(0, 7);
                 if (!ym) continue;
                 const kg = (o.lines || []).reduce((s, l) => s + (Number(l.quantity) || 0), 0);
                 if (kg > 0) orderActuals[ym] = (orderActuals[ym] || 0) + kg;
+                const store = o.shipTo?.branch || o.customer?.name || '—';
+                if (!byStore[store]) byStore[store] = { kg: 0, orders: 0, lastOrder: '' };
+                byStore[store].kg += kg;
+                byStore[store].orders++;
+                if ((o.createdAt || '') > byStore[store].lastOrder) byStore[store].lastOrder = o.createdAt || '';
             }
+            storeActuals = Object.entries(byStore)
+                .map(([name, d]) => ({ name, ...d }))
+                .sort((a, b) => b.kg - a.kg)
+                .slice(0, 10);
         } catch (e) { /* ok */ }
 
         let config = null;
@@ -345,7 +355,30 @@ const SalesView = (() => {
                 </div>
                 <div style="margin-top:0.75rem" id="sales-chart-area">${buildSalesByMonthChart(orderActuals)}</div>
             </div>
-        </div>`;
+        </div>
+        ${storeActuals.length ? `
+        <div class="cat-section" style="margin-bottom:1.5rem">
+            <div class="cat-section-head">
+                <div>
+                    <h2 class="cat-title">Top Stores</h2>
+                    <p class="cat-sub">By kg ordered, all time from Hub orders.</p>
+                </div>
+            </div>
+            <div class="sales-table-wrap" style="margin-top:0.5rem">
+                <table class="sales-table">
+                    <thead><tr><th>#</th><th>Store / Branch</th><th style="text-align:right">kg</th><th style="text-align:right">Orders</th><th style="text-align:right">Last Order</th></tr></thead>
+                    <tbody>
+                        ${storeActuals.map((s, i) => `<tr>
+                            <td style="color:#94a3b8;font-size:0.78rem">${i + 1}</td>
+                            <td>${escHtml(s.name)}</td>
+                            <td style="text-align:right;font-weight:600">${s.kg.toLocaleString('en-NZ')}</td>
+                            <td style="text-align:right;color:#64748b">${s.orders}</td>
+                            <td style="text-align:right;color:#94a3b8;font-size:0.8rem">${s.lastOrder ? s.lastOrder.slice(0,10) : '—'}</td>
+                        </tr>`).join('')}
+                    </tbody>
+                </table>
+            </div>
+        </div>` : ''}
 
         const settingsPanel = `
         <div id="sales-settings-panel" style="display:none">

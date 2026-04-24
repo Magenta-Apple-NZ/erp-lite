@@ -218,7 +218,7 @@ const Admin = (() => {
             const parsed = rows.map(r => ({
                 id:           r.id || r.sku || r.item_id || r.itemid || '',
                 name:         r.name || r.description || r.product || '',
-                defaultPrice: parseFloat(r.default_price || r.defaultprice || r.price || 0),
+                defaultPrice: parseFloat(r.default_price || r.defaultprice || r.unit_price || r.unitprice || r.price || 0),
                 pb1Quantity:  parseFloat(r.pb1_quantity || r.pb1quantity || '') || null,
                 pb1Price:     parseFloat(r.pb1_price || r.pb1price || '') || null,
                 pb2Quantity:  parseFloat(r.pb2_quantity || r.pb2quantity || '') || null,
