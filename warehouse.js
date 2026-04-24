@@ -508,97 +508,100 @@ const Warehouse = (() => {
     }
 
     function buildForecastChart(rows, scenario) {
-        const SERIES = {
-            avg:   { close: 'closeAvg',   color: '#3b82f6', dash: '',    label: 'Average' },
-            good:  { close: 'closeGood',  color: '#10b981', dash: '5 3', label: 'Good'    },
-            great: { close: 'closeGreat', color: '#8b5cf6', dash: '5 3', label: 'Great'   },
-        };
+        const id = 'forecast-chart';
+        const SERIES = [
+            { key: 'closeAvg',   color: '#3b82f6', dash: [],    label: 'Average', s: 'avg'   },
+            { key: 'closeGood',  color: '#10b981', dash: [5, 3], label: 'Good',    s: 'good'  },
+            { key: 'closeGreat', color: '#8b5cf6', dash: [5, 3], label: 'Great',   s: 'great' },
+        ];
 
-        const W = 700, H = 205;
-        const pad = { l: 52, r: 12, t: 18, b: 50 };
-        const chartW = W - pad.l - pad.r;
-        const chartH = H - pad.t - pad.b;
-
-        const allValues = rows.flatMap(r => [r.closeAvg, r.closeGood, r.closeGreat]);
-        const maxV = Math.max(...allValues, 1);
-        const minV = Math.min(...allValues, 0);
-        const range = maxV - minV || 1;
-
-        function xOf(i) { return pad.l + (i / Math.max(rows.length - 1, 1)) * chartW; }
-        function yOf(v) { return pad.t + chartH - ((v - minV) / range) * chartH; }
-
-        const zeroY = yOf(0);
-        const zeroLine = minV < 0
-            ? `<line x1="${pad.l}" y1="${zeroY.toFixed(1)}" x2="${W - pad.r}" y2="${zeroY.toFixed(1)}" stroke="#ef4444" stroke-width="2" opacity="0.9"/>`
-            : '';
-
-        // Bold red fill below zero for selected series
-        const selClose = SERIES[scenario].close;
-        let negFill = '';
-        if (minV < 0) {
-            const polyPts = [
-                `${xOf(0).toFixed(1)},${zeroY.toFixed(1)}`,
-                ...rows.map((r, i) => `${xOf(i).toFixed(1)},${yOf(Math.min(r[selClose], 0)).toFixed(1)}`),
-                `${xOf(rows.length - 1).toFixed(1)},${zeroY.toFixed(1)}`,
-            ].join(' ');
-            negFill = `<polygon points="${polyPts}" fill="#ef4444" opacity="0.18"/>`;
+        function hexAlpha(hex, a) {
+            const r = parseInt(hex.slice(1, 3), 16);
+            const g = parseInt(hex.slice(3, 5), 16);
+            const b = parseInt(hex.slice(5, 7), 16);
+            return `rgba(${r},${g},${b},${a})`;
         }
 
-        // Container arrival lines
-        const importLines = rows.map((r, i) => {
-            if (!r.incoming) return '';
-            const x = xOf(i).toFixed(1);
-            return `<line x1="${x}" y1="${pad.t}" x2="${x}" y2="${pad.t + chartH}" stroke="#64748b" stroke-width="1" stroke-dasharray="4 3" opacity="0.3"/>
-                    <text x="${x}" y="${pad.t - 4}" text-anchor="middle" font-size="8" fill="#64748b">+${fmtFull(r.incoming)}</text>`;
-        }).join('');
+        const allValues = rows.flatMap(r => [r.closeAvg, r.closeGood, r.closeGreat]);
+        const minV = Math.min(...allValues, 0);
 
-        // Draw dimmed series first, highlighted last (on top)
-        const drawOrder = Object.keys(SERIES).filter(s => s !== scenario).concat(scenario);
-        const seriesLines = drawOrder.map(s => {
-            const { close, color, dash } = SERIES[s];
+        const annotations = {};
+        if (minV < 0) {
+            annotations.zeroLine = {
+                type: 'line', yMin: 0, yMax: 0,
+                borderColor: 'rgba(239,68,68,0.8)', borderWidth: 2,
+            };
+        }
+        rows.forEach((r, i) => {
+            if (!r.incoming) return;
+            annotations['imp' + i] = {
+                type: 'line',
+                xMin: i, xMax: i,
+                borderColor: 'rgba(100,116,139,0.3)',
+                borderWidth: 1,
+                borderDash: [4, 3],
+                label: {
+                    display: true,
+                    content: '+' + fmtFull(r.incoming),
+                    position: 'start',
+                    font: { size: 8 },
+                    color: '#64748b',
+                    backgroundColor: 'transparent',
+                    padding: { x: 2, y: 1 },
+                },
+            };
+        });
+
+        const datasets = SERIES.map(({ key, color, dash, label, s }) => {
             const sel = s === scenario;
-            const pts = rows.map((r, i) => `${xOf(i).toFixed(1)},${yOf(r[close]).toFixed(1)}`).join(' ');
-            return `<polyline points="${pts}" fill="none" stroke="${color}" stroke-width="${sel ? 2.5 : 1.5}" stroke-dasharray="${dash}" stroke-linejoin="round" stroke-linecap="round" opacity="${sel ? 1 : 0.2}"/>`;
-        }).join('');
+            return {
+                label,
+                data: rows.map(r => r[key]),
+                borderColor: hexAlpha(color, sel ? 1 : 0.2),
+                backgroundColor: 'transparent',
+                borderWidth: sel ? 2.5 : 1.5,
+                borderDash: dash,
+                pointRadius: sel ? 3.5 : 0,
+                pointHoverRadius: sel ? 6 : 0,
+                pointBackgroundColor: hexAlpha(color, sel ? 1 : 0),
+                pointBorderColor: sel ? 'white' : 'transparent',
+                pointBorderWidth: 1.5,
+                fill: sel ? { target: { value: 0 }, above: 'transparent', below: 'rgba(239,68,68,0.15)' } : false,
+                tension: 0.2,
+                order: sel ? 0 : 1,
+            };
+        });
 
-        // Hover dots at every data point for the selected series
-        const allDots = rows.map((r, i) => {
-            const val = r[selClose];
-            return `<g class="chart-pt" pointer-events="all"><title>${escHtml(r.label)}: ${fmtFull(val)} kg</title>` +
-                `<rect x="${(xOf(i) - 7).toFixed(1)}" y="${(yOf(val) - 7).toFixed(1)}" width="14" height="14" fill="transparent" pointer-events="all"/>` +
-                `<circle cx="${xOf(i).toFixed(1)}" cy="${yOf(val).toFixed(1)}" r="3.5" fill="${SERIES[scenario].color}" stroke="white" stroke-width="1.5" class="chart-dot"/></g>`;
-        }).join('');
-
-        // Fixed dots at import arrival points (always visible)
-        const dots = rows.map((r, i) => {
-            if (!r.incoming) return '';
-            return `<circle cx="${xOf(i).toFixed(1)}" cy="${yOf(r[selClose]).toFixed(1)}" r="4" fill="${SERIES[scenario].color}" stroke="white" stroke-width="1.5"/>`;
-        }).join('');
-
-        const xLabels = rows.map((r, i) => {
-            if (i % 3 !== 0) return '';
-            return `<text x="${xOf(i).toFixed(1)}" y="${pad.t + chartH + 14}" text-anchor="middle" font-size="8.5" fill="#64748b">${escHtml(r.label)}</text>`;
-        }).join('');
-
-        const yLabels = [0, 0.25, 0.5, 0.75, 1].map(f => {
-            const val = minV + f * range;
-            const y = (pad.t + chartH - f * chartH).toFixed(1);
-            return `<text x="${pad.l - 4}" y="${(parseFloat(y) + 3).toFixed(1)}" text-anchor="end" font-size="8.5" fill="#94a3b8">${fmtKg(val)}</text>
-                    <line x1="${pad.l}" y1="${y}" x2="${W - pad.r}" y2="${y}" stroke="#f1f5f9" stroke-width="1"/>`;
-        }).join('');
-
-        const legendY = H - 14;
-        const legend = Object.entries(SERIES).map(([s, { label, color, dash }], i) => {
-            const sel = s === scenario;
-            const x = pad.l + i * 100;
-            return `<line x1="${x}" y1="${legendY}" x2="${x + 20}" y2="${legendY}" stroke="${color}" stroke-width="${sel ? 2.5 : 1.5}" stroke-dasharray="${dash}" opacity="${sel ? 1 : 0.35}"/>
-                    <text x="${x + 24}" y="${legendY + 4}" font-size="8.5" fill="${sel ? '#1e293b' : '#94a3b8'}" font-weight="${sel ? 600 : 400}">${label}</text>`;
-        }).join('');
-
-        return `
-        <svg viewBox="0 0 ${W} ${H}" class="imp-chart" xmlns="http://www.w3.org/2000/svg">
-            ${yLabels}${zeroLine}${negFill}${importLines}${seriesLines}${allDots}${dots}${xLabels}${legend}
-        </svg>`;
+        window._chartQ[id] = {
+            type: 'line',
+            data: { labels: rows.map(r => r.label), datasets },
+            options: {
+                animation: false,
+                responsive: true,
+                maintainAspectRatio: false,
+                interaction: { mode: 'index', intersect: false },
+                plugins: {
+                    legend: { display: true, position: 'bottom', labels: { font: { size: 10 }, boxWidth: 16, padding: 10 } },
+                    tooltip: { callbacks: { label: ctx => ` ${ctx.dataset.label}: ${fmtFull(ctx.parsed.y)} kg` } },
+                    annotation: { annotations },
+                },
+                scales: {
+                    x: {
+                        grid: { color: '#f1f5f9' },
+                        ticks: { font: { size: 8.5 }, color: '#64748b', maxRotation: 0, maxTicksLimit: 8 },
+                    },
+                    y: {
+                        grid: { color: '#f1f5f9' },
+                        ticks: {
+                            font: { size: 8.5 }, color: '#94a3b8',
+                            callback: v => Math.abs(v) >= 10000 ? (v / 1000).toFixed(0) + 'k'
+                                : Math.abs(v) >= 1000 ? (v / 1000).toFixed(1).replace(/\.0$/, '') + 'k' : v,
+                        },
+                    },
+                },
+            },
+        };
+        return `<div style="position:relative;height:205px;width:100%"><canvas data-chart-id="${id}"></canvas></div>`;
     }
 
 
@@ -1269,6 +1272,8 @@ const Warehouse = (() => {
                     </div>
                 </div>` : ''}
             </div>`;
+
+            if (typeof initCharts === 'function') initCharts(body);
 
             // ── Tab switching ──
             document.getElementById('imp-tab-overview')?.addEventListener('click', () => { activeTab = 'overview'; rebuild(); });

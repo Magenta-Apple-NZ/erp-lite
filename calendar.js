@@ -218,8 +218,8 @@ const CalendarView = (() => {
                     <div>${gcalBtn}</div>
                 </div>
             </div>
-            <div class="cal-day-grid">${dayCells}</div>
-            <div class="cal-month-ev-list">${evListHtml}</div>`;
+            <div class="cal-month-ev-list">${evListHtml}</div>
+            <div class="cal-day-grid">${dayCells}</div>`;
 
             // Nav buttons
             pane.querySelector('#cal-prev').addEventListener('click', () => {
@@ -248,34 +248,36 @@ const CalendarView = (() => {
         function buildSidebar() {
             const pane = document.getElementById('cal-sidebar-pane');
             const { focusMo, focusYr } = state;
-            const yr = focusYr;
+            const startYr = now.getFullYear();
+            const years = [startYr, startYr + 1, startYr + 2];
 
-            const cards = MONTH_NAMES.map((name, mo) => {
-                const isSelected = mo === focusMo && yr === focusYr;
-                const isNow      = mo === now.getMonth() && yr === now.getFullYear();
-                const dim        = new Date(yr, mo + 1, 0).getDate();
-                const typesSeen  = new Set();
-                for (let d = 1; d <= dim; d++) {
-                    const date = `${yr}-${String(mo + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
-                    for (const ev of (eventsByDate[date] || [])) {
-                        if (state.toggles.has(ev.type)) typesSeen.add(ev.type);
+            let html = '';
+            for (const yr of years) {
+                html += `<div class="cal-sidebar-yr">${yr}</div>`;
+                for (let mo = 0; mo < 12; mo++) {
+                    const isSelected = mo === focusMo && yr === focusYr;
+                    const isNow      = mo === now.getMonth() && yr === now.getFullYear();
+                    const dim        = new Date(yr, mo + 1, 0).getDate();
+                    const typesSeen  = new Set();
+                    for (let d = 1; d <= dim; d++) {
+                        const date = `${yr}-${String(mo + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+                        for (const ev of (eventsByDate[date] || [])) {
+                            if (state.toggles.has(ev.type)) typesSeen.add(ev.type);
+                        }
                     }
+                    const dots = [...typesSeen].map(t =>
+                        `<span class="cal-sd-dot cal-sd-dot--${t}"></span>`
+                    ).join('');
+                    html += `<button class="cal-sidebar-mo${isSelected ? ' selected' : ''}${isNow ? ' is-now' : ''}"
+                                data-mo="${mo}" data-yr="${yr}">
+                        <span class="cal-sd-name">${MONTH_SHORT[mo]}</span>
+                        <span class="cal-sd-dots">${dots}</span>
+                        ${isNow ? '<span class="cal-sd-now">Today</span>' : ''}
+                    </button>`;
                 }
-                const dots = [...typesSeen].map(t =>
-                    `<span class="cal-sd-dot cal-sd-dot--${t}"></span>`
-                ).join('');
+            }
 
-                return `<button class="cal-sidebar-mo${isSelected ? ' selected' : ''}${isNow ? ' is-now' : ''}"
-                            data-mo="${mo}" data-yr="${yr}">
-                    <span class="cal-sd-name">${MONTH_SHORT[mo]}</span>
-                    <span class="cal-sd-dots">${dots}</span>
-                    ${isNow ? '<span class="cal-sd-now">Today</span>' : ''}
-                </button>`;
-            });
-
-            pane.innerHTML = `
-            <div class="cal-sidebar-yr">${yr}</div>
-            ${cards.join('')}`;
+            pane.innerHTML = html;
 
             pane.querySelectorAll('.cal-sidebar-mo').forEach(btn => {
                 btn.addEventListener('click', () => {

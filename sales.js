@@ -192,102 +192,87 @@ const SalesView = (() => {
     }
 
     // Chart builders accept pre-computed {yr: [12 values]} data object
+    const CHART_COLORS = ['#94a3b8', '#3b82f6', '#10b981', '#f59e0b', '#8b5cf6'];
+
     function buildSalesByMonthChart(data) {
         const years = Object.keys(data).sort();
         if (!years.length) return '<p style="color:#94a3b8;font-size:0.875rem;padding:1rem 0">No data for selected filters.</p>';
-        const W = 680, H = 210;
-        const pad = { l: 46, r: 12, t: 16, b: 36 };
-        const chartW = W - pad.l - pad.r;
-        const chartH = H - pad.t - pad.b;
-        const groupW = chartW / 12;
-        const nY = years.length;
-        const barW = Math.max(Math.floor(groupW / (nY + 1)), 5);
-        const COLORS = ['#94a3b8', '#3b82f6', '#10b981', '#f59e0b', '#8b5cf6'];
-
-        const allVals = Object.values(data).flat().filter(v => v !== null && v > 0);
-        const maxV = Math.max(...allVals, 1);
-        function yOf(v) { return (pad.t + chartH - (v / maxV) * chartH).toFixed(1); }
-
-        const grid = [0, 0.25, 0.5, 0.75, 1].map(f => {
-            const v = f * maxV, y = yOf(v);
-            return `<text x="${pad.l - 4}" y="${(parseFloat(y) + 3).toFixed(1)}" text-anchor="end" font-size="8" fill="#94a3b8">${fmtKg(v)}</text>
-                    <line x1="${pad.l}" y1="${y}" x2="${W - pad.r}" y2="${y}" stroke="#f1f5f9" stroke-width="1"/>`;
-        }).join('');
-
-        const bars = years.flatMap((yr, yi) =>
-            (data[yr] || []).map((val, mo) => {
-                if (!val) return '';
-                const x = (pad.l + mo * groupW + (groupW - barW * nY) / 2 + yi * barW).toFixed(1);
-                const bh = ((val / maxV) * chartH).toFixed(1);
-                return `<rect x="${x}" y="${yOf(val)}" width="${barW - 1}" height="${bh}" fill="${COLORS[yi] || '#94a3b8'}" rx="1" opacity="0.9" class="chart-bar"><title>${MO_NAMES[mo]} ${yr}: ${Math.round(val).toLocaleString('en-NZ')} kg</title></rect>`;
-            })
-        ).join('');
-
-        const xLabels = MO_NAMES.map((m, i) =>
-            `<text x="${(pad.l + (i + 0.5) * groupW).toFixed(1)}" y="${pad.t + chartH + 14}" text-anchor="middle" font-size="8.5" fill="#64748b">${m}</text>`
-        ).join('');
-
-        const legend = years.map((yr, i) =>
-            `<rect x="${pad.l + i * 58}" y="${H - 11}" width="10" height="7" fill="${COLORS[i] || '#94a3b8'}" rx="1"/>
-             <text x="${pad.l + i * 58 + 13}" y="${H - 4}" font-size="8.5" fill="#475569">${yr}</text>`
-        ).join('');
-
-        return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto" xmlns="http://www.w3.org/2000/svg">${grid}${bars}${xLabels}${legend}</svg>`;
+        const id = 'monthly-sales-chart';
+        window._chartQ[id] = {
+            type: 'bar',
+            data: {
+                labels: MO_NAMES,
+                datasets: years.map((yr, yi) => ({
+                    label: yr,
+                    data: (data[yr] || new Array(12).fill(null)).map(v => v ?? null),
+                    backgroundColor: CHART_COLORS[yi] || '#94a3b8',
+                    borderRadius: 2,
+                    borderSkipped: false,
+                })),
+            },
+            options: {
+                animation: false,
+                responsive: true,
+                maintainAspectRatio: false,
+                interaction: { mode: 'index', intersect: false },
+                plugins: {
+                    legend: { display: true, position: 'bottom', labels: { font: { size: 11 }, boxWidth: 10, padding: 8 } },
+                    tooltip: { callbacks: { label: ctx => ` ${ctx.dataset.label}: ${Math.round(ctx.parsed.y).toLocaleString('en-NZ')} kg` } },
+                },
+                scales: {
+                    x: { grid: { display: false }, ticks: { font: { size: 10 }, color: '#64748b' } },
+                    y: { grid: { color: '#f1f5f9' }, ticks: { font: { size: 10 }, color: '#94a3b8', callback: v => Math.abs(v) >= 1000 ? (v / 1000).toFixed(0) + 'k' : v } },
+                },
+            },
+        };
+        return `<div style="position:relative;height:210px;width:100%"><canvas data-chart-id="${id}"></canvas></div>`;
     }
 
     function buildCumulativeChart(data) {
         const years = Object.keys(data).sort();
         if (!years.length) return '';
-        const W = 680, H = 210;
-        const pad = { l: 46, r: 12, t: 16, b: 36 };
-        const chartW = W - pad.l - pad.r;
-        const chartH = H - pad.t - pad.b;
-        const COLORS = ['#94a3b8', '#3b82f6', '#10b981', '#f59e0b', '#8b5cf6'];
-
+        const id = 'cumulative-chart';
         const cumData = {};
         for (const yr of years) {
             let run = 0;
             cumData[yr] = (data[yr] || []).map(v => { run += (v || 0); return v !== null ? run : null; });
         }
-
-        const allVals = Object.values(cumData).flat().filter(v => v !== null);
-        const maxV = Math.max(...allVals, 1);
-        function xOf(mo) { return (pad.l + (mo / 11) * chartW).toFixed(1); }
-        function yOf(v) { return (pad.t + chartH - (v / maxV) * chartH).toFixed(1); }
-
-        const grid = [0, 0.25, 0.5, 0.75, 1].map(f => {
-            const v = f * maxV, y = yOf(v);
-            return `<text x="${pad.l - 4}" y="${(parseFloat(y) + 3).toFixed(1)}" text-anchor="end" font-size="8" fill="#94a3b8">${fmtKg(v)}</text>
-                    <line x1="${pad.l}" y1="${y}" x2="${W - pad.r}" y2="${y}" stroke="#f1f5f9" stroke-width="1"/>`;
-        }).join('');
-
-        const lines = years.map((yr, yi) => {
-            const vals = cumData[yr];
-            const pts = vals.map((v, mo) => v !== null ? `${xOf(mo)},${yOf(v)}` : null).filter(Boolean).join(' ');
-            return pts ? `<polyline points="${pts}" fill="none" stroke="${COLORS[yi] || '#94a3b8'}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" opacity="0.9"/>` : '';
-        }).join('');
-
-        const dotsHtml = years.map((yr, yi) => {
-            const color = COLORS[yi] || '#94a3b8';
-            return cumData[yr].map((v, mo) => {
-                if (v === null) return '';
-                const cx = xOf(mo), cy = yOf(v);
-                return `<g class="chart-pt" pointer-events="all"><title>${MO_NAMES[mo]} ${yr}: ${Math.round(v).toLocaleString('en-NZ')} kg</title>` +
-                    `<rect x="${(parseFloat(cx) - 7).toFixed(1)}" y="${(parseFloat(cy) - 7).toFixed(1)}" width="14" height="14" fill="transparent" pointer-events="all"/>` +
-                    `<circle cx="${cx}" cy="${cy}" r="3.5" fill="${color}" stroke="white" stroke-width="1.5" class="chart-dot"/></g>`;
-            }).join('');
-        }).join('');
-
-        const xLabels = MO_NAMES.map((m, i) =>
-            `<text x="${xOf(i)}" y="${pad.t + chartH + 14}" text-anchor="middle" font-size="8.5" fill="#64748b">${m}</text>`
-        ).join('');
-
-        const legend = years.map((yr, i) =>
-            `<line x1="${pad.l + i * 58}" y1="${H - 7}" x2="${pad.l + i * 58 + 16}" y2="${H - 7}" stroke="${COLORS[i] || '#94a3b8'}" stroke-width="2"/>
-             <text x="${pad.l + i * 58 + 19}" y="${H - 3}" font-size="8.5" fill="#475569">${yr}</text>`
-        ).join('');
-
-        return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto" xmlns="http://www.w3.org/2000/svg">${grid}${lines}${dotsHtml}${xLabels}${legend}</svg>`;
+        window._chartQ[id] = {
+            type: 'line',
+            data: {
+                labels: MO_NAMES,
+                datasets: years.map((yr, yi) => ({
+                    label: yr,
+                    data: cumData[yr],
+                    borderColor: CHART_COLORS[yi] || '#94a3b8',
+                    backgroundColor: 'transparent',
+                    borderWidth: 2,
+                    pointRadius: 3.5,
+                    pointHoverRadius: 6,
+                    pointBackgroundColor: CHART_COLORS[yi] || '#94a3b8',
+                    pointBorderColor: 'white',
+                    pointBorderWidth: 1.5,
+                    fill: false,
+                    tension: 0.3,
+                    spanGaps: false,
+                })),
+            },
+            options: {
+                animation: false,
+                responsive: true,
+                maintainAspectRatio: false,
+                interaction: { mode: 'index', intersect: false },
+                plugins: {
+                    legend: { display: true, position: 'bottom', labels: { font: { size: 11 }, boxWidth: 16, padding: 8 } },
+                    tooltip: { callbacks: { label: ctx => ` ${ctx.dataset.label}: ${Math.round(ctx.parsed.y).toLocaleString('en-NZ')} kg` } },
+                },
+                scales: {
+                    x: { grid: { color: '#f1f5f9' }, ticks: { font: { size: 10 }, color: '#64748b' } },
+                    y: { grid: { color: '#f1f5f9' }, ticks: { font: { size: 10 }, color: '#94a3b8', callback: v => Math.abs(v) >= 1000 ? (v / 1000).toFixed(0) + 'k' : v } },
+                },
+            },
+        };
+        return `<div style="position:relative;height:210px;width:100%"><canvas data-chart-id="${id}"></canvas></div>`;
     }
 
     function buildDataTable(data) {
@@ -583,10 +568,16 @@ const SalesView = (() => {
             const data    = computeChartData(actuals);
 
             const monthlyArea = document.getElementById('sales-chart-area');
-            if (monthlyArea) monthlyArea.innerHTML = buildSalesByMonthChart(data);
+            if (monthlyArea) {
+                monthlyArea.innerHTML = buildSalesByMonthChart(data);
+                if (typeof initCharts === 'function') initCharts(monthlyArea);
+            }
 
             const cumulativeArea = document.getElementById('sales-chart-area-cumulative');
-            if (cumulativeArea) cumulativeArea.innerHTML = buildCumulativeChart(data);
+            if (cumulativeArea) {
+                cumulativeArea.innerHTML = buildCumulativeChart(data);
+                if (typeof initCharts === 'function') initCharts(cumulativeArea);
+            }
 
             const tableArea = document.getElementById('sales-data-table');
             if (tableArea) tableArea.innerHTML = buildDataTable(data);

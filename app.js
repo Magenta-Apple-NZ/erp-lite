@@ -8,6 +8,25 @@ let dragGroupIdx = null;
 let dragItemInfo = null;
 let modalCallback = null;
 
+// ── Chart.js registry ──
+window._chartQ    = {};
+window._chartInst = {};
+
+function initCharts(container) {
+    if (typeof Chart === 'undefined') return;
+    (container || document).querySelectorAll('canvas[data-chart-id]').forEach(canvas => {
+        const id = canvas.dataset.chartId;
+        const cfg = window._chartQ[id];
+        if (!cfg) return;
+        if (window._chartInst[id]) {
+            try { window._chartInst[id].destroy(); } catch (_) {}
+            delete window._chartInst[id];
+        }
+        window._chartInst[id] = new Chart(canvas, cfg);
+        delete window._chartQ[id];
+    });
+}
+
 // ── SVG icons for item types ──
 const TYPE_ICONS = {
     file: '<svg class="type-icon-svg" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>',
@@ -713,6 +732,7 @@ function fetchAndRenderSparklines(base, targets) {
             const { values, months } = extractMonthlyRates(histData, code);
             if (values.length < 2) return;
             pairEl.insertAdjacentHTML('beforeend', drawSparkline(values, months));
+            initCharts(pairEl);
         });
     };
 
@@ -744,36 +764,43 @@ function extractMonthlyRates(histData, code) {
 
 function drawSparkline(values, months) {
     const MO = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-    const W = 100, H = 30, PAD = 2, LBLH = 9;
-    const chartH = H - LBLH;
-    const min = Math.min(...values), max = Math.max(...values);
-    const range = max - min || 0.0001;
-    const coords = values.map((v, i) => ({
-        x: PAD + (i / (values.length - 1)) * (W - PAD * 2),
-        y: PAD + (1 - (v - min) / range) * (chartH - PAD * 2),
-        v,
-    }));
-    const pts = coords.map(c => c.x.toFixed(1) + ',' + c.y.toFixed(1)).join(' ');
+    const id = 'spark-' + Math.random().toString(36).slice(2, 9);
     const trending = values[values.length - 1] >= values[0] ? 'up' : 'down';
-    const stripW = (W - PAD * 2) / Math.max(values.length - 1, 1);
-    const points = coords.map((c, i) => {
-        const ym = months?.[i] || '';
-        const mo = ym ? MO[parseInt(ym.slice(5)) - 1] + ' ' + ym.slice(0, 4) : '';
-        const lbl = (mo ? mo + ': ' : '') + c.v.toFixed(4);
-        return '<g class="sparkline-pt" pointer-events="all">' +
-            '<title>' + lbl + '</title>' +
-            '<rect x="' + (c.x - stripW / 2).toFixed(1) + '" y="0" width="' + stripW.toFixed(1) + '" height="' + chartH + '" fill="transparent" pointer-events="all"/>' +
-            '<circle cx="' + c.x.toFixed(1) + '" cy="' + c.y.toFixed(1) + '" r="2" class="sparkline-dot"/>' +
-            '</g>';
-    }).join('');
-    const firstMo = months?.[0] ? MO[parseInt(months[0].slice(5)) - 1] + ' ' + months[0].slice(2, 4) : '';
-    const lastMo  = months?.[months.length - 1] ? MO[parseInt(months[months.length - 1].slice(5)) - 1] + ' ' + months[months.length - 1].slice(2, 4) : '';
-    const rangeLabel = (firstMo && lastMo && firstMo !== lastMo) ? firstMo + ' – ' + lastMo : 'Trend';
-    const label = '<text x="' + (W / 2) + '" y="' + H + '" text-anchor="middle" font-size="6.5" fill="#94a3b8">' + rangeLabel + '</text>';
-    return '<svg viewBox="0 0 ' + W + ' ' + (H + 2) + '" class="sparkline sparkline-' + trending + '" preserveAspectRatio="none">' +
-        '<polyline points="' + pts + '" fill="none" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round"/>' +
-        points + label +
-        '</svg>';
+    const color = trending === 'up' ? '#10b981' : '#ef4444';
+    const labels = (months || []).map(m => {
+        const mo = MO[parseInt(m.slice(5)) - 1] || '';
+        return mo + ' ' + m.slice(0, 4);
+    });
+    window._chartQ[id] = {
+        type: 'line',
+        data: {
+            labels,
+            datasets: [{
+                data: values,
+                borderColor: color,
+                borderWidth: 1.5,
+                pointRadius: 2,
+                pointHoverRadius: 4,
+                pointBackgroundColor: color,
+                pointBorderColor: 'transparent',
+                fill: false,
+                tension: 0.3,
+            }],
+        },
+        options: {
+            animation: false,
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: { display: false },
+                tooltip: {
+                    callbacks: { label: ctx => ctx.parsed.y.toFixed(4) },
+                },
+            },
+            scales: { x: { display: false }, y: { display: false } },
+        },
+    };
+    return `<div style="position:relative;height:32px;margin-top:4px"><canvas data-chart-id="${id}"></canvas></div>`;
 }
 
 // ── Helpers ──
@@ -1020,23 +1047,25 @@ document.querySelectorAll('.nav-item--soon').forEach(el => {
     });
 });
 
-// ── SVG chart dot hover ──
-// CSS :hover on <g> elements inside dynamically-inserted SVG is unreliable;
-// JS delegation is the robust alternative.
-document.addEventListener('mouseover', e => {
-    const pt = e.target.closest('.chart-pt, .sparkline-pt');
-    if (!pt) return;
-    const dot = pt.querySelector('.chart-dot, .sparkline-dot');
-    if (dot) dot.style.opacity = '1';
-});
-document.addEventListener('mouseout', e => {
-    const pt = e.target.closest('.chart-pt, .sparkline-pt');
-    if (!pt) return;
-    if (pt.contains(e.relatedTarget)) return; // still inside group
-    const dot = pt.querySelector('.chart-dot, .sparkline-dot');
-    if (dot) dot.style.opacity = '';
-});
+// ── GitHub version ──
+async function fetchGitHubVersion() {
+    const el = document.querySelector('.sidebar-version');
+    if (!el) return;
+    try {
+        const d = await fetch('https://api.github.com/repos/Magenta-Apple-NZ/erp-lite/commits/main',
+            { headers: { Accept: 'application/vnd.github.v3+json' } }).then(r => r.ok ? r.json() : null);
+        if (!d?.sha) return;
+        const sha  = d.sha.slice(0, 7);
+        const date = (d.commit?.committer?.date || d.commit?.author?.date || '').slice(0, 10);
+        el.textContent = date ? date + ' · ' + sha : sha;
+    } catch (_) {}
+}
 
 // ── Init ──
 loadConfig();
 handleRoute();
+fetchGitHubVersion();
+setTimeout(() => {
+    SalesView?.prefetch?.();
+    Warehouse?.prefetchImports?.();
+}, 400);
