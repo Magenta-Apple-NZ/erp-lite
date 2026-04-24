@@ -655,24 +655,38 @@ const Warehouse = (() => {
         let schedule = null;
         try { schedule = await api('/api/import'); } catch (e) { /* ok */ }
 
+        // If there's a live sheet URL, fetch fresh data immediately
+        if (schedule?.sheetUrl) {
+            schedule = await fetchLiveSheet(schedule);
+        }
+
         let scenario = 'avg';
+
+        async function refreshLive() {
+            const refreshBtn = document.getElementById('imp-refresh-btn');
+            if (refreshBtn) { refreshBtn.disabled = true; refreshBtn.textContent = 'Refreshing…'; }
+            const latest = await fetchLiveSheet(schedule);
+            if (latest !== schedule) {
+                schedule = latest;
+                rebuildImports(schedule);
+            } else {
+                if (refreshBtn) { refreshBtn.disabled = false; refreshBtn.textContent = '↻ Refresh'; }
+            }
+        }
 
         function rebuildImports(sched) {
             if (!sched?.rows?.length) {
+                const hasUrl = !!sched?.sheetUrl;
                 body.innerHTML = `
-                <div class="cat-section" style="max-width:600px">
+                <div class="cat-section" style="max-width:620px">
                     <div class="cat-section-head">
                         <div><h2 class="cat-title">Import Schedule</h2>
-                             <p class="cat-sub">Upload the import schedule CSV to track incoming stock.</p></div>
-                        <div class="cat-actions">
-                            <label class="btn-primary btn-sm cat-upload-lbl">
-                                Import CSV <input type="file" id="imp-csv-file" accept=".csv" style="display:none">
-                            </label>
-                        </div>
+                             <p class="cat-sub">Connect a Google Sheet for live data, or upload a one-off CSV.</p></div>
                     </div>
-                    <p class="wh-empty">No schedule uploaded yet.</p>
+                    ${hasUrl ? `<div class="imp-connect-status imp-connect-error">⚠ Sheet connected but returned no data — check the URL or sheet permissions.</div>` : ''}
+                    ${connectUiHtml(sched?.sheetUrl || '')}
                 </div>`;
-                wireImportUpload();
+                wireConnectUi(sched);
                 return;
             }
 
@@ -752,11 +766,18 @@ const Warehouse = (() => {
                             </div>
                             <div class="cat-actions">
                                 <div class="imp-scenario-wrap">${scenarioBtns}</div>
-                                <label class="btn-secondary btn-sm cat-upload-lbl" title="Replace schedule">
-                                    Replace CSV <input type="file" id="imp-csv-file" accept=".csv" style="display:none">
-                                </label>
+                                ${sched.sheetUrl
+                                    ? `<button class="btn-secondary btn-sm" id="imp-refresh-btn">↻ Refresh</button>
+                                       <button class="btn-secondary btn-sm" id="imp-settings-btn">⚙ Sheet</button>`
+                                    : `<label class="btn-secondary btn-sm cat-upload-lbl" title="Connect a Google Sheet or upload CSV">
+                                           ⚙ Connect <input type="file" id="imp-csv-file" accept=".csv" style="display:none">
+                                       </label>`}
                             </div>
                         </div>
+                        ${sched.sheetUrl ? `<div class="imp-connect-status">
+                            <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor"><circle cx="6" cy="6" r="5"/></svg>
+                            Live · Google Sheet · Updated ${sched.savedAt ? fmtDateTime(sched.savedAt) : 'just now'}
+                        </div>` : ''}
                         <div id="imp-chart-wrap">${buildImportChart(rows, scenario)}</div>
                     </div>
 
@@ -806,21 +827,25 @@ const Warehouse = (() => {
             body.querySelectorAll('.imp-scenario-btn').forEach(btn => {
                 btn.addEventListener('click', () => {
                     scenario = btn.dataset.s;
-                    body.querySelectorAll('.imp-scenario-btn').forEach(b => b.classList.remove('active'));
-                    btn.classList.add('active');
-                    document.getElementById('imp-scenario-label').textContent = btn.textContent;
-                    document.getElementById('imp-chart-wrap').innerHTML = buildImportChart(rows, scenario);
-                    // Re-render table rows with new scenario
-                    const labels = { avg: 'Average', good: 'Good', great: 'Great' };
-                    document.getElementById('imp-scenario-label').textContent = labels[scenario];
-                    rebuildImports(sched); // full re-render to update table
+                    rebuildImports(sched);
                 });
             });
 
-            wireImportUpload();
-        }
+            document.getElementById('imp-refresh-btn')?.addEventListener('click', refreshLive);
 
-        function wireImportUpload() {
+            document.getElementById('imp-settings-btn')?.addEventListener('click', () => {
+                // Inline settings panel toggle
+                const existing = document.getElementById('imp-settings-panel');
+                if (existing) { existing.remove(); return; }
+                const card = document.querySelector('.imp-chart-card');
+                if (!card) return;
+                const panel = document.createElement('div');
+                panel.id = 'imp-settings-panel';
+                panel.innerHTML = connectUiHtml(sched?.sheetUrl || '');
+                card.insertAdjacentElement('afterend', panel);
+                wireConnectUi(sched);
+            });
+
             document.getElementById('imp-csv-file')?.addEventListener('change', async e => {
                 const file = e.target.files[0];
                 if (!file) return;
@@ -834,15 +859,109 @@ const Warehouse = (() => {
                         body: JSON.stringify(parsed),
                     });
                     schedule = parsed;
-                    showToast(`Imported ${parsed.rows.length} months`);
+                    showToast(`Loaded ${parsed.rows.length} months`);
                     rebuildImports(schedule);
                 } catch (err) {
-                    showToast('Import failed: ' + err.message);
+                    showToast('Failed: ' + err.message);
                 }
             });
         }
 
         rebuildImports(schedule);
+    }
+
+    // ── Connect UI HTML ──
+    function connectUiHtml(currentUrl) {
+        return `
+        <div class="imp-connect-panel">
+            <h3 class="imp-connect-title">Connect Google Sheet</h3>
+            <ol class="imp-connect-steps">
+                <li>Open your spreadsheet in Google Sheets</li>
+                <li>File → Share → <strong>Publish to web</strong></li>
+                <li>Select the correct sheet tab, choose <strong>CSV</strong>, click Publish</li>
+                <li>Copy the URL and paste it below</li>
+            </ol>
+            <div class="imp-connect-row">
+                <input type="url" id="imp-sheet-url" class="imp-url-input"
+                    placeholder="https://docs.google.com/spreadsheets/d/…/pub?…&output=csv"
+                    value="${escHtml(currentUrl)}">
+                <button class="btn-primary btn-sm" id="imp-connect-btn">Connect</button>
+                ${currentUrl ? `<button class="btn-secondary btn-sm" id="imp-disconnect-btn">Disconnect</button>` : ''}
+            </div>
+            <p class="imp-connect-note">The URL is stored privately and only fetched server-side — your sheet does not need to be public to anyone with the link.</p>
+        </div>`;
+    }
+
+    function wireConnectUi(sched) {
+        document.getElementById('imp-connect-btn')?.addEventListener('click', async () => {
+            const url = document.getElementById('imp-sheet-url')?.value.trim();
+            if (!url || !url.startsWith('https://docs.google.com/spreadsheets/')) {
+                showToast('Please paste a valid Google Sheets URL');
+                return;
+            }
+            const btn = document.getElementById('imp-connect-btn');
+            btn.disabled = true; btn.textContent = 'Connecting…';
+            try {
+                // Save the URL first
+                await api('/api/import', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ sheetUrl: url }),
+                });
+                // Then fetch live
+                const latest = await fetchLiveSheet({ ...sched, sheetUrl: url });
+                schedule = latest;
+                showToast(schedule.rows?.length ? `Connected — ${schedule.rows.length} months loaded` : 'Connected (no rows parsed — check sheet format)');
+                rebuildImports(schedule);
+            } catch (err) {
+                showToast('Connection failed: ' + err.message);
+                btn.disabled = false; btn.textContent = 'Connect';
+            }
+        });
+
+        document.getElementById('imp-disconnect-btn')?.addEventListener('click', async () => {
+            if (!confirm('Remove the connected sheet? Cached data will remain until replaced.')) return;
+            await api('/api/import', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ sheetUrl: null }),
+            });
+            if (schedule) schedule.sheetUrl = null;
+            showToast('Sheet disconnected');
+            rebuildImports(schedule);
+        });
+    }
+
+    // ── Fetch live CSV from the proxy, parse, and save to KV cache ──
+    async function fetchLiveSheet(sched) {
+        if (!sched?.sheetUrl) return sched;
+        try {
+            const resp = await fetch('/api/import/fetch');
+            if (!resp.ok) {
+                const err = await resp.json().catch(() => ({}));
+                throw new Error(err.error || resp.statusText);
+            }
+            const csv = await resp.text();
+            const parsed = parseImportCsv(csv);
+            if (!parsed.rows.length) return sched; // don't clobber cache on empty parse
+            const updated = { ...parsed, sheetUrl: sched.sheetUrl, savedAt: new Date().toISOString() };
+            // Save to KV cache silently
+            api('/api/import', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(updated),
+            }).catch(() => {});
+            return updated;
+        } catch (e) {
+            showToast('Live refresh failed — showing cached data');
+            return sched;
+        }
+    }
+
+    function fmtDateTime(iso) {
+        if (!iso) return '—';
+        return new Date(iso).toLocaleString('en-NZ', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+    }
     }
 
     return { render };

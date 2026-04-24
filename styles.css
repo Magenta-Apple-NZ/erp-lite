@@ -1687,3 +1687,38 @@ a.xero-inv-linked:hover { background: #d1fae5; border-color: #6ee7b7; }
     background: #f1f5f9; color: #64748b; border-radius: 3px;
     padding: 0.1rem 0.35rem; white-space: nowrap;
 }
+
+/* Live connection status */
+.imp-connect-status {
+    display: flex; align-items: center; gap: 0.4rem;
+    font-size: 0.75rem; color: #059669; margin: 0.25rem 0 0.75rem;
+}
+.imp-connect-status svg { color: #059669; flex-shrink: 0; }
+.imp-connect-error { color: #dc2626; }
+.imp-connect-error svg { color: #dc2626; }
+
+/* Connect panel */
+.imp-connect-panel {
+    background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px;
+    padding: 1.1rem 1.25rem; margin: 1rem 0 0;
+}
+.imp-connect-title {
+    font-size: 0.82rem; font-weight: 700; color: #1e293b; margin: 0 0 0.6rem;
+}
+.imp-connect-steps {
+    font-size: 0.82rem; color: #475569; padding-left: 1.25rem;
+    margin: 0 0 0.85rem; line-height: 1.8;
+}
+.imp-connect-row { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; }
+.imp-url-input {
+    flex: 1; min-width: 260px;
+    padding: 0.42rem 0.7rem; border: 1px solid #e2e8f0; border-radius: 6px;
+    font-size: 0.83rem; font-family: monospace; color: #1a1a1a;
+    outline: none; background: white;
+    transition: border-color 0.15s;
+}
+.imp-url-input:focus { border-color: #3b82f6; }
+.imp-connect-note {
+    font-size: 0.75rem; color: #94a3b8; margin: 0.6rem 0 0;
+    display: flex; gap: 0.35rem; align-items: flex-start;
+}
