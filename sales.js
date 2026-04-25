@@ -582,9 +582,14 @@ const SalesView = (() => {
             .sort((a, b) => b.kg - a.kg)
             .slice(0, 10);
 
+        // ── Available years (union of sheet history + order years), sorted ascending ──
+        const orderYears = allOrders.map(o => (o.createdAt || '').slice(0, 4)).filter(y => /^20\d\d$/.test(y));
+        const allAvailableYears = [...new Set([...Object.keys(effectiveHistory), ...orderYears])].sort();
+        const defaultYears = new Set(allAvailableYears.slice(-3)); // latest 3 by default
+
         // ── Filter state ──
         let filterCustomer = '', filterBranch = '', filterProduct = '';
-        let yearRange = 'all';
+        let selectedYears = new Set(defaultYears);
 
         function getFilteredActuals() {
             const filtered = allOrders.filter(o => {
@@ -624,12 +629,12 @@ const SalesView = (() => {
         function computeChartData(actuals) {
             const isFiltered = filterCustomer || filterBranch || filterProduct;
 
-            // Always include historical years so the x-axis range stays consistent when filtering
             const allYearsSet = new Set([
                 ...Object.keys(effectiveHistory),
                 ...Object.keys(actuals).map(ym => ym.slice(0, 4)),
             ]);
-            const visibleYears = yearRange === 'all' ? [...allYearsSet].sort() : [...allYearsSet].sort().slice(-yearRange);
+            // Show only the years that are toggled on in the year filter
+            const visibleYears = [...allYearsSet].filter(yr => selectedYears.has(yr)).sort();
 
             if (isFiltered) {
                 // Orders-only data when filters are active — seed all years with null arrays
@@ -682,12 +687,11 @@ const SalesView = (() => {
             <select class="sales-filter-sel" id="sf-product">
                 ${makeOpts([...prodSet].sort(), filterProduct, 'Products')}
             </select>
-            <select class="sales-filter-sel" id="sf-range">
-                <option value="all"${yearRange === 'all' ? ' selected' : ''}>All years</option>
-                <option value="3"${yearRange === 3 ? ' selected' : ''}>3 years</option>
-                <option value="4"${yearRange === 4 ? ' selected' : ''}>4 years</option>
-                <option value="5"${yearRange === 5 ? ' selected' : ''}>5 years</option>
-            </select>
+            <div id="sf-years" style="display:flex;gap:0.25rem;flex-wrap:wrap">
+                ${allAvailableYears.map(yr =>
+                    `<button class="imp-view-btn${selectedYears.has(yr) ? ' active' : ''}" data-year="${escHtml(yr)}">${escHtml(yr)}</button>`
+                ).join('')}
+            </div>
             <button class="btn-secondary btn-sm" id="sf-clear">Clear</button>
         </div>`;
 
@@ -822,17 +826,28 @@ const SalesView = (() => {
         document.getElementById('sf-customer')?.addEventListener('change', e => { filterCustomer = e.target.value; rebuildCharts(); });
         document.getElementById('sf-branch')?.addEventListener('change', e => { filterBranch = e.target.value; rebuildCharts(); });
         document.getElementById('sf-product')?.addEventListener('change', e => { filterProduct = e.target.value; rebuildCharts(); });
-        document.getElementById('sf-range')?.addEventListener('change', e => {
-            const v = e.target.value;
-            yearRange = v === 'all' ? 'all' : parseInt(v);
-            rebuildCharts();
+
+        document.getElementById('sf-years')?.querySelectorAll('[data-year]').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const yr = btn.dataset.year;
+                if (selectedYears.has(yr)) {
+                    if (selectedYears.size > 1) { selectedYears.delete(yr); btn.classList.remove('active'); }
+                } else {
+                    selectedYears.add(yr); btn.classList.add('active');
+                }
+                rebuildCharts();
+            });
         });
+
         document.getElementById('sf-clear')?.addEventListener('click', () => {
-            filterCustomer = ''; filterBranch = ''; filterProduct = ''; yearRange = 'all';
+            filterCustomer = ''; filterBranch = ''; filterProduct = '';
+            selectedYears = new Set(defaultYears);
             document.getElementById('sf-customer').value = '';
             document.getElementById('sf-branch').value = '';
             document.getElementById('sf-product').value = '';
-            document.getElementById('sf-range').value = 'all';
+            document.querySelectorAll('#sf-years [data-year]').forEach(btn => {
+                btn.classList.toggle('active', selectedYears.has(btn.dataset.year));
+            });
             rebuildCharts();
         });
 
