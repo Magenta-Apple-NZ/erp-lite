@@ -117,27 +117,58 @@ const SalesView = (() => {
         return '';
     }
 
-    // Shared column-name resolver — returns index or -1
-    function findKgCol(h) {
-        // Prefer exact matches first, then partial
-        const exact = h.findIndex(c =>
-            c === 'kg' || c === 'qty_kg' || c === 'quantity_kg' || c === 'total_kg' ||
-            c === 'net_kg' || c === 'gross_kg' || c === 'weight' || c === 'volume' ||
-            c === 'qty' || c === 'quantity' || c === 'units' || c === 'sold' ||
-            c === 'amount' || c === 'ordered'
-        );
-        if (exact >= 0) return exact;
-        return h.findIndex(c => c.includes('kg') || c.includes('kilo') || c.includes('weight') || c.includes('quantity') || c.includes('volume'));
+    // Returns ALL column indices that look like a kg/volume/quantity field.
+    // Multiple matching columns (e.g. "Bundles Volume", "Loose Volume") are summed per row.
+    function findKgCols(h) {
+        const exact = [], partial = [];
+        h.forEach((c, i) => {
+            if (c === 'kg' || c === 'qty_kg' || c === 'quantity_kg' || c === 'total_kg' ||
+                c === 'net_kg' || c === 'gross_kg' || c === 'weight' || c === 'volume' ||
+                c === 'qty' || c === 'quantity' || c === 'units' || c === 'sold' ||
+                c === 'amount' || c === 'ordered') {
+                exact.push(i);
+            } else if (c.includes('volume') || c.includes('kg') || c.includes('kilo') ||
+                       c.includes('weight') || c.includes('quantity')) {
+                partial.push(i);
+            }
+        });
+        return exact.length ? exact : partial;
     }
 
+    function sumKgCols(row, idxs) {
+        return idxs.reduce((sum, i) => {
+            const v = parseFloat(String(row[i] || '').replace(/[,$\s]/g, ''));
+            return sum + (isNaN(v) ? 0 : v);
+        }, 0);
+    }
+
+    // Prefer an actual date column over a month-name column
     function findDateCol(h) {
-        const exact = h.findIndex(c =>
-            c === 'date' || c === 'month' || c === 'created' || c === 'shipped' ||
-            c === 'order_date' || c === 'invoice_date' || c === 'delivery_date' ||
-            c === 'dispatch_date' || c === 'ship_date' || c === 'period' || c === 'year_month'
+        const specific = h.findIndex(c =>
+            c === 'date' || c === 'order_date' || c === 'invoice_date' ||
+            c === 'delivery_date' || c === 'dispatch_date' || c === 'ship_date'
         );
-        if (exact >= 0) return exact;
-        return h.findIndex(c => c.includes('date') || c.includes('month') || c.includes('period'));
+        if (specific >= 0) return specific;
+        const period = h.findIndex(c => c === 'year_month' || c === 'period');
+        if (period >= 0) return period;
+        // month-name column — only useful when paired with a year column (handled below)
+        const month = h.findIndex(c => c === 'month' || c === 'created' || c === 'shipped');
+        if (month >= 0) return month;
+        return h.findIndex(c => c.includes('date') || c.includes('period'));
+    }
+
+    // When the sheet has separate Month (name) + Year columns, combine them into YYYY-MM
+    function parseDateFromMonthYear(monthVal, yearVal) {
+        const MO = ['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'];
+        const month = String(monthVal || '').toLowerCase().trim();
+        const year  = String(yearVal  || '').trim();
+        if (!year.match(/^20\d\d$/)) return '';
+        const mi = MO.findIndex((abbr, i) =>
+            month === abbr ||
+            month === ['january','february','march','april','may','june','july','august','september','october','november','december'][i] ||
+            month.startsWith(abbr)
+        );
+        return mi >= 0 ? `${year}-${String(mi + 1).padStart(2, '0')}` : '';
     }
 
     // Try to extract { year: [12 monthly kg values] } from a connected Google Sheet
@@ -167,17 +198,37 @@ const SalesView = (() => {
             return Object.keys(result).length ? result : null;
         }
 
-        // Format B: long format — date column + kg/quantity column
+        // Format B: long format — date column + one or more volume/kg columns (summed)
+        const kgIdxs  = findKgCols(h);
         const dateIdx = findDateCol(h);
-        const kgIdx   = findKgCol(h);
-        if (dateIdx >= 0 && kgIdx >= 0) {
+
+        if (kgIdxs.length > 0) {
             const byYm = {};
-            for (const row of rows) {
-                const ym = parseDateToYm(String(row[dateIdx] || ''));
-                const kg = parseFloat(String(row[kgIdx] || '').replace(/[,$\s]/g, ''));
-                if (!ym || isNaN(kg) || kg <= 0) continue;
-                byYm[ym] = (byYm[ym] || 0) + kg;
+
+            // Try Date column first
+            if (dateIdx >= 0) {
+                for (const row of rows) {
+                    const ym = parseDateToYm(String(row[dateIdx] || ''));
+                    const kg = sumKgCols(row, kgIdxs);
+                    if (!ym || kg <= 0) continue;
+                    byYm[ym] = (byYm[ym] || 0) + kg;
+                }
             }
+
+            // Fallback: Month-name + Year columns (e.g. "April" + "2025")
+            if (!Object.keys(byYm).length) {
+                const monthNameIdx = h.findIndex(c => c === 'month');
+                const yearNumIdx   = h.findIndex(c => c === 'year' || c === 'yr');
+                if (monthNameIdx >= 0 && yearNumIdx >= 0) {
+                    for (const row of rows) {
+                        const ym = parseDateFromMonthYear(row[monthNameIdx], row[yearNumIdx]);
+                        const kg = sumKgCols(row, kgIdxs);
+                        if (!ym || kg <= 0) continue;
+                        byYm[ym] = (byYm[ym] || 0) + kg;
+                    }
+                }
+            }
+
             if (!Object.keys(byYm).length) return null;
             const result = {};
             for (const [ym, kg] of Object.entries(byYm)) {
@@ -202,17 +253,22 @@ const SalesView = (() => {
             c === 'company' || c === 'organisation' || c === 'organization' ||
             c.includes('customer') || c.includes('client') || c.includes('store') || c.includes('account')
         );
-        const dateIdx = findDateCol(h);
-        const kgIdx   = findKgCol(h);
+        const dateIdx  = findDateCol(h);
+        const kgIdxs   = findKgCols(h);
 
-        if (custIdx < 0 || dateIdx < 0 || kgIdx < 0) return null;
+        if (custIdx < 0 || kgIdxs.length === 0) return null;
+
+        const monthNameIdx = dateIdx < 0 ? h.findIndex(c => c === 'month') : -1;
+        const yearNumIdx   = dateIdx < 0 ? h.findIndex(c => c === 'year' || c === 'yr') : -1;
 
         const result = [];
         for (const row of rows) {
             const customer = String(row[custIdx] || '').trim();
-            const ym = parseDateToYm(String(row[dateIdx] || ''));
-            const kg = parseFloat(String(row[kgIdx] || '').replace(/[,$\s]/g, ''));
-            if (!customer || !ym || isNaN(kg) || kg <= 0) continue;
+            const ym = dateIdx >= 0
+                ? parseDateToYm(String(row[dateIdx] || ''))
+                : parseDateFromMonthYear(row[monthNameIdx], row[yearNumIdx]);
+            const kg = sumKgCols(row, kgIdxs);
+            if (!customer || !ym || kg <= 0) continue;
             result.push({ customer, ym, kg });
         }
         return result.length ? result : null;
