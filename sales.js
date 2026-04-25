@@ -117,11 +117,11 @@ const SalesView = (() => {
         return '';
     }
 
-    // Returns ALL column indices that look like a kg/volume/quantity field.
-    // Multiple matching columns (e.g. "Bundles Volume", "Loose Volume") are summed per row.
-    function findKgCols(h) {
+    // Maps volume/kg column indices to clean product labels using the original (un-normalised) header text.
+    // e.g. "Prime Tie Bundles Volume" → { idx: 8, label: "Prime Tie Bundles" }
+    function labelKgCols(origHeaders, normHeaders) {
         const exact = [], partial = [];
-        h.forEach((c, i) => {
+        normHeaders.forEach((c, i) => {
             if (c === 'kg' || c === 'qty_kg' || c === 'quantity_kg' || c === 'total_kg' ||
                 c === 'net_kg' || c === 'gross_kg' || c === 'weight' || c === 'volume' ||
                 c === 'qty' || c === 'quantity' || c === 'units' || c === 'sold' ||
@@ -132,7 +132,19 @@ const SalesView = (() => {
                 partial.push(i);
             }
         });
-        return exact.length ? exact : partial;
+        const idxs = exact.length ? exact : partial;
+        return idxs.map(i => {
+            let label = origHeaders[i]
+                .replace(/\b(volumes?|kilo(gram)?s?|weights?|quantit(y|ies)|qty|units?|sold|amounts?|kg)\b/gi, '')
+                .replace(/\s+/g, ' ')
+                .trim() || origHeaders[i].trim();
+            return { idx: i, label };
+        });
+    }
+
+    // Returns ALL column indices that look like a kg/volume/quantity field (for sumKgCols compatibility).
+    function findKgCols(h) {
+        return labelKgCols(h, h).map(x => x.idx);
     }
 
     function sumKgCols(row, idxs) {
@@ -171,7 +183,8 @@ const SalesView = (() => {
         return mi >= 0 ? `${year}-${String(mi + 1).padStart(2, '0')}` : '';
     }
 
-    // Try to extract { year: [12 monthly kg values] } from a connected Google Sheet
+    // Try to extract { total: {year: [12]}, products: {name: {year: [12]}} | null } from a connected Google Sheet.
+    // products is non-null when multiple named volume columns are detected (e.g. per-product breakdown).
     function extractMonthlyFromSheet(headers, rows) {
         if (!headers.length || !rows.length) return null;
         const h = headers.map(s => s.toLowerCase().trim().replace(/[\s\-\/]+/g, '_'));
@@ -195,54 +208,78 @@ const SalesView = (() => {
                     return isNaN(v) ? null : v;
                 });
             }
-            return Object.keys(result).length ? result : null;
+            return Object.keys(result).length ? { total: result, products: null } : null;
         }
 
-        // Format B: long format — date column + one or more volume/kg columns (summed)
-        const kgIdxs  = findKgCols(h);
+        // Format B: long format — date column + one or more named volume/kg columns
+        const kgCols  = labelKgCols(headers, h);
         const dateIdx = findDateCol(h);
 
-        if (kgIdxs.length > 0) {
-            const byYm = {};
+        if (kgCols.length > 0) {
+            const byYmTotal = {};
+            const byYmProduct = {};
+            for (const { label } of kgCols) byYmProduct[label] = {};
+
+            function processRow(row, ym) {
+                for (const { idx, label } of kgCols) {
+                    const v = parseFloat(String(row[idx] || '').replace(/[,$\s]/g, ''));
+                    const kg = isNaN(v) ? 0 : v;
+                    if (kg <= 0) continue;
+                    byYmTotal[ym] = (byYmTotal[ym] || 0) + kg;
+                    byYmProduct[label][ym] = (byYmProduct[label][ym] || 0) + kg;
+                }
+            }
 
             // Try Date column first
             if (dateIdx >= 0) {
                 for (const row of rows) {
                     const ym = parseDateToYm(String(row[dateIdx] || ''));
-                    const kg = sumKgCols(row, kgIdxs);
-                    if (!ym || kg <= 0) continue;
-                    byYm[ym] = (byYm[ym] || 0) + kg;
+                    if (ym) processRow(row, ym);
                 }
             }
 
             // Fallback: Month-name + Year columns (e.g. "April" + "2025")
-            if (!Object.keys(byYm).length) {
+            if (!Object.keys(byYmTotal).length) {
                 const monthNameIdx = h.findIndex(c => c === 'month');
                 const yearNumIdx   = h.findIndex(c => c === 'year' || c === 'yr');
                 if (monthNameIdx >= 0 && yearNumIdx >= 0) {
                     for (const row of rows) {
                         const ym = parseDateFromMonthYear(row[monthNameIdx], row[yearNumIdx]);
-                        const kg = sumKgCols(row, kgIdxs);
-                        if (!ym || kg <= 0) continue;
-                        byYm[ym] = (byYm[ym] || 0) + kg;
+                        if (ym) processRow(row, ym);
                     }
                 }
             }
 
-            if (!Object.keys(byYm).length) return null;
-            const result = {};
-            for (const [ym, kg] of Object.entries(byYm)) {
-                const yr = ym.slice(0, 4);
-                const mo = parseInt(ym.slice(5)) - 1;
-                if (!result[yr]) result[yr] = new Array(12).fill(null);
-                result[yr][mo] = (result[yr][mo] || 0) + kg;
+            if (!Object.keys(byYmTotal).length) return null;
+
+            function ymMapToYearly(byYm) {
+                const result = {};
+                for (const [ym, kg] of Object.entries(byYm)) {
+                    const yr = ym.slice(0, 4);
+                    const mo = parseInt(ym.slice(5)) - 1;
+                    if (!result[yr]) result[yr] = new Array(12).fill(null);
+                    result[yr][mo] = (result[yr][mo] || 0) + kg;
+                }
+                return result;
             }
-            return result;
+
+            const total = ymMapToYearly(byYmTotal);
+            const multiProduct = kgCols.length > 1;
+            const products = multiProduct
+                ? Object.fromEntries(
+                    Object.entries(byYmProduct)
+                        .filter(([, byYm]) => Object.keys(byYm).length > 0)
+                        .map(([label, byYm]) => [label, ymMapToYearly(byYm)])
+                  )
+                : null;
+
+            return { total, products };
         }
         return null;
     }
 
-    // Extract per-customer rows from sheet for filter support (Format B long-form sheets only)
+    // Extract per-customer rows from sheet for filter support (Format B long-form sheets only).
+    // Each row carries a product label when multiple volume columns exist; null otherwise.
     function extractCustomerRowsFromSheet(headers, rows) {
         if (!headers.length || !rows.length) return null;
         const h = headers.map(s => s.toLowerCase().trim().replace(/[\s\-\/]+/g, '_'));
@@ -253,13 +290,14 @@ const SalesView = (() => {
             c === 'company' || c === 'organisation' || c === 'organization' ||
             c.includes('customer') || c.includes('client') || c.includes('store') || c.includes('account')
         );
-        const dateIdx  = findDateCol(h);
-        const kgIdxs   = findKgCols(h);
+        const dateIdx    = findDateCol(h);
+        const kgCols     = labelKgCols(headers, h);
 
-        if (custIdx < 0 || kgIdxs.length === 0) return null;
+        if (custIdx < 0 || kgCols.length === 0) return null;
 
         const monthNameIdx = dateIdx < 0 ? h.findIndex(c => c === 'month') : -1;
         const yearNumIdx   = dateIdx < 0 ? h.findIndex(c => c === 'year' || c === 'yr') : -1;
+        const multiProduct = kgCols.length > 1;
 
         const result = [];
         for (const row of rows) {
@@ -267,9 +305,13 @@ const SalesView = (() => {
             const ym = dateIdx >= 0
                 ? parseDateToYm(String(row[dateIdx] || ''))
                 : parseDateFromMonthYear(row[monthNameIdx], row[yearNumIdx]);
-            const kg = sumKgCols(row, kgIdxs);
-            if (!customer || !ym || kg <= 0) continue;
-            result.push({ customer, ym, kg });
+            if (!customer || !ym) continue;
+            for (const { idx, label } of kgCols) {
+                const v = parseFloat(String(row[idx] || '').replace(/[,$\s]/g, ''));
+                const kg = isNaN(v) ? 0 : v;
+                if (kg <= 0) continue;
+                result.push({ customer, product: multiProduct ? label : null, ym, kg });
+            }
         }
         return result.length ? result : null;
     }
@@ -542,7 +584,8 @@ const SalesView = (() => {
         // ── Derive history from sheet CSV (replaces hardcoded SALES_HISTORY when possible) ──
         const sheetHistory = extractMonthlyFromSheet(headers, rows);
         const sheetCustomerRows = extractCustomerRowsFromSheet(headers, rows);
-        const effectiveHistory = sheetHistory || SALES_HISTORY;
+        const effectiveHistory = sheetHistory?.total || SALES_HISTORY;
+        const sheetProducts = sheetHistory?.products || null; // { productName: {yr: [12]} } | null
 
         // ── Extract filter options from orders AND sheet (so historical customers appear) ──
         const custSet = new Set(), branchSet = new Set(), prodSet = new Set();
@@ -553,6 +596,9 @@ const SalesView = (() => {
         }
         if (sheetCustomerRows) {
             for (const r of sheetCustomerRows) if (r.customer) custSet.add(r.customer);
+        }
+        if (sheetProducts) {
+            for (const name of Object.keys(sheetProducts)) prodSet.add(name);
         }
 
         // ── Top Stores (unfiltered) + LY-to-date ──
@@ -615,10 +661,10 @@ const SalesView = (() => {
             }
 
             // Include filtered historical sheet rows (customer-filterable long-form sheets only)
-            // Skip when filtering by product — sheet data has no product-level breakdown
-            if (sheetCustomerRows && !filterProduct) {
+            if (sheetCustomerRows) {
                 for (const r of sheetCustomerRows) {
                     if (filterCustomer && r.customer !== filterCustomer) continue;
+                    if (filterProduct && r.product !== filterProduct) continue;
                     actuals[r.ym] = (actuals[r.ym] || 0) + r.kg;
                 }
             }
@@ -628,17 +674,23 @@ const SalesView = (() => {
 
         function computeChartData(actuals) {
             const isFiltered = filterCustomer || filterBranch || filterProduct;
+            // When a sheet product is selected, use its per-product history as the baseline
+            const productHistory = filterProduct && sheetProducts?.[filterProduct]
+                ? sheetProducts[filterProduct] : null;
+            const historyBase = productHistory || effectiveHistory;
 
             const allYearsSet = new Set([
-                ...Object.keys(effectiveHistory),
+                ...Object.keys(historyBase),
                 ...Object.keys(actuals).map(ym => ym.slice(0, 4)),
             ]);
-            // Show only the years that are toggled on in the year filter
             const visibleYears = [...allYearsSet].filter(yr => selectedYears.has(yr)).sort();
 
             if (isFiltered) {
-                // Orders-only data when filters are active — seed all years with null arrays
-                // so historical year columns still appear even when a customer has no orders in them
+                if (productHistory) {
+                    // Sheet product selected — merge its historical data with order actuals
+                    return getMergedData(actuals, visibleYears, productHistory);
+                }
+                // Other filter active — orders-only data seeded with null year arrays
                 const data = {};
                 for (const yr of visibleYears) data[yr] = new Array(12).fill(null);
                 for (const [ym, kg] of Object.entries(actuals)) {
@@ -749,7 +801,7 @@ const SalesView = (() => {
             </div>` : ''}
         </div>`;
 
-        const sheetYears = sheetHistory ? Object.keys(sheetHistory).sort() : [];
+        const sheetYears = sheetHistory ? Object.keys(sheetHistory.total || {}).sort() : [];
         const settingsPanel = `
         <div id="sales-settings-panel" style="display:none">
             <div class="cat-section" style="max-width:640px;margin-bottom:1.5rem">
@@ -765,7 +817,7 @@ const SalesView = (() => {
                 </div>` : ''}
                 ${sheetHistory ? `<div class="imp-connect-status" style="margin-bottom:0.75rem">
                     <svg width="10" height="10" viewBox="0 0 10 10" fill="#10b981"><circle cx="5" cy="5" r="5"/></svg>
-                    Sheet data merged — ${sheetYears.length} year${sheetYears.length !== 1 ? 's' : ''} detected (${sheetYears.join(', ')}), ${rows.length} rows
+                    Sheet data merged — ${sheetYears.length} year${sheetYears.length !== 1 ? 's' : ''} detected (${sheetYears.join(', ')}), ${rows.length} rows${sheetProducts ? `, ${Object.keys(sheetProducts).length} products (${Object.keys(sheetProducts).join(', ')})` : ''}
                 </div>` : config?.sheetUrl && !fetchError && rows.length ? `<div style="font-size:0.8125rem;color:#f59e0b;margin-bottom:0.75rem;padding:0.5rem 0.75rem;background:#fffbeb;border-radius:6px;border:1px solid #fde68a">
                     ⚠ Sheet loaded (${rows.length} rows) but column format not recognised.<br>
                     <strong>Columns found:</strong> ${headers.map(h => `<code style="background:#f1f5f9;padding:1px 4px;border-radius:3px;font-size:0.78rem">${escHtml(h)}</code>`).join(' ')}<br>
