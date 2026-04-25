@@ -80,13 +80,73 @@ const SalesView = (() => {
         return data;
     }
 
+    // Normalise a raw date string to YYYY-MM (returns '' if unrecognised)
+    function parseDateToYm(rawDate) {
+        const s = rawDate.trim();
+        if (!s) return '';
+        const MO_ABBR = ['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'];
+        // YYYY-MM-DD or YYYY-MM (ISO)
+        if (s.match(/^20\d\d-\d\d/)) return s.slice(0, 7);
+        // DD/MM/YYYY or D/M/YYYY (NZ/AU)
+        const dmy4 = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+        if (dmy4) return `${dmy4[3]}-${dmy4[2].padStart(2, '0')}`;
+        // DD/MM/YY (2-digit year, NZ)
+        const dmy2 = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2})$/);
+        if (dmy2) return `20${dmy2[3]}-${dmy2[2].padStart(2, '0')}`;
+        // MM/YYYY or M/YYYY
+        const my = s.match(/^(\d{1,2})\/(\d{4})$/);
+        if (my) return `${my[2]}-${my[1].padStart(2, '0')}`;
+        // YYYY/MM
+        const ym = s.match(/^(20\d\d)\/(\d{1,2})$/);
+        if (ym) return `${ym[1]}-${ym[2].padStart(2, '0')}`;
+        // "Apr 2025", "April 2025", "Apr-2025", "Apr-25"
+        const moYr = s.match(/^([a-zA-Z]{3,9})[.\s\-,]+(\d{2,4})$/);
+        if (moYr) {
+            const mi = MO_ABBR.indexOf(moYr[1].toLowerCase().slice(0, 3));
+            if (mi >= 0) {
+                const yr = moYr[2].length === 2 ? '20' + moYr[2] : moYr[2];
+                return `${yr}-${String(mi + 1).padStart(2, '0')}`;
+            }
+        }
+        // "2025 Apr" or "2025-Apr"
+        const yrMo = s.match(/^(20\d\d)[.\s\-]+([a-zA-Z]{3,9})$/);
+        if (yrMo) {
+            const mi = MO_ABBR.indexOf(yrMo[2].toLowerCase().slice(0, 3));
+            if (mi >= 0) return `${yrMo[1]}-${String(mi + 1).padStart(2, '0')}`;
+        }
+        return '';
+    }
+
+    // Shared column-name resolver — returns index or -1
+    function findKgCol(h) {
+        // Prefer exact matches first, then partial
+        const exact = h.findIndex(c =>
+            c === 'kg' || c === 'qty_kg' || c === 'quantity_kg' || c === 'total_kg' ||
+            c === 'net_kg' || c === 'gross_kg' || c === 'weight' || c === 'volume' ||
+            c === 'qty' || c === 'quantity' || c === 'units' || c === 'sold' ||
+            c === 'amount' || c === 'ordered'
+        );
+        if (exact >= 0) return exact;
+        return h.findIndex(c => c.includes('kg') || c.includes('kilo') || c.includes('weight') || c.includes('quantity') || c.includes('volume'));
+    }
+
+    function findDateCol(h) {
+        const exact = h.findIndex(c =>
+            c === 'date' || c === 'month' || c === 'created' || c === 'shipped' ||
+            c === 'order_date' || c === 'invoice_date' || c === 'delivery_date' ||
+            c === 'dispatch_date' || c === 'ship_date' || c === 'period' || c === 'year_month'
+        );
+        if (exact >= 0) return exact;
+        return h.findIndex(c => c.includes('date') || c.includes('month') || c.includes('period'));
+    }
+
     // Try to extract { year: [12 monthly kg values] } from a connected Google Sheet
     function extractMonthlyFromSheet(headers, rows) {
         if (!headers.length || !rows.length) return null;
         const h = headers.map(s => s.toLowerCase().trim().replace(/[\s\-\/]+/g, '_'));
 
         // Format A: wide table with Year column + month columns (Jan, February, jan, etc.)
-        const yearIdx = h.findIndex(c => c === 'year' || c === 'yr');
+        const yearIdx = h.findIndex(c => c === 'year' || c === 'yr' || c === 'financial_year' || c === 'fy');
         const MO_ABBR = ['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'];
         const MO_FULL = ['january','february','march','april','may','june','july','august','september','october','november','december'];
         const monthIdxs = MO_ABBR.map((abbr, i) =>
@@ -96,7 +156,7 @@ const SalesView = (() => {
         if (yearIdx >= 0 && monthIdxs.filter(i => i >= 0).length >= 6) {
             const result = {};
             for (const row of rows) {
-                const yr = String(row[yearIdx] || '').trim();
+                const yr = String(row[yearIdx] || '').trim().replace(/^fy ?/i, '');
                 if (!yr.match(/^20\d\d$/)) continue;
                 result[yr] = monthIdxs.map(mi => {
                     if (mi < 0) return null;
@@ -108,31 +168,14 @@ const SalesView = (() => {
         }
 
         // Format B: long format — date column + kg/quantity column
-        const dateIdx = h.findIndex(c =>
-            c.includes('date') || c === 'month' || c === 'created' || c === 'shipped' || c === 'order_date'
-        );
-        const kgIdx = h.findIndex(c =>
-            c === 'kg' || c === 'qty_kg' || c === 'quantity_kg' || c === 'total_kg' ||
-            c === 'weight' || c === 'volume' || c === 'qty' || c === 'quantity'
-        );
+        const dateIdx = findDateCol(h);
+        const kgIdx   = findKgCol(h);
         if (dateIdx >= 0 && kgIdx >= 0) {
             const byYm = {};
             for (const row of rows) {
-                const rawDate = String(row[dateIdx] || '').trim();
+                const ym = parseDateToYm(String(row[dateIdx] || ''));
                 const kg = parseFloat(String(row[kgIdx] || '').replace(/[,$\s]/g, ''));
-                if (!rawDate || isNaN(kg) || kg <= 0) continue;
-                let ym = '';
-                if (rawDate.match(/^20\d\d-\d\d/)) {
-                    ym = rawDate.slice(0, 7);
-                } else if (rawDate.match(/^\d{1,2}\/\d{1,2}\/\d{4}/)) {
-                    // NZ/AU format: DD/MM/YYYY
-                    const parts = rawDate.split('/');
-                    ym = `${parts[2]}-${parts[1].padStart(2, '0')}`;
-                } else if (rawDate.match(/^\d{1,2}\/\d{4}/)) {
-                    const [mo, yr] = rawDate.split('/');
-                    ym = `${yr}-${mo.padStart(2, '0')}`;
-                }
-                if (!ym || !ym.match(/^20\d\d-\d\d$/)) continue;
+                if (!ym || isNaN(kg) || kg <= 0) continue;
                 byYm[ym] = (byYm[ym] || 0) + kg;
             }
             if (!Object.keys(byYm).length) return null;
@@ -156,36 +199,20 @@ const SalesView = (() => {
         const custIdx = h.findIndex(c =>
             c === 'customer' || c === 'client' || c === 'account' ||
             c === 'customer_name' || c === 'store' || c === 'branch' ||
-            c.includes('customer') || c.includes('client')
+            c === 'company' || c === 'organisation' || c === 'organization' ||
+            c.includes('customer') || c.includes('client') || c.includes('store') || c.includes('account')
         );
-        const dateIdx = h.findIndex(c =>
-            c.includes('date') || c === 'month' || c === 'created' || c === 'shipped' || c === 'order_date'
-        );
-        const kgIdx = h.findIndex(c =>
-            c === 'kg' || c === 'qty_kg' || c === 'quantity_kg' || c === 'total_kg' ||
-            c === 'weight' || c === 'volume' || c === 'qty' || c === 'quantity'
-        );
+        const dateIdx = findDateCol(h);
+        const kgIdx   = findKgCol(h);
 
         if (custIdx < 0 || dateIdx < 0 || kgIdx < 0) return null;
 
         const result = [];
         for (const row of rows) {
             const customer = String(row[custIdx] || '').trim();
-            const rawDate  = String(row[dateIdx]  || '').trim();
+            const ym = parseDateToYm(String(row[dateIdx] || ''));
             const kg = parseFloat(String(row[kgIdx] || '').replace(/[,$\s]/g, ''));
-            if (!customer || !rawDate || isNaN(kg) || kg <= 0) continue;
-
-            let ym = '';
-            if (rawDate.match(/^20\d\d-\d\d/)) {
-                ym = rawDate.slice(0, 7);
-            } else if (rawDate.match(/^\d{1,2}\/\d{1,2}\/\d{4}/)) {
-                const parts = rawDate.split('/');
-                ym = `${parts[2]}-${parts[1].padStart(2, '0')}`;
-            } else if (rawDate.match(/^\d{1,2}\/\d{4}/)) {
-                const [mo, yr] = rawDate.split('/');
-                ym = `${yr}-${mo.padStart(2, '0')}`;
-            }
-            if (!ym || !ym.match(/^20\d\d-\d\d$/)) continue;
+            if (!customer || !ym || isNaN(kg) || kg <= 0) continue;
             result.push({ customer, ym, kg });
         }
         return result.length ? result : null;
@@ -678,9 +705,13 @@ const SalesView = (() => {
                 </div>` : ''}
                 ${sheetHistory ? `<div class="imp-connect-status" style="margin-bottom:0.75rem">
                     <svg width="10" height="10" viewBox="0 0 10 10" fill="#10b981"><circle cx="5" cy="5" r="5"/></svg>
-                    Sheet data merged — ${sheetYears.length} year${sheetYears.length !== 1 ? 's' : ''} detected (${sheetYears.join(', ')})
-                </div>` : config?.sheetUrl && !fetchError && rows.length ? `<div style="font-size:0.8125rem;color:#94a3b8;margin-bottom:0.75rem">
-                    Sheet loaded but monthly columns not detected — expected: <code>Year, Jan, Feb…Dec</code> or a date+kg long format.
+                    Sheet data merged — ${sheetYears.length} year${sheetYears.length !== 1 ? 's' : ''} detected (${sheetYears.join(', ')}), ${rows.length} rows
+                </div>` : config?.sheetUrl && !fetchError && rows.length ? `<div style="font-size:0.8125rem;color:#f59e0b;margin-bottom:0.75rem;padding:0.5rem 0.75rem;background:#fffbeb;border-radius:6px;border:1px solid #fde68a">
+                    ⚠ Sheet loaded (${rows.length} rows) but column format not recognised.<br>
+                    <strong>Columns found:</strong> ${headers.map(h => `<code style="background:#f1f5f9;padding:1px 4px;border-radius:3px;font-size:0.78rem">${escHtml(h)}</code>`).join(' ')}<br>
+                    <span style="color:#92400e">Expected either: <code>Year, Jan, Feb…Dec</code> (wide format) or columns containing a date and a kg/quantity value (long format).</span>
+                </div>` : config?.sheetUrl && !fetchError && !rows.length ? `<div style="font-size:0.8125rem;color:#ef4444;margin-bottom:0.75rem">
+                    Sheet returned no rows — check the URL points to the correct tab and that it is published as CSV.
                 </div>` : ''}
                 ${renderConnectPanel(config)}
             </div>
