@@ -1030,6 +1030,14 @@ const Orders = (() => {
         wireDetailButtons(order);
     }
 
+    // The order-detail container element. Looked up by id rather than threaded
+    // through every handler — wireDetailButtons runs in a closure over `order`
+    // but not `container`, so anywhere a full re-render is needed we resolve it
+    // here.
+    function getDetailContainer() {
+        return document.getElementById('orders-detail-container');
+    }
+
     // ── Order detail / packing slip ──
     async function renderDetail(container, orderId) {
         container.classList.add('slip-view');
@@ -1221,6 +1229,69 @@ const Orders = (() => {
             </div>`;
     }
 
+    // Modal for "Link to Xero Invoice" — replaces the older two-prompt() flow.
+    // Returns a Promise that resolves to { invoiceId, invoiceNumber } on Link
+    // or null on Cancel/Esc/click-outside.
+    function openLinkXeroModal({ invoiceId = '', invoiceNumber = '' } = {}) {
+        return new Promise(resolve => {
+            const overlay = document.createElement('div');
+            overlay.className = 'modal-overlay';
+            overlay.innerHTML = `
+                <div class="modal-box">
+                    <h3 class="modal-title">Link to Xero Invoice</h3>
+                    <div class="modal-field">
+                        <label>Xero invoice URL or ID</label>
+                        <input type="text" id="lx-id" placeholder="Paste URL or InvoiceID" value="${escHtml(invoiceId)}">
+                        <span class="modal-hint">Accepts the full Edit.aspx URL or just the GUID.</span>
+                    </div>
+                    <div class="modal-field">
+                        <label>Invoice number <span class="modal-hint">optional</span></label>
+                        <input type="text" id="lx-num" placeholder="INV-1042" value="${escHtml(invoiceNumber)}">
+                    </div>
+                    <div id="lx-error" style="display:none;color:#dc2626;font-size:0.9em;margin-bottom:0.65rem"></div>
+                    <div class="modal-actions">
+                        <button class="btn-primary" id="lx-save">Link</button>
+                        <button class="btn-secondary" id="lx-cancel">Cancel</button>
+                    </div>
+                </div>`;
+            document.body.appendChild(overlay);
+
+            const idInput  = overlay.querySelector('#lx-id');
+            const numInput = overlay.querySelector('#lx-num');
+            const errEl    = overlay.querySelector('#lx-error');
+            const saveBtn  = overlay.querySelector('#lx-save');
+
+            const close = value => {
+                document.removeEventListener('keydown', onKey);
+                overlay.remove();
+                resolve(value);
+            };
+            const onKey = e => {
+                if (e.key === 'Escape') close(null);
+                if (e.key === 'Enter' && (e.target === idInput || e.target === numInput)) save();
+            };
+            const save = () => {
+                const raw = idInput.value.trim();
+                if (!raw) { errEl.textContent = 'Paste a Xero URL or invoice ID.'; errEl.style.display = ''; return; }
+                const guidMatch = raw.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i);
+                const id = guidMatch ? guidMatch[0] : raw;
+                if (!guidMatch && !/^[0-9a-f-]{20,}$/i.test(id)) {
+                    errEl.textContent = "Couldn't find an InvoiceID GUID in that input.";
+                    errEl.style.display = '';
+                    return;
+                }
+                close({ invoiceId: id, invoiceNumber: numInput.value.trim() || null });
+            };
+
+            saveBtn.addEventListener('click', save);
+            overlay.querySelector('#lx-cancel').addEventListener('click', () => close(null));
+            overlay.addEventListener('click', e => { if (e.target === overlay) close(null); });
+            document.addEventListener('keydown', onKey);
+
+            setTimeout(() => idInput.focus(), 0);
+        });
+    }
+
     function printAddressPopup(order) {
         const ref = order.xeroInvoiceNumber || order.id;
         const win = window.open('', '_blank', 'width=1100,height=780');
@@ -1345,33 +1416,28 @@ const Orders = (() => {
 
         // Link to existing Xero invoice (manual reconciliation)
         document.getElementById('link-xero-btn')?.addEventListener('click', async () => {
-            const input = prompt(
-                'Paste the Xero invoice URL or InvoiceID GUID.\n\n' +
-                'URL format: https://go.xero.com/AccountsReceivable/Edit.aspx?InvoiceID=xxxxxxxx-...\n' +
-                'Invoice number (e.g. INV-1042) is optional — enter it on the next prompt.',
-                order.xeroInvoiceId || ''
-            );
-            if (input === null) return;
-            // Extract UUID from URL or use raw input
-            const guidMatch = input.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i);
-            const invoiceId = guidMatch ? guidMatch[0] : input.trim();
-            if (!invoiceId) return;
-            const invoiceNum = prompt('Invoice number (e.g. INV-1042):', order.xeroInvoiceNumber || '') || null;
+            const result = await openLinkXeroModal({
+                invoiceId: order.xeroInvoiceId || '',
+                invoiceNumber: order.xeroInvoiceNumber || '',
+            });
+            if (!result) return;
+            const { invoiceId, invoiceNumber } = result;
             try {
                 const updated = await api('/api/orders/' + orderId, {
                     method: 'PATCH',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         xeroInvoiceId: invoiceId,
-                        xeroInvoiceNumber: invoiceNum,
+                        xeroInvoiceNumber: invoiceNumber,
                         status: order.status === 'new' ? 'reviewed' : order.status,
-                        event: { ts: new Date().toISOString(), msg: `Linked to Xero invoice ${invoiceNum || invoiceId}` },
+                        event: { ts: new Date().toISOString(), msg: `Linked to Xero invoice ${invoiceNumber || invoiceId}` },
                     }),
                 });
                 Object.assign(order, updated);
-                await Orders.renderDetail(container, orderId);
+                showToast('Linked to Xero');
+                await Orders.renderDetail(getDetailContainer(), orderId);
             } catch (e) {
-                alert('Link failed: ' + e.message);
+                showErrorBanner('Link failed: ' + e.message);
             }
         });
 
@@ -1390,7 +1456,7 @@ const Orders = (() => {
                 });
                 Object.assign(order, updated);
                 showToast('Order marked as paid');
-                await Orders.renderDetail(container, orderId);
+                await Orders.renderDetail(getDetailContainer(), orderId);
             } catch (e) {
                 showErrorBanner('Error: ' + e.message);
             }
