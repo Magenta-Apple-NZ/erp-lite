@@ -3,7 +3,10 @@
     "base": "NZD",
     "targets": ["USD", "EUR", "AUD", "BDT", "ZAR"]
   },
-  "printers": [],
+  "printers": [
+    { "id": 75308467, "label": "Warehouse", "documents": ["slip", "address"] },
+    { "id": 75236244, "label": "Home",      "documents": ["slip", "address"] }
+  ],
   "pinned": [
     {
       "label": "Xero Dashboard",
