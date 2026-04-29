@@ -5,7 +5,7 @@
   },
   "printers": [
     { "id": 75308467, "label": "Warehouse",       "documents": ["slip", "address"] },
-    { "id": 75236244, "label": "Andrew's Office", "documents": ["slip"] }
+    { "id": 75409000, "label": "Andrew's Office", "documents": ["slip"] }
   ],
   "pinned": [
     {
