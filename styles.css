@@ -950,6 +950,21 @@ li.drag-over { background: #eff6ff; }
 .overflow-item.overflow-danger:hover { background: #fef2f2; color: #dc2626; }
 .overflow-item.overflow-dim { color: #94a3b8; cursor: default; }
 .overflow-item.overflow-dim:hover { background: none; }
+.overflow-item.overflow-indent { padding-left: 28px; }
+.overflow-section {
+    font-size: 0.65rem;
+    font-weight: 700;
+    color: #94a3b8;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    padding: 8px 16px 4px;
+    user-select: none;
+}
+.overflow-divider {
+    margin: 4px 0;
+    border: 0;
+    border-top: 1px solid #e2e8f0;
+}
 
 /* ── Orders filter bar ── */
 .orders-filter-bar {

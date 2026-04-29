@@ -971,10 +971,16 @@ const Orders = (() => {
     }
 
     // Render one overflow-menu button per printer that supports the given document type.
-    function printerMenuItems(docType, prefix) {
+    // `prefix` is prepended to the label ("Send address to Warehouse" etc.).
+    // `indent` adds left padding so items sit visually beneath a section heading.
+    function printerMenuItems(docType, { prefix = '', indent = false } = {}) {
         return getPrinters()
             .filter(p => Array.isArray(p.documents) && p.documents.includes(docType))
-            .map(p => `<button class="overflow-item" data-print-doc="${escHtml(docType)}" data-print-id="${escHtml(p.id)}" data-print-label="${escHtml(p.label || '')}">${escHtml(prefix)} → ${escHtml(p.label || ('Printer #' + p.id))}</button>`)
+            .map(p => {
+                const label = (p.label || ('Printer #' + p.id));
+                const cls = 'overflow-item' + (indent ? ' overflow-indent' : '');
+                return `<button class="${cls}" data-print-doc="${escHtml(docType)}" data-print-id="${escHtml(p.id)}" data-print-label="${escHtml(label)}">${escHtml(prefix + label)}</button>`;
+            })
             .join('');
     }
 
@@ -1010,12 +1016,15 @@ const Orders = (() => {
                 <button class="overflow-trigger btn-secondary btn-sm" title="More actions" onclick="event.stopPropagation();this.closest('.overflow-menu').classList.toggle('open')">•••</button>
                 <div class="overflow-dropdown">
                     ${xeroMenuItem}
-                    <button class="overflow-item" id="link-xero-btn">Link Xero Invoice…</button>
-                    ${!order.paidAt ? `<button class="overflow-item" id="mark-paid-btn">Mark as Paid</button>` : `<button class="overflow-item overflow-dim" id="mark-paid-btn" disabled>✓ Paid ${order.paidAt.slice(0,10)}</button>`}
-                    <button class="overflow-item" id="print-slip-btn">Print Packing Slip</button>
+                    <div class="overflow-section">Send Packing Slip</div>
+                    ${printerMenuItems('slip', { indent: true })}
+                    <button class="overflow-item overflow-indent" id="print-slip-btn">Local Printer</button>
+                    <hr class="overflow-divider">
                     <button class="overflow-item" id="print-address-btn">Print Address</button>
-                    ${printerMenuItems('slip', 'Send Slip')}
-                    ${printerMenuItems('address', 'Send Address')}
+                    ${printerMenuItems('address', { prefix: 'Send Address to ' })}
+                    <hr class="overflow-divider">
+                    <button class="overflow-item" id="link-xero-btn">Link Xero Invoice…</button>
+                    <hr class="overflow-divider">
                     <button class="overflow-item overflow-danger" id="delete-order-btn">Delete</button>
                 </div>
             </div>`;
@@ -1441,26 +1450,6 @@ const Orders = (() => {
             }
         });
 
-        // Mark as paid
-        document.getElementById('mark-paid-btn')?.addEventListener('click', async () => {
-            if (order.paidAt) return;
-            if (!confirm('Mark this order as paid?')) return;
-            try {
-                const updated = await api('/api/orders/' + orderId, {
-                    method: 'PATCH',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        paidAt: new Date().toISOString(),
-                        event: { ts: new Date().toISOString(), msg: 'Marked as paid' },
-                    }),
-                });
-                Object.assign(order, updated);
-                showToast('Order marked as paid');
-                await Orders.renderDetail(getDetailContainer(), orderId);
-            } catch (e) {
-                showErrorBanner('Error: ' + e.message);
-            }
-        });
 
         // Delete order
         document.getElementById('delete-order-btn')?.addEventListener('click', async () => {

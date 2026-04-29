@@ -4,8 +4,8 @@
     "targets": ["USD", "EUR", "AUD", "BDT", "ZAR"]
   },
   "printers": [
-    { "id": 75308467, "label": "Warehouse", "documents": ["slip", "address"] },
-    { "id": 75236244, "label": "Home",      "documents": ["slip", "address"] }
+    { "id": 75308467, "label": "Warehouse",       "documents": ["slip", "address"] },
+    { "id": 75236244, "label": "Andrew's Office", "documents": ["slip"] }
   ],
   "pinned": [
     {
