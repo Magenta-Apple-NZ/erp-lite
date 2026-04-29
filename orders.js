@@ -45,6 +45,16 @@ const Orders = (() => {
         paid:         '#10b981',
     };
 
+    // Xero brand mark — a Xero-blue circle with a white "x". Designed to read at
+    // 15–18px so it works as a row-action icon. Dim state is handled via the
+    // .row-action-btn--dim CSS opacity, so the SVG itself stays a single source.
+    function xeroBadgeSVG() {
+        return `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" aria-label="Xero">
+            <circle cx="12" cy="12" r="11" fill="#13B5EA"/>
+            <text x="12" y="17" text-anchor="middle" fill="#fff" font-family="Helvetica, Arial, sans-serif" font-weight="700" font-size="15">x</text>
+        </svg>`;
+    }
+
     function statusBadge(status) {
         const label = STATUS_LABELS[status] || status;
         const colour = STATUS_COLOURS[status] || '#94a3b8';
@@ -256,18 +266,27 @@ const Orders = (() => {
                                     <a class="row-action-btn" href="#orders/${o.id}" title="View packing slip" onclick="event.stopPropagation()">
                                         <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
                                     </a>
+                                    <button class="row-action-btn"
+                                        title="Print delivery address"
+                                        data-pa-to="${escHtml(o.shipTo?.branch || o.customer.name)}"
+                                        data-pa-addr="${escHtml(o.shipTo?.address || '')}"
+                                        data-pa-ref="${escHtml(o.xeroInvoiceNumber || o.id)}"
+                                        data-pa-id="${o.id}"
+                                        data-pa-po="${escHtml(o.poNumber || '')}"
+                                        onclick="event.stopPropagation()">
+                                        <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="6" width="14" height="11" rx="1"/><path d="M15 9h4l3 3v5h-7"/><circle cx="5.5" cy="18.5" r="2"/><circle cx="18.5" cy="18.5" r="2"/></svg>
+                                    </button>
                                     ${xeroUrl
-                                        ? `<a class="row-action-btn" href="${xeroUrl}" target="_blank" rel="noopener" title="Open in Xero" onclick="event.stopPropagation()"><svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg></a>`
-                                        : `<span class="row-action-btn row-action-btn--dim" title="Not yet synced to Xero"><svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg></span>`}
+                                        ? `<a class="row-action-btn row-action-btn--xero" href="${xeroUrl}" target="_blank" rel="noopener" title="Open in Xero" onclick="event.stopPropagation()">${xeroBadgeSVG()}</a>`
+                                        : `<span class="row-action-btn row-action-btn--xero row-action-btn--dim" title="Not yet synced to Xero">${xeroBadgeSVG()}</span>`}
                                     <div class="overflow-menu">
-                                        <button class="overflow-trigger btn-sm" title="More actions" onclick="event.stopPropagation();this.closest('.overflow-menu').classList.toggle('open')">•••</button>
+                                        <button class="row-action-btn overflow-trigger" title="More actions" onclick="event.stopPropagation();this.closest('.overflow-menu').classList.toggle('open')">•••</button>
                                         <div class="overflow-dropdown">
-                                            <button class="overflow-item"
-                                                data-pa-to="${escHtml(o.shipTo?.branch || o.customer.name)}"
-                                                data-pa-addr="${escHtml(o.shipTo?.address || '')}"
-                                                data-pa-ref="${escHtml(o.xeroInvoiceNumber || o.id)}"
-                                                data-pa-id="${o.id}"
-                                                data-pa-po="${escHtml(o.poNumber || '')}">Print Address</button>
+                                            <div class="overflow-section">Send Packing Slip</div>
+                                            ${printerMenuItems('slip', { indent: true, orderId: o.id })}
+                                            <hr class="overflow-divider">
+                                            ${printerMenuItems('address', { prefix: 'Send Address to ', orderId: o.id })}
+                                            <hr class="overflow-divider">
                                             <button class="overflow-item overflow-danger" data-delete-order="${o.id}">Delete</button>
                                         </div>
                                     </div>
@@ -282,6 +301,20 @@ const Orders = (() => {
 
         // Delegated events on body — survive re-renders of body.innerHTML
         body.addEventListener('click', e => {
+            // Row-level send-to-printer (slip / address) via PrintNode
+            const sendBtn = e.target.closest('[data-print-doc][data-order-id]');
+            if (sendBtn) {
+                const orderId   = sendBtn.dataset.orderId;
+                const doc       = sendBtn.dataset.printDoc;
+                const printerId = Number(sendBtn.dataset.printId);
+                const label     = sendBtn.dataset.printLabel || ('Printer #' + printerId);
+                const order     = orders.find(o => o.id === orderId);
+                if (!order) return;
+                if (doc === 'slip')    sendSlipToPrinter(order, sendBtn, { printerId, label });
+                if (doc === 'address') sendAddressToPrinter(order, sendBtn, { printerId, label });
+                return;
+            }
+            // Browser-print delivery address (truck icon + any other data-pa-id button)
             const printBtn = e.target.closest('[data-pa-id]');
             if (printBtn) {
                 printAddressPopup({
@@ -973,13 +1006,14 @@ const Orders = (() => {
     // Render one overflow-menu button per printer that supports the given document type.
     // `prefix` is prepended to the label ("Send address to Warehouse" etc.).
     // `indent` adds left padding so items sit visually beneath a section heading.
-    function printerMenuItems(docType, { prefix = '', indent = false } = {}) {
+    function printerMenuItems(docType, { prefix = '', indent = false, orderId = null } = {}) {
         return getPrinters()
             .filter(p => Array.isArray(p.documents) && p.documents.includes(docType))
             .map(p => {
                 const label = (p.label || ('Printer #' + p.id));
                 const cls = 'overflow-item' + (indent ? ' overflow-indent' : '');
-                return `<button class="${cls}" data-print-doc="${escHtml(docType)}" data-print-id="${escHtml(p.id)}" data-print-label="${escHtml(label)}">${escHtml(prefix + label)}</button>`;
+                const orderAttr = orderId ? ` data-order-id="${escHtml(orderId)}"` : '';
+                return `<button class="${cls}" data-print-doc="${escHtml(docType)}" data-print-id="${escHtml(p.id)}" data-print-label="${escHtml(label)}"${orderAttr}>${escHtml(prefix + label)}</button>`;
             })
             .join('');
     }
@@ -1035,7 +1069,9 @@ const Orders = (() => {
     function refreshActionBar(order) {
         const sel = document.getElementById('order-status-sel');
         if (sel) sel.value = order.status;
-        document.getElementById('action-btns').innerHTML = actionButtons(order, xeroConnected);
+        const actionBtns = document.getElementById('action-btns');
+        if (!actionBtns) return; // not on the detail view — nothing to refresh
+        actionBtns.innerHTML = actionButtons(order, xeroConnected);
         wireDetailButtons(order);
     }
 
@@ -1080,79 +1116,7 @@ const Orders = (() => {
         </div>
 
         <!-- Packing Slip (printable) -->
-        <div class="packing-slip" id="packing-slip">
-
-            <!-- Top bar: logo + title -->
-            <div class="slip-top">
-                <img src="enviroware_logo_clean.png" alt="Enviroware" class="slip-logo">
-                <div class="slip-title">PACKING SLIP</div>
-            </div>
-
-            <hr class="slip-rule">
-
-            <!-- FROM / SHIP TO two-column -->
-            <div class="slip-body">
-                <div class="slip-from">
-                    <div class="slip-col-label">FROM</div>
-                    <div class="slip-from-name">Enviroware</div>
-                    <div class="slip-from-addr">93 Tetley Road,<br>Katikati</div>
-
-                    <div class="slip-inv-details">
-                        <div class="slip-col-label">INVOICE DETAILS</div>
-                        ${order.xeroInvoiceNumber
-                            ? `<div class="slip-inv-row"><span>Invoice No.</span><strong>${escHtml(order.xeroInvoiceNumber)}</strong></div>`
-                            : ''}
-                        <div class="slip-inv-row"><span>Order</span><strong>${escHtml(order.id)}</strong></div>
-                        ${order.poNumber
-                            ? `<div class="slip-inv-row"><span>PO</span><strong>${escHtml(order.poNumber)}</strong></div>`
-                            : ''}
-                    </div>
-                </div>
-
-                <div class="slip-shipto">
-                    <div class="slip-col-label">SHIP TO</div>
-                    ${order.shipTo?.branch
-                        ? `<div class="slip-shipto-name">${escHtml(order.shipTo.branch)}</div>`
-                        : `<div class="slip-shipto-name">${escHtml(order.customer.name)}</div>`}
-                    ${order.shipTo?.address
-                        ? `<div class="slip-shipto-addr">${escHtml(order.shipTo.address).replace(/\n/g, '<br>')}</div>`
-                        : ''}
-                </div>
-            </div>
-
-            <hr class="slip-rule">
-
-            <!-- Line items -->
-            <table class="slip-lines">
-                <thead>
-                    <tr>
-                        <th class="sl-qty">QTY</th>
-                        <th class="sl-sku">SKU</th>
-                        <th class="sl-desc">DESCRIPTION</th>
-                        <th class="sl-num">UNIT PRICE</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    ${order.lines.map(l => `
-                    <tr>
-                        <td class="sl-qty">${l.quantity || ''}</td>
-                        <td class="sl-sku">${escHtml(l.sku || '')}</td>
-                        <td class="sl-desc">${escHtml(l.description)}</td>
-                        <td class="sl-num">$${fmt(l.unitPrice)}</td>
-                    </tr>`).join('')}
-                </tbody>
-            </table>
-
-            ${order.packingNotes ? `
-            <div class="slip-notes">
-                <div class="slip-notes-label">Packing Notes</div>
-                <div class="slip-notes-text">${escHtml(order.packingNotes).replace(/\n/g, '<br>')}</div>
-            </div>` : ''}
-
-            <div class="slip-footer">
-                Enviroware &middot; orders@primetie.co.nz &middot; (07) 549-1716 &middot; 93 Tetley Road, Katikati
-            </div>
-        </div>
+        <div class="packing-slip" id="packing-slip">${slipBodyHTML(order)}</div>
 
         <!-- Activity log (hidden when printing) -->
         ${renderEventLog(order.events || [])}`;
@@ -1207,6 +1171,80 @@ const Orders = (() => {
         }
         @media print { @page { size: A4 landscape; margin: 0; } body { print-color-adjust: exact; } }
     `;
+
+    // Inner content of the printable .packing-slip element. Pulled out so the
+    // same markup can be rendered on the detail view, off-screen for PrintNode
+    // sends, or in a popup for browser-print.
+    function slipBodyHTML(order) {
+        return `
+            <div class="slip-top">
+                <img src="enviroware_logo_clean.png" alt="Enviroware" class="slip-logo">
+                <div class="slip-title">PACKING SLIP</div>
+            </div>
+
+            <hr class="slip-rule">
+
+            <div class="slip-body">
+                <div class="slip-from">
+                    <div class="slip-col-label">FROM</div>
+                    <div class="slip-from-name">Enviroware</div>
+                    <div class="slip-from-addr">93 Tetley Road,<br>Katikati</div>
+
+                    <div class="slip-inv-details">
+                        <div class="slip-col-label">INVOICE DETAILS</div>
+                        ${order.xeroInvoiceNumber
+                            ? `<div class="slip-inv-row"><span>Invoice No.</span><strong>${escHtml(order.xeroInvoiceNumber)}</strong></div>`
+                            : ''}
+                        <div class="slip-inv-row"><span>Order</span><strong>${escHtml(order.id)}</strong></div>
+                        ${order.poNumber
+                            ? `<div class="slip-inv-row"><span>PO</span><strong>${escHtml(order.poNumber)}</strong></div>`
+                            : ''}
+                    </div>
+                </div>
+
+                <div class="slip-shipto">
+                    <div class="slip-col-label">SHIP TO</div>
+                    ${order.shipTo?.branch
+                        ? `<div class="slip-shipto-name">${escHtml(order.shipTo.branch)}</div>`
+                        : `<div class="slip-shipto-name">${escHtml(order.customer.name)}</div>`}
+                    ${order.shipTo?.address
+                        ? `<div class="slip-shipto-addr">${escHtml(order.shipTo.address).replace(/\n/g, '<br>')}</div>`
+                        : ''}
+                </div>
+            </div>
+
+            <hr class="slip-rule">
+
+            <table class="slip-lines">
+                <thead>
+                    <tr>
+                        <th class="sl-qty">QTY</th>
+                        <th class="sl-sku">SKU</th>
+                        <th class="sl-desc">DESCRIPTION</th>
+                        <th class="sl-num">UNIT PRICE</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${(order.lines || []).map(l => `
+                    <tr>
+                        <td class="sl-qty">${l.quantity || ''}</td>
+                        <td class="sl-sku">${escHtml(l.sku || '')}</td>
+                        <td class="sl-desc">${escHtml(l.description)}</td>
+                        <td class="sl-num">$${fmt(l.unitPrice)}</td>
+                    </tr>`).join('')}
+                </tbody>
+            </table>
+
+            ${order.packingNotes ? `
+            <div class="slip-notes">
+                <div class="slip-notes-label">Packing Notes</div>
+                <div class="slip-notes-text">${escHtml(order.packingNotes).replace(/\n/g, '<br>')}</div>
+            </div>` : ''}
+
+            <div class="slip-footer">
+                Enviroware &middot; orders@primetie.co.nz &middot; (07) 549-1716 &middot; 93 Tetley Road, Katikati
+            </div>`;
+    }
 
     function addressPageBodyHTML(order) {
         const to   = order.shipTo?.branch || order.customer?.name || '';
@@ -1340,13 +1378,21 @@ const Orders = (() => {
     }
 
     async function sendSlipToPrinter(order, btn, { printerId, label } = {}) {
-        const slip = document.getElementById('packing-slip');
-        if (!slip) return;
         const orig = btn?.textContent;
         const dest = label || 'printer';
         if (btn) { btn.disabled = true; btn.textContent = `Sending → ${dest}…`; }
+
+        // Render the slip off-screen so this works from the list view too
+        // (where #packing-slip isn't on the page). Same .packing-slip class
+        // means the page's existing CSS is applied at capture time.
+        const host = document.createElement('div');
+        host.style.cssText = 'position:fixed;left:-100000px;top:0;background:#fff;';
+        host.innerHTML = `<div class="packing-slip">${slipBodyHTML(order)}</div>`;
+        document.body.appendChild(host);
+
         try {
-            const pdfBase64 = await elementToPdfBase64(slip, { orientation: 'portrait' });
+            const slipEl = host.querySelector('.packing-slip');
+            const pdfBase64 = await elementToPdfBase64(slipEl, { orientation: 'portrait' });
             const result = await sendToPrintNode({ order, document: 'slip', pdfBase64, printerId });
             showToast(`Slip sent to ${dest} (job #${result.jobId})`);
             logEvent(order.id, 'Sent packing slip to printer', `${dest} · PrintNode job #${result.jobId}`);
@@ -1364,6 +1410,7 @@ const Orders = (() => {
         } catch (e) {
             showErrorBanner('Print failed: ' + e.message);
         } finally {
+            host.remove();
             if (btn) { btn.disabled = false; btn.textContent = orig; }
         }
     }

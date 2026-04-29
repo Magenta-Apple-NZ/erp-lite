@@ -905,6 +905,13 @@ li.drag-over { background: #eff6ff; }
 }
 .row-action-btn:hover { background: #f1f5f9; color: #1e293b; }
 .row-action-btn--dim { opacity: 0.3; cursor: default; pointer-events: none; }
+/* When the overflow trigger is used inside a row, drop its default min-width
+   so it lines up with the surrounding 28×28 row-action-btn icons. */
+.row-actions .overflow-trigger { min-width: 0; padding: 0; font-size: 0.95rem; line-height: 1; }
+/* The Xero badge is its own coloured surface, so the icon-button hover bg
+   would muddy it. Keep the slot clean. */
+.row-action-btn--xero { padding: 0; }
+.row-action-btn--xero:hover { background: transparent; }
 
 /* ── Overflow / context menu ── */
 .overflow-menu { position: relative; display: inline-flex; }
