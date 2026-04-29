@@ -962,6 +962,22 @@ const Orders = (() => {
         }
     }
 
+    // Read the printer registry from the loaded config. Each entry:
+    //   { id: <PrintNode printer id>, label: "Warehouse", documents: ["slip","address","label"] }
+    function getPrinters() {
+        // currentConfig is declared with `let` at top of app.js — shared across non-module scripts.
+        const cfg = (typeof currentConfig !== 'undefined') ? currentConfig : null;
+        return Array.isArray(cfg?.printers) ? cfg.printers : [];
+    }
+
+    // Render one overflow-menu button per printer that supports the given document type.
+    function printerMenuItems(docType, prefix) {
+        return getPrinters()
+            .filter(p => Array.isArray(p.documents) && p.documents.includes(docType))
+            .map(p => `<button class="overflow-item" data-print-doc="${escHtml(docType)}" data-print-id="${escHtml(p.id)}" data-print-label="${escHtml(p.label || '')}">${escHtml(prefix)} → ${escHtml(p.label || ('Printer #' + p.id))}</button>`)
+            .join('');
+    }
+
     // ── Action bar buttons — driven by order status ──
     function actionButtons(order, xeroConnected) {
         const edit = `<a href="#orders/${order.id}/edit" class="btn-secondary btn-sm" id="edit-order-btn">Edit</a>`;
@@ -998,6 +1014,8 @@ const Orders = (() => {
                     ${!order.paidAt ? `<button class="overflow-item" id="mark-paid-btn">Mark as Paid</button>` : `<button class="overflow-item overflow-dim" id="mark-paid-btn" disabled>✓ Paid ${order.paidAt.slice(0,10)}</button>`}
                     <button class="overflow-item" id="print-slip-btn">Print Packing Slip</button>
                     <button class="overflow-item" id="print-address-btn">Print Address</button>
+                    ${printerMenuItems('slip', 'Send Slip')}
+                    ${printerMenuItems('address', 'Send Address')}
                     <button class="overflow-item overflow-danger" id="delete-order-btn">Delete</button>
                 </div>
             </div>`;
@@ -1142,43 +1160,43 @@ const Orders = (() => {
         </div>`;
     }
 
-    function printAddressPopup(order) {
+    // Address sheet — A4 landscape. The body markup and styles are shared between
+    // the "Print Address" popup (browser print) and the "Send Address to Printer"
+    // PrintNode flow (off-screen html2pdf capture).
+    const ADDRESS_PAGE_STYLES = `
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: white; }
+        .page {
+            width: 297mm; min-height: 210mm;
+            padding: 16mm 22mm 14mm;
+            display: flex; flex-direction: column;
+        }
+        .addr-header {
+            display: flex; justify-content: space-between; align-items: flex-start;
+            border-bottom: 2px solid #1e293b; padding-bottom: 7mm; margin-bottom: 9mm;
+        }
+        .addr-from { font-size: 9pt; color: #475569; line-height: 1.6; }
+        .addr-from strong { display: block; font-size: 11pt; color: #1e293b; margin-bottom: 2mm; }
+        .addr-label {
+            font-size: 9pt; font-weight: 700; text-transform: uppercase;
+            letter-spacing: 0.12em; color: #94a3b8; margin-bottom: 5mm;
+        }
+        .addr-to { flex: 1; }
+        .addr-name { font-size: 36pt; font-weight: 700; color: #1e293b; line-height: 1.15; margin-bottom: 5mm; }
+        .addr-street { font-size: 22pt; color: #334155; line-height: 1.5; white-space: pre-line; }
+        .addr-refs {
+            margin-top: auto; padding-top: 8mm; border-top: 1px solid #e2e8f0;
+            font-size: 10pt; color: #64748b; display: flex; gap: 12mm;
+        }
+        @media print { @page { size: A4 landscape; margin: 0; } body { print-color-adjust: exact; } }
+    `;
+
+    function addressPageBodyHTML(order) {
         const to   = order.shipTo?.branch || order.customer?.name || '';
         const addr = order.shipTo?.address || '';
         const ref  = order.xeroInvoiceNumber || order.id;
         const po   = order.poNumber ? `PO: ${order.poNumber}` : '';
-        // Landscape: 297mm × 210mm — open window at roughly that aspect ratio
-        const win = window.open('', '_blank', 'width=1100,height=780');
-        win.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8">
-            <title>Address – ${escHtml(ref)}</title>
-            <style>
-            * { box-sizing: border-box; margin: 0; padding: 0; }
-            body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: white; }
-            .page {
-                width: 297mm; min-height: 210mm;
-                padding: 16mm 22mm 14mm;
-                display: flex; flex-direction: column;
-            }
-            .addr-header {
-                display: flex; justify-content: space-between; align-items: flex-start;
-                border-bottom: 2px solid #1e293b; padding-bottom: 7mm; margin-bottom: 9mm;
-            }
-            .addr-from { font-size: 9pt; color: #475569; line-height: 1.6; }
-            .addr-from strong { display: block; font-size: 11pt; color: #1e293b; margin-bottom: 2mm; }
-            .addr-label {
-                font-size: 9pt; font-weight: 700; text-transform: uppercase;
-                letter-spacing: 0.12em; color: #94a3b8; margin-bottom: 5mm;
-            }
-            .addr-to { flex: 1; }
-            .addr-name { font-size: 36pt; font-weight: 700; color: #1e293b; line-height: 1.15; margin-bottom: 5mm; }
-            .addr-street { font-size: 22pt; color: #334155; line-height: 1.5; white-space: pre-line; }
-            .addr-refs {
-                margin-top: auto; padding-top: 8mm; border-top: 1px solid #e2e8f0;
-                font-size: 10pt; color: #64748b; display: flex; gap: 12mm;
-            }
-            @media print { @page { size: A4 landscape; margin: 0; } body { print-color-adjust: exact; } }
-            </style>
-            </head><body>
+        return `
             <div class="page">
                 <div class="addr-header">
                     <div class="addr-from">
@@ -1200,11 +1218,101 @@ const Orders = (() => {
                     <span>Order: <strong>${escHtml(order.id)}</strong></span>
                     ${po ? `<span>${escHtml(po)}</span>` : ''}
                 </div>
-            </div>
-            </body></html>`);
+            </div>`;
+    }
+
+    function printAddressPopup(order) {
+        const ref = order.xeroInvoiceNumber || order.id;
+        const win = window.open('', '_blank', 'width=1100,height=780');
+        win.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8">
+            <title>Address – ${escHtml(ref)}</title>
+            <style>${ADDRESS_PAGE_STYLES}</style>
+            </head><body>${addressPageBodyHTML(order)}</body></html>`);
         win.document.close();
         win.focus();
         setTimeout(() => { win.print(); }, 400);
+    }
+
+    // Render an element to a base64-encoded PDF (no data: prefix) using html2pdf.
+    // Element must already be in the DOM so it has computed dimensions.
+    async function elementToPdfBase64(el, { orientation = 'portrait' } = {}) {
+        if (typeof html2pdf === 'undefined') {
+            throw new Error('PDF library not loaded — refresh the page and try again');
+        }
+        const dataUri = await html2pdf()
+            .set({
+                margin: 0,
+                html2canvas: { scale: 2, backgroundColor: '#ffffff', useCORS: true, logging: false },
+                jsPDF: { unit: 'mm', format: 'a4', orientation },
+            })
+            .from(el)
+            .outputPdf('datauristring');
+        // Strip "data:application/pdf;base64,"
+        return dataUri.split(',')[1];
+    }
+
+    async function sendToPrintNode({ order, document: doc, pdfBase64, printerId }) {
+        return api('/api/print', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ orderId: order.id, document: doc, pdfBase64, printerId }),
+        });
+    }
+
+    async function sendSlipToPrinter(order, btn, { printerId, label } = {}) {
+        const slip = document.getElementById('packing-slip');
+        if (!slip) return;
+        const orig = btn?.textContent;
+        const dest = label || 'printer';
+        if (btn) { btn.disabled = true; btn.textContent = `Sending → ${dest}…`; }
+        try {
+            const pdfBase64 = await elementToPdfBase64(slip, { orientation: 'portrait' });
+            const result = await sendToPrintNode({ order, document: 'slip', pdfBase64, printerId });
+            showToast(`Slip sent to ${dest} (job #${result.jobId})`);
+            logEvent(order.id, 'Sent packing slip to printer', `${dest} · PrintNode job #${result.jobId}`);
+            // Mirror the "Print Packing Slip" flow: advance new → reviewed
+            if (order.status === 'new') {
+                api('/api/orders/' + order.id, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ status: 'reviewed' }),
+                }).then(() => {
+                    order.status = 'reviewed';
+                    refreshActionBar(order);
+                }).catch(() => {});
+            }
+        } catch (e) {
+            showErrorBanner('Print failed: ' + e.message);
+        } finally {
+            if (btn) { btn.disabled = false; btn.textContent = orig; }
+        }
+    }
+
+    async function sendAddressToPrinter(order, btn, { printerId, label } = {}) {
+        const orig = btn?.textContent;
+        const dest = label || 'printer';
+        if (btn) { btn.disabled = true; btn.textContent = `Sending → ${dest}…`; }
+
+        // Render the address sheet off-screen so html2canvas can capture it at its
+        // declared 297mm × 210mm size, then remove it.
+        const host = document.createElement('div');
+        host.style.cssText = 'position:fixed;left:-100000px;top:0;background:#fff;';
+        host.innerHTML =
+            `<style>${ADDRESS_PAGE_STYLES}</style>${addressPageBodyHTML(order)}`;
+        document.body.appendChild(host);
+
+        try {
+            const page = host.querySelector('.page');
+            const pdfBase64 = await elementToPdfBase64(page, { orientation: 'landscape' });
+            const result = await sendToPrintNode({ order, document: 'address', pdfBase64, printerId });
+            showToast(`Address sent to ${dest} (job #${result.jobId})`);
+            logEvent(order.id, 'Sent address sheet to printer', `${dest} · PrintNode job #${result.jobId}`);
+        } catch (e) {
+            showErrorBanner('Print failed: ' + e.message);
+        } finally {
+            host.remove();
+            if (btn) { btn.disabled = false; btn.textContent = orig; }
+        }
     }
 
     function wireDetailButtons(order) {
@@ -1302,6 +1410,18 @@ const Orders = (() => {
         // Print address sheet
         document.getElementById('print-address-btn')?.addEventListener('click', () => {
             printAddressPopup(order);
+        });
+
+        // Send-to-printer buttons are rendered dynamically from config.printers — one per
+        // (printer × document) combo. Wire them via data attributes rather than fixed ids.
+        document.querySelectorAll('#action-btns [data-print-doc]').forEach(btn => {
+            btn.addEventListener('click', e => {
+                const doc       = btn.dataset.printDoc;
+                const printerId = Number(btn.dataset.printId);
+                const label     = btn.dataset.printLabel || ('Printer #' + printerId);
+                if (doc === 'slip')    sendSlipToPrinter(order, e.currentTarget, { printerId, label });
+                if (doc === 'address') sendAddressToPrinter(order, e.currentTarget, { printerId, label });
+            });
         });
 
         // Print — opens clean popup, advances new → reviewed

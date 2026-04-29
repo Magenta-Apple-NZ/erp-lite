@@ -278,12 +278,13 @@ const Admin = (() => {
         <div class="view-header">
             <div>
                 <h1 class="view-title">Catalogue</h1>
-                <p class="view-subtitle">Manage product pricing and store locations.</p>
+                <p class="view-subtitle">Manage product pricing, store locations, and printers.</p>
             </div>
         </div>
         <div class="imp-tabs">
             <button class="imp-view-btn active" id="cat-tab-prices">Prices</button>
             <button class="imp-view-btn" id="cat-tab-stores">Stores</button>
+            <button class="imp-view-btn" id="cat-tab-printers">Printers</button>
         </div>
         <div id="admin-body"><div class="orders-loading">Loading…</div></div>`;
 
@@ -296,20 +297,101 @@ const Admin = (() => {
         } catch (e) { /* empty catalog is fine */ }
 
         const body = document.getElementById('admin-body');
-        let activeTab = 'prices';
 
         function switchTab(tab) {
-            activeTab = tab;
             document.getElementById('cat-tab-prices').classList.toggle('active', tab === 'prices');
             document.getElementById('cat-tab-stores').classList.toggle('active', tab === 'stores');
-            if (tab === 'prices') renderPricesTab(body, items, updated => { items = updated; });
-            else renderStoresTab(body, stores, updated => { stores = updated; });
+            document.getElementById('cat-tab-printers').classList.toggle('active', tab === 'printers');
+            if (tab === 'prices')        renderPricesTab(body, items, updated => { items = updated; });
+            else if (tab === 'stores')   renderStoresTab(body, stores, updated => { stores = updated; });
+            else if (tab === 'printers') renderPrintersTab(body);
         }
 
-        document.getElementById('cat-tab-prices').addEventListener('click', () => switchTab('prices'));
-        document.getElementById('cat-tab-stores').addEventListener('click', () => switchTab('stores'));
+        document.getElementById('cat-tab-prices').addEventListener('click',   () => switchTab('prices'));
+        document.getElementById('cat-tab-stores').addEventListener('click',   () => switchTab('stores'));
+        document.getElementById('cat-tab-printers').addEventListener('click', () => switchTab('printers'));
 
         switchTab('prices');
+    }
+
+    // ── Printers tab ──
+    // Lists printers visible to the configured PrintNode API key, alongside the
+    // current config.json registry. Lookup is read-only — to map a printer for
+    // routing, copy its ID and add an entry to config.json under "printers".
+    async function renderPrintersTab(body) {
+        body.innerHTML = `<div class="orders-loading">Loading printers…</div>`;
+
+        let resp;
+        try {
+            resp = await api('/api/print/printers');
+        } catch (e) {
+            body.innerHTML = `
+                <div class="cat-empty">
+                    <p><strong>Could not reach PrintNode.</strong></p>
+                    <p style="color:#64748b">${escHtml(e.message)}</p>
+                    <p style="color:#64748b">Check that <code>PRINTNODE_API_KEY</code> is set in Cloudflare Pages env vars.</p>
+                </div>`;
+            return;
+        }
+
+        const configured = (typeof currentConfig !== 'undefined' && Array.isArray(currentConfig.printers))
+            ? currentConfig.printers : [];
+        const configuredById = new Map(configured.map(p => [Number(p.id), p]));
+
+        const printerRows = (resp.printers || []).map(p => {
+            const cfg = configuredById.get(Number(p.id));
+            const stateColour = p.state === 'online' ? '#10b981' : '#ef4444';
+            const cfgCell = cfg
+                ? `<span style="color:#10b981">✓ ${escHtml(cfg.label)}</span><br><span style="color:#94a3b8;font-size:0.85em">${escHtml((cfg.documents || []).join(', '))}</span>`
+                : `<span style="color:#94a3b8">— not in config.json</span>`;
+            return `
+                <tr>
+                    <td><strong>${escHtml(p.name)}</strong>${p.description ? `<br><span style="color:#94a3b8;font-size:0.85em">${escHtml(p.description)}</span>` : ''}</td>
+                    <td>${escHtml(p.computer || '')}</td>
+                    <td><span style="color:${stateColour}">●</span> ${escHtml(p.state || 'unknown')}</td>
+                    <td><code>${escHtml(p.id)}</code> <button class="btn-secondary btn-sm" data-copy-id="${escHtml(p.id)}">Copy</button></td>
+                    <td>${cfgCell}</td>
+                </tr>`;
+        }).join('');
+
+        const orphanRows = configured
+            .filter(c => !(resp.printers || []).some(p => Number(p.id) === Number(c.id)))
+            .map(c => `
+                <tr style="background:#fef2f2">
+                    <td><strong>${escHtml(c.label)}</strong><br><span style="color:#ef4444;font-size:0.85em">configured but not visible to PrintNode</span></td>
+                    <td>—</td><td><span style="color:#ef4444">● offline / unknown</span></td>
+                    <td><code>${escHtml(c.id)}</code></td>
+                    <td>${escHtml((c.documents || []).join(', '))}</td>
+                </tr>`).join('');
+
+        body.innerHTML = `
+            <div class="cat-section">
+                <p style="color:#64748b;margin-bottom:1rem">
+                    Printers visible to the configured PrintNode API key. To route slips/addresses to a printer,
+                    add an entry to <code>config.json</code> under <code>"printers"</code>:
+                </p>
+                <pre style="background:#f8fafc;padding:0.75rem;border-radius:6px;font-size:0.85em;overflow:auto;margin-bottom:1.25rem">{ "id": 70123456, "label": "Warehouse", "documents": ["slip", "address"] }</pre>
+                <table class="cat-table">
+                    <thead>
+                        <tr>
+                            <th>Name</th><th>Computer</th><th>State</th><th>PrintNode ID</th><th>Configured for</th>
+                        </tr>
+                    </thead>
+                    <tbody>${printerRows || `<tr><td colspan="5" style="text-align:center;color:#94a3b8;padding:1rem">No printers registered with PrintNode yet</td></tr>`}${orphanRows}</tbody>
+                </table>
+            </div>`;
+
+        body.querySelectorAll('[data-copy-id]').forEach(btn => {
+            btn.addEventListener('click', async () => {
+                const id = btn.dataset.copyId;
+                try {
+                    await navigator.clipboard.writeText(id);
+                    showToast(`Copied printer ID ${id}`);
+                } catch (e) {
+                    showToast('Copy failed — select and copy manually');
+                }
+            });
+        });
     }
 
     return { renderAdmin };

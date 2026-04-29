@@ -7,9 +7,13 @@
 # 2. npx wrangler kv:namespace create XERO_KV
 #    → copy the id into [[kv_namespaces]] below
 # 3. In Cloudflare Pages dashboard → Settings → Environment variables, set:
-#    XERO_CLIENT_ID     = (from developer.xero.com)
-#    XERO_CLIENT_SECRET = (from developer.xero.com)
-#    XERO_REDIRECT_URI  = https://hub.primetie.co.nz/api/xero/callback
+#    XERO_CLIENT_ID       = (from developer.xero.com)
+#    XERO_CLIENT_SECRET   = (from developer.xero.com)
+#    XERO_REDIRECT_URI    = https://hub.primetie.co.nz/api/xero/callback
+#    PRINTNODE_API_KEY    = (from app.printnode.com → API Keys)
+# Printer mappings are stored in config.json under "printers" (each entry has
+# id, label, and a list of supported document types). Discover printer IDs in
+# the Hub: Catalogue → Printers tab. PRINTNODE_PRINTER_ID is no longer needed.
 # 4. In Pages dashboard → Functions → KV namespace bindings, bind:
 #    ORDERS_KV → the namespace you created
 #    XERO_KV   → the namespace you created
