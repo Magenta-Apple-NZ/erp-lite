@@ -284,6 +284,7 @@ const Orders = (() => {
                                         <div class="overflow-dropdown">
                                             <div class="overflow-section">Send Packing Slip</div>
                                             ${printerMenuItems('slip', { indent: true, orderId: o.id })}
+                                            <button class="overflow-item overflow-indent" data-download-slip="${o.id}">Download as PDF</button>
                                             <hr class="overflow-divider">
                                             ${printerMenuItems('address', { prefix: 'Send Address to ', orderId: o.id })}
                                             <hr class="overflow-divider">
@@ -312,6 +313,13 @@ const Orders = (() => {
                 if (!order) return;
                 if (doc === 'slip')    sendSlipToPrinter(order, sendBtn, { printerId, label });
                 if (doc === 'address') sendAddressToPrinter(order, sendBtn, { printerId, label });
+                return;
+            }
+            // Row-level download packing slip as PDF
+            const downloadBtn = e.target.closest('[data-download-slip]');
+            if (downloadBtn) {
+                const order = orders.find(o => o.id === downloadBtn.dataset.downloadSlip);
+                if (order) downloadSlipAsPdf(order, downloadBtn);
                 return;
             }
             // Browser-print delivery address (truck icon + any other data-pa-id button)
@@ -1053,6 +1061,7 @@ const Orders = (() => {
                     <div class="overflow-section">Send Packing Slip</div>
                     ${printerMenuItems('slip', { indent: true })}
                     <button class="overflow-item overflow-indent" id="print-slip-btn">Local Printer</button>
+                    <button class="overflow-item overflow-indent" id="download-slip-btn">Download as PDF</button>
                     <hr class="overflow-divider">
                     <button class="overflow-item" id="print-address-btn">Print Address</button>
                     ${printerMenuItems('address', { prefix: 'Send Address to ' })}
@@ -1437,6 +1446,48 @@ const Orders = (() => {
         }
     }
 
+    // Generate the packing slip as a downloadable PDF — same render path as
+    // the printer flow, but saved to disk instead of POSTed to PrintNode.
+    // Filename matches the PrintNode job title so it lines up with the order log.
+    async function downloadSlipAsPdf(order, btn) {
+        const orig = btn?.textContent;
+        if (btn) { btn.disabled = true; btn.textContent = 'Generating PDF…'; }
+
+        // Render off-screen so this works from the list view too.
+        const host = document.createElement('div');
+        host.style.cssText = 'position:fixed;left:-100000px;top:0;background:#fff;';
+        host.innerHTML = `<div class="packing-slip">${slipBodyHTML(order)}</div>`;
+        document.body.appendChild(host);
+
+        try {
+            if (typeof html2pdf === 'undefined') {
+                throw new Error('PDF library not loaded — refresh the page and try again');
+            }
+            const slipEl = host.querySelector('.packing-slip');
+            const ref = order.xeroInvoiceNumber || order.id;
+            const filename = `Packing Slip — ${ref}.pdf`;
+
+            await html2pdf()
+                .set({
+                    margin: 0,
+                    html2canvas: { scale: 2, backgroundColor: '#ffffff', useCORS: true, logging: false },
+                    jsPDF:      { unit: 'mm', format: 'a4', orientation: 'portrait' },
+                    filename,
+                })
+                .from(slipEl)
+                .save();
+
+            showToast(`Downloaded ${filename}`);
+            logEvent(order.id, 'Downloaded packing slip', filename);
+        } catch (e) {
+            showErrorBanner('Download failed: ' + e.message);
+            logEvent(order.id, 'Download error', e.message);
+        } finally {
+            host.remove();
+            if (btn) { btn.disabled = false; btn.textContent = orig; }
+        }
+    }
+
     async function sendAddressToPrinter(order, btn, { printerId, label } = {}) {
         const orig = btn?.textContent;
         const dest = label || 'printer';
@@ -1548,6 +1599,11 @@ const Orders = (() => {
         // Print address sheet
         document.getElementById('print-address-btn')?.addEventListener('click', () => {
             printAddressPopup(order);
+        });
+
+        // Download packing slip as PDF
+        document.getElementById('download-slip-btn')?.addEventListener('click', e => {
+            downloadSlipAsPdf(order, e.currentTarget);
         });
 
         // Send-to-printer buttons are rendered dynamically from config.printers — one per
