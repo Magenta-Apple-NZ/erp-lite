@@ -1377,10 +1377,16 @@ const Orders = (() => {
         });
     }
 
+    // Translate a PrintNode terminal failure into a single line for both
+    // the on-screen banner and the order log.
+    function describePrintFailure(result) {
+        return result.message ? `${result.state}: ${result.message}` : result.state;
+    }
+
     async function sendSlipToPrinter(order, btn, { printerId, label } = {}) {
         const orig = btn?.textContent;
         const dest = label || 'printer';
-        if (btn) { btn.disabled = true; btn.textContent = `Sending → ${dest}…`; }
+        if (btn) { btn.disabled = true; btn.textContent = `Printing → ${dest}…`; }
 
         // Render the slip off-screen so this works from the list view too
         // (where #packing-slip isn't on the page). Same .packing-slip class
@@ -1394,21 +1400,37 @@ const Orders = (() => {
             const slipEl = host.querySelector('.packing-slip');
             const pdfBase64 = await elementToPdfBase64(slipEl, { orientation: 'portrait' });
             const result = await sendToPrintNode({ order, document: 'slip', pdfBase64, printerId });
-            showToast(`Slip sent to ${dest} (job #${result.jobId})`);
-            logEvent(order.id, 'Sent packing slip to printer', `${dest} · PrintNode job #${result.jobId}`);
-            // Mirror the "Print Packing Slip" flow: advance new → reviewed
-            if (order.status === 'new') {
-                api('/api/orders/' + order.id, {
-                    method: 'PATCH',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ status: 'reviewed' }),
-                }).then(() => {
-                    order.status = 'reviewed';
-                    refreshActionBar(order);
-                }).catch(() => {});
+
+            const jobRef = `PrintNode job #${result.jobId}`;
+
+            if (result.success) {
+                // Confirmed printed — terminal state was 'done'.
+                showToast(`Slip printed at ${dest} (${jobRef})`);
+                logEvent(order.id, 'Printed packing slip', `${dest} · ${jobRef}`);
+                if (order.status === 'new') {
+                    api('/api/orders/' + order.id, {
+                        method: 'PATCH',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ status: 'reviewed' }),
+                    }).then(() => {
+                        order.status = 'reviewed';
+                        refreshActionBar(order);
+                    }).catch(() => {});
+                }
+            } else if (result.confirmed) {
+                // Terminal failure (error/cancelled/expired) — surface PrintNode's verbatim message.
+                const detail = describePrintFailure(result);
+                showErrorBanner(`Print FAILED at ${dest} — ${detail}. Use "Print in browser" as a fallback. (${jobRef})`);
+                logEvent(order.id, 'Print failed', `${dest} · ${detail} · ${jobRef}`);
+            } else {
+                // Polling closed without a terminal state — likely the local PrintNode Client is offline.
+                const stateLabel = result.state || 'pending';
+                showErrorBanner(`Slip not confirmed at ${dest} after 25s — last state: ${stateLabel}. The PrintNode Client may be offline. Use "Print in browser" as a fallback. (${jobRef})`);
+                logEvent(order.id, 'Print unconfirmed', `${dest} · last state: ${stateLabel} · ${jobRef}`);
             }
         } catch (e) {
             showErrorBanner('Print failed: ' + e.message);
+            logEvent(order.id, 'Print error', e.message);
         } finally {
             host.remove();
             if (btn) { btn.disabled = false; btn.textContent = orig; }
@@ -1418,7 +1440,7 @@ const Orders = (() => {
     async function sendAddressToPrinter(order, btn, { printerId, label } = {}) {
         const orig = btn?.textContent;
         const dest = label || 'printer';
-        if (btn) { btn.disabled = true; btn.textContent = `Sending → ${dest}…`; }
+        if (btn) { btn.disabled = true; btn.textContent = `Printing → ${dest}…`; }
 
         // Render the address sheet off-screen so html2canvas can capture it at its
         // declared 297mm × 210mm size, then remove it.
@@ -1432,10 +1454,24 @@ const Orders = (() => {
             const page = host.querySelector('.page');
             const pdfBase64 = await elementToPdfBase64(page, { orientation: 'landscape' });
             const result = await sendToPrintNode({ order, document: 'address', pdfBase64, printerId });
-            showToast(`Address sent to ${dest} (job #${result.jobId})`);
-            logEvent(order.id, 'Sent address sheet to printer', `${dest} · PrintNode job #${result.jobId}`);
+
+            const jobRef = `PrintNode job #${result.jobId}`;
+
+            if (result.success) {
+                showToast(`Address printed at ${dest} (${jobRef})`);
+                logEvent(order.id, 'Printed address sheet', `${dest} · ${jobRef}`);
+            } else if (result.confirmed) {
+                const detail = describePrintFailure(result);
+                showErrorBanner(`Address print FAILED at ${dest} — ${detail}. (${jobRef})`);
+                logEvent(order.id, 'Address print failed', `${dest} · ${detail} · ${jobRef}`);
+            } else {
+                const stateLabel = result.state || 'pending';
+                showErrorBanner(`Address not confirmed at ${dest} after 25s — last state: ${stateLabel}. The PrintNode Client may be offline. (${jobRef})`);
+                logEvent(order.id, 'Address print unconfirmed', `${dest} · last state: ${stateLabel} · ${jobRef}`);
+            }
         } catch (e) {
             showErrorBanner('Print failed: ' + e.message);
+            logEvent(order.id, 'Print error', e.message);
         } finally {
             host.remove();
             if (btn) { btn.disabled = false; btn.textContent = orig; }
