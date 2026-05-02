@@ -2732,3 +2732,214 @@ a.xero-inv-linked:hover { background: #d1fae5; border-color: #6ee7b7; }
 }
 .sales-ytd-up { background: #dcfce7; color: #15803d; }
 .sales-ytd-dn { background: #fee2e2; color: #dc2626; }
+/* ────────────────────────────────────────────────────────────────
+   Shipment detail — rigid schema (Shipment #42 onwards)
+   Two-column layout with a sticky % of Total chart on the right.
+   ──────────────────────────────────────────────────────────────── */
+
+.ship-detail-view--new .ship-detail-layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 280px;
+    gap: 1.5rem;
+    align-items: start;
+}
+.ship-detail-view--new .ship-detail-main { min-width: 0; }
+
+.ship-pct-chart {
+    position: sticky;
+    top: 1rem;
+    background: white;
+    border: 1px solid #e2e8f0;
+    border-radius: 0.5rem;
+    padding: 1rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.85rem;
+}
+.ship-pct-title {
+    margin: 0;
+    font-size: 0.78rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: #64748b;
+    font-weight: 600;
+}
+.ship-pct-row { display: flex; flex-direction: column; gap: 0.25rem; }
+.ship-pct-row-hd {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 0.5rem;
+}
+.ship-pct-row-name { font-size: 0.85rem; font-weight: 600; }
+.ship-pct-row-pct {
+    font-size: 0.8rem;
+    color: #475569;
+    font-variant-numeric: tabular-nums;
+}
+.ship-pct-bar {
+    height: 8px;
+    background: #f1f5f9;
+    border-radius: 4px;
+    overflow: hidden;
+}
+.ship-pct-bar-fill {
+    height: 100%;
+    border-radius: 4px;
+    transition: width 0.25s ease;
+}
+.ship-pct-row-val {
+    font-size: 0.78rem;
+    color: #64748b;
+    font-variant-numeric: tabular-nums;
+    text-align: right;
+}
+.ship-pct-total {
+    margin-top: 0.5rem;
+    padding-top: 0.75rem;
+    border-top: 1px solid #e2e8f0;
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    font-size: 0.9rem;
+    color: #0f172a;
+}
+.ship-pct-total strong { font-size: 1.05rem; font-variant-numeric: tabular-nums; }
+
+/* Section blocks within the cost breakdown */
+.ship-fix-section { margin-bottom: 1.25rem; }
+.ship-fix-section-hd {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    margin-bottom: 0.4rem;
+}
+.ship-fix-section-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+.ship-fix-section-name { font-size: 0.95rem; font-weight: 600; color: #0f172a; }
+.ship-fix-section-sum {
+    margin-left: auto;
+    font-size: 0.9rem;
+    font-variant-numeric: tabular-nums;
+    color: #475569;
+}
+
+/* Rigid line table */
+.ship-fix-table {
+    width: 100%;
+    border-collapse: collapse;
+    background: white;
+    border: 1px solid #e2e8f0;
+    border-radius: 0.4rem;
+    overflow: hidden;
+}
+.ship-fix-table thead th {
+    background: #f8fafc;
+    color: #475569;
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    font-weight: 600;
+    text-align: left;
+    padding: 0.4rem 0.6rem;
+    border-bottom: 1px solid #e2e8f0;
+}
+.ship-fix-th-amt     { width: 200px; }
+.ship-fix-th-mult    { width: 200px; }
+.ship-fix-th-nzd     { width: 110px; text-align: right !important; }
+.ship-fix-th-paidvia { width: 130px; }
+.ship-fix-th-chk     { width: 28px;  text-align: center !important; }
+
+.ship-fix-row td {
+    padding: 0.35rem 0.6rem;
+    border-bottom: 1px solid #f1f5f9;
+    vertical-align: middle;
+    font-size: 0.88rem;
+}
+.ship-fix-row:last-child td { border-bottom: none; }
+.ship-fix-row--paid td { background: #f0fdf4; }
+.ship-fix-row--paid .ship-fix-num,
+.ship-fix-row--paid .ship-fix-paidvia { color: #475569; }
+
+.ship-fix-td-label  { font-weight: 500; color: #1e293b; }
+.ship-fix-td-amt    { display: flex; align-items: center; gap: 4px; }
+.ship-fix-td-nzd    { text-align: right; font-variant-numeric: tabular-nums; color: #0f172a; }
+.ship-fix-td-mult   { color: #64748b; font-size: 0.8rem; }
+.ship-fix-td-chk    { text-align: center; }
+
+.ship-fix-num {
+    width: 90px;
+    padding: 0.25rem 0.4rem;
+    border: 1px solid transparent;
+    border-radius: 4px;
+    font-size: 0.88rem;
+    font-variant-numeric: tabular-nums;
+    background: transparent;
+}
+.ship-fix-num:hover { border-color: #e2e8f0; background: white; }
+.ship-fix-num:focus { border-color: #3b82f6; background: white; outline: none; }
+.ship-fix-unit { color: #64748b; font-size: 0.78rem; margin-right: 4px; }
+.ship-fix-ccy {
+    padding: 0.2rem 0.3rem;
+    border: 1px solid #e2e8f0;
+    border-radius: 4px;
+    font-size: 0.8rem;
+    background: white;
+}
+.ship-fix-paidvia {
+    width: 100%;
+    padding: 0.25rem 0.4rem;
+    border: 1px solid transparent;
+    border-radius: 4px;
+    font-size: 0.85rem;
+    background: transparent;
+}
+.ship-fix-paidvia:hover { border-color: #e2e8f0; background: white; }
+.ship-fix-paidvia:focus { border-color: #3b82f6; background: white; outline: none; }
+.ship-fix-mult { display: inline-block; }
+.ship-fix-localtotal { display: inline-block; margin-left: 0.5rem; color: #475569; }
+.ship-fix-nil { color: #cbd5e1; }
+.ship-fix-fxtag {
+    display: inline-block;
+    margin-left: 0.4rem;
+    padding: 1px 4px;
+    background: #f1f5f9;
+    border-radius: 3px;
+    font-size: 0.7rem;
+    color: #64748b;
+    font-variant-numeric: tabular-nums;
+}
+.ship-fix-other-empty {
+    margin: 0.25rem 0 0;
+    color: #94a3b8;
+    font-size: 0.85rem;
+    font-style: italic;
+}
+
+/* Raw Product split inputs */
+.ship-raw-split {
+    display: flex;
+    align-items: end;
+    gap: 1rem;
+    flex-wrap: wrap;
+}
+.ship-raw-split-field { display: flex; flex-direction: column; gap: 0.2rem; }
+.ship-raw-split-field input { width: 130px; }
+.ship-raw-split-status {
+    margin-left: auto;
+    font-size: 0.85rem;
+    font-variant-numeric: tabular-nums;
+}
+.ship-raw-split-ok  { color: #16a34a; }
+.ship-raw-split-bad { color: #d97706; }
+
+/* Below ~1100px — drop the chart under the main column instead of beside it */
+@media (max-width: 1100px) {
+    .ship-detail-view--new .ship-detail-layout { grid-template-columns: minmax(0, 1fr); }
+    .ship-pct-chart { position: static; }
+}
+

@@ -834,7 +834,426 @@ const Warehouse = (() => {
             </div>`;
         }
 
+        // ────────────────────────────────────────────────────────────────
+        // RIGID SCHEMA (Shipment #42 onwards)
+        //
+        // Every new shipment carries a fixed set of cost lines under three
+        // sections (Raw Product / Processing / Freight). A fourth section,
+        // "Other Costs", takes free-form lines via the existing costLines
+        // array. The right-hand "% of Total" chart is driven off the four
+        // section totals.
+        //
+        // Detection: shipments with s.seq are rendered by renderShipDetailNew.
+        // Legacy shipments (no seq) keep falling through to the original
+        // free-form renderer below.
+        // ────────────────────────────────────────────────────────────────
+
+        const SHIP_SECTIONS = [
+            { key: 'product',    label: 'Cost of Product',  colour: '#16a34a' },
+            { key: 'processing', label: 'Processing Costs', colour: '#7c3aed' },
+            { key: 'freight',    label: 'Freight Costs',    colour: '#2563eb' },
+            { key: 'other',      label: 'Other Costs',      colour: '#64748b' },
+        ];
+
+        // Each entry: kind = 'rawProduct' (rate × own kg), 'perKg' (rate × shipment kg), or 'flat' (amount).
+        const FIXED_LINE_SCHEMA = [
+            { key: 'rawWhite',       section: 'product',    label: 'Raw Product (White)',  kind: 'rawProduct', kgField: 'rawWhiteKg',  defaultRate: 0,     defaultCcy: 'EUR' },
+            { key: 'rawColour',      section: 'product',    label: 'Raw Product (Colour)', kind: 'rawProduct', kgField: 'rawColourKg', defaultRate: 0,     defaultCcy: 'EUR' },
+            { key: 'sorting',        section: 'processing', label: 'Sorting',              kind: 'perKg',      defaultRate: 1.18,  defaultCcy: 'USD' },
+            { key: 'bundling',       section: 'processing', label: 'Bundling',             kind: 'perKg',      defaultRate: 70,    defaultCcy: 'BDT' },
+            { key: 'fixedBundling',  section: 'processing', label: 'Fixed bundling',       kind: 'flat',       defaultAmount: 10000, defaultCcy: 'USD' },
+            { key: 'freightItalyBd', section: 'freight',    label: 'Italy → Bangladesh',   kind: 'flat',       defaultAmount: 9000,  defaultCcy: 'USD' },
+            { key: 'freightBdTga',   section: 'freight',    label: 'Bangladesh → Tauranga',kind: 'flat',       defaultAmount: 8000,  defaultCcy: 'USD' },
+            { key: 'freightTgaKati', section: 'freight',    label: 'Tauranga → Katikati',  kind: 'flat',       defaultAmount: 5000,  defaultCcy: 'NZD' },
+        ];
+
+        // Build the default fixedLines map for a fresh shipment.
+        function defaultFixedLines() {
+            const out = {};
+            for (const def of FIXED_LINE_SCHEMA) {
+                const line = { ccy: def.defaultCcy, paid: false, paidVia: '' };
+                if (def.kind === 'flat') line.amount = def.defaultAmount;
+                else                     line.rate   = def.defaultRate;
+                out[def.key] = line;
+            }
+            return out;
+        }
+
+        // Default kg split: 60% white / 40% colour (rounded to whole kg).
+        function defaultRawSplit(kg) {
+            const w = Math.round((kg || 0) * 0.6);
+            return { rawWhiteKg: w, rawColourKg: Math.max(0, (kg || 0) - w) };
+        }
+
+        // Convert a single fixed line into NZD using current forex rates.
+        // kind dictates which factor to multiply the value by.
+        function fixedLineNzd(def, line, s, forex) {
+            if (!line) return 0;
+            let amount = 0;
+            if (def.kind === 'flat')          amount = Number(line.amount) || 0;
+            else if (def.kind === 'perKg')    amount = (Number(line.rate) || 0) * (Number(s.kg) || 0);
+            else if (def.kind === 'rawProduct') amount = (Number(line.rate) || 0) * (Number(s[def.kgField]) || 0);
+            if (!amount) return 0;
+            const ccy = line.ccy || def.defaultCcy;
+            if (ccy === 'NZD') return amount;
+            const rate = forex[ccy];
+            return rate ? amount / rate : amount;
+        }
+
+        // Convert a freeform Other-Costs line to NZD.
+        function otherLineNzd(l, forex) {
+            const amt = Number(l.amount) || 0;
+            if (!amt) return 0;
+            if (!l.ccy || l.ccy === 'NZD') return amt;
+            const rate = forex[l.ccy];
+            return rate ? amt / rate : amt;
+        }
+
+        // Compute per-section NZD totals and the global total/paid figures.
+        function computeShipTotalsNew(s, forex) {
+            const fixed = s.fixedLines || {};
+            const sectionTotals = { product: 0, processing: 0, freight: 0, other: 0 };
+            const sectionPaid   = { product: 0, processing: 0, freight: 0, other: 0 };
+            for (const def of FIXED_LINE_SCHEMA) {
+                const line = fixed[def.key];
+                const nzd  = fixedLineNzd(def, line, s, forex);
+                sectionTotals[def.section] += nzd;
+                if (line?.paid) sectionPaid[def.section] += nzd;
+            }
+            for (const l of (s.costLines || [])) {
+                const nzd = otherLineNzd(l, forex);
+                sectionTotals.other += nzd;
+                if (l.paid) sectionPaid.other += nzd;
+            }
+            const total = sectionTotals.product + sectionTotals.processing + sectionTotals.freight + sectionTotals.other;
+            const paid  = sectionPaid.product  + sectionPaid.processing  + sectionPaid.freight  + sectionPaid.other;
+            return { sectionTotals, sectionPaid, total, paid };
+        }
+
+        // Right-side sticky chart: four horizontal bars showing each section's
+        // share of the total. Bars use the section colours from SHIP_SECTIONS.
+        function buildPctChartHtml(sectionTotals, total) {
+            const bars = SHIP_SECTIONS.map(sec => {
+                const v = sectionTotals[sec.key] || 0;
+                const pct = total > 0 ? (v / total) * 100 : 0;
+                const pctTxt = total > 0 ? pct.toFixed(1) + '%' : '—';
+                const valTxt = v > 0 ? '$' + Math.round(v).toLocaleString('en-NZ') : '$0';
+                return `<div class="ship-pct-row">
+                    <div class="ship-pct-row-hd">
+                        <span class="ship-pct-row-name" style="color:${sec.colour}">${sec.label}</span>
+                        <span class="ship-pct-row-pct">${pctTxt}</span>
+                    </div>
+                    <div class="ship-pct-bar"><div class="ship-pct-bar-fill" style="width:${Math.min(100,pct).toFixed(2)}%;background:${sec.colour}"></div></div>
+                    <div class="ship-pct-row-val">${valTxt}</div>
+                </div>`;
+            }).join('');
+
+            return `<aside class="ship-pct-chart">
+                <h4 class="ship-pct-title">% of Total</h4>
+                ${bars}
+                <div class="ship-pct-total">
+                    <span>Total</span>
+                    <strong>${total > 0 ? '$' + Math.round(total).toLocaleString('en-NZ') : '$0'}</strong>
+                </div>
+            </aside>`;
+        }
+
+        const CCYS_FIXED = ['NZD', 'USD', 'EUR', 'AUD', 'CNY', 'BDT'];
+
+        // Render one rigid line as a table row. Per-kg lines show their rate
+        // and the auto-computed total (kg × rate); flat lines just show the
+        // amount. Both still expose ccy + paid + paidVia.
+        function buildFixedRowHtml(s, def, forex) {
+            const line = (s.fixedLines || {})[def.key] || {};
+            const nzd  = fixedLineNzd(def, line, s, forex);
+            const ccy  = line.ccy || def.defaultCcy;
+
+            let amountCellInner = '';
+            if (def.kind === 'flat') {
+                const amt = line.amount != null ? line.amount : '';
+                amountCellInner = `<input class="ship-fix-num" data-f="amount" type="number" value="${amt}" placeholder="0" step="0.01" min="0">`;
+            } else {
+                // perKg or rawProduct — show rate, with the multiplier in the kg cell
+                const rate = line.rate != null ? line.rate : '';
+                amountCellInner = `<input class="ship-fix-num" data-f="rate" type="number" value="${rate}" placeholder="0" step="0.01" min="0"><span class="ship-fix-unit">/kg</span>`;
+            }
+
+            const ccySelect = `<select class="ship-fix-ccy" data-f="ccy">
+                ${CCYS_FIXED.map(c => `<option${c === ccy ? ' selected' : ''}>${c}</option>`).join('')}
+            </select>`;
+
+            // For per-kg lines, show the multiplier (own kg or shipment kg) and the local-ccy total;
+            // for flat lines, this column is blank.
+            let multCell = '';
+            if (def.kind === 'rawProduct') {
+                const ownKg = Number(s[def.kgField]) || 0;
+                const localTotal = (Number(line.rate) || 0) * ownKg;
+                multCell = `<span class="ship-fix-mult">× ${ownKg.toLocaleString('en-NZ')} kg</span>` +
+                           (localTotal > 0 ? `<span class="ship-fix-localtotal">= ${localTotal.toLocaleString('en-NZ',{maximumFractionDigits:2})} ${ccy}</span>` : '');
+            } else if (def.kind === 'perKg') {
+                const shipKg = Number(s.kg) || 0;
+                const localTotal = (Number(line.rate) || 0) * shipKg;
+                multCell = `<span class="ship-fix-mult">× ${shipKg.toLocaleString('en-NZ')} kg</span>` +
+                           (localTotal > 0 ? `<span class="ship-fix-localtotal">= ${localTotal.toLocaleString('en-NZ',{maximumFractionDigits:2})} ${ccy}</span>` : '');
+            }
+
+            const liveFx = ccy && ccy !== 'NZD' && forex[ccy];
+
+            return `<tr class="ship-fix-row${line.paid ? ' ship-fix-row--paid' : ''}" data-ship-id="${escHtml(s.id)}" data-line-key="${escHtml(def.key)}">
+                <td class="ship-fix-td-label">${escHtml(def.label)}</td>
+                <td class="ship-fix-td-amt">${amountCellInner}${ccySelect}</td>
+                <td class="ship-fix-td-mult">${multCell}</td>
+                <td class="ship-fix-td-nzd">
+                    ${nzd > 0 ? `<span>$${Math.round(nzd).toLocaleString('en-NZ')}</span>` : '<span class="ship-fix-nil">—</span>'}
+                    ${liveFx ? `<span class="ship-fix-fxtag">${forex[ccy].toFixed(4)}</span>` : ''}
+                </td>
+                <td class="ship-fix-td-paidvia"><input class="ship-fix-paidvia" data-f="paidVia" value="${escHtml(line.paidVia || '')}" placeholder="Paid via…"></td>
+                <td class="ship-fix-td-chk"><input type="checkbox" class="ship-fix-paid" ${line.paid ? 'checked' : ''} title="Paid"></td>
+            </tr>`;
+        }
+
+        function buildFixedSectionHtml(s, sectionKey, forex) {
+            const sec   = SHIP_SECTIONS.find(x => x.key === sectionKey);
+            const defs  = FIXED_LINE_SCHEMA.filter(d => d.section === sectionKey);
+            const totals = computeShipTotalsNew(s, forex);
+            const subtotal = totals.sectionTotals[sectionKey] || 0;
+
+            return `<div class="ship-fix-section" data-section="${escHtml(sectionKey)}">
+                <div class="ship-fix-section-hd">
+                    <span class="ship-fix-section-dot" style="background:${sec.colour}"></span>
+                    <span class="ship-fix-section-name">${sec.label}</span>
+                    <span class="ship-fix-section-sum">${subtotal > 0 ? '$' + Math.round(subtotal).toLocaleString('en-NZ') : '—'}</span>
+                </div>
+                <table class="ship-fix-table">
+                    <thead><tr>
+                        <th>Line</th>
+                        <th class="ship-fix-th-amt">Amount</th>
+                        <th class="ship-fix-th-mult"></th>
+                        <th class="ship-fix-th-nzd">≈&thinsp;NZD</th>
+                        <th class="ship-fix-th-paidvia">Paid Via</th>
+                        <th class="ship-fix-th-chk" title="Paid">✓</th>
+                    </tr></thead>
+                    <tbody>${defs.map(d => buildFixedRowHtml(s, d, forex)).join('')}</tbody>
+                </table>
+            </div>`;
+        }
+
+        // Other Costs — the only freeform section. Reuses costLines on the
+        // shipment so the existing add/delete/save handlers Just Work.
+        function buildOtherSectionHtml(s, forex) {
+            const sec   = SHIP_SECTIONS.find(x => x.key === 'other');
+            const lines = s.costLines || [];
+            const subtotal = lines.reduce((t, l) => t + otherLineNzd(l, forex), 0);
+
+            const rowsHtml = lines.map(l => {
+                const nzd = otherLineNzd(l, forex);
+                const liveFx = l.ccy && l.ccy !== 'NZD' && forex[l.ccy];
+                return `<tr class="imp-cl-row${l.paid ? ' imp-cl-paid-row' : ''}" data-ship-id="${escHtml(s.id)}" data-line-id="${escHtml(l.id)}">
+                    <td><input class="imp-cl-field imp-cl-inp" data-f="desc" value="${escHtml(l.desc || '')}" placeholder="Description…"></td>
+                    <td class="imp-cl-td-amt">
+                        <input class="imp-cl-field imp-cl-num" data-f="amount" type="number" value="${l.amount != null ? l.amount : ''}" placeholder="0" step="0.01" min="0">
+                        <select class="imp-cl-field imp-cl-ccy" data-f="ccy">
+                            ${CCYS_FIXED.map(c => `<option${c === (l.ccy || 'NZD') ? ' selected' : ''}>${c}</option>`).join('')}
+                        </select>
+                    </td>
+                    <td class="imp-cl-td-nzd">
+                        ${nzd > 0 ? `<span>$${Math.round(nzd).toLocaleString('en-NZ')}</span>` : '<span class="imp-cl-nil">—</span>'}
+                        ${liveFx ? `<span class="imp-cl-fxtag">${forex[l.ccy].toFixed(4)}</span>` : ''}
+                    </td>
+                    <td><input class="imp-cl-field imp-cl-inp imp-cl-paidvia" data-f="paidVia" value="${escHtml(l.paidVia || '')}" placeholder="Paid via…"></td>
+                    <td class="imp-cl-td-chk">
+                        <input type="checkbox" class="imp-cl-paid" data-ship-id="${escHtml(s.id)}" data-line-id="${escHtml(l.id)}" ${l.paid ? 'checked' : ''} title="Paid">
+                    </td>
+                    <td><button class="imp-cl-del" data-ship-id="${escHtml(s.id)}" data-line-id="${escHtml(l.id)}" title="Remove">×</button></td>
+                </tr>`;
+            }).join('');
+
+            return `<div class="ship-fix-section" data-section="other">
+                <div class="ship-fix-section-hd">
+                    <span class="ship-fix-section-dot" style="background:${sec.colour}"></span>
+                    <span class="ship-fix-section-name">${sec.label}</span>
+                    <span class="ship-fix-section-sum">${subtotal > 0 ? '$' + Math.round(subtotal).toLocaleString('en-NZ') : '—'}</span>
+                    <button class="imp-cl-add-line btn-link" data-ship-id="${escHtml(s.id)}" data-cat="Other">+ line</button>
+                </div>
+                ${lines.length ? `<table class="imp-cl-table">
+                    <thead><tr>
+                        <th>Description</th>
+                        <th class="imp-cl-th-amt">Amount</th>
+                        <th class="imp-cl-th-nzd">≈&thinsp;NZD</th>
+                        <th class="imp-cl-th-paidvia">Paid Via</th>
+                        <th class="imp-cl-th-chk" title="Paid">✓</th>
+                        <th style="width:18px"></th>
+                    </tr></thead>
+                    <tbody>${rowsHtml}</tbody>
+                </table>` : '<p class="ship-fix-other-empty">No other costs yet — interest, rubbish, bank fees, etc.</p>'}
+            </div>`;
+        }
+
+        function renderShipDetailNew(s) {
+            currentDetailShipId = s.id;
+            const totals  = computeShipTotalsNew(s, forex);
+            const total   = totals.total;
+            const paid    = totals.paid;
+            const osNzd   = total - paid;
+            const paidPct = total > 0 ? Math.round(paid / total * 100) : 0;
+            const ppkg    = total > 0 && s.kg > 0 ? (total / s.kg).toFixed(2) : null;
+
+            const STATUS_META = {
+                planning:    { l: 'Planning',    c: '#94a3b8' },
+                ordered:     { l: 'Ordered',     c: '#3b82f6' },
+                'in-transit':{ l: 'In Transit',  c: '#f59e0b' },
+                customs:     { l: 'Customs',     c: '#8b5cf6' },
+                delivered:   { l: 'Delivered',   c: '#10b981' },
+            };
+            const curStatus  = s.status || 'planning';
+            const statusMeta = STATUS_META[curStatus] || { l: curStatus, c: '#94a3b8' };
+
+            const milestones = s.milestones || [];
+            const totalKg    = Number(s.kg) || 0;
+            const whiteKg    = Number(s.rawWhiteKg) || 0;
+            const colourKg   = Number(s.rawColourKg) || 0;
+            const splitDelta = totalKg - (whiteKg + colourKg);
+
+            body.innerHTML = `
+            <div class="ship-detail-view ship-detail-view--new">
+                <div class="ship-detail-topbar">
+                    <button class="ship-detail-back">← Shipments</button>
+                    <div class="ship-status-wrap">
+                        <span class="ship-status-dot" style="background:${statusMeta.c}"></span>
+                        <select class="ship-status-sel" data-ship-id="${escHtml(s.id)}" data-field="status">
+                            ${Object.entries(STATUS_META).map(([v,{l}]) =>
+                                `<option value="${v}"${curStatus===v?' selected':''}>${l}</option>`
+                            ).join('')}
+                        </select>
+                    </div>
+                </div>
+
+                <div class="ship-detail-layout">
+                    <div class="ship-detail-main">
+                        <div class="ship-detail-hdr">
+                            <h1 class="ship-detail-title">Shipment #${s.seq}${s.campaign ? ' — ' + escHtml(s.campaign) : ''}</h1>
+                            <p class="ship-detail-meta">${ymLabel(s.ym)} &middot; ${fmtFull(s.kg)} kg${s.pricePerKg ? ` &middot; $${s.pricePerKg}/kg listed` : ''}</p>
+                        </div>
+
+                        <div class="ship-sum-row">
+                            <div class="ship-sum-card">
+                                <div class="ship-sum-val">$${Math.round(total).toLocaleString('en-NZ')}</div>
+                                <div class="ship-sum-lbl">Total Cost (NZD)</div>
+                            </div>
+                            <div class="ship-sum-card">
+                                <div class="ship-sum-val">${ppkg ? '$'+ppkg : '—'}</div>
+                                <div class="ship-sum-lbl">Cost / kg</div>
+                            </div>
+                            <div class="ship-sum-card ship-sum-card--paid">
+                                <div class="ship-sum-val">$${Math.round(paid).toLocaleString('en-NZ')}</div>
+                                <div class="ship-sum-lbl">Paid (${paidPct}%)</div>
+                            </div>
+                            <div class="ship-sum-card ${osNzd > 0.5 ? 'ship-sum-card--os' : 'ship-sum-card--clear'}">
+                                <div class="ship-sum-val">${osNzd > 0.5 ? '$'+Math.round(osNzd).toLocaleString('en-NZ') : '✓ Clear'}</div>
+                                <div class="ship-sum-lbl">${osNzd > 0.5 ? 'Outstanding' : 'Fully Paid'}</div>
+                            </div>
+                        </div>
+
+                        <div class="ship-det-section">
+                            <div class="ship-det-hd">
+                                <h3 class="ship-det-title">Milestones</h3>
+                                <button class="btn-link ship-add-milestone" data-ship-id="${escHtml(s.id)}">+ Add</button>
+                            </div>
+                            <div class="imp-milestones">
+                                ${milestones.length
+                                    ? milestones.map((m, i) => `
+                                    <label class="imp-milestone${m.done?' imp-milestone--done':''}">
+                                        <input type="checkbox" class="imp-milestone-check"
+                                            data-ship-id="${escHtml(s.id)}" data-idx="${i}" ${m.done?'checked':''}>
+                                        <span class="imp-milestone-label">${escHtml(m.label)}</span>
+                                        ${m.date?`<span class="imp-milestone-date">${escHtml(m.date)}</span>`:''}
+                                    </label>`).join('')
+                                    : '<p class="wh-empty" style="margin:0.25rem 0">No milestones — click + Add to create one.</p>'
+                                }
+                            </div>
+                        </div>
+
+                        <div class="ship-det-section">
+                            <div class="ship-det-hd"><h3 class="ship-det-title">Raw Product Split</h3></div>
+                            <div class="ship-raw-split">
+                                <div class="ship-raw-split-field">
+                                    <label class="imp-field-label">White (kg)</label>
+                                    <input type="number" class="imp-detail-input ship-raw-kg"
+                                        data-ship-id="${escHtml(s.id)}" data-field="rawWhiteKg"
+                                        value="${whiteKg}" placeholder="0" step="any" min="0">
+                                </div>
+                                <div class="ship-raw-split-field">
+                                    <label class="imp-field-label">Colour (kg)</label>
+                                    <input type="number" class="imp-detail-input ship-raw-kg"
+                                        data-ship-id="${escHtml(s.id)}" data-field="rawColourKg"
+                                        value="${colourKg}" placeholder="0" step="any" min="0">
+                                </div>
+                                <div class="ship-raw-split-status">
+                                    ${Math.abs(splitDelta) < 1
+                                        ? `<span class="ship-raw-split-ok">✓ matches ${totalKg.toLocaleString('en-NZ')} kg total</span>`
+                                        : `<span class="ship-raw-split-bad">${splitDelta > 0 ? '+' : ''}${Math.round(splitDelta).toLocaleString('en-NZ')} kg vs total ${totalKg.toLocaleString('en-NZ')} kg</span>`}
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="ship-det-section">
+                            <div class="ship-det-hd"><h3 class="ship-det-title">Cost Breakdown</h3></div>
+                            ${buildFixedSectionHtml(s, 'product',    forex)}
+                            ${buildFixedSectionHtml(s, 'processing', forex)}
+                            ${buildFixedSectionHtml(s, 'freight',    forex)}
+                            ${buildOtherSectionHtml(s, forex)}
+                        </div>
+
+                        <div class="ship-det-section">
+                            <div class="ship-det-hd"><h3 class="ship-det-title">Shipment Details</h3></div>
+                            <div class="imp-pricing-grid">
+                                <div class="imp-pricing-field">
+                                    <label class="imp-field-label">Campaign / Ref</label>
+                                    <input type="text" class="imp-detail-input imp-url-input"
+                                        data-ship-id="${escHtml(s.id)}" data-field="campaign"
+                                        value="${escHtml(s.campaign||'')}" placeholder="e.g. Batch 41">
+                                </div>
+                                <div class="imp-pricing-field">
+                                    <label class="imp-field-label">Arrival month</label>
+                                    <input type="month" class="imp-detail-input imp-url-input"
+                                        data-ship-id="${escHtml(s.id)}" data-field="ym"
+                                        value="${escHtml(s.ym||'')}">
+                                </div>
+                                <div class="imp-pricing-field">
+                                    <label class="imp-field-label">Volume (kg)</label>
+                                    <input type="number" class="imp-detail-input imp-url-input"
+                                        data-ship-id="${escHtml(s.id)}" data-field="kg"
+                                        value="${s.kg||''}" placeholder="12000" step="any" min="0">
+                                </div>
+                                <div class="imp-pricing-field">
+                                    <label class="imp-field-label">Listed price / kg</label>
+                                    <input type="number" class="imp-detail-input imp-url-input"
+                                        data-ship-id="${escHtml(s.id)}" data-field="pricePerKg"
+                                        value="${s.pricePerKg||''}" placeholder="4.50" step="0.01" min="0">
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="ship-det-section">
+                            <div class="ship-det-hd"><h3 class="ship-det-title">Notes</h3></div>
+                            <textarea class="ship-notes-ta" rows="5"
+                                data-ship-id="${escHtml(s.id)}" data-field="notes"
+                                placeholder="Internal notes, contacts, terms, tracking references…">${escHtml(s.notes||'')}</textarea>
+                        </div>
+
+                        <div class="ship-det-danger">
+                            <button class="imp-ship-del" data-id="${escHtml(s.id)}">Remove shipment</button>
+                        </div>
+                    </div>
+
+                    ${buildPctChartHtml(totals.sectionTotals, total)}
+                </div>
+            </div>`;
+        }
+
         function renderShipDetail(s) {
+            // New rigid schema (Shipment #42 onwards) lives on its own renderer.
+            if (s.seq) return renderShipDetailNew(s);
             currentDetailShipId = s.id;
             const lines = s.costLines || [];
             function lineNzdD(l) {
@@ -1353,14 +1772,26 @@ const Warehouse = (() => {
                 btn.disabled = true; btn.textContent = 'Adding…';
                 try {
                     const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
-                    const shipments = [...(config.shipments || []), { id, ym, kg, note, campaign, pricePerKg }];
+                    // Sequence numbers start at #42 (first new-schema shipment).
+                    const existingSeqs = (config.shipments || []).map(s => Number(s.seq) || 0);
+                    const seq = Math.max(41, ...existingSeqs) + 1;
+                    const split = defaultRawSplit(kg);
+                    const newShip = {
+                        id, seq, ym, kg, note, campaign, pricePerKg,
+                        rawWhiteKg:  split.rawWhiteKg,
+                        rawColourKg: split.rawColourKg,
+                        fixedLines:  defaultFixedLines(),
+                        costLines:   [], // Other Costs section starts empty
+                        status:      'planning',
+                    };
+                    const shipments = [...(config.shipments || []), newShip];
                     await api('/api/import/forecast', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ shipments }),
                     });
                     config.shipments = shipments;
-                    showToast('Shipment added');
+                    showToast(`Shipment #${seq} added`);
                     rebuild();
                 } catch (err) {
                     showToast('Save failed: ' + err.message);
@@ -1402,6 +1833,49 @@ const Warehouse = (() => {
 
         body.addEventListener('change', async e => {
             if (acSignal.aborted) return;
+
+            // ── Fixed-schema (rigid) cost line — amount/rate/ccy/paidVia ──
+            const fixField = e.target.closest('.ship-fix-num, .ship-fix-ccy, .ship-fix-paidvia');
+            if (fixField) {
+                const row = fixField.closest('.ship-fix-row');
+                if (!row) return;
+                const { shipId, lineKey } = row.dataset;
+                const f   = fixField.dataset.f;  // 'amount' | 'rate' | 'ccy' | 'paidVia'
+                const val = fixField.type === 'number' ? (parseFloat(fixField.value) || 0) : fixField.value;
+                config.shipments = (config.shipments || []).map(s => {
+                    if (s.id !== shipId) return s;
+                    const fixedLines = { ...(s.fixedLines || {}) };
+                    fixedLines[lineKey] = { ...(fixedLines[lineKey] || {}), [f]: val };
+                    return { ...s, fixedLines };
+                });
+                await costSave();
+                return;
+            }
+
+            // Fixed-schema paid checkbox
+            const fixPaid = e.target.closest('.ship-fix-paid');
+            if (fixPaid) {
+                const row = fixPaid.closest('.ship-fix-row');
+                if (!row) return;
+                const { shipId, lineKey } = row.dataset;
+                config.shipments = (config.shipments || []).map(s => {
+                    if (s.id !== shipId) return s;
+                    const fixedLines = { ...(s.fixedLines || {}) };
+                    fixedLines[lineKey] = { ...(fixedLines[lineKey] || {}), paid: fixPaid.checked };
+                    return { ...s, fixedLines };
+                });
+                await costSave();
+                return;
+            }
+
+            // Raw Product white/colour kg split
+            if (e.target.matches('.ship-raw-kg')) {
+                const { shipId, field: f } = e.target.dataset;
+                const val = parseFloat(e.target.value) || 0;
+                config.shipments = (config.shipments || []).map(s => s.id === shipId ? { ...s, [f]: val } : s);
+                await costSave();
+                return;
+            }
 
             // Cost line field
             const field = e.target.closest('.imp-cl-field');
