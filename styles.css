@@ -358,6 +358,22 @@ body {
     align-content: start;
 }
 
+/* Shortcuts launchpad is now a footer section below the live modules.
+   The pseudo-element gives it a visible (but quiet) header. */
+#dashboard:not(:empty)::before {
+    content: 'Shortcuts';
+    grid-column: 1 / -1;
+    display: block;
+    margin: 0.5rem 0 0;
+    padding-top: 1rem;
+    border-top: 1px solid #f1f5f9;
+    font-size: 0.78rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: #94a3b8;
+    font-weight: 700;
+}
+
 /* ── Group widget cards ── */
 .group {
     background: white;
@@ -2732,6 +2748,7 @@ a.xero-inv-linked:hover { background: #d1fae5; border-color: #6ee7b7; }
 }
 .sales-ytd-up { background: #dcfce7; color: #15803d; }
 .sales-ytd-dn { background: #fee2e2; color: #dc2626; }
+
 /* ────────────────────────────────────────────────────────────────
    Shipment detail — rigid schema (Shipment #42 onwards)
    Two-column layout with a sticky % of Total chart on the right.
@@ -2943,3 +2960,197 @@ a.xero-inv-linked:hover { background: #d1fae5; border-color: #6ee7b7; }
     .ship-pct-chart { position: static; }
 }
 
+/* ────────────────────────────────────────────────────────────────
+   Dashboard module grid
+   Replaces the old "quick actions on top, links below" layout with
+   live data modules. Quick actions get demoted to a slim footer row.
+   ──────────────────────────────────────────────────────────────── */
+
+.db-grid {
+    display: grid;
+    gap: 0.75rem;
+    margin-bottom: 0.75rem;
+}
+.db-grid-2 { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+.db-grid-3 { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr); }
+
+@media (max-width: 980px) {
+    .db-grid-2, .db-grid-3 { grid-template-columns: minmax(0, 1fr); }
+}
+
+.db-mod {
+    background: white;
+    border: 1px solid #e2e8f0;
+    border-radius: 0.5rem;
+    padding: 0.85rem 0.95rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.55rem;
+    min-width: 0;
+}
+.db-mod-hd {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 0.5rem;
+}
+.db-mod-title {
+    margin: 0;
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: #475569;
+    font-weight: 700;
+}
+.db-mod-link {
+    font-size: 0.75rem;
+    color: #3b82f6;
+    text-decoration: none;
+}
+.db-mod-link:hover { text-decoration: underline; }
+.db-mod-body { display: flex; flex-direction: column; gap: 0.35rem; min-height: 1.5rem; }
+.db-mod-loading,
+.db-mod-empty {
+    font-size: 0.82rem;
+    color: #94a3b8;
+    margin: 0.25rem 0;
+    font-style: italic;
+}
+.db-mod--strip { padding: 0.6rem 0.95rem; }
+.db-mod--chart { padding: 0.6rem 0.85rem; }
+.db-mod--chart .db-chart-inner { padding: 0; }
+
+/* Generic row content used by Latest Orders & Incoming Shipments */
+.db-rows { display: flex; flex-direction: column; gap: 0.25rem; }
+.db-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto auto auto;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.32rem 0.4rem;
+    border-radius: 4px;
+    font-size: 0.85rem;
+    color: #1e293b;
+    text-decoration: none;
+    border: 1px solid transparent;
+}
+a.db-row:hover { background: #f8fafc; border-color: #e2e8f0; }
+.db-row-main {
+    font-weight: 500;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.db-row-sub  { font-weight: 400; color: #64748b; }
+.db-row-meta { font-size: 0.78rem; color: #64748b; font-variant-numeric: tabular-nums; }
+.db-row-date { font-size: 0.75rem; color: #94a3b8; font-variant-numeric: tabular-nums; }
+.db-row-tag {
+    font-size: 0.7rem;
+    font-weight: 600;
+    padding: 1px 6px;
+    border-radius: 10px;
+    border: 1px solid;
+    white-space: nowrap;
+}
+
+/* Calendar 14-day list */
+.db-cal-day { display: flex; flex-direction: column; gap: 0.15rem; }
+.db-cal-day-hd {
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: #94a3b8;
+    font-weight: 700;
+    margin-top: 0.25rem;
+}
+.db-cal-event {
+    display: grid;
+    grid-template-columns: 42px minmax(0, 1fr);
+    align-items: baseline;
+    gap: 0.45rem;
+    padding: 0.18rem 0.35rem;
+    font-size: 0.83rem;
+    border-left: 2px solid transparent;
+}
+.db-cal-event--gcal     { border-left-color: #3b82f6; }
+.db-cal-event--shipment { border-left-color: #f59e0b; background: #fef3c7; border-radius: 0 3px 3px 0; }
+.db-cal-time {
+    font-size: 0.78rem;
+    color: #475569;
+    font-variant-numeric: tabular-nums;
+}
+.db-cal-time--all { color: #94a3b8; }
+.db-cal-title {
+    color: #0f172a;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.db-cal-more {
+    margin-top: 0.25rem;
+    font-size: 0.75rem;
+    color: #94a3b8;
+    font-style: italic;
+}
+
+/* Calendar 28-day strip */
+.db-mod--strip { overflow-x: auto; }
+.db-strip {
+    display: grid;
+    grid-template-columns: repeat(28, minmax(20px, 1fr));
+    gap: 2px;
+    min-width: 560px;
+}
+.db-strip-cell {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-start;
+    padding: 0.3rem 0.1rem 0.25rem;
+    border-radius: 3px;
+    background: #f8fafc;
+    font-variant-numeric: tabular-nums;
+    min-height: 48px;
+    position: relative;
+}
+.db-strip-cell--weekend { background: #f1f5f9; }
+.db-strip-cell--today {
+    background: #dbeafe;
+    border: 1px solid #3b82f6;
+    padding-top: calc(0.3rem - 1px);
+}
+.db-strip-cell--has    { background: #eff6ff; }
+.db-strip-cell--has.db-strip-cell--weekend { background: #e0e7ff; }
+.db-strip-dow {
+    font-size: 0.6rem;
+    color: #94a3b8;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+.db-strip-dom {
+    font-size: 0.85rem;
+    color: #1e293b;
+    font-weight: 600;
+}
+.db-strip-dots {
+    margin-top: 0.15rem;
+    font-size: 0.55rem;
+    color: #3b82f6;
+    line-height: 1;
+    letter-spacing: -1px;
+}
+
+/* Demoted quick-actions footer — slimmer, lower-key than the original headline cards */
+.db-quick-actions--footer {
+    margin: 0.5rem 0 0;
+    padding-top: 0.75rem;
+    border-top: 1px solid #f1f5f9;
+    gap: 0.4rem;
+}
+.db-quick-actions--footer .db-quick-card {
+    padding: 0.4rem 0.7rem;
+    font-size: 0.8rem;
+    border-color: #f1f5f9;
+    color: #64748b;
+}
+.db-quick-actions--footer .db-quick-card svg { width: 14px; height: 14px; }

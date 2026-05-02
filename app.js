@@ -511,6 +511,230 @@ function openItem(item) {
     }
 }
 
+// ── Dashboard module helpers ────────────────────────────────────────────
+
+function _ehDb(s) {
+    return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+const DB_STATUS_LABELS = {
+    new: 'New', reviewed: 'Reviewed', sent_to_xero: 'Xero', dispatched: 'Dispatched', paid: 'Paid',
+};
+const DB_STATUS_COLOURS = {
+    new: '#3b82f6', reviewed: '#f59e0b', sent_to_xero: '#8b5cf6', dispatched: '#64748b', paid: '#10b981',
+};
+
+// Latest 6 orders by createdAt descending.
+function renderLatestOrdersBody(orders) {
+    if (!Array.isArray(orders) || !orders.length) {
+        return '<p class="db-mod-empty">No orders yet.</p>';
+    }
+    const sorted = orders.slice().sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
+    const rows = sorted.slice(0, 6).map(o => {
+        const status = o.status || 'new';
+        const colour = DB_STATUS_COLOURS[status] || '#94a3b8';
+        const label  = DB_STATUS_LABELS[status]  || status;
+        const cust   = o.customer?.name || 'Unknown customer';
+        const ref    = o.xeroInvoiceNumber || o.id;
+        const date   = (o.createdAt || '').slice(0, 10);
+        return `<a class="db-row" href="#orders/${_ehDb(o.id)}">
+            <span class="db-row-main">${_ehDb(cust)}</span>
+            <span class="db-row-meta">${_ehDb(ref)}</span>
+            <span class="db-row-date">${_ehDb(date)}</span>
+            <span class="db-row-tag" style="color:${colour};background:${colour}18;border-color:${colour}30">${label}</span>
+        </a>`;
+    }).join('');
+    return `<div class="db-rows">${rows}</div>`;
+}
+
+// Next 4 shipments by ym (ascending), reading config.shipments synchronously.
+// "Incoming" = ym ≥ current month.
+function renderIncomingShipmentsBody(config) {
+    const all = (config?.shipments || []).slice();
+    if (!all.length) return '<p class="db-mod-empty">No shipments scheduled.</p>';
+
+    const now    = new Date();
+    const curYm  = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
+    const upcoming = all
+        .filter(s => (s.ym || '') >= curYm)
+        .sort((a, b) => (a.ym || '').localeCompare(b.ym || ''))
+        .slice(0, 4);
+
+    if (!upcoming.length) return '<p class="db-mod-empty">No upcoming shipments.</p>';
+
+    const STATUS_C = { planning:'#94a3b8', ordered:'#3b82f6', 'in-transit':'#f59e0b', customs:'#8b5cf6', delivered:'#10b981' };
+    const STATUS_L = { planning:'Planning', ordered:'Ordered', 'in-transit':'In transit', customs:'Customs', delivered:'Delivered' };
+
+    const rows = upcoming.map(s => {
+        const title = s.seq ? `Shipment #${s.seq}` : (s.campaign || 'Shipment');
+        const sub   = s.campaign && s.seq ? s.campaign : '';
+        const kg    = Number(s.kg) || 0;
+        const ymTxt = s.ym ? new Date(s.ym + '-01').toLocaleDateString('en-NZ', { month: 'short', year: 'numeric' }) : '';
+        const st    = s.status || 'planning';
+        const c     = STATUS_C[st] || '#94a3b8';
+        return `<div class="db-row">
+            <span class="db-row-main">${_ehDb(title)}${sub ? ' · <span class="db-row-sub">' + _ehDb(sub) + '</span>' : ''}</span>
+            <span class="db-row-meta">${kg ? kg.toLocaleString('en-NZ') + ' kg' : ''}</span>
+            <span class="db-row-date">${_ehDb(ymTxt)}</span>
+            <span class="db-row-tag" style="color:${c};background:${c}18;border-color:${c}30">${STATUS_L[st] || st}</span>
+        </div>`;
+    }).join('');
+    return `<div class="db-rows">${rows}</div>`;
+}
+
+// Format a Google Calendar event into { date: 'YYYY-MM-DD', time: 'HH:MM' or '', title }.
+function _parseGcalEvent(ev) {
+    const startObj = ev.start || {};
+    if (startObj.date) {
+        return { date: startObj.date, time: '', title: ev.summary || '(no title)', allDay: true };
+    }
+    if (startObj.dateTime) {
+        const d = new Date(startObj.dateTime);
+        if (isNaN(d)) return null;
+        const yyyy = d.getFullYear();
+        const mm   = String(d.getMonth() + 1).padStart(2, '0');
+        const dd   = String(d.getDate()).padStart(2, '0');
+        const hh   = String(d.getHours()).padStart(2, '0');
+        const mi   = String(d.getMinutes()).padStart(2, '0');
+        return { date: `${yyyy}-${mm}-${dd}`, time: `${hh}:${mi}`, title: ev.summary || '(no title)', allDay: false };
+    }
+    return null;
+}
+
+function _dayLabel(d, today) {
+    const diff = Math.round((d - today) / 86400000);
+    if (diff === 0) return 'Today';
+    if (diff === 1) return 'Tomorrow';
+    return d.toLocaleDateString('en-NZ', { weekday: 'short', day: 'numeric', month: 'short' });
+}
+
+// 14-day list, grouped by date. Empty days are skipped except Today.
+function renderCalendar14dBody(events, shipments) {
+    const today = new Date(); today.setHours(0,0,0,0);
+    const horizonMs = 14 * 86400000;
+
+    const map = {}; // 'YYYY-MM-DD' → [{type, time, title}]
+    for (const ev of (events || [])) {
+        const parsed = _parseGcalEvent(ev);
+        if (!parsed) continue;
+        const d = new Date(parsed.date + 'T00:00:00');
+        if (d < today || (d - today) >= horizonMs) continue;
+        (map[parsed.date] = map[parsed.date] || []).push({ type: 'gcal', ...parsed });
+    }
+    for (const s of (shipments || [])) {
+        if (!s.ym) continue;
+        // Default a shipment to the first of its arrival month.
+        const date = s.ym + '-01';
+        const d = new Date(date + 'T00:00:00');
+        if (d < today || (d - today) >= horizonMs) continue;
+        const title = s.seq ? `Shipment #${s.seq} ETA` : `Shipment ETA · ${s.campaign || s.ym}`;
+        (map[date] = map[date] || []).push({ type: 'shipment', time: '', title, allDay: true });
+    }
+
+    const dates = Object.keys(map).sort();
+    if (!dates.length) return '<p class="db-mod-empty">No events in the next 14 days.</p>';
+
+    let totalShown = 0;
+    const MAX = 8;
+    let truncated = 0;
+
+    const blocks = dates.map(date => {
+        const d = new Date(date + 'T00:00:00');
+        const items = map[date].sort((a, b) => (a.time || '').localeCompare(b.time || ''));
+        const slice = totalShown < MAX ? items.slice(0, MAX - totalShown) : [];
+        truncated += items.length - slice.length;
+        totalShown += slice.length;
+        if (!slice.length) return '';
+        return `<div class="db-cal-day">
+            <div class="db-cal-day-hd">${_ehDb(_dayLabel(d, today))}</div>
+            ${slice.map(it => `<div class="db-cal-event db-cal-event--${it.type}">
+                ${it.time ? `<span class="db-cal-time">${it.time}</span>` : '<span class="db-cal-time db-cal-time--all">·</span>'}
+                <span class="db-cal-title">${_ehDb(it.title)}</span>
+            </div>`).join('')}
+        </div>`;
+    }).filter(Boolean).join('');
+
+    const footer = truncated > 0
+        ? `<div class="db-cal-more">… and ${truncated} more</div>`
+        : '';
+    return blocks + footer;
+}
+
+// 28-day strip: one cell per day, dot if events. Click → /calendar.
+function renderCalendar28dBody(events, shipments) {
+    const today = new Date(); today.setHours(0,0,0,0);
+    const dayCount = {};
+    for (const ev of (events || [])) {
+        const parsed = _parseGcalEvent(ev);
+        if (!parsed) continue;
+        dayCount[parsed.date] = (dayCount[parsed.date] || 0) + 1;
+    }
+    for (const s of (shipments || [])) {
+        if (!s.ym) continue;
+        const date = s.ym + '-01';
+        dayCount[date] = (dayCount[date] || 0) + 1;
+    }
+
+    const cells = [];
+    for (let i = 0; i < 28; i++) {
+        const d = new Date(today); d.setDate(d.getDate() + i);
+        const yyyy = d.getFullYear();
+        const mm   = String(d.getMonth() + 1).padStart(2, '0');
+        const dd   = String(d.getDate()).padStart(2, '0');
+        const key  = `${yyyy}-${mm}-${dd}`;
+        const n    = dayCount[key] || 0;
+        const dow  = d.getDay();
+        const isWeekend = dow === 0 || dow === 6;
+        const cls  = `db-strip-cell${i === 0 ? ' db-strip-cell--today' : ''}${isWeekend ? ' db-strip-cell--weekend' : ''}${n > 0 ? ' db-strip-cell--has' : ''}`;
+        const dotsHtml = n > 0
+            ? '<span class="db-strip-dots">' + '●'.repeat(Math.min(n, 3)) + '</span>'
+            : '';
+        cells.push(`<div class="${cls}" title="${key}${n ? ' · ' + n + ' event' + (n > 1 ? 's' : '') : ''}">
+            <span class="db-strip-dow">${'SMTWTFS'[dow]}</span>
+            <span class="db-strip-dom">${d.getDate()}</span>
+            ${dotsHtml}
+        </div>`);
+    }
+    return `<div class="db-strip">${cells.join('')}</div>`;
+}
+
+// Fetch /api/calendar/events for the next 28 days, populate both calendar modules.
+function loadDashboardCalendar(config) {
+    const now = new Date(); now.setHours(0,0,0,0);
+    const max = new Date(now); max.setDate(max.getDate() + 28);
+    const url = `/api/calendar/events?timeMin=${now.toISOString()}&timeMax=${max.toISOString()}`;
+    const shipments = config?.shipments || [];
+
+    fetch(url).then(r => {
+        if (!r.ok) return r.status === 401 ? 'unconnected' : 'error';
+        return r.json();
+    }).then(events => {
+        const fourteenEl = document.querySelector('#db-mod-cal-14d .db-mod-body');
+        const stripEl    = document.querySelector('#db-mod-cal-28d .db-mod-body');
+
+        if (events === 'unconnected') {
+            const msg = '<p class="db-mod-empty">Connect Google Calendar in <a href="#calendar">Calendar</a> to see events here.</p>';
+            if (fourteenEl) fourteenEl.innerHTML = msg;
+            if (stripEl)    stripEl.innerHTML = renderCalendar28dBody([], shipments); // strip still shows shipment ticks
+            return;
+        }
+        if (events === 'error' || !Array.isArray(events)) events = [];
+
+        if (fourteenEl) fourteenEl.innerHTML = renderCalendar14dBody(events, shipments);
+        if (stripEl)    stripEl.innerHTML    = renderCalendar28dBody(events, shipments);
+    }).catch(() => {
+        const fourteenEl = document.querySelector('#db-mod-cal-14d .db-mod-body');
+        const stripEl    = document.querySelector('#db-mod-cal-28d .db-mod-body');
+        if (fourteenEl) fourteenEl.innerHTML = '<p class="db-mod-empty">Could not load calendar.</p>';
+        if (stripEl)    stripEl.innerHTML    = renderCalendar28dBody([], shipments);
+    });
+}
+
+// Module-grid dashboard. Skeleton renders immediately; modules populate
+// asynchronously as their data lands. Order on the page (top → bottom):
+// FX strip · Needs Review (if any) · 2-column grid (Latest Orders, Calendar
+// 14-day) · 3-column grid (Incoming Shipments, Sales mini, Orders mini) ·
+// Calendar 28-day strip · Quick Actions (demoted to a slim footer row).
 function renderDashboardWidgets(config) {
     const el = document.getElementById('db-widgets');
     if (!el) return;
@@ -526,7 +750,8 @@ function renderDashboardWidgets(config) {
           icon: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>' },
     ];
 
-    const actionsHtml = `<div class="db-quick-actions">${QUICK_ACTIONS.map(a =>
+    // Quick Actions are now footer-row chips, not headline cards.
+    const actionsHtml = `<div class="db-quick-actions db-quick-actions--footer">${QUICK_ACTIONS.map(a =>
         `<a class="db-quick-card" href="#${a.hash}">${a.icon}<span>${a.label}</span></a>`
     ).join('')}</div>`;
 
@@ -557,12 +782,39 @@ function renderDashboardWidgets(config) {
         }
     }
 
-    el.innerHTML = actionsHtml + fxHtml +
+    // New module-grid skeleton. Module bodies are filled in by the async
+    // fetches below — orders feed Latest Orders / alerts / mini charts;
+    // calendar events feed the two calendar modules; config.shipments
+    // feeds Incoming Shipments synchronously.
+    el.innerHTML =
+        fxHtml +
         '<div id="db-alerts-container"></div>' +
-        '<div class="db-charts-row">' +
-        '<div class="db-chart-card" id="db-sales-chart"><span class="db-chart-loading">Loading sales…</span></div>' +
-        '<div class="db-chart-card" id="db-orders-chart"><span class="db-chart-loading">Loading orders…</span></div>' +
-        '</div>';
+        '<div class="db-grid db-grid-2">' +
+            '<section class="db-mod" id="db-mod-latest-orders">' +
+                '<div class="db-mod-hd"><h3 class="db-mod-title">Latest Orders</h3><a class="db-mod-link" href="#orders">All →</a></div>' +
+                '<div class="db-mod-body"><span class="db-mod-loading">Loading…</span></div>' +
+            '</section>' +
+            '<section class="db-mod" id="db-mod-cal-14d">' +
+                '<div class="db-mod-hd"><h3 class="db-mod-title">Next 14 days</h3><a class="db-mod-link" href="#calendar">All →</a></div>' +
+                '<div class="db-mod-body"><span class="db-mod-loading">Loading…</span></div>' +
+            '</section>' +
+        '</div>' +
+        '<div class="db-grid db-grid-3">' +
+            '<section class="db-mod" id="db-mod-incoming-ships">' +
+                '<div class="db-mod-hd"><h3 class="db-mod-title">Incoming Shipments</h3><a class="db-mod-link" href="#imports">All →</a></div>' +
+                '<div class="db-mod-body">' + renderIncomingShipmentsBody(config) + '</div>' +
+            '</section>' +
+            '<section class="db-mod db-mod--chart" id="db-sales-chart"><span class="db-mod-loading">Loading sales…</span></section>' +
+            '<section class="db-mod db-mod--chart" id="db-orders-chart"><span class="db-mod-loading">Loading orders…</span></section>' +
+        '</div>' +
+        '<section class="db-mod db-mod--strip" id="db-mod-cal-28d">' +
+            '<div class="db-mod-hd"><h3 class="db-mod-title">Next 28 days</h3></div>' +
+            '<div class="db-mod-body"><span class="db-mod-loading">Loading…</span></div>' +
+        '</section>' +
+        actionsHtml;
+
+    // Calendar fetches in parallel with orders (independent endpoints).
+    loadDashboardCalendar(config);
 
     // Async: load orders and draw mini charts
     fetch('/api/orders').then(r => r.ok ? r.json() : []).then(orders => {
@@ -621,6 +873,10 @@ function renderDashboardWidgets(config) {
 
         const ordersEl = document.getElementById('db-orders-chart');
         if (ordersEl) ordersEl.innerHTML = drawMiniBar(cntVals, moLabels, '#7c3aed', `Orders · ${cntVals[cntVals.length-1]} this month`, 'orders');
+
+        // Latest Orders module — last 6 orders by createdAt, regardless of status.
+        const latestEl = document.querySelector('#db-mod-latest-orders .db-mod-body');
+        if (latestEl) latestEl.innerHTML = renderLatestOrdersBody(orders || []);
 
         // Alerts: orders needing attention
         const eh = s => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
