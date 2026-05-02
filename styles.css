@@ -2141,16 +2141,21 @@ a.xero-inv-linked:hover { background: #d1fae5; border-color: #6ee7b7; }
 .imp-matrix-stage { color: #64748b; font-size: 0.75rem; white-space: nowrap; }
 .imp-matrix-row--arrive td { background: #eff6ff; font-weight: 600; border-top: 1px solid #bfdbfe; }
 
-/* ── Imports overview 2-column layout ── */
+/* ── Imports overview 2-column layout ──
+   minmax(0, 1fr) on the main column prevents min-content children
+   (charts, tables) from blowing out the grid and pushing the side
+   panel past the page edge. The side column is widened so FX values
+   like "0.5234" and "72.4500" fit without clipping. */
 .imp-overview-grid {
     display: grid;
-    grid-template-columns: 1fr 260px;
+    grid-template-columns: minmax(0, 1fr) 300px;
     gap: 1.25rem;
     align-items: start;
 }
-.imp-overview-main { display: flex; flex-direction: column; gap: 1.25rem; }
+.imp-overview-main { display: flex; flex-direction: column; gap: 1.25rem; min-width: 0; }
 .imp-overview-main .imp-chart-card { margin-bottom: 0; }
-.imp-overview-side { display: flex; flex-direction: column; gap: 1.25rem; }
+.imp-overview-side { display: flex; flex-direction: column; gap: 1.25rem; min-width: 0; }
+.imp-overview-side .cat-section { min-width: 0; max-width: 100%; box-sizing: border-box; }
 
 /* ── Forex rate tiles ── */
 .imp-fx-panel { padding: 1rem 1.1rem !important; }
@@ -2883,6 +2888,18 @@ a.xero-inv-linked:hover { background: #d1fae5; border-color: #6ee7b7; }
 .ship-fix-row--paid .ship-fix-paidvia { color: #475569; }
 
 .ship-fix-td-label  { font-weight: 500; color: #1e293b; }
+.ship-fix-label-inp {
+    width: 100%;
+    padding: 0.25rem 0.4rem;
+    border: 1px solid transparent;
+    border-radius: 4px;
+    font-size: 0.88rem;
+    font-weight: 500;
+    background: transparent;
+    color: #1e293b;
+}
+.ship-fix-label-inp:hover { border-color: #e2e8f0; background: white; }
+.ship-fix-label-inp:focus { border-color: #3b82f6; background: white; outline: none; }
 .ship-fix-td-amt    { display: flex; align-items: center; gap: 4px; }
 .ship-fix-td-nzd    { text-align: right; font-variant-numeric: tabular-nums; color: #0f172a; }
 .ship-fix-td-mult   { color: #64748b; font-size: 0.8rem; }
@@ -2958,6 +2975,106 @@ a.xero-inv-linked:hover { background: #d1fae5; border-color: #6ee7b7; }
 @media (max-width: 1100px) {
     .ship-detail-view--new .ship-detail-layout { grid-template-columns: minmax(0, 1fr); }
     .ship-pct-chart { position: static; }
+}
+
+/* ────────────────────────────────────────────────────────────────
+   Imports — Shipments Timeline (Overview tab)
+   13-month horizontal strip; chips reuse imp-event-card--nav so the
+   existing click delegation routes them into the detail view.
+   ──────────────────────────────────────────────────────────────── */
+
+.imp-timeline-card { margin-bottom: 1.25rem; }
+.imp-tl-wrap {
+    overflow-x: auto;
+    margin: 0 -0.25rem;
+    padding: 0 0.25rem 0.25rem;
+}
+.imp-tl {
+    display: grid;
+    grid-template-columns: repeat(13, minmax(64px, 1fr));
+    gap: 0.3rem;
+    min-width: 880px;
+}
+.imp-tl-col {
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+    min-height: 90px;
+    padding: 0.4rem 0.35rem;
+    background: #f8fafc;
+    border: 1px solid #f1f5f9;
+    border-radius: 6px;
+}
+.imp-tl-col--current {
+    background: #eff6ff;
+    border-color: #bfdbfe;
+}
+.imp-tl-col-hd {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 0.25rem;
+    padding-bottom: 0.3rem;
+    border-bottom: 1px dashed #e2e8f0;
+}
+.imp-tl-mo {
+    font-size: 0.72rem;
+    font-weight: 700;
+    color: #0f172a;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+.imp-tl-col--current .imp-tl-mo { color: #1d4ed8; }
+.imp-tl-yr {
+    font-size: 0.65rem;
+    color: #94a3b8;
+    font-weight: 600;
+}
+.imp-tl-col-body {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    flex: 1;
+}
+.imp-tl-col-empty { display: block; min-height: 1.2rem; }
+
+.imp-tl-chip {
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+    padding: 0.3rem 0.4rem;
+    background: white;
+    border: 1px solid #e2e8f0;
+    border-radius: 5px;
+    cursor: pointer;
+    font-size: 0.78rem;
+    transition: border-color 0.12s ease, box-shadow 0.12s ease, transform 0.06s ease;
+}
+.imp-tl-chip:hover {
+    border-color: #1d4ed8;
+    box-shadow: 0 0 0 2px rgba(29,78,216,0.08);
+}
+.imp-tl-chip:active { transform: translateY(1px); }
+.imp-tl-chip-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+.imp-tl-chip-title {
+    font-weight: 700;
+    color: #0f172a;
+    font-variant-numeric: tabular-nums;
+    flex: 1;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.imp-tl-chip-kg {
+    font-size: 0.7rem;
+    color: #64748b;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
 }
 
 /* ────────────────────────────────────────────────────────────────

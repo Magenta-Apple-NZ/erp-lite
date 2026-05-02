@@ -849,23 +849,39 @@ const Warehouse = (() => {
         // ────────────────────────────────────────────────────────────────
 
         const SHIP_SECTIONS = [
-            { key: 'product',    label: 'Cost of Product',  colour: '#16a34a' },
-            { key: 'processing', label: 'Processing Costs', colour: '#7c3aed' },
-            { key: 'freight',    label: 'Freight Costs',    colour: '#2563eb' },
-            { key: 'other',      label: 'Other Costs',      colour: '#64748b' },
+            { key: 'raw',        label: 'Raw',        colour: '#16a34a' },
+            { key: 'processing', label: 'Processing', colour: '#7c3aed' },
+            { key: 'freight',    label: 'Freight',    colour: '#2563eb' },
+            { key: 'other',      label: 'Other',      colour: '#64748b' },
         ];
 
-        // Each entry: kind = 'rawProduct' (rate × own kg), 'perKg' (rate × shipment kg), or 'flat' (amount).
+        // Rigid 7-line schema. Sections + labels match the operator's mental
+        // model — see Business-Hub-Brief.md. `kind` controls how the line is
+        // computed: 'rawProduct' = rate × own kg field; 'perKg' = rate × ship kg;
+        // 'flat' = amount. Raw lines have editable per-line labels (line.labelOverride).
         const FIXED_LINE_SCHEMA = [
-            { key: 'rawWhite',       section: 'product',    label: 'Raw Product (White)',  kind: 'rawProduct', kgField: 'rawWhiteKg',  defaultRate: 0,     defaultCcy: 'EUR' },
-            { key: 'rawColour',      section: 'product',    label: 'Raw Product (Colour)', kind: 'rawProduct', kgField: 'rawColourKg', defaultRate: 0,     defaultCcy: 'EUR' },
-            { key: 'sorting',        section: 'processing', label: 'Sorting',              kind: 'perKg',      defaultRate: 1.18,  defaultCcy: 'USD' },
-            { key: 'bundling',       section: 'processing', label: 'Bundling',             kind: 'perKg',      defaultRate: 70,    defaultCcy: 'BDT' },
-            { key: 'fixedBundling',  section: 'processing', label: 'Fixed bundling',       kind: 'flat',       defaultAmount: 10000, defaultCcy: 'USD' },
-            { key: 'freightItalyBd', section: 'freight',    label: 'Italy → Bangladesh',   kind: 'flat',       defaultAmount: 9000,  defaultCcy: 'USD' },
-            { key: 'freightBdTga',   section: 'freight',    label: 'Bangladesh → Tauranga',kind: 'flat',       defaultAmount: 8000,  defaultCcy: 'USD' },
-            { key: 'freightTgaKati', section: 'freight',    label: 'Tauranga → Katikati',  kind: 'flat',       defaultAmount: 5000,  defaultCcy: 'NZD' },
+            { key: 'rawA',           section: 'raw',        label: 'Raw Product Costs (1)', kind: 'rawProduct', kgField: 'rawWhiteKg',  defaultRate: 0,    defaultCcy: 'EUR', editableLabel: true },
+            { key: 'rawB',           section: 'raw',        label: 'Raw Product Costs (2)', kind: 'rawProduct', kgField: 'rawColourKg', defaultRate: 0,    defaultCcy: 'EUR', editableLabel: true },
+            { key: 'processing',     section: 'processing', label: 'Processing Costs',      kind: 'flat',       defaultAmount: 0,     defaultCcy: 'USD' },
+            { key: 'management',     section: 'processing', label: 'Management Costs',      kind: 'flat',       defaultAmount: 0,     defaultCcy: 'USD' },
+            { key: 'freightItalyBd', section: 'freight',    label: 'Italy → Bangladesh',    kind: 'flat',       defaultAmount: 9000,  defaultCcy: 'USD' },
+            { key: 'freightBdTga',   section: 'freight',    label: 'Bangladesh → Tauranga', kind: 'flat',       defaultAmount: 8000,  defaultCcy: 'USD' },
+            { key: 'freightTgaKati', section: 'freight',    label: 'Tauranga → Katikati',   kind: 'flat',       defaultAmount: 5000,  defaultCcy: 'NZD' },
         ];
+
+        // Aliases for shipments created against the previous schema. Read-only:
+        // we never write to old keys, but we read from them so any test data
+        // entered under #42's first iteration doesn't disappear.
+        const FIXED_LINE_ALIASES = {
+            rawA: 'rawWhite',
+            rawB: 'rawColour',
+        };
+        function fixedLineFor(s, key) {
+            const fl = s.fixedLines || {};
+            if (fl[key]) return fl[key];
+            const alias = FIXED_LINE_ALIASES[key];
+            return alias ? fl[alias] : undefined;
+        }
 
         // Build the default fixedLines map for a fresh shipment.
         function defaultFixedLines() {
@@ -911,11 +927,10 @@ const Warehouse = (() => {
 
         // Compute per-section NZD totals and the global total/paid figures.
         function computeShipTotalsNew(s, forex) {
-            const fixed = s.fixedLines || {};
-            const sectionTotals = { product: 0, processing: 0, freight: 0, other: 0 };
-            const sectionPaid   = { product: 0, processing: 0, freight: 0, other: 0 };
+            const sectionTotals = { raw: 0, processing: 0, freight: 0, other: 0 };
+            const sectionPaid   = { raw: 0, processing: 0, freight: 0, other: 0 };
             for (const def of FIXED_LINE_SCHEMA) {
-                const line = fixed[def.key];
+                const line = fixedLineFor(s, def.key);
                 const nzd  = fixedLineNzd(def, line, s, forex);
                 sectionTotals[def.section] += nzd;
                 if (line?.paid) sectionPaid[def.section] += nzd;
@@ -925,9 +940,71 @@ const Warehouse = (() => {
                 sectionTotals.other += nzd;
                 if (l.paid) sectionPaid.other += nzd;
             }
-            const total = sectionTotals.product + sectionTotals.processing + sectionTotals.freight + sectionTotals.other;
-            const paid  = sectionPaid.product  + sectionPaid.processing  + sectionPaid.freight  + sectionPaid.other;
+            const total = sectionTotals.raw + sectionTotals.processing + sectionTotals.freight + sectionTotals.other;
+            const paid  = sectionPaid.raw  + sectionPaid.processing  + sectionPaid.freight  + sectionPaid.other;
             return { sectionTotals, sectionPaid, total, paid };
+        }
+
+        // Horizontal timeline for the Imports overview. Shows a 13-month window
+        // (3 months back → 9 forward), one column per month, with shipment chips
+        // stacked inside each column. Chips reuse imp-event-card--nav so the
+        // existing click delegation routes them straight into the detail view.
+        function buildShipmentsTimelineHtml(shipments, forex) {
+            const all = (shipments || []).slice();
+            if (!all.length) {
+                return '<p class="wh-empty" style="margin:0">No shipments scheduled.</p>';
+            }
+
+            // Build a fixed window of months: current - 3 → current + 9 (13 total).
+            const now = new Date();
+            now.setDate(1);
+            const months = [];
+            for (let i = -3; i <= 9; i++) {
+                const d = new Date(now.getFullYear(), now.getMonth() + i, 1);
+                const ym = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
+                months.push({ ym, label: d.toLocaleDateString('en-NZ', { month: 'short' }), year: d.getFullYear() });
+            }
+            const curYm = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
+
+            // Bucket shipments by ym. Anything outside the visible window collapses
+            // to the edge column so it stays clickable from the timeline.
+            const byMonth = {};
+            for (const s of all) {
+                const ym = s.ym || months[0].ym;
+                let bucket = ym;
+                if (ym < months[0].ym) bucket = months[0].ym;
+                else if (ym > months[months.length - 1].ym) bucket = months[months.length - 1].ym;
+                (byMonth[bucket] = byMonth[bucket] || []).push(s);
+            }
+
+            const STATUS_C = { planning:'#94a3b8', ordered:'#3b82f6', 'in-transit':'#f59e0b', customs:'#8b5cf6', delivered:'#10b981' };
+
+            const cols = months.map(m => {
+                const ships = (byMonth[m.ym] || []).slice().sort((a, b) => (a.seq || 0) - (b.seq || 0));
+                const isCurrent = m.ym === curYm;
+                const showYear = m.label === 'Jan' || m === months[0];
+                const chips = ships.map(s => {
+                    const title  = s.seq ? `#${s.seq}` : (s.campaign || 'ship').slice(0, 8);
+                    const kg     = Number(s.kg) || 0;
+                    const status = s.status || 'planning';
+                    const c      = STATUS_C[status] || '#94a3b8';
+                    const total  = s.seq ? computeShipTotalsNew(s, forex).total : 0;
+                    return `<div class="imp-tl-chip imp-event-card--nav" data-ship-id="${escHtml(s.id)}" title="${escHtml(s.campaign || '')}${kg ? ' · ' + kg.toLocaleString('en-NZ') + ' kg' : ''}${total ? ' · $' + Math.round(total).toLocaleString('en-NZ') : ''}">
+                        <span class="imp-tl-chip-dot" style="background:${c}"></span>
+                        <span class="imp-tl-chip-title">${escHtml(title)}</span>
+                        ${kg ? `<span class="imp-tl-chip-kg">${kg >= 1000 ? (kg/1000).toFixed(kg >= 10000 ? 0 : 1) + 'k' : kg}</span>` : ''}
+                    </div>`;
+                }).join('');
+                return `<div class="imp-tl-col${isCurrent ? ' imp-tl-col--current' : ''}">
+                    <div class="imp-tl-col-hd">
+                        <span class="imp-tl-mo">${m.label}</span>
+                        ${showYear ? `<span class="imp-tl-yr">${m.year}</span>` : ''}
+                    </div>
+                    <div class="imp-tl-col-body">${chips || '<span class="imp-tl-col-empty"></span>'}</div>
+                </div>`;
+            }).join('');
+
+            return `<div class="imp-tl-wrap"><div class="imp-tl">${cols}</div></div>`;
         }
 
         // Right-side sticky chart: four horizontal bars showing each section's
@@ -964,9 +1041,10 @@ const Warehouse = (() => {
         // and the auto-computed total (kg × rate); flat lines just show the
         // amount. Both still expose ccy + paid + paidVia.
         function buildFixedRowHtml(s, def, forex) {
-            const line = (s.fixedLines || {})[def.key] || {};
+            const line = fixedLineFor(s, def.key) || {};
             const nzd  = fixedLineNzd(def, line, s, forex);
             const ccy  = line.ccy || def.defaultCcy;
+            const labelText = line.labelOverride || def.label;
 
             let amountCellInner = '';
             if (def.kind === 'flat') {
@@ -999,8 +1077,12 @@ const Warehouse = (() => {
 
             const liveFx = ccy && ccy !== 'NZD' && forex[ccy];
 
+            const labelCell = def.editableLabel
+                ? `<input class="ship-fix-label-inp" data-f="labelOverride" value="${escHtml(labelText)}" placeholder="${escHtml(def.label)}">`
+                : escHtml(labelText);
+
             return `<tr class="ship-fix-row${line.paid ? ' ship-fix-row--paid' : ''}" data-ship-id="${escHtml(s.id)}" data-line-key="${escHtml(def.key)}">
-                <td class="ship-fix-td-label">${escHtml(def.label)}</td>
+                <td class="ship-fix-td-label">${labelCell}</td>
                 <td class="ship-fix-td-amt">${amountCellInner}${ccySelect}</td>
                 <td class="ship-fix-td-mult">${multCell}</td>
                 <td class="ship-fix-td-nzd">
@@ -1177,13 +1259,13 @@ const Warehouse = (() => {
                             <div class="ship-det-hd"><h3 class="ship-det-title">Raw Product Split</h3></div>
                             <div class="ship-raw-split">
                                 <div class="ship-raw-split-field">
-                                    <label class="imp-field-label">White (kg)</label>
+                                    <label class="imp-field-label">Line 1 (kg)</label>
                                     <input type="number" class="imp-detail-input ship-raw-kg"
                                         data-ship-id="${escHtml(s.id)}" data-field="rawWhiteKg"
                                         value="${whiteKg}" placeholder="0" step="any" min="0">
                                 </div>
                                 <div class="ship-raw-split-field">
-                                    <label class="imp-field-label">Colour (kg)</label>
+                                    <label class="imp-field-label">Line 2 (kg)</label>
                                     <input type="number" class="imp-detail-input ship-raw-kg"
                                         data-ship-id="${escHtml(s.id)}" data-field="rawColourKg"
                                         value="${colourKg}" placeholder="0" step="any" min="0">
@@ -1198,7 +1280,7 @@ const Warehouse = (() => {
 
                         <div class="ship-det-section">
                             <div class="ship-det-hd"><h3 class="ship-det-title">Cost Breakdown</h3></div>
-                            ${buildFixedSectionHtml(s, 'product',    forex)}
+                            ${buildFixedSectionHtml(s, 'raw',        forex)}
                             ${buildFixedSectionHtml(s, 'processing', forex)}
                             ${buildFixedSectionHtml(s, 'freight',    forex)}
                             ${buildOtherSectionHtml(s, forex)}
@@ -1506,25 +1588,44 @@ const Warehouse = (() => {
             const shipCard = (s, past) => {
                 const milestones = s.milestones || [];
                 const doneCount  = milestones.filter(m => m.done).length;
-                const lines      = s.costLines || [];
-                const lineNzdC   = l => {
-                    const amt = Number(l.amount) || 0;
-                    if (!amt) return 0;
-                    if (!l.ccy || l.ccy === 'NZD') return amt;
-                    const rate = forex[l.ccy];
-                    return rate ? amt / rate : amt;
-                };
-                const totalNzd = lines.reduce((t, l) => t + lineNzdC(l), 0);
-                const paidNzd  = lines.filter(l => l.paid).reduce((t, l) => t + lineNzdC(l), 0);
-                const osNzd    = totalNzd - paidNzd;
-                const status   = s.status || (past ? 'delivered' : 'planning');
-                const sc       = SHIP_STATUS_COLORS[status] || '#94a3b8';
+
+                // New-schema shipments use computeShipTotalsNew (rigid + Other);
+                // legacy shipments still sum the old free-form costLines only.
+                let totalNzd, paidNzd;
+                if (s.seq) {
+                    const t = computeShipTotalsNew(s, forex);
+                    totalNzd = t.total;
+                    paidNzd  = t.paid;
+                } else {
+                    const lineNzdC = l => {
+                        const amt = Number(l.amount) || 0;
+                        if (!amt) return 0;
+                        if (!l.ccy || l.ccy === 'NZD') return amt;
+                        const rate = forex[l.ccy];
+                        return rate ? amt / rate : amt;
+                    };
+                    const lines = s.costLines || [];
+                    totalNzd = lines.reduce((t, l) => t + lineNzdC(l), 0);
+                    paidNzd  = lines.filter(l => l.paid).reduce((t, l) => t + lineNzdC(l), 0);
+                }
+                const osNzd  = totalNzd - paidNzd;
+                const status = s.status || (past ? 'delivered' : 'planning');
+                const sc     = SHIP_STATUS_COLORS[status] || '#94a3b8';
+
+                // Title hierarchy: for new-schema shipments, "Shipment #N" is the
+                // dominant title and the campaign (if any) drops to a subtitle.
+                // Legacy shipments still lead with their campaign or month.
+                const title    = s.seq ? `Shipment #${s.seq}` : (s.campaign || ymLabel(s.ym));
+                const subtitle = s.seq
+                    ? [s.campaign, ymLabel(s.ym)].filter(Boolean).join(' · ')
+                    : (s.campaign ? ymLabel(s.ym) : '');
+
                 return `
                 <div class="imp-event-card imp-event-card--nav ${past ? 'imp-event-card--past' : ''}" data-ship-id="${escHtml(s.id)}">
                     <div class="imp-event-card-summary">
                         <div>
-                            <div class="imp-event-title">${escHtml(s.campaign || ymLabel(s.ym))}</div>
-                            <div class="imp-event-month">${s.campaign ? ymLabel(s.ym) : ''}</div>
+                            <div class="imp-event-title">${escHtml(title)}</div>
+                            ${subtitle ? `<div class="imp-event-month">${escHtml(subtitle)}</div>` : ''}
                             <div class="imp-event-qty">${fmtFull(s.kg)} kg</div>
                             ${s.note ? `<div class="imp-event-note">${escHtml(s.note)}</div>` : ''}
                             ${totalNzd > 0 ? `<div class="imp-ship-cost-pill">
@@ -1573,6 +1674,11 @@ const Warehouse = (() => {
                         </div>
                     </div>
                     <div id="imp-chart-wrap">${buildForecastChart(rows, scenario)}</div>
+                </div>
+
+                <div class="cat-section imp-timeline-card">
+                    <h2 class="cat-title" style="margin-bottom:0.75rem">Shipments Timeline</h2>
+                    ${buildShipmentsTimelineHtml(allShips, forex)}
                 </div>
 
                 <div class="cat-section imp-table-card" style="padding-bottom:0">
@@ -1834,8 +1940,8 @@ const Warehouse = (() => {
         body.addEventListener('change', async e => {
             if (acSignal.aborted) return;
 
-            // ── Fixed-schema (rigid) cost line — amount/rate/ccy/paidVia ──
-            const fixField = e.target.closest('.ship-fix-num, .ship-fix-ccy, .ship-fix-paidvia');
+            // ── Fixed-schema (rigid) cost line — amount/rate/ccy/paidVia/labelOverride ──
+            const fixField = e.target.closest('.ship-fix-num, .ship-fix-ccy, .ship-fix-paidvia, .ship-fix-label-inp');
             if (fixField) {
                 const row = fixField.closest('.ship-fix-row');
                 if (!row) return;
