@@ -660,20 +660,29 @@ function renderCalendar14dBody(events, shipments) {
     return blocks + footer;
 }
 
-// 28-day strip: one cell per day, dot if events. Click → /calendar.
-function renderCalendar28dBody(events, shipments) {
-    const today = new Date(); today.setHours(0,0,0,0);
-    const dayCount = {};
+// Build a per-date map of events keyed by 'YYYY-MM-DD' for the 28-day expand.
+// Cached on window so the click handler can read it without re-fetching.
+function _buildDayMap(events, shipments) {
+    const map = {};
     for (const ev of (events || [])) {
         const parsed = _parseGcalEvent(ev);
         if (!parsed) continue;
-        dayCount[parsed.date] = (dayCount[parsed.date] || 0) + 1;
+        (map[parsed.date] = map[parsed.date] || []).push({ type: 'gcal', ...parsed });
     }
     for (const s of (shipments || [])) {
         if (!s.ym) continue;
         const date = s.ym + '-01';
-        dayCount[date] = (dayCount[date] || 0) + 1;
+        const title = s.seq ? `Shipment #${s.seq} ETA` : `Shipment ETA · ${s.campaign || s.ym}`;
+        (map[date] = map[date] || []).push({ type: 'shipment', time: '', title, allDay: true });
     }
+    return map;
+}
+
+// 28-day strip: one cell per day, dot if events. Click expands details inline.
+function renderCalendar28dBody(events, shipments) {
+    const today = new Date(); today.setHours(0,0,0,0);
+    const dayMap = _buildDayMap(events, shipments);
+    window._dbDayMap = dayMap; // shared with the click handler below
 
     const cells = [];
     for (let i = 0; i < 28; i++) {
@@ -682,20 +691,64 @@ function renderCalendar28dBody(events, shipments) {
         const mm   = String(d.getMonth() + 1).padStart(2, '0');
         const dd   = String(d.getDate()).padStart(2, '0');
         const key  = `${yyyy}-${mm}-${dd}`;
-        const n    = dayCount[key] || 0;
+        const items = dayMap[key] || [];
+        const n    = items.length;
         const dow  = d.getDay();
         const isWeekend = dow === 0 || dow === 6;
         const cls  = `db-strip-cell${i === 0 ? ' db-strip-cell--today' : ''}${isWeekend ? ' db-strip-cell--weekend' : ''}${n > 0 ? ' db-strip-cell--has' : ''}`;
         const dotsHtml = n > 0
             ? '<span class="db-strip-dots">' + '●'.repeat(Math.min(n, 3)) + '</span>'
             : '';
-        cells.push(`<div class="${cls}" title="${key}${n ? ' · ' + n + ' event' + (n > 1 ? 's' : '') : ''}">
+        cells.push(`<button type="button" class="${cls}" data-date="${key}" title="${key}${n ? ' · ' + n + ' event' + (n > 1 ? 's' : '') : ''}">
             <span class="db-strip-dow">${'SMTWTFS'[dow]}</span>
             <span class="db-strip-dom">${d.getDate()}</span>
             ${dotsHtml}
-        </div>`);
+        </button>`);
     }
     return `<div class="db-strip">${cells.join('')}</div>`;
+}
+
+// Render the expanded detail panel for a given day.
+function _renderStripDetailFor(date) {
+    const items = (window._dbDayMap || {})[date] || [];
+    const d = new Date(date + 'T00:00:00');
+    const heading = d.toLocaleDateString('en-NZ', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+    const body = items.length
+        ? items.sort((a, b) => (a.time || '').localeCompare(b.time || '')).map(it => `
+            <div class="db-cal-event db-cal-event--${it.type}">
+                ${it.time ? `<span class="db-cal-time">${it.time}</span>` : '<span class="db-cal-time db-cal-time--all">·</span>'}
+                <span class="db-cal-title">${_ehDb(it.title)}</span>
+            </div>`).join('')
+        : '<p class="db-mod-empty">Nothing scheduled.</p>';
+    return `<div class="db-strip-detail-hd">
+            <span>${_ehDb(heading)}</span>
+            <button type="button" class="db-strip-detail-close" title="Close">×</button>
+        </div>
+        <div class="db-strip-detail-body">${body}</div>`;
+}
+
+// One-time delegated click handler for the 28-day strip cells + close button.
+if (!window._dbStripWired) {
+    window._dbStripWired = true;
+    document.addEventListener('click', e => {
+        const closeBtn = e.target.closest('.db-strip-detail-close');
+        if (closeBtn) {
+            const panel = document.getElementById('db-strip-detail');
+            if (panel) { panel.style.display = 'none'; panel.innerHTML = ''; }
+            document.querySelectorAll('.db-strip-cell--open').forEach(c => c.classList.remove('db-strip-cell--open'));
+            return;
+        }
+        const cell = e.target.closest('.db-strip-cell');
+        if (!cell) return;
+        const date = cell.dataset.date;
+        if (!date) return;
+        const panel = document.getElementById('db-strip-detail');
+        if (!panel) return;
+        document.querySelectorAll('.db-strip-cell--open').forEach(c => c.classList.remove('db-strip-cell--open'));
+        cell.classList.add('db-strip-cell--open');
+        panel.innerHTML = _renderStripDetailFor(date);
+        panel.style.display = '';
+    });
 }
 
 // Fetch /api/calendar/events for the next 28 days, populate both calendar modules.
@@ -750,8 +803,9 @@ function renderDashboardWidgets(config) {
           icon: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>' },
     ];
 
-    // Quick Actions are now footer-row chips, not headline cards.
-    const actionsHtml = `<div class="db-quick-actions db-quick-actions--footer">${QUICK_ACTIONS.map(a =>
+    // Quick Actions sit at the very top of the dashboard — primary
+    // navigation shortcut row, not a footer.
+    const actionsHtml = `<div class="db-quick-actions">${QUICK_ACTIONS.map(a =>
         `<a class="db-quick-card" href="#${a.hash}">${a.icon}<span>${a.label}</span></a>`
     ).join('')}</div>`;
 
@@ -787,6 +841,7 @@ function renderDashboardWidgets(config) {
     // calendar events feed the two calendar modules; config.shipments
     // feeds Incoming Shipments synchronously.
     el.innerHTML =
+        actionsHtml +
         fxHtml +
         '<div id="db-alerts-container"></div>' +
         '<div class="db-grid db-grid-2">' +
@@ -808,10 +863,10 @@ function renderDashboardWidgets(config) {
             '<section class="db-mod db-mod--chart" id="db-orders-chart"><span class="db-mod-loading">Loading orders…</span></section>' +
         '</div>' +
         '<section class="db-mod db-mod--strip" id="db-mod-cal-28d">' +
-            '<div class="db-mod-hd"><h3 class="db-mod-title">Next 28 days</h3></div>' +
+            '<div class="db-mod-hd"><h3 class="db-mod-title">Next 28 days</h3><span class="db-mod-hint">Click a day for events</span></div>' +
             '<div class="db-mod-body"><span class="db-mod-loading">Loading…</span></div>' +
-        '</section>' +
-        actionsHtml;
+            '<div class="db-strip-detail" id="db-strip-detail" style="display:none"></div>' +
+        '</section>';
 
     // Calendar fetches in parallel with orders (independent endpoints).
     loadDashboardCalendar(config);

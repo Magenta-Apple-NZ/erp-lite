@@ -1578,6 +1578,13 @@ const Warehouse = (() => {
             }).join('');
 
             const allShips      = (config.shipments || []).slice().sort((a, b) => a.ym.localeCompare(b.ym));
+
+            // Every shipment surfaces with a "#N" — fall back to a virtual
+            // index for legacy shipments that pre-date the seq field. We
+            // mutate the in-memory copy only; nothing writes back to KV.
+            allShips.forEach((s, i) => { if (!s.seq) s._displaySeq = i + 1; });
+            const displaySeqOf = s => s.seq || s._displaySeq || 0;
+
             const todayYm       = new Date().toISOString().slice(0, 7);
             const upcomingShips = allShips.filter(s => s.ym >= todayYm);
             const pastShips     = allShips.filter(s => s.ym < todayYm);
@@ -1612,13 +1619,12 @@ const Warehouse = (() => {
                 const status = s.status || (past ? 'delivered' : 'planning');
                 const sc     = SHIP_STATUS_COLORS[status] || '#94a3b8';
 
-                // Title hierarchy: for new-schema shipments, "Shipment #N" is the
-                // dominant title and the campaign (if any) drops to a subtitle.
-                // Legacy shipments still lead with their campaign or month.
-                const title    = s.seq ? `Shipment #${s.seq}` : (s.campaign || ymLabel(s.ym));
-                const subtitle = s.seq
-                    ? [s.campaign, ymLabel(s.ym)].filter(Boolean).join(' · ')
-                    : (s.campaign ? ymLabel(s.ym) : '');
+                // Every card leads with "Shipment #N". Legacy shipments use
+                // their virtual displaySeq computed above. The campaign and
+                // month always drop to the subtitle line.
+                const seqForTitle = displaySeqOf(s);
+                const title    = `Shipment #${seqForTitle}`;
+                const subtitle = [s.campaign, ymLabel(s.ym)].filter(Boolean).join(' · ');
 
                 return `
                 <div class="imp-event-card imp-event-card--nav ${past ? 'imp-event-card--past' : ''}" data-ship-id="${escHtml(s.id)}">

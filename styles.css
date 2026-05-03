@@ -1870,13 +1870,16 @@ a.xero-inv-linked:hover { background: #d1fae5; border-color: #6ee7b7; }
 .imp-row--low .imp-td-month { color: #92400e; }
 .imp-row--critical .imp-td-month { color: #991b1b; font-weight: 700; }
 
-/* ── Upcoming import event cards (details/summary) ── */
+/* ── Upcoming import event cards (details/summary) ──
+   Single column, full-width stacked vertically — gives each card room to
+   show the shipment journey timeline. */
 .imp-events-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    display: flex;
+    flex-direction: column;
     gap: 0.75rem;
     margin-top: 0.25rem;
 }
+.imp-events-grid > .imp-event-card { width: 100%; }
 .imp-events-grid--past { opacity: 0.8; }
 
 .imp-event-card {
@@ -3211,13 +3214,43 @@ a.db-row:hover { background: #f8fafc; border-color: #e2e8f0; }
 }
 
 /* Calendar 28-day strip */
-.db-mod--strip { overflow-x: auto; }
+.db-mod--strip { overflow-x: visible; }
+.db-mod--strip .db-mod-body { overflow-x: auto; }
 .db-strip {
     display: grid;
     grid-template-columns: repeat(28, minmax(20px, 1fr));
     gap: 2px;
     min-width: 560px;
 }
+.db-strip-cell { border: none; cursor: pointer; font-family: inherit; text-align: inherit; }
+.db-strip-cell:hover { outline: 2px solid #93c5fd; outline-offset: -1px; }
+.db-strip-cell--open { outline: 2px solid #1d4ed8; outline-offset: -1px; }
+.db-mod-hint { font-size: 0.7rem; color: #94a3b8; font-style: italic; }
+.db-strip-detail {
+    margin-top: 0.6rem;
+    padding-top: 0.6rem;
+    border-top: 1px solid #f1f5f9;
+}
+.db-strip-detail-hd {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: #0f172a;
+    margin-bottom: 0.3rem;
+}
+.db-strip-detail-close {
+    border: none;
+    background: transparent;
+    font-size: 1.1rem;
+    color: #94a3b8;
+    cursor: pointer;
+    padding: 0 0.3rem;
+    line-height: 1;
+}
+.db-strip-detail-close:hover { color: #475569; }
+.db-strip-detail-body { display: flex; flex-direction: column; gap: 0.2rem; }
 .db-strip-cell {
     display: flex;
     flex-direction: column;
