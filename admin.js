@@ -106,171 +106,72 @@ const Admin = (() => {
     }
 
     // ── Prices tab (pricing matrix) ──
-    function renderPricesTab(body, items, onSave) {
+    // The Prices and Stores catalogs are now sourced from published Google
+    // Sheets via /api/catalog/items and /api/catalog/stores. The Hub no
+    // longer accepts edits — the sheet is the source of truth. This tab is
+    // a read-only viewer plus a link out for editing.
+    const ITEMS_SHEET_VIEW_URL  = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSf_VXDqVAC5KqHJZTil7H-2MoeK5lSqx5OWmCaigi6Xn7wNdznlp0mS-D5rgI35-X4Vh-itflowh1j/pubhtml?gid=0';
+    const STORES_SHEET_VIEW_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSf_VXDqVAC5KqHJZTil7H-2MoeK5lSqx5OWmCaigi6Xn7wNdznlp0mS-D5rgI35-X4Vh-itflowh1j/pubhtml?gid=1005144257';
+
+    function fmtPrice(v) { return v == null ? '<span class="cat-price-nil">—</span>' : '$' + Number(v).toFixed(2); }
+
+    function renderPricesTab(body, items) {
         body.innerHTML = `
         <div class="cat-section">
             <div class="cat-section-head">
                 <div>
                     <h2 class="cat-title">Price Matrix</h2>
-                    <p class="cat-sub">Prices per kg at each quantity break point.</p>
-                </div>
-                <div class="cat-actions">
-                    <button class="btn-secondary btn-sm" id="matrix-add-btn">+ Add Product</button>
-                    <button class="btn-secondary btn-sm" id="matrix-dl-btn" ${items.length ? '' : 'disabled'}>Download CSV</button>
-                    <button class="btn-primary btn-sm" id="matrix-save-btn">Save Changes</button>
+                    <p class="cat-sub">Read-only. Source: <a href="${ITEMS_SHEET_VIEW_URL}" target="_blank" rel="noopener">Pricing sheet ↗</a> (cached ~60s).</p>
                 </div>
             </div>
             <div class="matrix-wrap">
-                <table class="matrix-table">
+                <table class="matrix-table matrix-table--readonly">
                     <thead>
                         <tr>
                             <th class="matrix-th-id">ID</th>
                             <th class="matrix-th-name">Product Name</th>
-                            <th class="matrix-th-price">&lt; 150 kg</th>
+                            <th class="matrix-th-price">Unit Price</th>
                             <th class="matrix-th-price">150+ kg</th>
                             <th class="matrix-th-price">500+ kg</th>
                             <th class="matrix-th-price">2,000+ kg</th>
-                            <th style="width:32px"></th>
                         </tr>
                     </thead>
-                    <tbody id="matrix-tbody">
-                        ${items.map(item => matrixRow(item)).join('')}
+                    <tbody>
+                        ${items.length
+                            ? items.map(it => `<tr>
+                                <td class="cat-mono">${escHtml(it.id || '')}</td>
+                                <td>${escHtml(it.name || '')}</td>
+                                <td class="cat-num">${fmtPrice(it.defaultPrice)}</td>
+                                <td class="cat-num">${fmtPrice(it.pb1Price)}</td>
+                                <td class="cat-num">${fmtPrice(it.pb2Price)}</td>
+                                <td class="cat-num">${fmtPrice(it.pb3Price)}</td>
+                            </tr>`).join('')
+                            : '<tr><td colspan="6" class="cat-empty">No items yet. Add rows in the source sheet.</td></tr>'}
                     </tbody>
                 </table>
             </div>
         </div>`;
-
-        document.getElementById('matrix-add-btn').addEventListener('click', () => {
-            const tbody = document.getElementById('matrix-tbody');
-            tbody.insertAdjacentHTML('beforeend', matrixRow({ id: '', name: '', defaultPrice: null, pb1Price: null, pb2Price: null, pb3Price: null, isLoose: false }));
-            tbody.lastElementChild.querySelector('.matrix-id').focus();
-        });
-
-        document.getElementById('matrix-dl-btn').addEventListener('click', () => {
-            if (!items.length) return;
-            downloadCsv(itemsToCsv(items), `prices-${new Date().toISOString().slice(0, 10)}.csv`);
-        });
-
-        document.getElementById('matrix-save-btn').addEventListener('click', async () => {
-            const rows = [...document.querySelectorAll('#matrix-tbody .matrix-row')];
-            const updated = rows.map(tr => ({
-                id:           tr.querySelector('.matrix-id').value.trim(),
-                name:         tr.querySelector('.matrix-name').value.trim(),
-                defaultPrice: parseFloat(tr.querySelector('.matrix-p0').value) || 0,
-                pb1Quantity:  150,
-                pb1Price:     parseFloat(tr.querySelector('.matrix-p150').value) || null,
-                pb2Quantity:  500,
-                pb2Price:     parseFloat(tr.querySelector('.matrix-p500').value) || null,
-                pb3Quantity:  2000,
-                pb3Price:     parseFloat(tr.querySelector('.matrix-p2000').value) || null,
-            })).filter(i => i.name);
-
-            const btn = document.getElementById('matrix-save-btn');
-            btn.disabled = true; btn.textContent = 'Saving…';
-            try {
-                const r = await api('/api/catalog/items', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ items: updated }),
-                });
-                onSave(updated);
-                document.getElementById('matrix-dl-btn').disabled = false;
-                showToast(`Saved ${r.count} products`);
-            } catch (e) {
-                showToast('Save failed: ' + e.message);
-            } finally {
-                btn.disabled = false; btn.textContent = 'Save Changes';
-            }
-        });
-
-        document.getElementById('matrix-tbody').addEventListener('click', e => {
-            if (e.target.closest('.matrix-del')) e.target.closest('.matrix-row').remove();
-        });
     }
 
-    // ── Stores tab ──
-    function renderStoresTab(body, stores, onSave) {
+    // ── Stores tab (read-only, sourced from published Google Sheet) ──
+    function renderStoresTab(body, stores) {
         body.innerHTML = `
         <div class="cat-section" id="cat-stores">
             <div class="cat-section-head">
                 <div>
                     <h2 class="cat-title">Store Locations</h2>
-                    <p class="cat-sub" id="stores-sub">${stores.length} store${stores.length !== 1 ? 's' : ''}</p>
-                </div>
-                <div class="cat-actions">
-                    <button class="btn-secondary btn-sm" id="stores-tpl-btn">Download template</button>
-                    <button class="btn-secondary btn-sm" id="stores-dl-btn" ${stores.length ? '' : 'disabled'}>Download current CSV</button>
-                    <label class="btn-primary btn-sm cat-upload-lbl">
-                        Upload CSV
-                        <input type="file" id="stores-file" accept=".csv" style="display:none">
-                    </label>
+                    <p class="cat-sub">Read-only. Source: <a href="${STORES_SHEET_VIEW_URL}" target="_blank" rel="noopener">Stores sheet ↗</a> (cached ~60s). ${stores.length} store${stores.length !== 1 ? 's' : ''}.</p>
                 </div>
             </div>
-            <div id="stores-preview" style="display:${stores.length ? '' : 'none'}">
-                <table class="cat-table">
-                    <thead><tr><th>Code</th><th>Customer</th><th>Branch</th><th>City</th><th>Postcode</th></tr></thead>
-                    <tbody id="stores-tbody">${storesTableRows(stores)}</tbody>
-                </table>
-                <div class="cat-save-row">
-                    <button class="btn-primary btn-sm" id="stores-save-btn" style="display:none">Save to Hub</button>
-                </div>
-            </div>
-            <p class="cat-format">Expected columns: <code>Customer Code, Customer, Branch, City, Street Address, Postcode, Phone</code></p>
+            <table class="cat-table">
+                <thead><tr><th>Code</th><th>Customer</th><th>Branch</th><th>City</th><th>Postcode</th></tr></thead>
+                <tbody>
+                    ${stores.length
+                        ? storesTableRows(stores)
+                        : '<tr><td colspan="5" class="cat-empty">No stores yet. Add rows in the source sheet.</td></tr>'}
+                </tbody>
+            </table>
         </div>`;
-
-        document.getElementById('stores-tpl-btn').addEventListener('click', () => {
-            const csv = [STORE_HEADERS.join(','), STORE_EXAMPLE.join(',')].join('\n');
-            downloadCsv(csv, 'stores-template.csv');
-        });
-        document.getElementById('stores-dl-btn').addEventListener('click', () => {
-            if (!stores.length) return;
-            downloadCsv(storesToCsv(stores), `stores-${new Date().toISOString().slice(0, 10)}.csv`);
-        });
-
-        document.getElementById('stores-file').addEventListener('change', async e => {
-            const file = e.target.files[0];
-            if (!file) return;
-            e.target.value = '';
-            const rows = parseCsv(await file.text());
-            const parsed = rows.map(r => ({
-                customerCode:  r.customer_code || r.customercode || r.code || r.account_id || r.accountid || '',
-                customer:      r.customer || r.customer_name || r.company || '',
-                branch:        r.branch || r.branch_name || r.store || r.name || '',
-                city:          r.city || r.town || '',
-                streetAddress: r.street_address || r.streetaddress || r.address || r.street || '',
-                postcode:      r.postcode || r.post_code || r.zip || '',
-                phone:         r.phone || r.telephone || r.tel || '',
-            })).filter(s => s.customer || s.branch);
-
-            if (!parsed.length) { showToast('No valid rows — check headers match: Account ID, Customer, Branch…'); return; }
-            document.getElementById('stores-tbody').innerHTML = storesTableRows(parsed);
-            document.getElementById('stores-preview').style.display = '';
-            const existing = stores.length;
-            document.getElementById('stores-sub').textContent = existing
-                ? `${parsed.length} stores ready to save — will replace ${existing} existing`
-                : `${parsed.length} stores ready to save`;
-            const btn = document.getElementById('stores-save-btn');
-            btn.style.display = '';
-            btn._data = parsed;
-        });
-
-        document.getElementById('stores-save-btn').addEventListener('click', async function () {
-            this.disabled = true; this.textContent = 'Saving…';
-            try {
-                const r = await api('/api/catalog/stores', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ stores: this._data }),
-                });
-                onSave(this._data);
-                showToast(`Saved ${r.count} stores`);
-                document.getElementById('stores-sub').textContent = `${r.count} store${r.count !== 1 ? 's' : ''}`;
-                this.style.display = 'none';
-            } catch (e) {
-                showToast('Save failed: ' + e.message);
-                this.disabled = false; this.textContent = 'Save to Hub';
-            }
-        });
     }
 
     async function renderAdmin(container) {

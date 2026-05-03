@@ -1189,10 +1189,49 @@ function setActiveNav(navId) {
     if (el) el.classList.add('active');
 }
 
+// Worker mode: a sticky UI restriction (not a security boundary — Cloudflare
+// Access still gates the site). Set by visiting #worker once, cleared via
+// #worker-exit. Persists across reloads so Andrew can share #worker with Jake
+// and Jake never needs to navigate sidebar tabs again.
+function applyWorkerModeClass() {
+    const on = localStorage.getItem('hub-worker-mode') === '1';
+    document.body.classList.toggle('body--worker', on);
+}
+applyWorkerModeClass();
+
 async function handleRoute() {
     const hash = location.hash.replace(/^#\/?/, '');
 
+    // Worker-mode toggles. These set the flag and bounce to the orders list
+    // so the URL the user actually lands on is #orders (cleaner share link).
+    if (hash === 'worker') {
+        localStorage.setItem('hub-worker-mode', '1');
+        applyWorkerModeClass();
+        location.hash = 'orders';
+        return;
+    }
+    if (hash === 'worker-exit') {
+        localStorage.removeItem('hub-worker-mode');
+        applyWorkerModeClass();
+        location.hash = '';
+        return;
+    }
+
+    // In worker mode, only orders/* routes are reachable; any other hash
+    // (admin, imports, sales, calendar, warehouse, dashboard) bounces to
+    // orders. This is a UI restriction; Cloudflare Access remains the
+    // actual security boundary at the email level.
+    const inWorkerMode = localStorage.getItem('hub-worker-mode') === '1';
+    if (inWorkerMode && hash && !hash.startsWith('orders')) {
+        location.hash = 'orders';
+        return;
+    }
+
     if (!hash || hash === 'dashboard') {
+        if (inWorkerMode) {
+            location.hash = 'orders';
+            return;
+        }
         setActiveView('view-dashboard');
         setActiveNav('nav-dashboard');
         // Silently prefetch data-heavy tabs so they open instantly

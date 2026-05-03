@@ -2758,6 +2758,23 @@ a.xero-inv-linked:hover { background: #d1fae5; border-color: #6ee7b7; }
 .sales-ytd-dn { background: #fee2e2; color: #dc2626; }
 
 /* ────────────────────────────────────────────────────────────────
+   Worker mode — share #worker with warehouse staff for an
+   orders-only view. Sticky via localStorage; #worker-exit clears.
+   This is a UI restriction, not a security boundary; Cloudflare
+   Access still gates the site by email.
+   ──────────────────────────────────────────────────────────────── */
+
+body.body--worker .sidebar { display: none; }
+body.body--worker .main-wrap { width: 100%; }
+body.body--worker #dashboard-topbar { display: none; }
+body.body--worker .app-shell { padding: 0; }
+
+/* In worker mode the only routes that should appear are orders/*.
+   Direct hash entry to #admin etc. still loads the view (we don't
+   block that here), but every visible link points at orders. */
+body.body--worker .orders-view-inner { padding-top: 1rem; }
+
+/* ────────────────────────────────────────────────────────────────
    Shipment detail — rigid schema (Shipment #42 onwards)
    Two-column layout with a sticky % of Total chart on the right.
    ──────────────────────────────────────────────────────────────── */
