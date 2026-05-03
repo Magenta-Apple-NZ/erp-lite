@@ -2,6 +2,14 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Project ambition
+
+**The Business Hub is evolving from a static dashboard into a mini-ERP.** Over a 12-week sprint (Apr 17 — Jul 17, 2026), it will become the system of record for orders, dispatch, and Xero invoice coordination. It consolidates three separate systems (Chrome Extension scraper, Make webhooks, Packing Slip Generator on Render) into one integrated platform.
+
+**End state (Jul 17):** Warehouse staff work autonomously from the Hub queue. Orders enter once, generate packing slips natively, and push to Xero. Manual logs and triple-keying are gone.
+
+See `ROADMAP.md` for the full 5-phase plan and success criteria.
+
 ## Running locally
 
 ```bash
@@ -9,26 +17,59 @@ python3 -m http.server 8000
 # then open http://localhost:8000
 ```
 
-No build step, no dependencies, no package manager. Open `index.html` directly via `file://` if you need local file/folder links to work natively (Chrome blocks `file://` links from `http://` pages).
+No build step. Open `index.html` directly via `file://` if you need local file/folder links to work natively (Chrome blocks `file://` links from `http://` pages).
 
 ## Architecture
 
-Single-page app: `index.html` (shell) + `styles.css` + `app.js` (all logic) + `config.json` (all content). No frameworks, no bundler.
+**Frontend:** Single-page app (`index.html` + `styles.css` + `app.js` + `config.json`). No frameworks, no bundler.
 
-**Data flow:** `loadConfig()` fetches `config.json` at runtime → populates `allGroups` and `pinnedItems` → `renderGroups()` / `renderPinned()` build the DOM from scratch on every load or reload.
+**Backend:** Cloudflare Workers (Pages Functions) under `/functions/api/`. Currently includes:
+- `_xero.js` — Shared Xero OAuth logic
+- `xero/auth.js` — Initiate OAuth flow
+- `xero/callback.js` — Handle OAuth callback, store tokens in XERO_KV
+- `xero/status.js` — Get Xero organisation & contact list
+- `xero/customers.js` — Fetch Xero customers for typeahead
+- `xero/push.js` — (Planned) Push invoice to Xero
 
-**config.json is the only file users edit.** All groups, items, pinned shortcuts, and currency settings live there. Changes take effect on reload (↻ button calls `loadConfig()` again).
+**Data layer:** Cloudflare KV (persistent key-value store). Currently planned namespaces:
+- `ORDERS_KV` — Order records (ID, customer, items, ship-to, status, packing slip data)
+- `XERO_KV` — Xero OAuth tokens + cached customer/location data
 
-**Item types:** `link` (opens URL), `file` (opens via `file://` protocol), `folder` (opens via `file://` protocol). File/folder items get a "Copy path" button as a fallback when `file://` links are blocked.
+### Frontend data flow
 
-**Seasonal logic** (`isSeasonActive`): season strings like `"oct-mar"` are parsed into month indices and handle year-boundary wraps. Off-season items get `.off-season` class (dimmed) plus a grey badge.
+`loadConfig()` fetches `config.json` at runtime → populates `allGroups` and `pinnedItems` → `renderGroups()` / `renderPinned()` build the DOM. **config.json is the only file users edit** for static content (groups, links, seasonal items).
 
-**Currency widget:** fetches live rates from `frankfurter.dev` on load, rendered in the header. Configured via `config.currencies` in `config.json`.
+**Item types:** `link` (opens URL), `file`, `folder`. File/folder items get a "Copy path" button as fallback.
 
-**Collapse state** is persisted to `localStorage` under the key `hub-collapsed` as a `{groupName: bool}` map.
+**Seasonal logic:** Items tagged with `"season": "oct-mar"` are dimmed off-season with a grey badge.
+
+**Currency widget:** Fetches live rates from `frankfurter.dev` on load.
+
+**Collapse state:** Persisted to `localStorage` under `hub-collapsed`.
+
+### Backend data flow (Phase 1+)
+
+App routes like `/orders` and `/warehouse` will call Cloudflare Worker endpoints (`/api/orders`, `/api/orders/[id]`, etc.) to fetch/create/update orders in KV. Xero integration flows through `/api/xero/push`.
+
+## Current progress
+
+**✅ Phase 1 scaffolding complete** (Week 1–3, in progress):
+- Cloudflare Functions boilerplate and OAuth flow implemented
+- Order creation form with Xero customer typeahead
+- KV namespace bindings declared in `wrangler.toml`
+- Orders list and detail views drafted in the UI
+
+**⏳ Next steps:**
+- Provision `ORDERS_KV` and `XERO_KV` namespaces in Cloudflare dashboard
+- End-to-end verification: create order → render packing slip → push Xero draft
+- Seed store locations into KV from existing Google Sheet
+
+**🚫 Feature-frozen:** Packing Slip Generator (Render service) receives no new work from this point. All slip rendering moves to Hub.
 
 ## Deployment
 
-Hosted on Cloudflare Pages from the `Magenta-Apple-NZ/erp-lite` GitHub repo (auto-deploys on push to `main`). Custom domain: `hub.primetie.co.nz`. Access is restricted to two users via Cloudflare Access (Zero Trust → Applications).
+Hosted on Cloudflare Pages from the `Magenta-Apple-NZ/erp-lite` GitHub repo (auto-deploys on push to `main`). Custom domain: `hub.primetie.co.nz`. Access restricted to two users via Cloudflare Access.
 
-To deploy a change: commit and push to `main` — Cloudflare Pages picks it up automatically.
+Deploy: commit and push to `main` — Pages + Workers both auto-deploy.
+
+**KV provisioning:** Namespaces must be created in the Cloudflare dashboard and their IDs added to `wrangler.toml` before Phase 1 can be verified.
