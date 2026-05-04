@@ -2965,6 +2965,19 @@ body.body--worker .orders-view-inner { padding-top: 1rem; }
 .ship-fix-th-paidvia { width: 130px; }
 .ship-fix-th-chk     { width: 28px;  text-align: center !important; }
 
+/* V3 cost table — separated columns with subtle vertical dividers */
+.ship-fix-table--v3 thead th,
+.ship-fix-table--v3 tbody td {
+    border-right: 1px solid #eef2f7;
+}
+.ship-fix-table--v3 thead th:last-child,
+.ship-fix-table--v3 tbody td:last-child { border-right: none; }
+.ship-fix-th-line   { width: auto; }
+.ship-fix-th-units  { width: 110px; text-align: right !important; }
+.ship-fix-th-cost   { width: 160px; }
+.ship-fix-th-ccy    { width: 70px;  text-align: center !important; }
+.ship-fix-th-sub    { width: 120px; text-align: right !important; }
+
 .ship-fix-row td {
     padding: 0.35rem 0.6rem;
     border-bottom: 1px solid #f1f5f9;
@@ -2994,6 +3007,13 @@ body.body--worker .orders-view-inner { padding-top: 1rem; }
 .ship-fix-td-mult   { color: #64748b; font-size: 0.8rem; }
 .ship-fix-td-chk    { text-align: center; }
 
+.ship-fix-td-units  { text-align: right; font-variant-numeric: tabular-nums; color: #475569; white-space: nowrap; }
+.ship-fix-td-cost   { white-space: nowrap; }
+.ship-fix-td-ccy    { text-align: center; }
+.ship-fix-td-sub    { text-align: right; font-variant-numeric: tabular-nums; color: #334155; }
+.ship-fix-units      { color: #1e293b; font-weight: 500; }
+.ship-fix-units-unit { margin-left: 4px; color: #94a3b8; font-size: 0.78rem; }
+
 .ship-fix-num {
     width: 90px;
     padding: 0.25rem 0.4rem;
@@ -3007,12 +3027,23 @@ body.body--worker .orders-view-inner { padding-top: 1rem; }
 .ship-fix-num:focus { border-color: #3b82f6; background: white; outline: none; }
 .ship-fix-unit { color: #64748b; font-size: 0.78rem; margin-right: 4px; }
 .ship-fix-ccy {
-    padding: 0.2rem 0.3rem;
-    border: 1px solid #e2e8f0;
-    border-radius: 4px;
-    font-size: 0.8rem;
-    background: white;
+    padding: 0.18rem 0.45rem;
+    border: 1px solid #cbd5e1;
+    border-radius: 999px;
+    font-size: 0.72rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    color: #334155;
+    background: #f8fafc;
+    text-transform: uppercase;
+    cursor: pointer;
+    appearance: none;
+    -webkit-appearance: none;
+    text-align: center;
+    text-align-last: center;
 }
+.ship-fix-ccy:hover { border-color: #94a3b8; background: white; }
+.ship-fix-ccy:focus { outline: none; border-color: #3b82f6; background: white; }
 .ship-fix-paidvia {
     width: 100%;
     padding: 0.25rem 0.4rem;
@@ -3194,60 +3225,133 @@ body.body--worker .orders-view-inner { padding-top: 1rem; }
 .ship-pct-legend-name { color: #475569; flex: 1; }
 .ship-pct-legend-pct  { color: #1e293b; font-weight: 600; font-variant-numeric: tabular-nums; }
 
-/* V3 detail — Stage timeline (SVG line chart + editable date rows) */
+/* V3 detail — Stage timeline (minimalist line chart + numbered rows) */
 .ship-tl-section { display: flex; flex-direction: column; gap: 0.85rem; }
 .ship-tl-svg {
     width: 100%;
-    height: 56px;
+    height: 44px;
     overflow: visible;
 }
-.ship-tl-dot circle { transition: r 0.12s, stroke-width 0.12s; }
-.ship-tl-dot:hover circle { r: 9; stroke-width: 3; }
+.ship-tl-dot circle { transition: r 0.12s; }
+.ship-tl-dot:hover circle { r: 7; }
 .ship-tl-rows {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-    gap: 0.5rem;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 0.4rem;
 }
 .ship-tl-row {
     display: flex;
     flex-direction: column;
     gap: 0.3rem;
-    background: white;
-    border: 1px solid #e2e8f0;
-    border-radius: 8px;
-    padding: 0.55rem 0.65rem;
+    padding: 0.1rem 0;
 }
-.ship-tl-row--done { background: #ecfdf5; border-color: #10b981; }
 .ship-tl-toggle {
     display: flex;
     align-items: center;
-    gap: 0.4rem;
+    gap: 0.45rem;
     background: none;
     border: none;
     padding: 0;
     cursor: pointer;
     text-align: left;
 }
-.ship-tl-icon { font-size: 1.05rem; line-height: 1; }
+.ship-tl-num {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 22px;
+    height: 18px;
+    padding: 0 4px;
+    border: 1px solid #cbd5e1;
+    border-radius: 3px;
+    background: white;
+    color: #64748b;
+    font-size: 0.65rem;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: 0.04em;
+    line-height: 1;
+}
+.ship-tl-toggle--done .ship-tl-num {
+    background: #0f172a;
+    border-color: #0f172a;
+    color: white;
+}
 .ship-tl-label {
     font-size: 0.78rem;
-    font-weight: 600;
+    font-weight: 500;
     color: #475569;
     line-height: 1.2;
 }
-.ship-tl-row--done .ship-tl-label { color: #065f46; }
+.ship-tl-toggle--done .ship-tl-label { color: #0f172a; }
 .ship-tl-date {
     border: 1px solid #e2e8f0;
-    border-radius: 5px;
+    border-radius: 4px;
     padding: 0.25rem 0.4rem;
     font-size: 0.78rem;
     font-family: inherit;
-    color: #1e293b;
+    color: #475569;
     background: white;
     width: 100%;
     box-sizing: border-box;
 }
-.ship-tl-date:focus { outline: none; border-color: #3b82f6; }
+.ship-tl-date:hover { border-color: #94a3b8; }
+.ship-tl-date:focus { outline: none; border-color: #3b82f6; color: #1e293b; }
+
+/* Stage defaults inline panel */
+.ship-tl-cfg {
+    margin-top: 0.5rem;
+    padding: 0.85rem 1rem;
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 6px;
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+}
+.ship-tl-cfg-hd { display: flex; flex-direction: column; gap: 0.15rem; margin-bottom: 0.25rem; }
+.ship-tl-cfg-hd strong { font-size: 0.85rem; color: #1e293b; }
+.ship-tl-cfg-hint { font-size: 0.75rem; color: #64748b; }
+.ship-tl-cfg-row {
+    display: grid;
+    grid-template-columns: 28px 1fr auto;
+    align-items: center;
+    gap: 0.6rem;
+    font-size: 0.82rem;
+}
+.ship-tl-cfg-num {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 24px; height: 18px;
+    border: 1px solid #cbd5e1; border-radius: 3px;
+    background: white; color: #64748b;
+    font-size: 0.65rem; font-weight: 600; font-variant-numeric: tabular-nums;
+}
+.ship-tl-cfg-label { color: #334155; }
+.ship-tl-cfg-anchor {
+    font-size: 0.7rem; color: #94a3b8;
+    text-transform: uppercase; letter-spacing: 0.05em;
+}
+.ship-tl-cfg-gap {
+    width: 60px;
+    padding: 0.2rem 0.35rem;
+    border: 1px solid #cbd5e1;
+    border-radius: 4px;
+    font-size: 0.82rem;
+    font-variant-numeric: tabular-nums;
+    text-align: right;
+    background: white;
+}
+.ship-tl-cfg-gap:focus { outline: none; border-color: #3b82f6; }
+.ship-tl-cfg-unit { font-size: 0.72rem; color: #94a3b8; margin-left: 0.25rem; }
+.ship-tl-cfg-actions {
+    display: flex; align-items: center; gap: 0.6rem;
+    margin-top: 0.5rem; padding-top: 0.5rem;
+    border-top: 1px solid #e2e8f0;
+}
+.ship-tl-cfg-saved { font-size: 0.75rem; color: #10b981; }
+
+/* Section header secondary actions cluster */
+.ship-det-hd-actions { display: flex; align-items: center; gap: 0.65rem; }
 
 /* ── V3 detail — Shipment Stage track ────────────────────────────── */
 .ship-stage-track {
@@ -3422,7 +3526,22 @@ body.body--worker .orders-view-inner { padding-top: 1rem; }
     font-weight: 500;
     width: fit-content;
 }
-.imp-upcoming-card-stage-icon { font-size: 0.85rem; }
+.imp-upcoming-card-stage-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 22px;
+    height: 16px;
+    padding: 0 4px;
+    border-radius: 3px;
+    background: white;
+    border: 1px solid #cbd5e1;
+    color: #64748b;
+    font-size: 0.62rem;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: 0.04em;
+}
 
 /* Below ~1100px — drop the chart under the main column instead of beside it */
 @media (max-width: 1100px) {

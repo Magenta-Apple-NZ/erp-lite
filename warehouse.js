@@ -1071,18 +1071,29 @@ const Warehouse = (() => {
         }
 
         // ── V3 timeline ─────────────────────────────────────────────────
-        // Standard milestone offsets (days from start date). These are the
-        // historical averages — operator can still edit individual dates
-        // in the detail view as actuals come in.
-        const SHIP_MILESTONE_OFFSETS_V3 = [
-            { label: 'Order placed',          days: 0   },
-            { label: 'LC ready',              days: 14  },
-            { label: 'Shipped (Left Italy)',  days: 28  },
-            { label: 'LC presented',          days: 49  }, // shipped + 21
-            { label: 'Landed in Bangladesh',  days: 119 }, // LC + 70
-            { label: 'Left Bangladesh',       days: 161 }, // landed + 42 (6 wk)
-            { label: 'Arrived in Tauranga',   days: 211 }, // left BD + 50
+        // Standard stage gaps (days from the previous step). Stored as
+        // relative deltas so editing one date can cascade forward by the
+        // same gap. Operator can still adjust dates per-shipment as
+        // actuals come in. These act as fallbacks; user-saved overrides
+        // live on config.stageDefaults.
+        const SHIP_STAGE_DEFAULTS_V3 = [
+            { label: 'Start LC',              gap: 0  },  // anchor
+            { label: 'LC ready',              gap: 14 },
+            { label: 'Shipped (Left Italy)',  gap: 14 },
+            { label: 'LC presented',          gap: 21 },
+            { label: 'Landed in Bangladesh',  gap: 70 },
+            { label: 'Left Bangladesh',       gap: 42 },
+            { label: 'Arrived in Tauranga',   gap: 50 },
         ];
+
+        function getStageDefaults(config) {
+            const saved = config && Array.isArray(config.stageDefaults) ? config.stageDefaults : null;
+            if (!saved || saved.length !== SHIP_STAGE_DEFAULTS_V3.length) return SHIP_STAGE_DEFAULTS_V3;
+            return SHIP_STAGE_DEFAULTS_V3.map((d, i) => ({
+                label: d.label,
+                gap: Number(saved[i]?.gap) >= 0 ? Number(saved[i].gap) : d.gap,
+            }));
+        }
 
         function addDaysIso(iso, days) {
             if (!iso) return '';
@@ -1092,19 +1103,23 @@ const Warehouse = (() => {
             return d.toISOString().slice(0, 10);
         }
 
-        function defaultMilestonesV3(startDate) {
-            return SHIP_MILESTONE_OFFSETS_V3.map(m => ({
-                label: m.label,
-                date:  startDate ? addDaysIso(startDate, m.days) : '',
-                done:  m.days === 0 ? !!startDate : false,
-            }));
+        function defaultMilestonesV3(startDate, defaults = SHIP_STAGE_DEFAULTS_V3) {
+            let cum = 0;
+            return defaults.map((m, i) => {
+                cum += i === 0 ? 0 : (Number(m.gap) || 0);
+                return {
+                    label: m.label,
+                    date:  startDate ? addDaysIso(startDate, cum) : '',
+                    done:  i === 0 ? !!startDate : false,
+                };
+            });
         }
 
-        // Arrival month is now derived: it's the YYYY-MM of the final
-        // milestone (Arrived in Tauranga) so the timeline still groups
-        // shipments by ETA.
-        function ymFromStartDate(startDate) {
-            const arrival = addDaysIso(startDate, SHIP_MILESTONE_OFFSETS_V3.at(-1).days);
+        // Arrival month is the YYYY-MM of the final milestone (Arrived
+        // in Tauranga) so the forecast can still group shipments by ETA.
+        function ymFromStartDate(startDate, defaults = SHIP_STAGE_DEFAULTS_V3) {
+            const totalDays = defaults.slice(1).reduce((s, m) => s + (Number(m.gap) || 0), 0);
+            const arrival = addDaysIso(startDate, totalDays);
             return arrival ? arrival.slice(0, 7) : '';
         }
 
@@ -1297,6 +1312,10 @@ const Warehouse = (() => {
         }
 
         // ── V3 row + section builders ────────────────────────────────────
+        // Cost-line row in the V3 detail breakdown. Columns are split so
+        // each cell holds a single concept (units, rate, ccy, subtotal, NZD)
+        // — keeps numbers right-aligned and prevents the old
+        // amount+ccy+mult cluster from drifting out of column.
         function buildFixedRowHtmlV3(s, def, derived, forex) {
             const line = (s.fixedLines || {})[def.key] || {};
             const nzd  = fixedLineNzdV3(def, line, derived, forex);
@@ -1304,36 +1323,36 @@ const Warehouse = (() => {
             const labelText = line.labelOverride || def.label;
 
             const minAttr = def.allowNegative ? '' : ' min="0"';
-            let amountCellInner = '';
+
+            let unitsCellInner = '<span class="ship-fix-nil">—</span>';
+            let costCellInner = '';
+            let localTotal = 0;
+
             if (def.kind === 'flat') {
                 const amt = line.amount != null ? line.amount : '';
-                amountCellInner = `<input class="ship-fix-num" data-f="amount" type="number" value="${amt}" placeholder="0" step="0.01"${minAttr}>`;
+                costCellInner = `<input class="ship-fix-num" data-f="amount" type="number" value="${amt}" placeholder="0" step="0.01"${minAttr}>`;
+                localTotal = Number(line.amount) || 0;
             } else if (def.kind === 'perKg') {
+                const kg = Number(derived[def.kgField]) || 0;
+                unitsCellInner = `<span class="ship-fix-units">${kg.toLocaleString('en-NZ', { maximumFractionDigits: 0 })}</span><span class="ship-fix-units-unit">kg</span>`;
                 const rate = line.rate != null ? line.rate : '';
-                amountCellInner = `<input class="ship-fix-num" data-f="rate" type="number" value="${rate}" placeholder="0" step="0.01" min="0"><span class="ship-fix-unit">/kg</span>`;
+                costCellInner = `<input class="ship-fix-num" data-f="rate" type="number" value="${rate}" placeholder="0" step="0.0001" min="0"><span class="ship-fix-unit">/kg</span>`;
+                localTotal = (Number(line.rate) || 0) * kg;
             } else if (def.kind === 'allocation') {
                 const af = line.allocFactor != null ? line.allocFactor : '';
+                unitsCellInner = `<input class="ship-fix-num ship-fix-num--alloc" data-f="allocFactor" type="number" value="${af}" placeholder="0.67" step="0.01" min="0" title="Allocation factor"><span class="ship-fix-units-unit">×</span>`;
                 const aa = line.annualAmount != null ? line.annualAmount : '';
-                amountCellInner = `<input class="ship-fix-num ship-fix-num--alloc" data-f="allocFactor" type="number" value="${af}" placeholder="0.67" step="0.01" min="0" title="Allocation factor"><span class="ship-fix-unit">×</span><input class="ship-fix-num" data-f="annualAmount" type="number" value="${aa}" placeholder="annual" step="0.01" min="0" title="Annual amount">`;
+                costCellInner = `<input class="ship-fix-num" data-f="annualAmount" type="number" value="${aa}" placeholder="annual" step="0.01" min="0" title="Annual amount"><span class="ship-fix-unit">/yr</span>`;
+                localTotal = (Number(line.allocFactor) || 0) * (Number(line.annualAmount) || 0);
             }
 
-            const ccySelect = `<select class="ship-fix-ccy" data-f="ccy">
+            const ccyPill = `<select class="ship-fix-ccy" data-f="ccy">
                 ${CCYS_FIXED.map(c => `<option${c === ccy ? ' selected' : ''}>${c}</option>`).join('')}
             </select>`;
 
-            // Local-total hint: per-kg lines show "= rate × kg" in the line currency.
-            // Allocation lines show factor × annual.
-            let multCell = '';
-            if (def.kind === 'perKg') {
-                const kg = Number(derived[def.kgField]) || 0;
-                const localTotal = (Number(line.rate) || 0) * kg;
-                if (localTotal > 0) {
-                    multCell = `<span class="ship-fix-localtotal">= ${localTotal.toLocaleString('en-NZ', { maximumFractionDigits: 2 })} ${ccy}</span>`;
-                }
-            } else if (def.kind === 'allocation') {
-                const localTotal = (Number(line.allocFactor) || 0) * (Number(line.annualAmount) || 0);
-                multCell = localTotal > 0 ? `<span class="ship-fix-localtotal">= ${localTotal.toLocaleString('en-NZ', { maximumFractionDigits: 2 })} ${ccy}</span>` : '';
-            }
+            const subDisplay = localTotal
+                ? `<span>${localTotal.toLocaleString('en-NZ', { maximumFractionDigits: 2 })}</span>`
+                : '<span class="ship-fix-nil">—</span>';
 
             const nzdDisplay = (() => {
                 if (nzd === 0) return '<span class="ship-fix-nil">—</span>';
@@ -1343,8 +1362,10 @@ const Warehouse = (() => {
 
             return `<tr class="ship-fix-row${line.paid ? ' ship-fix-row--paid' : ''}" data-ship-id="${escHtml(s.id)}" data-line-key="${escHtml(def.key)}">
                 <td class="ship-fix-td-label"><input class="ship-fix-label-inp" data-f="labelOverride" value="${escHtml(labelText)}" placeholder="${escHtml(def.label)}"></td>
-                <td class="ship-fix-td-amt">${amountCellInner}${ccySelect}</td>
-                <td class="ship-fix-td-mult">${multCell}</td>
+                <td class="ship-fix-td-units">${unitsCellInner}</td>
+                <td class="ship-fix-td-cost">${costCellInner}</td>
+                <td class="ship-fix-td-ccy">${ccyPill}</td>
+                <td class="ship-fix-td-sub">${subDisplay}</td>
                 <td class="ship-fix-td-nzd">${nzdDisplay}</td>
                 <td class="ship-fix-td-chk"><input type="checkbox" class="ship-fix-paid" ${line.paid ? 'checked' : ''} title="Paid"></td>
             </tr>`;
@@ -1364,11 +1385,13 @@ const Warehouse = (() => {
                     <span class="ship-fix-section-name">${sec.label}</span>
                     <span class="ship-fix-section-sum">${subDisp}</span>
                 </div>
-                <table class="ship-fix-table">
+                <table class="ship-fix-table ship-fix-table--v3">
                     <thead><tr>
-                        <th>Line</th>
-                        <th class="ship-fix-th-amt">Amount</th>
-                        <th class="ship-fix-th-mult"></th>
+                        <th class="ship-fix-th-line">Line Item</th>
+                        <th class="ship-fix-th-units">Units</th>
+                        <th class="ship-fix-th-cost">Cost / Unit</th>
+                        <th class="ship-fix-th-ccy">Ccy</th>
+                        <th class="ship-fix-th-sub">Sub-total</th>
                         <th class="ship-fix-th-nzd">≈&thinsp;NZD</th>
                         <th class="ship-fix-th-chk" title="Paid">✓</th>
                     </tr></thead>
@@ -1430,15 +1453,17 @@ const Warehouse = (() => {
             </aside>`;
         }
 
-        // SVG line-chart timeline for shipment milestones with editable date inputs
-        // beneath. Dots are spaced by date when ≥2 dates exist; otherwise evenly
-        // by index. Done dots fill green; hovered dots show a native title tooltip.
-        function buildStageTimelineV3(s, milestones, stageIcon) {
+        // Minimalist SVG line-chart timeline. Dots are spaced by date when
+        // ≥2 dates exist; otherwise evenly by index. Done dots fill solid;
+        // a thin grey rule joins them with a slate progress overlay up to
+        // the last completed step. The row beneath shows a step number,
+        // label, and an editable date input.
+        function buildStageTimelineV3(s, milestones) {
             if (!milestones.length) {
                 return '<p class="wh-empty" style="margin:0">No stages yet — click + Add to create one.</p>';
             }
 
-            const W = 800, H = 56, padX = 32, lineY = 28;
+            const W = 800, H = 44, padX = 24, lineY = 22;
             const tsValues = milestones.map(m => m.date ? new Date(m.date + 'T00:00:00').getTime() : null).filter(t => t != null);
             const useDates = tsValues.length >= 2;
             const minTs = useDates ? Math.min(...tsValues) : 0;
@@ -1453,38 +1478,64 @@ const Warehouse = (() => {
 
             const dots = milestones.map((m, i) => {
                 const x = xFor(m, i).toFixed(1);
-                const fill = m.done ? '#10b981' : 'white';
-                const stroke = m.done ? '#10b981' : '#cbd5e1';
+                const fill = m.done ? '#0f172a' : '#ffffff';
+                const stroke = m.done ? '#0f172a' : '#cbd5e1';
                 return `<g class="ship-tl-dot${m.done ? ' ship-tl-dot--done' : ''}">
                     <title>${escHtml(m.label)}${m.date ? ' · ' + escHtml(m.date) : ''}</title>
-                    <circle cx="${x}" cy="${lineY}" r="7" fill="${fill}" stroke="${stroke}" stroke-width="2"/>
+                    <circle cx="${x}" cy="${lineY}" r="5" fill="${fill}" stroke="${stroke}" stroke-width="1.5"/>
                 </g>`;
             }).join('');
 
             const svg = `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" class="ship-tl-svg">
-                <line x1="${padX}" y1="${lineY}" x2="${W-padX}" y2="${lineY}" stroke="#e2e8f0" stroke-width="2"/>
-                ${lastDoneIdx >= 0 ? `<line x1="${padX}" y1="${lineY}" x2="${lastDoneX.toFixed(1)}" y2="${lineY}" stroke="#10b981" stroke-width="3"/>` : ''}
+                <line x1="${padX}" y1="${lineY}" x2="${W-padX}" y2="${lineY}" stroke="#e2e8f0" stroke-width="1"/>
+                ${lastDoneIdx >= 0 ? `<line x1="${padX}" y1="${lineY}" x2="${lastDoneX.toFixed(1)}" y2="${lineY}" stroke="#0f172a" stroke-width="1.5"/>` : ''}
                 ${dots}
             </svg>`;
 
             const rows = milestones.map((m, i) => `
                 <div class="ship-tl-row${m.done ? ' ship-tl-row--done' : ''}">
-                    <button type="button" class="ship-tl-toggle ship-stage-step${m.done ? ' ship-stage-step--done' : ''}"
+                    <button type="button" class="ship-tl-toggle${m.done ? ' ship-tl-toggle--done' : ''}"
                             data-ship-id="${escHtml(s.id)}" data-idx="${i}"
                             title="Click to ${m.done ? 'mark not done' : 'mark done'}">
-                        <span class="ship-tl-icon">${stageIcon(m.label)}</span>
+                        <span class="ship-tl-num">${String(i + 1).padStart(2, '0')}</span>
                         <span class="ship-tl-label">${escHtml(m.label)}</span>
                     </button>
                     <input type="date" class="ship-tl-date"
                         data-ship-id="${escHtml(s.id)}" data-idx="${i}"
                         value="${escHtml(m.date || '')}"
-                        title="Edit milestone date">
+                        title="Edit date — later steps shift by their default gaps">
                 </div>
             `).join('');
 
             return `<div class="ship-tl-section">
                 ${svg}
                 <div class="ship-tl-rows">${rows}</div>
+            </div>`;
+        }
+
+        function buildStageDefaultsPanel(config) {
+            const defaults = getStageDefaults(config);
+            const rows = defaults.map((m, i) => `
+                <div class="ship-tl-cfg-row">
+                    <span class="ship-tl-cfg-num">${String(i + 1).padStart(2, '0')}</span>
+                    <span class="ship-tl-cfg-label">${escHtml(m.label)}</span>
+                    ${i === 0
+                        ? '<span class="ship-tl-cfg-anchor">anchor</span>'
+                        : `<input type="number" class="ship-tl-cfg-gap" data-idx="${i}"
+                              value="${m.gap}" min="0" step="1"
+                              title="Days after previous step"> <span class="ship-tl-cfg-unit">days after step ${i}</span>`}
+                </div>
+            `).join('');
+            return `<div class="ship-tl-cfg" id="ship-tl-cfg" hidden>
+                <div class="ship-tl-cfg-hd">
+                    <strong>Default gaps between stages</strong>
+                    <span class="ship-tl-cfg-hint">Used for new shipments and when an existing date is edited.</span>
+                </div>
+                ${rows}
+                <div class="ship-tl-cfg-actions">
+                    <button class="btn-secondary btn-sm" id="ship-tl-cfg-reset">Reset to defaults</button>
+                    <span class="ship-tl-cfg-saved" id="ship-tl-cfg-saved" hidden>Saved</span>
+                </div>
             </div>`;
         }
 
@@ -1498,20 +1549,14 @@ const Warehouse = (() => {
             const paidPct = total > 0 ? Math.round(paid / total * 100) : 0;
             const ppkg    = totals.ppkgYield > 0 ? totals.ppkgYield.toFixed(2) : null;
 
-            const milestones = s.milestones || [];
+            // Display labels: legacy shipments stored 'Order placed' as the
+            // anchor; surface as 'Start LC' to match current taxonomy.
+            const STAGE_LABEL_RENAMES = { 'Order placed': 'Start LC' };
+            const milestones = (s.milestones || []).map(m =>
+                STAGE_LABEL_RENAMES[m.label] ? { ...m, label: STAGE_LABEL_RENAMES[m.label] } : m
+            );
 
             const fmtKg = v => (v || 0).toLocaleString('en-NZ', { maximumFractionDigits: 0 });
-
-            const STAGE_ICONS = {
-                'Order placed':         '📝',
-                'LC ready':             '📄',
-                'Shipped (Left Italy)': '🚢',
-                'LC presented':         '📨',
-                'Landed in Bangladesh': '📦',
-                'Left Bangladesh':      '🚢',
-                'Arrived in Tauranga':  '🚚',
-            };
-            const stageIcon = lbl => STAGE_ICONS[lbl] || '◯';
 
             // Net = white + colour. Waste applies evenly to both. Visual bar
             // segments are scaled against netKg so they always total 100%.
@@ -1564,9 +1609,13 @@ const Warehouse = (() => {
                         <div class="ship-det-section">
                             <div class="ship-det-hd">
                                 <h3 class="ship-det-title">Shipment Stage</h3>
-                                <button class="btn-link ship-add-milestone" data-ship-id="${escHtml(s.id)}">+ Add</button>
+                                <div class="ship-det-hd-actions">
+                                    <button class="btn-link ship-tl-cfg-toggle" type="button" title="Edit default gaps between stages">Defaults</button>
+                                    <button class="btn-link ship-add-milestone" data-ship-id="${escHtml(s.id)}">+ Add</button>
+                                </div>
                             </div>
-                            ${buildStageTimelineV3(s, milestones, stageIcon)}
+                            ${buildStageTimelineV3(s, milestones)}
+                            ${buildStageDefaultsPanel(config)}
                         </div>
 
                         <div class="ship-det-section">
@@ -2059,15 +2108,15 @@ const Warehouse = (() => {
             // Compact card for the overview's "Upcoming Shipments" strip.
             // Shows core info: #, ETA, yield kg, $paid/$total, current stage.
             // Card is clickable (delegates to .imp-event-card--nav handler).
-            const UPCOMING_STAGE_ICONS = {
-                'Order placed':         '📝',
-                'LC ready':             '📄',
-                'Shipped (Left Italy)': '🚢',
-                'LC presented':         '📨',
-                'Landed in Bangladesh': '📦',
-                'Left Bangladesh':      '🚢',
-                'Arrived in Tauranga':  '🚚',
-            };
+            // Map a stage label to its step number for the minimalist
+            // current-stage badge on upcoming cards. Falls back to '·' for
+            // ad-hoc / legacy labels not in the standard sequence.
+            const STAGE_STEP_NUMS = (() => {
+                const map = {};
+                getStageDefaults(config).forEach((d, i) => { map[d.label] = String(i + 1).padStart(2, '0'); });
+                map['Order placed'] = map['Start LC'];
+                return map;
+            })();
             const upcomingCard = (s) => {
                 let totalNzd = 0, paidNzd = 0, yieldKg = 0;
                 if (s.schema === 3) {
@@ -2081,8 +2130,8 @@ const Warehouse = (() => {
                 }
                 const milestones = s.milestones || [];
                 const lastDone   = [...milestones].reverse().find(m => m.done);
-                const stageLabel = lastDone ? lastDone.label : 'Not started';
-                const stageIcon  = UPCOMING_STAGE_ICONS[stageLabel] || '◯';
+                const displayLabel = lastDone ? (lastDone.label === 'Order placed' ? 'Start LC' : lastDone.label) : 'Not started';
+                const stageBadge = lastDone ? (STAGE_STEP_NUMS[lastDone.label] || '·') : '–';
                 const seqForTitle = displaySeqOf(s);
                 return `
                 <div class="imp-upcoming-card imp-event-card--nav" data-ship-id="${escHtml(s.id)}">
@@ -2097,8 +2146,8 @@ const Warehouse = (() => {
                         <span class="imp-upcoming-card-total">$${Math.round(totalNzd).toLocaleString('en-NZ')}</span>
                     </div>
                     <div class="imp-upcoming-card-stage">
-                        <span class="imp-upcoming-card-stage-icon">${stageIcon}</span>
-                        <span class="imp-upcoming-card-stage-label">${escHtml(stageLabel)}</span>
+                        <span class="imp-upcoming-card-stage-icon">${stageBadge}</span>
+                        <span class="imp-upcoming-card-stage-label">${escHtml(displayLabel)}</span>
                     </div>
                 </div>`;
             };
@@ -2393,14 +2442,15 @@ const Warehouse = (() => {
                 btn.disabled = true; btn.textContent = 'Adding…';
                 try {
                     const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+                    const stageDefaults = getStageDefaults(config);
                     const newShip = {
                         id, seq, schema: 3,
                         startDate,
-                        ym: ymFromStartDate(startDate),
+                        ym: ymFromStartDate(startDate, stageDefaults),
                         whiteRawKg, colourRawKg, wastePct,
                         fixedLines: defaultFixedLinesV3(),
                         status:     'planning',
-                        milestones: defaultMilestonesV3(startDate),
+                        milestones: defaultMilestonesV3(startDate, stageDefaults),
                     };
                     const shipments = [...(config.shipments || []), newShip];
                     await api('/api/import/forecast', {
@@ -2536,19 +2586,55 @@ const Warehouse = (() => {
                 return;
             }
 
-            // Milestone date input (per-stage editable date)
+            // Milestone date input (per-stage editable date) — when a date
+            // is set, cascade later steps forward by their default gaps.
+            // Existing 'done' flags are preserved.
             if (e.target.matches('.ship-tl-date')) {
                 const { shipId } = e.target.dataset;
                 const idx = parseInt(e.target.dataset.idx);
                 const date = e.target.value || '';
+                const stageDefaults = getStageDefaults(config);
                 config.shipments = (config.shipments || []).map(sh => {
                     if (sh.id !== shipId) return sh;
-                    const milestones = (sh.milestones || []).map((m, i) =>
-                        i === idx ? { ...m, date } : m
-                    );
-                    return { ...sh, milestones };
+                    const ms = [...(sh.milestones || [])];
+                    ms[idx] = { ...ms[idx], date };
+                    if (date) {
+                        let prev = date;
+                        for (let i = idx + 1; i < ms.length; i++) {
+                            const gap = Number(stageDefaults[i]?.gap) || 0;
+                            const nextDate = addDaysIso(prev, gap);
+                            ms[i] = { ...ms[i], date: nextDate };
+                            prev = nextDate;
+                        }
+                    }
+                    const patch = { ...sh, milestones: ms };
+                    if (idx === 0 && date) {
+                        patch.startDate = date;
+                        patch.ym = ymFromStartDate(date, stageDefaults);
+                    } else if (date) {
+                        patch.ym = ymFromStartDate(ms[0]?.date || sh.startDate || date, stageDefaults);
+                    }
+                    return patch;
                 });
                 await costSave();
+                return;
+            }
+
+            // Stage-defaults gap edit — persist to config.stageDefaults
+            if (e.target.matches('.ship-tl-cfg-gap')) {
+                const i = parseInt(e.target.dataset.idx);
+                const v = Math.max(0, Math.round(Number(e.target.value) || 0));
+                e.target.value = v;
+                const current = getStageDefaults(config).map(d => ({ label: d.label, gap: d.gap }));
+                current[i] = { ...current[i], gap: v };
+                config.stageDefaults = current;
+                await quietSave();
+                const saved = document.getElementById('ship-tl-cfg-saved');
+                if (saved) {
+                    saved.hidden = false;
+                    clearTimeout(saved._t);
+                    saved._t = setTimeout(() => { saved.hidden = true; }, 1200);
+                }
                 return;
             }
 
@@ -2578,11 +2664,12 @@ const Warehouse = (() => {
                 // already ticked off (only fill blank dates from the new
                 // schedule).
                 if (f === 'startDate' && val) {
+                    const stageDefaults = getStageDefaults(config);
                     config.shipments = (config.shipments || []).map(s => {
                         if (s.id !== shipId || s.schema !== 3) {
                             return s.id === shipId ? { ...s, [f]: val } : s;
                         }
-                        const fresh = defaultMilestonesV3(val);
+                        const fresh = defaultMilestonesV3(val, stageDefaults);
                         const merged = (s.milestones || []).map((m, i) => {
                             const f = fresh[i];
                             if (!f) return m;
@@ -2591,7 +2678,7 @@ const Warehouse = (() => {
                         const padded = merged.length < fresh.length
                             ? [...merged, ...fresh.slice(merged.length)]
                             : merged;
-                        return { ...s, startDate: val, ym: ymFromStartDate(val), milestones: padded };
+                        return { ...s, startDate: val, ym: ymFromStartDate(val, stageDefaults), milestones: padded };
                     });
                     await quietSave();
                     renderShipDetail(config.shipments.find(s => s.id === shipId));
@@ -2672,7 +2759,7 @@ const Warehouse = (() => {
             }
 
             // Stage track step → toggle done (mirror checkbox behaviour, click anywhere on step)
-            const stageStep = e.target.closest('.ship-stage-step');
+            const stageStep = e.target.closest('.ship-stage-step, .ship-tl-toggle');
             if (stageStep) {
                 const { shipId } = stageStep.dataset;
                 const idx = parseInt(stageStep.dataset.idx);
@@ -2685,6 +2772,21 @@ const Warehouse = (() => {
                     return { ...s, milestones };
                 });
                 await costSave();
+                return;
+            }
+
+            // Stage defaults panel — open/close
+            if (e.target.closest('.ship-tl-cfg-toggle')) {
+                const panel = document.getElementById('ship-tl-cfg');
+                if (panel) panel.hidden = !panel.hidden;
+                return;
+            }
+
+            // Stage defaults — reset to factory defaults
+            if (e.target.closest('#ship-tl-cfg-reset')) {
+                delete config.stageDefaults;
+                await quietSave();
+                renderShipDetail(config.shipments.find(sh => sh.id === currentDetailShipId));
                 return;
             }
 
