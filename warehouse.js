@@ -822,7 +822,7 @@ const Warehouse = (() => {
             }
         } catch (e) { /* BDT sparkline optional */ }
 
-        let scenario  = 'avg';
+        let scenario  = 'great';
         let currentDetailShipId = null;
 
         // Build line-item cost breakdown HTML for a shipment card
@@ -1518,6 +1518,176 @@ const Warehouse = (() => {
             </aside>`;
         }
 
+        // ── Shipment Analytics ─────────────────────────────────────────
+        // Aggregates the shipment fleet from three angles. Cost/Kg and
+        // %-of-Total skip historical shipments (no cost data); the
+        // timeline grid includes them since their dates are populated.
+        function diffDays(aIso, bIso) {
+            if (!aIso || !bIso) return null;
+            const a = new Date(aIso + 'T00:00:00');
+            const b = new Date(bIso + 'T00:00:00');
+            if (isNaN(a) || isNaN(b)) return null;
+            return Math.round((b - a) / 86400000);
+        }
+
+        function buildShipAnalyticsSection(allShips, forex, stageDefaults) {
+            const v3       = allShips.filter(s => s.schema === 3);
+            const v3Cost   = v3.filter(s => !s.historical);
+            const v3Sorted = [...v3].sort((a, b) => (Number(a.seq) || 0) - (Number(b.seq) || 0));
+            const sortedCost = [...v3Cost].sort((a, b) => (Number(a.seq) || 0) - (Number(b.seq) || 0));
+
+            // ── Cost/Kg + Waste table ────────────────────────────────────
+            let totYield = 0, totCost = 0, totWaste = 0, wasteN = 0;
+            const costRows = sortedCost.map(s => {
+                const t = computeShipTotalsV3(s, forex);
+                const yieldKg = t.derived.yieldKg;
+                const cost    = t.total;
+                const ppkg    = yieldKg > 0 ? cost / yieldKg : 0;
+                const waste   = t.derived.wastePct || 0;
+                totYield += yieldKg;
+                totCost  += cost;
+                if (waste > 0) { totWaste += waste; wasteN++; }
+                return `<tr>
+                    <td class="sa-td-ship">#${s.seq}</td>
+                    <td class="sa-td-num">${fmtFull(yieldKg)}</td>
+                    <td class="sa-td-num">$${fmtFull(cost)}</td>
+                    <td class="sa-td-num sa-td-emph">$${ppkg.toFixed(2)}</td>
+                    <td class="sa-td-num">${waste.toFixed(1)}%</td>
+                </tr>`;
+            }).join('');
+            const avgPpkg  = totYield > 0 ? totCost / totYield : 0;
+            const avgWaste = wasteN > 0 ? totWaste / wasteN : 0;
+            const costFoot = sortedCost.length ? `<tr class="sa-tr-foot">
+                <td class="sa-td-ship">Fleet</td>
+                <td class="sa-td-num">${fmtFull(totYield)}</td>
+                <td class="sa-td-num">$${fmtFull(totCost)}</td>
+                <td class="sa-td-num sa-td-emph">$${avgPpkg.toFixed(2)}</td>
+                <td class="sa-td-num">${avgWaste.toFixed(1)}%</td>
+            </tr>` : '';
+            const costTable = sortedCost.length ? `<table class="sa-table">
+                <thead><tr>
+                    <th>Shipment</th>
+                    <th class="sa-th-num">Yield kg</th>
+                    <th class="sa-th-num">Cost NZD</th>
+                    <th class="sa-th-num">$ / kg</th>
+                    <th class="sa-th-num">Waste %</th>
+                </tr></thead>
+                <tbody>${costRows}</tbody>
+                <tfoot>${costFoot}</tfoot>
+            </table>` : '<p class="wh-empty" style="margin:0">No V3 shipments with cost data yet.</p>';
+
+            // ── Shipping Timelines: gap days between consecutive stages ─
+            // Skip the first stage (Start LC = anchor); show 6 deltas.
+            const stageLabels = (stageDefaults || SHIP_STAGE_DEFAULTS_V3).map(d => d.label);
+            const gapHeaders = stageLabels.slice(1).map(lbl =>
+                `<th class="sa-th-num" title="${escHtml(lbl)}">${escHtml(lbl.split(' ')[0])}</th>`
+            ).join('');
+
+            const dated = v3Sorted.filter(s => (s.milestones || []).filter(m => m.date).length >= 2);
+            const gapsByCol = stageLabels.slice(1).map(() => []);
+            const tlRows = dated.map(s => {
+                const ms = s.milestones || [];
+                let totalDays = 0, anyTotal = false;
+                const cells = stageLabels.slice(1).map((_, i) => {
+                    const prev = ms[i]?.date, curr = ms[i + 1]?.date;
+                    const d = diffDays(prev, curr);
+                    if (d != null) { gapsByCol[i].push(d); totalDays += d; anyTotal = true; }
+                    return d == null ? '<td class="sa-td-num sa-td-na">—</td>' : `<td class="sa-td-num">${d}d</td>`;
+                }).join('');
+                const totalCell = anyTotal ? `<td class="sa-td-num sa-td-emph">${totalDays}d</td>` : '<td class="sa-td-num sa-td-na">—</td>';
+                const tag = s.historical ? '<span class="sa-tag-hist">historical</span>' : '';
+                return `<tr><td class="sa-td-ship">#${s.seq}${tag}</td>${cells}${totalCell}</tr>`;
+            }).join('');
+            const avgRow = (() => {
+                if (!dated.length) return '';
+                let totalAvg = 0, hasTotalAvg = false;
+                const cells = gapsByCol.map(arr => {
+                    if (!arr.length) return '<td class="sa-td-num sa-td-na">—</td>';
+                    const m = arr.reduce((s, v) => s + v, 0) / arr.length;
+                    totalAvg += m; hasTotalAvg = true;
+                    return `<td class="sa-td-num">${m.toFixed(0)}d</td>`;
+                }).join('');
+                const total = hasTotalAvg ? `<td class="sa-td-num sa-td-emph">${totalAvg.toFixed(0)}d</td>` : '<td class="sa-td-num sa-td-na">—</td>';
+                return `<tr class="sa-tr-foot"><td class="sa-td-ship">Average</td>${cells}${total}</tr>`;
+            })();
+            const defaultsRow = (() => {
+                const sd = stageDefaults || SHIP_STAGE_DEFAULTS_V3;
+                let total = 0;
+                const cells = sd.slice(1).map(g => { total += g.gap; return `<td class="sa-td-num sa-td-default">${g.gap}d</td>`; }).join('');
+                return `<tr class="sa-tr-foot sa-tr-default"><td class="sa-td-ship">Default</td>${cells}<td class="sa-td-num sa-td-emph sa-td-default">${total}d</td></tr>`;
+            })();
+            const tlTable = dated.length ? `<table class="sa-table">
+                <thead><tr>
+                    <th>Shipment</th>
+                    ${gapHeaders}
+                    <th class="sa-th-num">Total</th>
+                </tr></thead>
+                <tbody>${tlRows}</tbody>
+                <tfoot>${avgRow}${defaultsRow}</tfoot>
+            </table>` : '<p class="wh-empty" style="margin:0">Need at least 2 dated stages on a shipment to show timeline gaps.</p>';
+
+            // ── % of Total stacked bars ────────────────────────────────
+            const pctRows = sortedCost.map(s => {
+                const t = computeShipTotalsV3(s, forex);
+                const total = t.total;
+                if (total <= 0) return `<div class="sa-pct-row sa-pct-row--empty">
+                    <div class="sa-pct-label">#${s.seq}</div>
+                    <div class="sa-pct-bar"><span class="wh-empty" style="font-size:0.75rem">no cost data</span></div>
+                </div>`;
+                const segs = SHIP_SECTIONS_V3.map(sec => {
+                    const v = t.sectionTotals[sec.key] || 0;
+                    if (v <= 0) return '';
+                    const pct = (v / total) * 100;
+                    return `<div class="sa-pct-seg" style="width:${pct.toFixed(2)}%;background:${sec.colour}"
+                        title="${escHtml(sec.label)}: $${fmtFull(v)} (${pct.toFixed(1)}%)"></div>`;
+                }).join('');
+                return `<div class="sa-pct-row">
+                    <div class="sa-pct-label">#${s.seq}</div>
+                    <div class="sa-pct-bar">${segs}</div>
+                    <div class="sa-pct-total">$${fmtFull(total)}</div>
+                </div>`;
+            }).join('');
+            const pctLegend = SHIP_SECTIONS_V3.map(sec =>
+                `<span class="sa-pct-leg-item"><span class="sa-pct-leg-dot" style="background:${sec.colour}"></span>${escHtml(sec.label)}</span>`
+            ).join('');
+            const pctBlock = sortedCost.length ? `
+                <div class="sa-pct-rows">${pctRows}</div>
+                <div class="sa-pct-legend">${pctLegend}</div>
+            ` : '<p class="wh-empty" style="margin:0">No V3 shipments with cost data yet.</p>';
+
+            return `
+            <div class="cat-section sa-block">
+                <div class="sa-hd">
+                    <h2 class="cat-title" style="margin:0">Shipment Analytics</h2>
+                    <p class="cat-sub" style="margin:0">Compare the fleet across cost efficiency, timing, and cost mix.</p>
+                </div>
+
+                <div class="sa-card">
+                    <div class="sa-card-hd">
+                        <h3 class="sa-card-title">Cost / Kg & Waste %</h3>
+                        <span class="sa-card-sub">${sortedCost.length} shipment${sortedCost.length !== 1 ? 's' : ''} · historical excluded</span>
+                    </div>
+                    <div class="sa-card-body">${costTable}</div>
+                </div>
+
+                <div class="sa-card">
+                    <div class="sa-card-hd">
+                        <h3 class="sa-card-title">Shipping Timelines</h3>
+                        <span class="sa-card-sub">days between consecutive stages</span>
+                    </div>
+                    <div class="sa-card-body sa-card-body--wide">${tlTable}</div>
+                </div>
+
+                <div class="sa-card">
+                    <div class="sa-card-hd">
+                        <h3 class="sa-card-title">Cost Composition</h3>
+                        <span class="sa-card-sub">% of total NZD by section</span>
+                    </div>
+                    <div class="sa-card-body">${pctBlock}</div>
+                </div>
+            </div>`;
+        }
+
         // Minimalist SVG line-chart timeline. Dots are spaced by date when
         // ≥2 dates exist; otherwise evenly by index. Done dots fill solid;
         // a thin grey rule joins them with a slate progress overlay up to
@@ -1722,12 +1892,14 @@ const Warehouse = (() => {
 
                         <div class="ship-det-section">
                             <div class="ship-det-hd"><h3 class="ship-det-title">Net Weight Breakdown</h3></div>
-                            <div class="ship-yield-bar" title="Net ${fmtKg(d.netKg)} kg → Yield ${fmtKg(d.yieldKg)} kg (${d.yieldPct.toFixed(1)}%)">
-                                ${d.whiteKg     > 0 ? `<div class="ship-yield-seg ship-yield-seg--white"        style="width:${segPct(d.whiteKg).toFixed(2)}%"        title="White yield: ${fmtKg(d.whiteKg)} kg"></div>` : ''}
-                                ${whiteWasteKg  > 0 ? `<div class="ship-yield-seg ship-yield-seg--white-waste"  style="width:${segPct(whiteWasteKg).toFixed(2)}%"  title="White waste: ${fmtKg(whiteWasteKg)} kg (${d.wastePct.toFixed(1)}%)"></div>` : ''}
-                                ${d.colourKg    > 0 ? `<div class="ship-yield-seg ship-yield-seg--colour"       style="width:${segPct(d.colourKg).toFixed(2)}%"       title="Colour yield: ${fmtKg(d.colourKg)} kg"></div>` : ''}
-                                ${colourWasteKg > 0 ? `<div class="ship-yield-seg ship-yield-seg--colour-waste" style="width:${segPct(colourWasteKg).toFixed(2)}%" title="Colour waste: ${fmtKg(colourWasteKg)} kg (${d.wastePct.toFixed(1)}%)"></div>` : ''}
-                            </div>
+                            ${(() => {
+                                const wasteKg = whiteWasteKg + colourWasteKg;
+                                return `<div class="ship-yield-bar" title="Net ${fmtKg(d.netKg)} kg → Yield ${fmtKg(d.yieldKg)} kg (${d.yieldPct.toFixed(1)}%)">
+                                ${d.whiteKg  > 0 ? `<div class="ship-yield-seg ship-yield-seg--white"  style="width:${segPct(d.whiteKg).toFixed(2)}%"  title="White yield: ${fmtKg(d.whiteKg)} kg"></div>` : ''}
+                                ${d.colourKg > 0 ? `<div class="ship-yield-seg ship-yield-seg--colour" style="width:${segPct(d.colourKg).toFixed(2)}%" title="Colour yield: ${fmtKg(d.colourKg)} kg"></div>` : ''}
+                                ${wasteKg    > 0 ? `<div class="ship-yield-seg ship-yield-seg--waste"  style="width:${segPct(wasteKg).toFixed(2)}%"  title="Waste: ${fmtKg(wasteKg)} kg (${d.wastePct.toFixed(1)}%)"></div>` : ''}
+                            </div>`;
+                            })()}
                             <div class="ship-yield-legend">
                                 <span class="ship-yield-leg-item"><span class="ship-yield-leg-dot ship-yield-leg-dot--white"></span>White ${fmtKg(d.whiteRawKg)} kg</span>
                                 <span class="ship-yield-leg-item"><span class="ship-yield-leg-dot ship-yield-leg-dot--colour"></span>Colour ${fmtKg(d.colourRawKg)} kg</span>
@@ -2130,10 +2302,6 @@ const Warehouse = (() => {
                 `<button class="imp-scenario-btn ${scenario === s ? 'active' : ''}" data-s="${s}">${{ avg: 'Average', good: 'Good +10%', great: 'Great +20%' }[s]}</button>`
             ).join('');
 
-            // Closings for all three scenarios are shown side-by-side; the
-            // health dot still tracks the active scenario so it matches the
-            // chart above. Critical/low row tinting also follows the active
-            // scenario's closing.
             let _prevFcstYr = null;
             const tableRows = rows.map(r => {
                 const closing   = r[closeKey];
@@ -2147,7 +2315,7 @@ const Warehouse = (() => {
                 }[status];
                 let yearRow = '';
                 if (r.yr !== _prevFcstYr) {
-                    if (_prevFcstYr !== null) yearRow = `<tr class="imp-year-divider"><td colspan="9">${r.yr}</td></tr>`;
+                    if (_prevFcstYr !== null) yearRow = `<tr class="imp-year-divider"><td colspan="7">${r.yr}</td></tr>`;
                     _prevFcstYr = r.yr;
                 }
                 const incomingShip = r.incomingShips && r.incomingShips.length ? r.incomingShips[0] : null;
@@ -2156,12 +2324,6 @@ const Warehouse = (() => {
                         ? `<button class="imp-incoming-link" data-ship-id="${escHtml(incomingShip.id)}" title="${escHtml(incomingShip.campaign || ymLabel(incomingShip.ym))}">${'+' + fmtFull(r.incoming)}</button>`
                         : '+' + fmtFull(r.incoming))
                     : '—';
-                const closeCell = (val, scenarioKey) => {
-                    const cls = `imp-td-num imp-td-close imp-td-close--${scenarioKey}` +
-                        (val < 0 ? ' fcst-negative' : '') +
-                        (scenarioKey === scenario ? ' imp-td-close--active' : '');
-                    return `<td class="${cls}">${fmtFull(val)}</td>`;
-                };
                 return yearRow + `
                 <tr class="imp-row ${r.incoming ? 'imp-has-import' : ''} ${!hasActual && status !== 'ok' ? 'imp-row--' + status : ''}">
                     <td class="imp-td-month">${escHtml(r.label)}</td>
@@ -2169,12 +2331,16 @@ const Warehouse = (() => {
                     <td class="imp-td-num">${fmtFull(sales)}</td>
                     <td class="imp-td-num">${fmtFull(r[openKey])}</td>
                     <td class="imp-td-num imp-incoming ${r.incoming ? 'imp-incoming-val' : ''}">${incomingContent}</td>
-                    ${closeCell(r.closeAvg,   'avg')}
-                    ${closeCell(r.closeGood,  'good')}
-                    ${closeCell(r.closeGreat, 'great')}
+                    <td class="imp-td-num ${closing < 0 ? 'fcst-negative' : ''}">${fmtFull(closing)}</td>
                     <td style="text-align:center;padding:0 0.5rem">${dot}</td>
                 </tr>`;
             }).join('');
+
+            // Annual Est. Sales — sum the next 12 forecast rows under the
+            // active scenario so it tracks the toggle. Surfaced as a chip
+            // beside the table title.
+            const annualEstSales = rows.slice(0, 12).reduce((t, r) => t + (r[salesKey] || 0), 0);
+            const annualLabel = ({ avg: 'Average', good: 'Good +10%', great: 'Great +20%' })[scenario] || 'Average';
 
             const allShips      = (config.shipments || []).slice().sort((a, b) => a.ym.localeCompare(b.ym));
 
@@ -2369,9 +2535,15 @@ const Warehouse = (() => {
                 </div>
 
                 <div class="cat-section imp-table-card" style="padding-bottom:0">
-                    <h2 class="cat-title" style="margin-bottom:0.75rem">Monthly Forecast</h2>
+                    <div class="imp-table-head">
+                        <h2 class="cat-title" style="margin:0">Monthly Forecast</h2>
+                        <div class="imp-annual-chip" title="Sum of Est. Sales over the next 12 months at the active scenario">
+                            <span class="imp-annual-chip-lbl">12-mo Est. Sales · ${annualLabel}</span>
+                            <span class="imp-annual-chip-val">${fmtFull(annualEstSales)} kg</span>
+                        </div>
+                    </div>
                     <div class="imp-table-wrap">
-                        <table class="imp-table imp-table--tri">
+                        <table class="imp-table">
                             <thead>
                                 <tr>
                                     <th class="imp-th-month">Month</th>
@@ -2379,9 +2551,7 @@ const Warehouse = (() => {
                                     <th class="imp-th-num">Est. Sales</th>
                                     <th class="imp-th-num">Opening</th>
                                     <th class="imp-th-num imp-th-incoming">Incoming</th>
-                                    <th class="imp-th-num imp-th-close imp-th-close--avg${scenario==='avg'?' imp-th-close--active':''}">Closing · Avg</th>
-                                    <th class="imp-th-num imp-th-close imp-th-close--good${scenario==='good'?' imp-th-close--active':''}">Closing · Good</th>
-                                    <th class="imp-th-num imp-th-close imp-th-close--great${scenario==='great'?' imp-th-close--active':''}">Closing · Great</th>
+                                    <th class="imp-th-num">Closing</th>
                                     <th style="width:32px"></th>
                                 </tr>
                             </thead>
@@ -2389,6 +2559,8 @@ const Warehouse = (() => {
                         </table>
                     </div>
                 </div>
+
+                ${buildShipAnalyticsSection(allShips, forex, getStageDefaults(config))}
 
                 <details class="cat-section" style="margin-top:1.25rem">
                     <summary style="cursor:pointer;list-style:none;display:flex;align-items:center;justify-content:space-between;padding-bottom:0.5rem">
@@ -2407,6 +2579,31 @@ const Warehouse = (() => {
                     </div>
                     <div style="margin-top:1rem">
                         <button class="btn-primary btn-sm" id="imp-avg-save-btn">Save Averages</button>
+                    </div>
+                </details>
+
+                <details class="cat-section" style="margin-top:1.25rem">
+                    <summary style="cursor:pointer;list-style:none;display:flex;align-items:center;justify-content:space-between;padding-bottom:0.5rem">
+                        <h2 class="cat-title" style="margin:0">Historical Backfill</h2>
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+                    </summary>
+                    <p class="cat-sub" style="margin-bottom:0.75rem">
+                        Paste a CSV of past shipments (one shipment per row, dates as DD/MM/YY).
+                        Imports as <em>historical</em> shipments — milestones populated, no cost or weight data.
+                    </p>
+                    <p class="cat-sub" style="margin:0 0 0.5rem;font-size:0.72rem;color:#94a3b8">
+                        Expected columns: <code>Shipment #N · Packing List · LC ready · Shipped · Presented LC to ANZ · Landed in Bangladesh · Left Bangladesh · Arrived in Tauranga</code>.
+                        Header rows containing "Packing List" or only digits are skipped.
+                    </p>
+                    <textarea id="imp-backfill-csv" class="imp-backfill-csv" rows="8"
+                        placeholder=",Packing List,LC ready,Shipped,Presented LC to ANZ,Landed in Bangladesh,Left Bangladesh,Arrived in Tauranga
+,,14,28,21,70,42,50
+Shipment #33,20/10/21,16/11/21,23/1/22,27/2/22,7/4/22,19/5/22,8/7/22"></textarea>
+                    <div id="imp-backfill-preview" class="imp-backfill-preview" hidden></div>
+                    <div style="display:flex;gap:0.5rem;align-items:center;margin-top:0.75rem">
+                        <button class="btn-secondary btn-sm" id="imp-backfill-parse">Parse</button>
+                        <button class="btn-primary btn-sm" id="imp-backfill-import" disabled>Import</button>
+                        <span id="imp-backfill-status" class="cat-sub" style="margin:0"></span>
                     </div>
                 </details>
                 </div>
@@ -2443,6 +2640,110 @@ const Warehouse = (() => {
                 } catch (err) {
                     showToast('Save failed: ' + err.message);
                     btn.disabled = false; btn.textContent = 'Save';
+                }
+            });
+
+            // ── Historical Backfill ──
+            // Parse a CSV of past shipments (date format DD/MM/YY) and stage
+            // them as a parsed[] array. Import button posts them as
+            // historical V3 shipments — milestones populated, no cost or
+            // weight data. Existing shipment numbers are skipped.
+            const BACKFILL_COLS = [
+                { csv: 'Packing List',          label: 'Start LC',              gap: 0  },
+                { csv: 'LC ready',              label: 'LC ready',              gap: 14 },
+                { csv: 'Shipped',               label: 'Shipped (Left Italy)',  gap: 14 },
+                { csv: 'Presented LC to ANZ',   label: 'LC presented',          gap: 21 },
+                { csv: 'Landed in Bangladesh',  label: 'Landed in Bangladesh',  gap: 70 },
+                { csv: 'Left Bangladesh',       label: 'Left Bangladesh',       gap: 42 },
+                { csv: 'Arrived in Tauranga',   label: 'Arrived in Tauranga',   gap: 50 },
+            ];
+            const parseDmy = s => {
+                const m = (s || '').trim().match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/);
+                if (!m) return '';
+                const dd = String(parseInt(m[1])).padStart(2, '0');
+                const mm = String(parseInt(m[2])).padStart(2, '0');
+                let yr = parseInt(m[3]);
+                if (yr < 100) yr += 2000;
+                return `${yr}-${mm}-${dd}`;
+            };
+            let _backfillStaged = [];
+
+            document.getElementById('imp-backfill-parse')?.addEventListener('click', () => {
+                const ta = document.getElementById('imp-backfill-csv');
+                const status = document.getElementById('imp-backfill-status');
+                const preview = document.getElementById('imp-backfill-preview');
+                const importBtn = document.getElementById('imp-backfill-import');
+                const raw = (ta?.value || '').trim();
+                _backfillStaged = [];
+                if (!raw) {
+                    if (status) { status.textContent = 'Paste some CSV first.'; status.style.color = '#ef4444'; }
+                    importBtn.disabled = true;
+                    if (preview) { preview.hidden = true; preview.innerHTML = ''; }
+                    return;
+                }
+                const existingSeqs = new Set((config.shipments || []).map(s => Number(s.seq)).filter(Boolean));
+                const lines = raw.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+                const errors = [];
+                for (const line of lines) {
+                    const cells = line.split(',').map(c => c.trim());
+                    // Skip header rows (contains 'Packing List') or offset rows (only digits / blanks)
+                    const lower = line.toLowerCase();
+                    if (lower.includes('packing list') || lower.includes('lc ready')) continue;
+                    if (cells.slice(1).every(c => c === '' || /^\d+$/.test(c))) continue;
+                    const seqMatch = cells[0].match(/(\d+)/);
+                    if (!seqMatch) { errors.push(`Skipped: "${cells[0]}" (no shipment number)`); continue; }
+                    const seq = parseInt(seqMatch[1]);
+                    if (existingSeqs.has(seq)) { errors.push(`#${seq} already exists — skipped`); continue; }
+                    const dateCells = cells.slice(1, 1 + BACKFILL_COLS.length);
+                    const milestones = BACKFILL_COLS.map((col, i) => ({
+                        label: col.label,
+                        date:  parseDmy(dateCells[i] || ''),
+                        done:  !!parseDmy(dateCells[i] || ''),
+                    }));
+                    const startDate = milestones[0].date || '';
+                    const arrival = milestones[milestones.length - 1].date;
+                    const ym = arrival ? arrival.slice(0, 7) : (startDate ? startDate.slice(0, 7) : '');
+                    if (!ym) { errors.push(`#${seq}: no usable dates — skipped`); continue; }
+                    _backfillStaged.push({
+                        id: 'h' + seq + '-' + Math.random().toString(36).slice(2, 6),
+                        seq, schema: 3, historical: true,
+                        startDate, ym,
+                        status: 'delivered',
+                        milestones,
+                        fixedLines: {}, costLines: [],
+                    });
+                }
+                const okCount = _backfillStaged.length;
+                if (preview) {
+                    preview.hidden = okCount === 0 && errors.length === 0;
+                    preview.innerHTML = [
+                        okCount ? `<div class="imp-backfill-ok">Ready to import ${okCount} shipment${okCount !== 1 ? 's' : ''}: ${_backfillStaged.map(s => '#' + s.seq).join(', ')}</div>` : '',
+                        errors.length ? `<div class="imp-backfill-warn">${errors.map(escHtml).join('<br>')}</div>` : '',
+                    ].join('');
+                }
+                importBtn.disabled = okCount === 0;
+                if (status) { status.textContent = ''; }
+            });
+
+            document.getElementById('imp-backfill-import')?.addEventListener('click', async () => {
+                if (!_backfillStaged.length) return;
+                const btn = document.getElementById('imp-backfill-import');
+                const status = document.getElementById('imp-backfill-status');
+                btn.disabled = true; btn.textContent = 'Importing…';
+                try {
+                    const shipments = [...(config.shipments || []), ..._backfillStaged];
+                    await api('/api/import/forecast', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ shipments }),
+                    });
+                    config.shipments = shipments;
+                    showToast(`Imported ${_backfillStaged.length} historical shipment${_backfillStaged.length !== 1 ? 's' : ''}`);
+                    _backfillStaged = [];
+                    rebuild();
+                } catch (err) {
+                    if (status) { status.textContent = 'Import failed: ' + err.message; status.style.color = '#ef4444'; }
+                    btn.disabled = false; btn.textContent = 'Import';
                 }
             });
 
