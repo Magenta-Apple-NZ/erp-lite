@@ -1033,9 +1033,7 @@ const Orders = (() => {
         let primaryAction = '';
         let xeroMenuItem  = '';
 
-        if (order.status === 'new') {
-            primaryAction = `<button class="btn-secondary btn-sm" disabled title="Print the packing slip first to review it">Send to Xero</button>`;
-        } else if (order.status === 'reviewed') {
+        if (order.status === 'new' || order.status === 'reviewed') {
             primaryAction = xeroConnected
                 ? `<button id="push-xero-btn" class="btn-primary">Send to Xero</button>`
                 : `<span class="xero-not-connected">Xero not connected</span>`;
