@@ -3131,6 +3131,181 @@ body.body--worker .orders-view-inner { padding-top: 1rem; }
 .ship-fix-neg { color: #b91c1c; }
 .ship-fix-num--alloc { width: 60px; }
 
+/* ── V3 detail — Shipment Stage track ────────────────────────────── */
+.ship-stage-track {
+    display: flex;
+    align-items: stretch;
+    gap: 0.5rem;
+    overflow-x: auto;
+    padding: 0.25rem 0;
+}
+.ship-stage-step {
+    flex: 1 1 0;
+    min-width: 96px;
+    background: white;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    padding: 0.6rem 0.5rem;
+    cursor: pointer;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.3rem;
+    text-align: center;
+    transition: transform 0.12s, border-color 0.12s, background 0.12s;
+    position: relative;
+}
+.ship-stage-step:hover { transform: translateY(-1px); border-color: #94a3b8; }
+.ship-stage-step--done {
+    background: #ecfdf5;
+    border-color: #10b981;
+}
+.ship-stage-step--done::after {
+    content: '✓';
+    position: absolute;
+    top: 4px;
+    right: 6px;
+    color: #10b981;
+    font-size: 0.7rem;
+    font-weight: 700;
+}
+.ship-stage-icon {
+    font-size: 1.4rem;
+    line-height: 1;
+}
+.ship-stage-label {
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: #475569;
+    line-height: 1.15;
+}
+.ship-stage-step--done .ship-stage-label { color: #065f46; }
+.ship-stage-date {
+    font-size: 0.68rem;
+    color: #94a3b8;
+    font-variant-numeric: tabular-nums;
+}
+.ship-stage-step--done .ship-stage-date { color: #10b981; }
+
+/* ── V3 detail — Net Weight Breakdown bar ─────────────────────────── */
+.ship-yield-bar {
+    display: flex;
+    height: 28px;
+    border-radius: 6px;
+    overflow: hidden;
+    background: #f1f5f9;
+    margin-bottom: 0.5rem;
+}
+.ship-yield-seg {
+    height: 100%;
+    transition: filter 0.12s;
+    cursor: help;
+}
+.ship-yield-seg:hover { filter: brightness(0.92); }
+.ship-yield-seg--white         { background: #cbd5e1; }
+.ship-yield-seg--white-waste   { background: repeating-linear-gradient(45deg, #cbd5e1, #cbd5e1 4px, #e2e8f0 4px, #e2e8f0 8px); }
+.ship-yield-seg--colour        { background: #7c3aed; }
+.ship-yield-seg--colour-waste  { background: repeating-linear-gradient(45deg, #7c3aed, #7c3aed 4px, #a78bfa 4px, #a78bfa 8px); }
+
+.ship-yield-legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.6rem 1rem;
+    align-items: center;
+    margin: 0.4rem 0 0.9rem;
+    font-size: 0.78rem;
+    color: #475569;
+}
+.ship-yield-leg-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    font-variant-numeric: tabular-nums;
+}
+.ship-yield-leg-dot {
+    display: inline-block;
+    width: 10px;
+    height: 10px;
+    border-radius: 2px;
+}
+.ship-yield-leg-dot--white  { background: #cbd5e1; }
+.ship-yield-leg-dot--colour { background: #7c3aed; }
+.ship-yield-leg-dot--waste  { background: repeating-linear-gradient(45deg, #94a3b8, #94a3b8 3px, #e2e8f0 3px, #e2e8f0 6px); }
+.ship-yield-leg-formula {
+    margin-left: auto;
+    font-size: 0.72rem;
+    color: #94a3b8;
+    font-variant-numeric: tabular-nums;
+}
+
+/* ── Imports overview — Upcoming Shipments cards ──────────────────── */
+.imp-upcoming-card-section { margin-bottom: 1.25rem; }
+.imp-upcoming-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 0.75rem;
+}
+.imp-upcoming-card {
+    background: white;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    padding: 0.85rem 1rem;
+    cursor: pointer;
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+    transition: transform 0.12s, border-color 0.12s, box-shadow 0.12s;
+}
+.imp-upcoming-card:hover {
+    transform: translateY(-2px);
+    border-color: #94a3b8;
+    box-shadow: 0 4px 12px rgba(15, 23, 42, 0.06);
+}
+.imp-upcoming-card-hd {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 0.5rem;
+}
+.imp-upcoming-card-num {
+    font-size: 0.95rem;
+    font-weight: 700;
+    color: #0f172a;
+}
+.imp-upcoming-card-eta {
+    font-size: 0.75rem;
+    color: #64748b;
+}
+.imp-upcoming-card-kg {
+    font-size: 1.4rem;
+    font-weight: 700;
+    color: #1e293b;
+    font-variant-numeric: tabular-nums;
+    line-height: 1.1;
+}
+.imp-upcoming-card-money {
+    font-size: 0.8rem;
+    color: #475569;
+    font-variant-numeric: tabular-nums;
+}
+.imp-upcoming-card-paid    { font-weight: 700; color: #0f172a; }
+.imp-upcoming-card-sep     { margin: 0 0.3rem; color: #cbd5e1; }
+.imp-upcoming-card-total   { color: #94a3b8; }
+.imp-upcoming-card-stage {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    margin-top: 0.1rem;
+    padding: 0.3rem 0.55rem;
+    background: #f1f5f9;
+    border-radius: 999px;
+    font-size: 0.74rem;
+    color: #475569;
+    font-weight: 500;
+    width: fit-content;
+}
+.imp-upcoming-card-stage-icon { font-size: 0.85rem; }
+
 /* Below ~1100px — drop the chart under the main column instead of beside it */
 @media (max-width: 1100px) {
     .ship-detail-view--new .ship-detail-layout,

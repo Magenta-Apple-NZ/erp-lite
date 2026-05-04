@@ -730,8 +730,6 @@ const Warehouse = (() => {
         } catch (e) { /* BDT sparkline optional */ }
 
         let scenario  = 'avg';
-        let shipView  = 'cards';
-        let activeTab = 'overview';
         let currentDetailShipId = null;
 
         // Build line-item cost breakdown HTML for a shipment card
@@ -1074,8 +1072,8 @@ const Warehouse = (() => {
         // kgField on perKg lines selects which derived weight to multiply by.
         const FIXED_LINE_SCHEMA_V3 = [
             // Raw Product
-            { key: 'rawWhite',       section: 'raw',        label: 'White Toeclips',           kind: 'perKg', kgField: 'whiteKg',  defaultRate: 1.50,    defaultCcy: 'EUR' },
-            { key: 'rawColour',      section: 'raw',        label: 'Coloured Toeclips',        kind: 'perKg', kgField: 'colourKg', defaultRate: 0.75,    defaultCcy: 'EUR' },
+            { key: 'rawWhite',       section: 'raw',        label: 'White Toeclips',           kind: 'perKg', kgField: 'whiteRawKg',  defaultRate: 1.50,    defaultCcy: 'EUR' },
+            { key: 'rawColour',      section: 'raw',        label: 'Coloured Toeclips',        kind: 'perKg', kgField: 'colourRawKg', defaultRate: 0.75,    defaultCcy: 'EUR' },
             { key: 'inspection',     section: 'raw',        label: 'Preshipment Inspection',   kind: 'flat',  defaultAmount: 0,    defaultCcy: 'EUR' },
             // Bangladesh
             { key: 'handlingA',      section: 'bangladesh', label: 'Handling & Sorting (1)',   kind: 'perKg', kgField: 'yieldKg',  defaultRate: 1.18,    defaultCcy: 'USD' },
@@ -1357,13 +1355,15 @@ const Warehouse = (() => {
                 ${CCYS_FIXED.map(c => `<option${c === ccy ? ' selected' : ''}>${c}</option>`).join('')}
             </select>`;
 
-            // Multiplier column shows the kg basis (perKg) or factor × annual local total (allocation).
+            // Local-total hint: per-kg lines show "= rate × kg" in the line currency.
+            // Allocation lines show factor × annual.
             let multCell = '';
             if (def.kind === 'perKg') {
                 const kg = Number(derived[def.kgField]) || 0;
                 const localTotal = (Number(line.rate) || 0) * kg;
-                multCell = `<span class="ship-fix-mult">× ${kg.toLocaleString('en-NZ', { maximumFractionDigits: 0 })} kg</span>` +
-                           (localTotal > 0 ? `<span class="ship-fix-localtotal">= ${localTotal.toLocaleString('en-NZ', { maximumFractionDigits: 2 })} ${ccy}</span>` : '');
+                if (localTotal > 0) {
+                    multCell = `<span class="ship-fix-localtotal">= ${localTotal.toLocaleString('en-NZ', { maximumFractionDigits: 2 })} ${ccy}</span>`;
+                }
             } else if (def.kind === 'allocation') {
                 const localTotal = (Number(line.allocFactor) || 0) * (Number(line.annualAmount) || 0);
                 multCell = localTotal > 0 ? `<span class="ship-fix-localtotal">= ${localTotal.toLocaleString('en-NZ', { maximumFractionDigits: 2 })} ${ccy}</span>` : '';
@@ -1384,7 +1384,6 @@ const Warehouse = (() => {
                     ${nzdDisplay}
                     ${liveFx ? `<span class="ship-fix-fxtag">${forex[ccy].toFixed(4)}</span>` : ''}
                 </td>
-                <td class="ship-fix-td-paidvia"><input class="ship-fix-paidvia" data-f="paidVia" value="${escHtml(line.paidVia || '')}" placeholder="Paid via…"></td>
                 <td class="ship-fix-td-chk"><input type="checkbox" class="ship-fix-paid" ${line.paid ? 'checked' : ''} title="Paid"></td>
             </tr>`;
         }
@@ -1409,7 +1408,6 @@ const Warehouse = (() => {
                         <th class="ship-fix-th-amt">Amount</th>
                         <th class="ship-fix-th-mult"></th>
                         <th class="ship-fix-th-nzd">≈&thinsp;NZD</th>
-                        <th class="ship-fix-th-paidvia">Paid Via</th>
                         <th class="ship-fix-th-chk" title="Paid">✓</th>
                     </tr></thead>
                     <tbody>${defs.map(d => buildFixedRowHtmlV3(s, d, derived, forex)).join('')}</tbody>
@@ -1466,6 +1464,23 @@ const Warehouse = (() => {
 
             const fmtKg = v => (v || 0).toLocaleString('en-NZ', { maximumFractionDigits: 0 });
 
+            const STAGE_ICONS = {
+                'Order placed':         '📝',
+                'LC ready':             '📄',
+                'Shipped (Left Italy)': '🚢',
+                'LC presented':         '📨',
+                'Landed in Bangladesh': '📦',
+                'Left Bangladesh':      '🚢',
+                'Arrived in Tauranga':  '🚚',
+            };
+            const stageIcon = lbl => STAGE_ICONS[lbl] || '◯';
+
+            // Net = white + colour. Waste applies evenly to both. Visual bar
+            // segments are scaled against netKg so they always total 100%.
+            const whiteWasteKg  = Math.max(0, d.whiteRawKg  - d.whiteKg);
+            const colourWasteKg = Math.max(0, d.colourRawKg - d.colourKg);
+            const segPct = v => d.netKg > 0 ? (v / d.netKg) * 100 : 0;
+
             body.innerHTML = `
             <div class="ship-detail-view ship-detail-view--new ship-detail-view--v3">
                 <div class="ship-detail-topbar">
@@ -1487,27 +1502,69 @@ const Warehouse = (() => {
                             <p class="ship-detail-meta">${ymLabel(s.ym)} &middot; ${fmtKg(d.netKg)} kg net &middot; ${d.yieldPct.toFixed(1)}% yield</p>
                         </div>
 
-                        <div class="ship-sum-row">
-                            <div class="ship-sum-card">
-                                <div class="ship-sum-val">$${Math.round(total).toLocaleString('en-NZ')}</div>
-                                <div class="ship-sum-lbl">Total Cost (NZD)</div>
+                        ${(() => {
+                            // Paid card greens up as paidPct rises; Outstanding reddens as it rises.
+                            // hue 0 = red, 120 = green. Hue stays gray-ish (null) when total = 0.
+                            const osPct  = total > 0 ? Math.max(0, Math.min(100, (osNzd / total) * 100)) : 0;
+                            const paidH  = total > 0 ? paidPct * 1.2 : null;
+                            const osH    = total > 0 ? 120 - osPct * 1.2 : null;
+                            const tint   = h => h == null
+                                ? 'background:#f8fafc;border-color:#e2e8f0;color:#1e293b'
+                                : `background:hsl(${h},80%,96%);border-color:hsl(${h},60%,82%);color:hsl(${h},65%,32%)`;
+                            return `<div class="ship-sum-row">
+                                <div class="ship-sum-card">
+                                    <div class="ship-sum-val">${fmtKg(d.yieldKg)}</div>
+                                    <div class="ship-sum-lbl">KG</div>
+                                </div>
+                                <div class="ship-sum-card">
+                                    <div class="ship-sum-val">${ppkg ? '$' + ppkg : '—'}</div>
+                                    <div class="ship-sum-lbl">$ / kg</div>
+                                </div>
+                                <div class="ship-sum-card" style="${tint(paidH)}">
+                                    <div class="ship-sum-val">$${Math.round(paid).toLocaleString('en-NZ')}</div>
+                                    <div class="ship-sum-lbl">Paid (${paidPct}%)</div>
+                                </div>
+                                <div class="ship-sum-card" style="${tint(osH)}">
+                                    <div class="ship-sum-val">${osNzd > 0.5 ? '$' + Math.round(osNzd).toLocaleString('en-NZ') : '✓ Clear'}</div>
+                                    <div class="ship-sum-lbl">Outstanding</div>
+                                </div>
+                            </div>`;
+                        })()}
+
+                        <div class="ship-det-section">
+                            <div class="ship-det-hd">
+                                <h3 class="ship-det-title">Shipment Stage</h3>
+                                <button class="btn-link ship-add-milestone" data-ship-id="${escHtml(s.id)}">+ Add</button>
                             </div>
-                            <div class="ship-sum-card">
-                                <div class="ship-sum-val">${ppkg ? '$' + ppkg : '—'}</div>
-                                <div class="ship-sum-lbl">Cost / Yield kg</div>
-                            </div>
-                            <div class="ship-sum-card ship-sum-card--paid">
-                                <div class="ship-sum-val">$${Math.round(paid).toLocaleString('en-NZ')}</div>
-                                <div class="ship-sum-lbl">Paid (${paidPct}%)</div>
-                            </div>
-                            <div class="ship-sum-card ${osNzd > 0.5 ? 'ship-sum-card--os' : 'ship-sum-card--clear'}">
-                                <div class="ship-sum-val">${osNzd > 0.5 ? '$' + Math.round(osNzd).toLocaleString('en-NZ') : '✓ Clear'}</div>
-                                <div class="ship-sum-lbl">${osNzd > 0.5 ? 'Outstanding' : 'Fully Paid'}</div>
+                            <div class="ship-stage-track">
+                                ${milestones.length
+                                    ? milestones.map((m, i) => `
+                                    <button type="button" class="ship-stage-step${m.done ? ' ship-stage-step--done' : ''}"
+                                            data-ship-id="${escHtml(s.id)}" data-idx="${i}"
+                                            title="${escHtml(m.label)}${m.date ? ' · ' + escHtml(m.date) : ''}">
+                                        <span class="ship-stage-icon">${stageIcon(m.label)}</span>
+                                        <span class="ship-stage-label">${escHtml(m.label)}</span>
+                                        <span class="ship-stage-date">${m.date ? escHtml(m.date) : '—'}</span>
+                                    </button>`).join('')
+                                    : '<p class="wh-empty" style="margin:0">No stages yet — click + Add to create one.</p>'
+                                }
                             </div>
                         </div>
 
                         <div class="ship-det-section">
-                            <div class="ship-det-hd"><h3 class="ship-det-title">Yield</h3></div>
+                            <div class="ship-det-hd"><h3 class="ship-det-title">Net Weight Breakdown</h3></div>
+                            <div class="ship-yield-bar" title="Net ${fmtKg(d.netKg)} kg → Yield ${fmtKg(d.yieldKg)} kg (${d.yieldPct.toFixed(1)}%)">
+                                ${d.whiteKg     > 0 ? `<div class="ship-yield-seg ship-yield-seg--white"        style="width:${segPct(d.whiteKg).toFixed(2)}%"        title="White yield: ${fmtKg(d.whiteKg)} kg"></div>` : ''}
+                                ${whiteWasteKg  > 0 ? `<div class="ship-yield-seg ship-yield-seg--white-waste"  style="width:${segPct(whiteWasteKg).toFixed(2)}%"  title="White waste: ${fmtKg(whiteWasteKg)} kg (${d.wastePct.toFixed(1)}%)"></div>` : ''}
+                                ${d.colourKg    > 0 ? `<div class="ship-yield-seg ship-yield-seg--colour"       style="width:${segPct(d.colourKg).toFixed(2)}%"       title="Colour yield: ${fmtKg(d.colourKg)} kg"></div>` : ''}
+                                ${colourWasteKg > 0 ? `<div class="ship-yield-seg ship-yield-seg--colour-waste" style="width:${segPct(colourWasteKg).toFixed(2)}%" title="Colour waste: ${fmtKg(colourWasteKg)} kg (${d.wastePct.toFixed(1)}%)"></div>` : ''}
+                            </div>
+                            <div class="ship-yield-legend">
+                                <span class="ship-yield-leg-item"><span class="ship-yield-leg-dot ship-yield-leg-dot--white"></span>White ${fmtKg(d.whiteRawKg)} kg</span>
+                                <span class="ship-yield-leg-item"><span class="ship-yield-leg-dot ship-yield-leg-dot--colour"></span>Colour ${fmtKg(d.colourRawKg)} kg</span>
+                                <span class="ship-yield-leg-item"><span class="ship-yield-leg-dot ship-yield-leg-dot--waste"></span>Waste ${d.wastePct.toFixed(1)}% (−${fmtKg(d.netKg - d.yieldKg)} kg)</span>
+                                <span class="ship-yield-leg-formula">White + Colour = ${fmtKg(d.netKg)} kg × ${d.yieldPct.toFixed(0)}% = ${fmtKg(d.yieldKg)} kg yield</span>
+                            </div>
                             <div class="ship-yield-grid">
                                 <div class="ship-yield-field">
                                     <label class="imp-field-label">White amount (kg)</label>
@@ -1527,13 +1584,6 @@ const Warehouse = (() => {
                                         data-ship-id="${escHtml(s.id)}" data-field="wastePct"
                                         value="${s.wastePct ?? ''}" placeholder="10" step="0.1" min="0" max="100">
                                 </div>
-                            </div>
-                            <div class="ship-yield-derived">
-                                <div class="ship-yield-stat"><span class="ship-yield-stat-lbl">Net kg</span><span class="ship-yield-stat-val">${fmtKg(d.netKg)} <span class="ship-yield-stat-sub">(${d.whitePct.toFixed(1)}% white)</span></span></div>
-                                <div class="ship-yield-stat"><span class="ship-yield-stat-lbl">Yield %</span><span class="ship-yield-stat-val">${d.yieldPct.toFixed(1)}%</span></div>
-                                <div class="ship-yield-stat"><span class="ship-yield-stat-lbl">Yield kg</span><span class="ship-yield-stat-val">${fmtKg(d.yieldKg)}</span></div>
-                                <div class="ship-yield-stat"><span class="ship-yield-stat-lbl">White kg</span><span class="ship-yield-stat-val">${fmtKg(d.whiteKg)}</span></div>
-                                <div class="ship-yield-stat"><span class="ship-yield-stat-lbl">Colour kg</span><span class="ship-yield-stat-val">${fmtKg(d.colourKg)}</span></div>
                             </div>
                         </div>
 
@@ -1570,27 +1620,7 @@ const Warehouse = (() => {
                         </div>
                     </div>
 
-                    <div class="ship-detail-side">
-                        <aside class="ship-side-card">
-                            <div class="ship-side-hd">
-                                <h4 class="ship-pct-title">Milestones</h4>
-                                <button class="btn-link ship-add-milestone" data-ship-id="${escHtml(s.id)}">+ Add</button>
-                            </div>
-                            <div class="imp-milestones">
-                                ${milestones.length
-                                    ? milestones.map((m, i) => `
-                                    <label class="imp-milestone${m.done?' imp-milestone--done':''}">
-                                        <input type="checkbox" class="imp-milestone-check"
-                                            data-ship-id="${escHtml(s.id)}" data-idx="${i}" ${m.done?'checked':''}>
-                                        <span class="imp-milestone-label">${escHtml(m.label)}</span>
-                                        ${m.date?`<span class="imp-milestone-date">${escHtml(m.date)}</span>`:''}
-                                    </label>`).join('')
-                                    : '<p class="wh-empty" style="margin:0.25rem 0">No milestones — click + Add to create one.</p>'
-                                }
-                            </div>
-                        </aside>
-                        ${buildPctChartHtmlV3(totals.sectionTotals, total)}
-                    </div>
+                    ${buildPctChartHtmlV3(totals.sectionTotals, total)}
                 </div>
             </div>`;
         }
@@ -2006,6 +2036,53 @@ const Warehouse = (() => {
             const SHIP_STATUS_COLORS = { planning:'#94a3b8', ordered:'#3b82f6', 'in-transit':'#f59e0b', customs:'#8b5cf6', delivered:'#10b981' };
             const SHIP_STATUS_LABELS = { planning:'Planning', ordered:'Ordered', 'in-transit':'In Transit', customs:'Customs', delivered:'Delivered' };
 
+            // Compact card for the overview's "Upcoming Shipments" strip.
+            // Shows core info: #, ETA, yield kg, $paid/$total, current stage.
+            // Card is clickable (delegates to .imp-event-card--nav handler).
+            const UPCOMING_STAGE_ICONS = {
+                'Order placed':         '📝',
+                'LC ready':             '📄',
+                'Shipped (Left Italy)': '🚢',
+                'LC presented':         '📨',
+                'Landed in Bangladesh': '📦',
+                'Left Bangladesh':      '🚢',
+                'Arrived in Tauranga':  '🚚',
+            };
+            const upcomingCard = (s) => {
+                let totalNzd = 0, paidNzd = 0, yieldKg = 0;
+                if (s.schema === 3) {
+                    const t = computeShipTotalsV3(s, forex);
+                    totalNzd = t.total; paidNzd = t.paid; yieldKg = t.derived.yieldKg;
+                } else if (s.seq) {
+                    const t = computeShipTotalsNew(s, forex);
+                    totalNzd = t.total; paidNzd = t.paid; yieldKg = Number(s.kg) || 0;
+                } else {
+                    yieldKg = Number(s.kg) || 0;
+                }
+                const milestones = s.milestones || [];
+                const lastDone   = [...milestones].reverse().find(m => m.done);
+                const stageLabel = lastDone ? lastDone.label : 'Not started';
+                const stageIcon  = UPCOMING_STAGE_ICONS[stageLabel] || '◯';
+                const seqForTitle = displaySeqOf(s);
+                return `
+                <div class="imp-upcoming-card imp-event-card--nav" data-ship-id="${escHtml(s.id)}">
+                    <div class="imp-upcoming-card-hd">
+                        <span class="imp-upcoming-card-num">Shipment #${seqForTitle}</span>
+                        <span class="imp-upcoming-card-eta">${escHtml(ymLabel(s.ym))}</span>
+                    </div>
+                    <div class="imp-upcoming-card-kg">${fmtFull(yieldKg)} kg</div>
+                    <div class="imp-upcoming-card-money">
+                        <span class="imp-upcoming-card-paid">$${Math.round(paidNzd).toLocaleString('en-NZ')}</span>
+                        <span class="imp-upcoming-card-sep">/</span>
+                        <span class="imp-upcoming-card-total">$${Math.round(totalNzd).toLocaleString('en-NZ')}</span>
+                    </div>
+                    <div class="imp-upcoming-card-stage">
+                        <span class="imp-upcoming-card-stage-icon">${stageIcon}</span>
+                        <span class="imp-upcoming-card-stage-label">${escHtml(stageLabel)}</span>
+                    </div>
+                </div>`;
+            };
+
             const shipCard = (s, past) => {
                 const milestones = s.milestones || [];
                 const doneCount  = milestones.filter(m => m.done).length;
@@ -2069,12 +2146,7 @@ const Warehouse = (() => {
             };
 
             body.innerHTML = `
-            <div class="imp-tabs">
-                <button class="imp-view-btn ${activeTab === 'overview' ? 'active' : ''}" id="imp-tab-overview">Overview</button>
-                <button class="imp-view-btn ${activeTab === 'shipments' ? 'active' : ''}" id="imp-tab-shipments">Shipments${allShips.length ? ` (${allShips.length})` : ''}</button>
-            </div>
-
-            <div id="imp-overview-panel"${activeTab !== 'overview' ? ' style="display:none"' : ''}>
+            <div>
                 <div class="imp-overview-grid">
                 <div class="imp-overview-main">
                 <div class="cat-section imp-chart-card">
@@ -2103,6 +2175,47 @@ const Warehouse = (() => {
                 <div class="cat-section imp-timeline-card">
                     <h2 class="cat-title" style="margin-bottom:0.75rem">Shipments Timeline</h2>
                     ${buildShipmentsTimelineHtml(allShips, forex)}
+                </div>
+
+                <div class="cat-section imp-upcoming-card-section">
+                    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.75rem;gap:0.75rem">
+                        <h2 class="cat-title" style="margin:0">Upcoming Shipments</h2>
+                        <button class="btn-primary btn-sm" id="imp-add-ship-btn">+ Add</button>
+                    </div>
+                    <div id="imp-add-ship-form" style="display:none;margin-bottom:1rem;padding:0.75rem;background:#f8fafc;border-radius:6px;border:1px solid #e2e8f0">
+                        <div class="imp-add-form-grid">
+                            <div>
+                                <label class="imp-field-label">Shipment #</label>
+                                <input type="number" id="ship-seq" class="imp-url-input" min="1" step="1">
+                            </div>
+                            <div>
+                                <label class="imp-field-label">Start date</label>
+                                <input type="date" id="ship-startdate" class="imp-url-input">
+                            </div>
+                            <div>
+                                <label class="imp-field-label">White amount (kg)</label>
+                                <input type="number" id="ship-whitekg" class="imp-url-input" placeholder="e.g. 7000" min="0" step="any">
+                            </div>
+                            <div>
+                                <label class="imp-field-label">Coloured amount (kg)</label>
+                                <input type="number" id="ship-colourkg" class="imp-url-input" placeholder="e.g. 13000" min="0" step="any">
+                            </div>
+                            <div>
+                                <label class="imp-field-label">Waste %</label>
+                                <input type="number" id="ship-wastepct" class="imp-url-input" placeholder="10" min="0" max="100" step="0.1" value="10">
+                            </div>
+                        </div>
+                        <p id="ship-yield-preview" class="imp-add-yield-preview"></p>
+                        <div style="display:flex;gap:0.4rem;margin-top:0.5rem">
+                            <button class="btn-primary btn-sm" id="ship-save-btn">Add Shipment</button>
+                            <button class="btn-secondary btn-sm" id="ship-cancel-btn">Cancel</button>
+                        </div>
+                    </div>
+                    <div class="imp-upcoming-grid">
+                        ${upcomingShips.length
+                            ? upcomingShips.slice(0, 3).map(s => upcomingCard(s)).join('')
+                            : '<p class="wh-empty" style="margin:0">No upcoming shipments — click + Add to create one.</p>'}
+                    </div>
                 </div>
 
                 <div class="cat-section imp-table-card" style="padding-bottom:0">
@@ -2147,94 +2260,13 @@ const Warehouse = (() => {
                 </div>
                 ${fxPanelHtml ? `<div class="imp-overview-side">${fxPanelHtml}</div>` : ''}
                 </div>
-            </div>
-
-            <div id="imp-shipments-panel"${activeTab !== 'shipments' ? ' style="display:none"' : ''}>
-                <div class="cat-section">
-                    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.75rem;gap:0.75rem">
-                        <h3 class="stk-section-title" style="margin:0">Upcoming Shipments</h3>
-                        <div style="display:flex;gap:0.35rem;align-items:center">
-                            <button class="imp-view-btn ${shipView === 'cards' ? 'active' : ''}" id="imp-view-cards">Cards</button>
-                            <button class="imp-view-btn ${shipView === 'matrix' ? 'active' : ''}" id="imp-view-matrix">Matrix</button>
-                            <button class="btn-primary btn-sm" id="imp-add-ship-btn">+ Add</button>
-                        </div>
-                    </div>
-                    <div id="imp-add-ship-form" style="display:none;margin-bottom:1rem;padding:0.75rem;background:#f8fafc;border-radius:6px;border:1px solid #e2e8f0">
-                        <div class="imp-add-form-grid">
-                            <div>
-                                <label class="imp-field-label">Shipment #</label>
-                                <input type="number" id="ship-seq" class="imp-url-input" min="1" step="1">
-                            </div>
-                            <div>
-                                <label class="imp-field-label">Start date</label>
-                                <input type="date" id="ship-startdate" class="imp-url-input">
-                            </div>
-                            <div>
-                                <label class="imp-field-label">White amount (kg)</label>
-                                <input type="number" id="ship-whitekg" class="imp-url-input" placeholder="e.g. 7000" min="0" step="any">
-                            </div>
-                            <div>
-                                <label class="imp-field-label">Coloured amount (kg)</label>
-                                <input type="number" id="ship-colourkg" class="imp-url-input" placeholder="e.g. 13000" min="0" step="any">
-                            </div>
-                            <div>
-                                <label class="imp-field-label">Waste %</label>
-                                <input type="number" id="ship-wastepct" class="imp-url-input" placeholder="10" min="0" max="100" step="0.1" value="10">
-                            </div>
-                        </div>
-                        <p id="ship-yield-preview" class="imp-add-yield-preview"></p>
-                        <div style="display:flex;gap:0.4rem;margin-top:0.5rem">
-                            <button class="btn-primary btn-sm" id="ship-save-btn">Add Shipment</button>
-                            <button class="btn-secondary btn-sm" id="ship-cancel-btn">Cancel</button>
-                        </div>
-                    </div>
-                    ${shipView === 'matrix' ? (() => {
-                        const allLabels = [...new Set(upcomingShips.flatMap(s => (s.milestones || []).map(m => m.label)))];
-                        const cols = upcomingShips.map(s => `<th>${escHtml(s.campaign || s.note || ymLabel(s.ym))}<br><small style="font-weight:400;color:#64748b">${ymLabel(s.ym)}</small></th>`).join('');
-                        const rows2 = allLabels.map(lbl => {
-                            const cells = upcomingShips.map(s => {
-                                const m = (s.milestones || []).find(m => m.label === lbl);
-                                return `<td>${m?.done ? escHtml(m.date || '✓') : '<span style="color:#cbd5e1">—</span>'}</td>`;
-                            }).join('');
-                            return `<tr><td class="imp-matrix-stage">${escHtml(lbl)}</td>${cells}</tr>`;
-                        }).join('');
-                        const arriveRow = upcomingShips.map(s => `<td style="font-weight:600;color:#1e40af">${ymLabel(s.ym)}</td>`).join('');
-                        return `<div class="imp-matrix-wrap">
-                            <table class="imp-matrix-table">
-                                <thead><tr><th>Milestone</th>${cols}</tr></thead>
-                                <tbody>
-                                    ${rows2}
-                                    <tr class="imp-matrix-row--arrive"><td class="imp-matrix-stage">Arrival</td>${arriveRow}</tr>
-                                </tbody>
-                            </table>
-                        </div>`;
-                    })() : `<div class="imp-events-grid">
-                        ${upcomingShips.length
-                            ? upcomingShips.map(s => shipCard(s, false)).join('')
-                            : '<p class="wh-empty" style="margin:0">No upcoming shipments.</p>'}
-                    </div>`}
-                </div>
-                ${pastShips.length ? `
-                <div class="cat-section">
-                    <h3 class="stk-section-title">Past Shipments</h3>
-                    <div class="imp-events-grid imp-events-grid--past">
-                        ${pastShips.map(s => shipCard(s, true)).join('')}
-                    </div>
-                </div>` : ''}
             </div>`;
 
             if (typeof initCharts === 'function') initCharts(body);
 
-            // ── Tab switching ──
-            document.getElementById('imp-tab-overview')?.addEventListener('click', () => { activeTab = 'overview'; rebuild(); });
-            document.getElementById('imp-tab-shipments')?.addEventListener('click', () => { activeTab = 'shipments'; rebuild(); });
-
             body.querySelectorAll('.imp-scenario-btn').forEach(btn => {
                 btn.addEventListener('click', () => { scenario = btn.dataset.s; rebuild(); });
             });
-
-            document.getElementById('imp-view-cards')?.addEventListener('click', () => { shipView = 'cards'; rebuild(); });
-            document.getElementById('imp-view-matrix')?.addEventListener('click', () => { shipView = 'matrix'; rebuild(); });
 
             document.getElementById('imp-edit-stock-btn')?.addEventListener('click', () => {
                 document.getElementById('imp-stock-edit').style.display = '';
@@ -2569,9 +2601,8 @@ const Warehouse = (() => {
                 if (s) { renderShipDetail(s); return; }
             }
 
-            // Back to shipment list
+            // Back to shipment list (overview)
             if (e.target.closest('.ship-detail-back')) {
-                activeTab = 'shipments';
                 rebuild();
                 return;
             }
@@ -2605,6 +2636,23 @@ const Warehouse = (() => {
                 config.shipments = (config.shipments || []).map(s =>
                     s.id !== shipId ? s : { ...s, costLines: [...(s.costLines || []), line] }
                 );
+                await costSave();
+                return;
+            }
+
+            // Stage track step → toggle done (mirror checkbox behaviour, click anywhere on step)
+            const stageStep = e.target.closest('.ship-stage-step');
+            if (stageStep) {
+                const { shipId } = stageStep.dataset;
+                const idx = parseInt(stageStep.dataset.idx);
+                const today = new Date().toISOString().slice(0, 10);
+                config.shipments = (config.shipments || []).map(s => {
+                    if (s.id !== shipId) return s;
+                    const milestones = (s.milestones || []).map((m, i) =>
+                        i === idx ? { ...m, done: !m.done, date: !m.done && !m.date ? today : m.date } : m
+                    );
+                    return { ...s, milestones };
+                });
                 await costSave();
                 return;
             }
