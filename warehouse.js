@@ -516,20 +516,13 @@ const Warehouse = (() => {
         return rows;
     }
 
-    function buildForecastChart(rows, scenario) {
+    function buildForecastChart(rows, scenario, shipments) {
         const id = 'forecast-chart';
         const SERIES = [
-            { key: 'closeAvg',   color: '#3b82f6', dash: [],    label: 'Average', s: 'avg'   },
-            { key: 'closeGood',  color: '#10b981', dash: [5, 3], label: 'Good',    s: 'good'  },
-            { key: 'closeGreat', color: '#8b5cf6', dash: [5, 3], label: 'Great',   s: 'great' },
+            { key: 'closeAvg',   color: '#3b82f6', dash: [],     label: 'Average', s: 'avg',   negFill: true  },
+            { key: 'closeGood',  color: '#10b981', dash: [],     label: 'Good',    s: 'good',  negFill: false },
+            { key: 'closeGreat', color: '#8b5cf6', dash: [],     label: 'Great',   s: 'great', negFill: false },
         ];
-
-        function hexAlpha(hex, a) {
-            const r = parseInt(hex.slice(1, 3), 16);
-            const g = parseInt(hex.slice(3, 5), 16);
-            const b = parseInt(hex.slice(5, 7), 16);
-            return `rgba(${r},${g},${b},${a})`;
-        }
 
         const allValues = rows.flatMap(r => [r.closeAvg, r.closeGood, r.closeGreat]);
         const minV = Math.min(...allValues, 0);
@@ -541,45 +534,80 @@ const Warehouse = (() => {
                 borderColor: 'rgba(239,68,68,0.8)', borderWidth: 2,
             };
         }
-        rows.forEach((r, i) => {
-            if (!r.incoming) return;
-            annotations['imp' + i] = {
+
+        // Shipment windows: a translucent band from start month → arrival month,
+        // with solid markers at each end. Replaces the previous single dashed
+        // arrival line. Falls back to arrival-only when start date is unknown
+        // (legacy shipments without s.startDate).
+        const ymToIndex = {};
+        rows.forEach((r, i) => { ymToIndex[r.ym] = i; });
+        (shipments || []).forEach((s, idx) => {
+            const arriveCol = ymToIndex[s.ym];
+            if (arriveCol == null) return;
+            const startYm = s.startDate ? s.startDate.slice(0, 7) : null;
+            const startCol = startYm != null ? ymToIndex[startYm] : null;
+            const kg = shipIncomingKg(s);
+            const tag = s.seq ? `#${s.seq}` : '';
+
+            if (startCol != null && startCol !== arriveCol) {
+                annotations['shipBox' + idx] = {
+                    type: 'box',
+                    xMin: startCol - 0.5,
+                    xMax: arriveCol + 0.5,
+                    backgroundColor: 'rgba(59,130,246,0.07)',
+                    borderWidth: 0,
+                    drawTime: 'beforeDatasetsDraw',
+                };
+                annotations['shipStart' + idx] = {
+                    type: 'line',
+                    xMin: startCol, xMax: startCol,
+                    borderColor: 'rgba(59,130,246,0.6)',
+                    borderWidth: 1.5,
+                    label: {
+                        display: true,
+                        content: tag ? `${tag} start` : 'start',
+                        position: 'start',
+                        font: { size: 8 },
+                        color: '#3b82f6',
+                        backgroundColor: 'transparent',
+                        padding: { x: 2, y: 1 },
+                    },
+                };
+            }
+
+            annotations['shipEnd' + idx] = {
                 type: 'line',
-                xMin: i, xMax: i,
-                borderColor: 'rgba(100,116,139,0.3)',
-                borderWidth: 1,
-                borderDash: [4, 3],
+                xMin: arriveCol, xMax: arriveCol,
+                borderColor: 'rgba(59,130,246,0.85)',
+                borderWidth: 2,
                 label: {
                     display: true,
-                    content: '+' + fmtFull(r.incoming),
+                    content: `${tag ? tag + ' · ' : ''}+${fmtFull(kg)}`,
                     position: 'start',
-                    font: { size: 8 },
-                    color: '#64748b',
+                    font: { size: 8.5, weight: '600' },
+                    color: '#1d4ed8',
                     backgroundColor: 'transparent',
                     padding: { x: 2, y: 1 },
                 },
             };
         });
 
-        const datasets = SERIES.map(({ key, color, dash, label, s }) => {
-            const sel = s === scenario;
-            return {
-                label,
-                data: rows.map(r => r[key]),
-                borderColor: hexAlpha(color, sel ? 1 : 0.2),
-                backgroundColor: 'transparent',
-                borderWidth: sel ? 2.5 : 1.5,
-                borderDash: dash,
-                pointRadius: sel ? 3.5 : 0,
-                pointHoverRadius: sel ? 6 : 0,
-                pointBackgroundColor: hexAlpha(color, sel ? 1 : 0),
-                pointBorderColor: sel ? 'white' : 'transparent',
-                pointBorderWidth: 1.5,
-                fill: sel ? { target: { value: 0 }, above: 'transparent', below: 'rgba(239,68,68,0.15)' } : false,
-                tension: 0.2,
-                order: sel ? 0 : 1,
-            };
-        });
+        const datasets = SERIES.map(({ key, color, dash, label, negFill }) => ({
+            label,
+            data: rows.map(r => r[key]),
+            borderColor: color,
+            backgroundColor: 'transparent',
+            borderWidth: 2.25,
+            borderDash: dash,
+            pointRadius: 3,
+            pointHoverRadius: 5.5,
+            pointBackgroundColor: color,
+            pointBorderColor: 'white',
+            pointBorderWidth: 1.5,
+            fill: negFill ? { target: { value: 0 }, above: 'transparent', below: 'rgba(239,68,68,0.15)' } : false,
+            tension: 0.2,
+            order: negFill ? 0 : 1,
+        }));
 
         window._chartQ[id] = {
             type: 'line',
@@ -950,69 +978,6 @@ const Warehouse = (() => {
             const total = sectionTotals.raw + sectionTotals.processing + sectionTotals.freight + sectionTotals.other;
             const paid  = sectionPaid.raw  + sectionPaid.processing  + sectionPaid.freight  + sectionPaid.other;
             return { sectionTotals, sectionPaid, total, paid };
-        }
-
-        // Horizontal timeline for the Imports overview. Shows a 13-month window
-        // (3 months back → 9 forward), one column per month, with shipment chips
-        // stacked inside each column. Chips reuse imp-event-card--nav so the
-        // existing click delegation routes them straight into the detail view.
-        function buildShipmentsTimelineHtml(shipments, forex) {
-            const all = (shipments || []).slice();
-            if (!all.length) {
-                return '<p class="wh-empty" style="margin:0">No shipments scheduled.</p>';
-            }
-
-            // Build a fixed window of months: current - 3 → current + 9 (13 total).
-            const now = new Date();
-            now.setDate(1);
-            const months = [];
-            for (let i = -3; i <= 9; i++) {
-                const d = new Date(now.getFullYear(), now.getMonth() + i, 1);
-                const ym = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
-                months.push({ ym, label: d.toLocaleDateString('en-NZ', { month: 'short' }), year: d.getFullYear() });
-            }
-            const curYm = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
-
-            // Bucket shipments by ym. Anything outside the visible window collapses
-            // to the edge column so it stays clickable from the timeline.
-            const byMonth = {};
-            for (const s of all) {
-                const ym = s.ym || months[0].ym;
-                let bucket = ym;
-                if (ym < months[0].ym) bucket = months[0].ym;
-                else if (ym > months[months.length - 1].ym) bucket = months[months.length - 1].ym;
-                (byMonth[bucket] = byMonth[bucket] || []).push(s);
-            }
-
-            const STATUS_C = { planning:'#94a3b8', ordered:'#3b82f6', 'in-transit':'#f59e0b', customs:'#8b5cf6', delivered:'#10b981' };
-
-            const cols = months.map(m => {
-                const ships = (byMonth[m.ym] || []).slice().sort((a, b) => (a.seq || 0) - (b.seq || 0));
-                const isCurrent = m.ym === curYm;
-                const showYear = m.label === 'Jan' || m === months[0];
-                const chips = ships.map(s => {
-                    const title  = s.seq ? `#${s.seq}` : (s.campaign || 'ship').slice(0, 8);
-                    const kg     = s.schema === 3 ? ((Number(s.whiteRawKg) || 0) + (Number(s.colourRawKg) || 0)) : (Number(s.kg) || 0);
-                    const status = s.status || 'planning';
-                    const c      = STATUS_C[status] || '#94a3b8';
-                    const total  = s.schema === 3 ? computeShipTotalsV3(s, forex).total
-                                : (s.seq ? computeShipTotalsNew(s, forex).total : 0);
-                    return `<div class="imp-tl-chip imp-event-card--nav" data-ship-id="${escHtml(s.id)}" title="${escHtml(s.campaign || '')}${kg ? ' · ' + kg.toLocaleString('en-NZ') + ' kg' : ''}${total ? ' · $' + Math.round(total).toLocaleString('en-NZ') : ''}">
-                        <span class="imp-tl-chip-dot" style="background:${c}"></span>
-                        <span class="imp-tl-chip-title">${escHtml(title)}</span>
-                        ${kg ? `<span class="imp-tl-chip-kg">${kg >= 1000 ? (kg/1000).toFixed(kg >= 10000 ? 0 : 1) + 'k' : kg}</span>` : ''}
-                    </div>`;
-                }).join('');
-                return `<div class="imp-tl-col${isCurrent ? ' imp-tl-col--current' : ''}">
-                    <div class="imp-tl-col-hd">
-                        <span class="imp-tl-mo">${m.label}</span>
-                        ${showYear ? `<span class="imp-tl-yr">${m.year}</span>` : ''}
-                    </div>
-                    <div class="imp-tl-col-body">${chips || '<span class="imp-tl-col-empty"></span>'}</div>
-                </div>`;
-            }).join('');
-
-            return `<div class="imp-tl-wrap"><div class="imp-tl">${cols}</div></div>`;
         }
 
         // Right-side sticky chart: four horizontal bars showing each section's
@@ -2224,12 +2189,7 @@ const Warehouse = (() => {
                             <button class="btn-secondary btn-sm" id="imp-stock-cancel-btn">Cancel</button>
                         </div>
                     </div>
-                    <div id="imp-chart-wrap">${buildForecastChart(rows, scenario)}</div>
-                </div>
-
-                <div class="cat-section imp-timeline-card">
-                    <h2 class="cat-title" style="margin-bottom:0.75rem">Shipments Timeline</h2>
-                    ${buildShipmentsTimelineHtml(allShips, forex)}
+                    <div id="imp-chart-wrap">${buildForecastChart(rows, scenario, allShips)}</div>
                 </div>
 
                 <div class="cat-section imp-upcoming-card-section">
