@@ -1077,12 +1077,12 @@ const Warehouse = (() => {
             { key: 'inspection',     section: 'raw',        label: 'Preshipment Inspection',   kind: 'flat',  defaultAmount: 0,    defaultCcy: 'EUR' },
             // Bangladesh
             { key: 'handlingA',      section: 'bangladesh', label: 'Handling & Sorting (1)',   kind: 'perKg', kgField: 'yieldKg',  defaultRate: 1.18,    defaultCcy: 'USD' },
-            { key: 'handlingB',      section: 'bangladesh', label: 'Handling & Sorting (2)',   kind: 'perKg', kgField: 'yieldKg',  defaultRate: 0.63,    defaultCcy: 'USD' },
+            { key: 'handlingB',      section: 'bangladesh', label: 'LC Deposit',               kind: 'flat',  defaultAmount: 0,    defaultCcy: 'USD' },
+            { key: 'lcRefund',       section: 'bangladesh', label: 'LC Refund',                kind: 'flat',  defaultAmount: 0,    defaultCcy: 'NZD', allowNegative: true },
             { key: 'bundling',       section: 'bangladesh', label: 'Bundling',                 kind: 'perKg', kgField: 'yieldKg',  defaultRate: 79,      defaultCcy: 'BDT' },
             { key: 'rent',           section: 'bangladesh', label: 'Rent (Annual)',            kind: 'allocation', defaultAlloc: 0.67, defaultAnnual: 243075,  defaultCcy: 'BDT' },
             { key: 'salaries',       section: 'bangladesh', label: 'Salaries (Annual)',        kind: 'allocation', defaultAlloc: 0.67, defaultAnnual: 1060430, defaultCcy: 'BDT' },
             { key: 'bankFees',       section: 'bangladesh', label: 'Bank Fees',                kind: 'flat',  defaultAmount: 557,  defaultCcy: 'NZD' },
-            { key: 'lcRefund',       section: 'bangladesh', label: 'LC Refund',                kind: 'flat',  defaultAmount: 0,    defaultCcy: 'NZD', allowNegative: true },
             // Freight
             { key: 'freightItalyBd', section: 'freight',    label: 'Italy → Bangladesh',       kind: 'flat',  defaultAmount: 15000, defaultCcy: 'NZD' },
             { key: 'freightBdNz',    section: 'freight',    label: 'Bangladesh → New Zealand', kind: 'flat',  defaultAmount: 34000, defaultCcy: 'NZD' },
