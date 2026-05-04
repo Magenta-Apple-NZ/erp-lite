@@ -2670,6 +2670,8 @@ a.xero-inv-linked:hover { background: #d1fae5; border-color: #6ee7b7; }
     padding: 0 0 3rem;
     max-width: 860px;
 }
+.ship-detail-view--new,
+.ship-detail-view--v3 { max-width: none; }
 .ship-detail-topbar {
     display: flex;
     align-items: center;
