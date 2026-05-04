@@ -2130,6 +2130,10 @@ const Warehouse = (() => {
                 `<button class="imp-scenario-btn ${scenario === s ? 'active' : ''}" data-s="${s}">${{ avg: 'Average', good: 'Good +10%', great: 'Great +20%' }[s]}</button>`
             ).join('');
 
+            // Closings for all three scenarios are shown side-by-side; the
+            // health dot still tracks the active scenario so it matches the
+            // chart above. Critical/low row tinting also follows the active
+            // scenario's closing.
             let _prevFcstYr = null;
             const tableRows = rows.map(r => {
                 const closing   = r[closeKey];
@@ -2143,7 +2147,7 @@ const Warehouse = (() => {
                 }[status];
                 let yearRow = '';
                 if (r.yr !== _prevFcstYr) {
-                    if (_prevFcstYr !== null) yearRow = `<tr class="imp-year-divider"><td colspan="7">${r.yr}</td></tr>`;
+                    if (_prevFcstYr !== null) yearRow = `<tr class="imp-year-divider"><td colspan="9">${r.yr}</td></tr>`;
                     _prevFcstYr = r.yr;
                 }
                 const incomingShip = r.incomingShips && r.incomingShips.length ? r.incomingShips[0] : null;
@@ -2152,6 +2156,12 @@ const Warehouse = (() => {
                         ? `<button class="imp-incoming-link" data-ship-id="${escHtml(incomingShip.id)}" title="${escHtml(incomingShip.campaign || ymLabel(incomingShip.ym))}">${'+' + fmtFull(r.incoming)}</button>`
                         : '+' + fmtFull(r.incoming))
                     : '—';
+                const closeCell = (val, scenarioKey) => {
+                    const cls = `imp-td-num imp-td-close imp-td-close--${scenarioKey}` +
+                        (val < 0 ? ' fcst-negative' : '') +
+                        (scenarioKey === scenario ? ' imp-td-close--active' : '');
+                    return `<td class="${cls}">${fmtFull(val)}</td>`;
+                };
                 return yearRow + `
                 <tr class="imp-row ${r.incoming ? 'imp-has-import' : ''} ${!hasActual && status !== 'ok' ? 'imp-row--' + status : ''}">
                     <td class="imp-td-month">${escHtml(r.label)}</td>
@@ -2159,7 +2169,9 @@ const Warehouse = (() => {
                     <td class="imp-td-num">${fmtFull(sales)}</td>
                     <td class="imp-td-num">${fmtFull(r[openKey])}</td>
                     <td class="imp-td-num imp-incoming ${r.incoming ? 'imp-incoming-val' : ''}">${incomingContent}</td>
-                    <td class="imp-td-num ${closing < 0 ? 'fcst-negative' : ''}">${fmtFull(closing)}</td>
+                    ${closeCell(r.closeAvg,   'avg')}
+                    ${closeCell(r.closeGood,  'good')}
+                    ${closeCell(r.closeGreat, 'great')}
                     <td style="text-align:center;padding:0 0.5rem">${dot}</td>
                 </tr>`;
             }).join('');
@@ -2292,29 +2304,6 @@ const Warehouse = (() => {
             <div>
                 <div class="imp-overview-grid">
                 <div class="imp-overview-main">
-                <div class="cat-section imp-chart-card">
-                    <div class="cat-section-head">
-                        <div>
-                            <h2 class="cat-title">Stock Trajectory &middot; Prime Ties <span class="fcst-version">v${config.version || 1}</span></h2>
-                            <p class="cat-sub">Starting stock: <strong>${fmtFull(config.startingKg ?? 0)}</strong>
-                                <button class="btn-link" id="imp-edit-stock-btn">Edit</button></p>
-                        </div>
-                        <div class="cat-actions">
-                            <div class="imp-scenario-wrap">${scenarioBtns}</div>
-                        </div>
-                    </div>
-                    <div id="imp-stock-edit" style="display:none;margin-bottom:1rem">
-                        <div class="imp-connect-row">
-                            <label style="font-size:0.8125rem;color:#64748b;white-space:nowrap">Current stock (kg):</label>
-                            <input type="number" id="imp-stock-kg" class="imp-url-input" style="max-width:140px"
-                                value="${config.startingKg ?? ''}" placeholder="e.g. 5000" min="0" step="any">
-                            <button class="btn-primary btn-sm" id="imp-stock-save-btn">Save</button>
-                            <button class="btn-secondary btn-sm" id="imp-stock-cancel-btn">Cancel</button>
-                        </div>
-                    </div>
-                    <div id="imp-chart-wrap">${buildForecastChart(rows, scenario, allShips)}</div>
-                </div>
-
                 <div class="cat-section imp-upcoming-card-section">
                     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.75rem;gap:0.75rem">
                         <h2 class="cat-title" style="margin:0">Upcoming Shipments</h2>
@@ -2356,10 +2345,33 @@ const Warehouse = (() => {
                     </div>
                 </div>
 
+                <div class="cat-section imp-chart-card">
+                    <div class="cat-section-head">
+                        <div>
+                            <h2 class="cat-title">Stock Trajectory &middot; Prime Ties <span class="fcst-version">v${config.version || 1}</span></h2>
+                            <p class="cat-sub">Starting stock: <strong>${fmtFull(config.startingKg ?? 0)}</strong>
+                                <button class="btn-link" id="imp-edit-stock-btn">Edit</button></p>
+                        </div>
+                        <div class="cat-actions">
+                            <div class="imp-scenario-wrap">${scenarioBtns}</div>
+                        </div>
+                    </div>
+                    <div id="imp-stock-edit" style="display:none;margin-bottom:1rem">
+                        <div class="imp-connect-row">
+                            <label style="font-size:0.8125rem;color:#64748b;white-space:nowrap">Current stock (kg):</label>
+                            <input type="number" id="imp-stock-kg" class="imp-url-input" style="max-width:140px"
+                                value="${config.startingKg ?? ''}" placeholder="e.g. 5000" min="0" step="any">
+                            <button class="btn-primary btn-sm" id="imp-stock-save-btn">Save</button>
+                            <button class="btn-secondary btn-sm" id="imp-stock-cancel-btn">Cancel</button>
+                        </div>
+                    </div>
+                    <div id="imp-chart-wrap">${buildForecastChart(rows, scenario, allShips)}</div>
+                </div>
+
                 <div class="cat-section imp-table-card" style="padding-bottom:0">
                     <h2 class="cat-title" style="margin-bottom:0.75rem">Monthly Forecast</h2>
                     <div class="imp-table-wrap">
-                        <table class="imp-table">
+                        <table class="imp-table imp-table--tri">
                             <thead>
                                 <tr>
                                     <th class="imp-th-month">Month</th>
@@ -2367,7 +2379,9 @@ const Warehouse = (() => {
                                     <th class="imp-th-num">Est. Sales</th>
                                     <th class="imp-th-num">Opening</th>
                                     <th class="imp-th-num imp-th-incoming">Incoming</th>
-                                    <th class="imp-th-num">Closing</th>
+                                    <th class="imp-th-num imp-th-close imp-th-close--avg${scenario==='avg'?' imp-th-close--active':''}">Closing · Avg</th>
+                                    <th class="imp-th-num imp-th-close imp-th-close--good${scenario==='good'?' imp-th-close--active':''}">Closing · Good</th>
+                                    <th class="imp-th-num imp-th-close imp-th-close--great${scenario==='great'?' imp-th-close--active':''}">Closing · Great</th>
                                     <th style="width:32px"></th>
                                 </tr>
                             </thead>

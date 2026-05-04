@@ -622,12 +622,24 @@ function renderCalendar14dBody(events, shipments) {
         (map[parsed.date] = map[parsed.date] || []).push({ type: 'gcal', ...parsed });
     }
     for (const s of (shipments || [])) {
+        const tag = s.seq ? `#${s.seq}` : '';
+        const milestones = (s.milestones || []).filter(m => m && m.date);
+        if (milestones.length) {
+            for (const m of milestones) {
+                const date = m.date.slice(0, 10);
+                const d = new Date(date + 'T00:00:00');
+                if (d < today || (d - today) >= horizonMs) continue;
+                const stage = m.label === 'Order placed' ? 'Start LC' : m.label;
+                const title = `${tag ? tag + ' · ' : ''}${stage}${m.done ? ' ✓' : ''}`;
+                (map[date] = map[date] || []).push({ type: 'shipment', time: '', title, allDay: true });
+            }
+            continue;
+        }
         if (!s.ym) continue;
-        // Default a shipment to the first of its arrival month.
         const date = s.ym + '-01';
         const d = new Date(date + 'T00:00:00');
         if (d < today || (d - today) >= horizonMs) continue;
-        const title = s.seq ? `Shipment #${s.seq} ETA` : `Shipment ETA · ${s.campaign || s.ym}`;
+        const title = tag ? `Shipment ${tag} ETA` : `Shipment ETA · ${s.campaign || s.ym}`;
         (map[date] = map[date] || []).push({ type: 'shipment', time: '', title, allDay: true });
     }
 
@@ -670,9 +682,20 @@ function _buildDayMap(events, shipments) {
         (map[parsed.date] = map[parsed.date] || []).push({ type: 'gcal', ...parsed });
     }
     for (const s of (shipments || [])) {
+        const tag = s.seq ? `#${s.seq}` : '';
+        const milestones = (s.milestones || []).filter(m => m && m.date);
+        if (milestones.length) {
+            for (const m of milestones) {
+                const date = m.date.slice(0, 10);
+                const stage = m.label === 'Order placed' ? 'Start LC' : m.label;
+                const title = `${tag ? tag + ' · ' : ''}${stage}${m.done ? ' ✓' : ''}`;
+                (map[date] = map[date] || []).push({ type: 'shipment', time: '', title, allDay: true });
+            }
+            continue;
+        }
         if (!s.ym) continue;
         const date = s.ym + '-01';
-        const title = s.seq ? `Shipment #${s.seq} ETA` : `Shipment ETA · ${s.campaign || s.ym}`;
+        const title = tag ? `Shipment ${tag} ETA` : `Shipment ETA · ${s.campaign || s.ym}`;
         (map[date] = map[date] || []).push({ type: 'shipment', time: '', title, allDay: true });
     }
     return map;

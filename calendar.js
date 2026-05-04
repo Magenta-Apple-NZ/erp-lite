@@ -108,10 +108,24 @@ const CalendarView = (() => {
         for (const [date, labels] of Object.entries(NZ_TAX))
             for (const label of labels) addEvent(eventsByDate, date, { type: 'tax', label });
 
+        // V3 shipments carry a milestones[] array with a date per stage —
+        // surface each one as a calendar event so the cascade is visible
+        // alongside holidays / tax dates / Google Calendar. Legacy
+        // shipments (no milestones) fall back to a single arrival event.
         for (const s of (config.shipments || [])) {
+            const tag = s.seq ? `#${s.seq}` : '';
+            const milestones = (s.milestones || []).filter(m => m && m.date);
+            if (milestones.length) {
+                for (const m of milestones) {
+                    const stageLabel = m.label === 'Order placed' ? 'Start LC' : m.label;
+                    const label = `${tag ? tag + ' · ' : ''}${stageLabel}${m.done ? ' ✓' : ''}`;
+                    addEvent(eventsByDate, m.date.slice(0, 10), { type: 'shipment', label });
+                }
+                continue;
+            }
             const date = (s.arrivalDate || (s.ym + '-01')).slice(0, 10);
             const label = s.campaign || (s.kg ? fmtKg(s.kg) + ' kg' : 'Shipment');
-            addEvent(eventsByDate, date, { type: 'shipment', label });
+            addEvent(eventsByDate, date, { type: 'shipment', label: tag ? `${tag} · ${label}` : label });
         }
 
         for (const ev of gcalEvents) {

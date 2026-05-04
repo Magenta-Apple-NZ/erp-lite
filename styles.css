@@ -1997,6 +1997,16 @@ a.xero-inv-linked:hover { background: #d1fae5; border-color: #6ee7b7; }
     padding: 0.1rem 0.35rem; white-space: nowrap;
 }
 
+/* Tri-scenario forecast table — three closing columns side-by-side */
+.imp-table--tri { min-width: 720px; }
+.imp-th-close, .imp-td-close { color: #94a3b8; }
+.imp-th-close--avg,   .imp-td-close--avg   { border-left: 1px solid #f1f5f9; }
+.imp-th-close--good,  .imp-td-close--good  { border-left: 1px solid #f1f5f9; }
+.imp-th-close--great, .imp-td-close--great { border-left: 1px solid #f1f5f9; }
+.imp-th-close--active { color: #1e293b !important; background: #f8fafc; }
+.imp-td-close--active { color: #0f172a; font-weight: 600; background: #f8fafc; }
+.imp-td-close--active.fcst-negative { color: #ef4444; }
+
 /* Live connection status */
 .imp-connect-status {
     display: flex; align-items: center; gap: 0.4rem;
@@ -2044,13 +2054,20 @@ a.xero-inv-linked:hover { background: #d1fae5; border-color: #6ee7b7; }
 /* ── Monthly averages grid ── */
 .fcst-avg-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
-    gap: 0.5rem;
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+    gap: 0.5rem 0.85rem;
 }
-.fcst-avg-cell { display: flex; align-items: center; gap: 0.35rem; }
+.fcst-avg-cell { display: flex; align-items: center; gap: 0.4rem; min-width: 0; }
 .fcst-avg-label { font-size: 0.78rem; font-weight: 600; color: #64748b; width: 28px; flex-shrink: 0; }
-.fcst-avg-input { width: 70px !important; text-align: right; padding: 0.3rem 0.4rem !important; }
-.fcst-avg-unit  { font-size: 0.72rem; color: #94a3b8; }
+/* Override .imp-url-input flex:1; min-width:260px which would otherwise blow these cells out */
+.fcst-avg-input {
+    width: 70px !important;
+    min-width: 0 !important;
+    flex: 0 0 auto !important;
+    text-align: right;
+    padding: 0.3rem 0.4rem !important;
+}
+.fcst-avg-unit  { font-size: 0.72rem; color: #94a3b8; flex-shrink: 0; }
 
 /* ── Shipment card extras ── */
 .imp-event-note { font-size: 0.75rem; color: #64748b; margin-top: 2px; }
