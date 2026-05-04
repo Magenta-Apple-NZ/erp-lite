@@ -3131,6 +3131,124 @@ body.body--worker .orders-view-inner { padding-top: 1rem; }
 .ship-fix-neg { color: #b91c1c; }
 .ship-fix-num--alloc { width: 60px; }
 
+/* V3 cost lines — editable label input (matches v2 styling) */
+.ship-fix-label-inp {
+    width: 100%;
+    padding: 0.25rem 0.4rem;
+    border: 1px solid transparent;
+    border-radius: 4px;
+    font-size: 0.88rem;
+    font-weight: 500;
+    background: transparent;
+    color: #1e293b;
+    font-family: inherit;
+}
+.ship-fix-label-inp:hover { border-color: #e2e8f0; background: white; }
+.ship-fix-label-inp:focus { border-color: #3b82f6; background: white; outline: none; }
+
+/* V3 doughnut % chart — canvas wrap with overlaid total */
+.ship-pct-canvas-wrap {
+    position: relative;
+    width: 100%;
+    height: 200px;
+}
+.ship-pct-canvas-center {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    pointer-events: none;
+}
+.ship-pct-canvas-total {
+    font-size: 1.05rem;
+    font-weight: 700;
+    color: #0f172a;
+    font-variant-numeric: tabular-nums;
+}
+.ship-pct-canvas-label {
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: #94a3b8;
+}
+.ship-pct-legend {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    margin-top: 0.4rem;
+}
+.ship-pct-legend-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.82rem;
+}
+.ship-pct-legend-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+.ship-pct-legend-name { color: #475569; flex: 1; }
+.ship-pct-legend-pct  { color: #1e293b; font-weight: 600; font-variant-numeric: tabular-nums; }
+
+/* V3 detail — Stage timeline (SVG line chart + editable date rows) */
+.ship-tl-section { display: flex; flex-direction: column; gap: 0.85rem; }
+.ship-tl-svg {
+    width: 100%;
+    height: 56px;
+    overflow: visible;
+}
+.ship-tl-dot circle { transition: r 0.12s, stroke-width 0.12s; }
+.ship-tl-dot:hover circle { r: 9; stroke-width: 3; }
+.ship-tl-rows {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 0.5rem;
+}
+.ship-tl-row {
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+    background: white;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    padding: 0.55rem 0.65rem;
+}
+.ship-tl-row--done { background: #ecfdf5; border-color: #10b981; }
+.ship-tl-toggle {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    background: none;
+    border: none;
+    padding: 0;
+    cursor: pointer;
+    text-align: left;
+}
+.ship-tl-icon { font-size: 1.05rem; line-height: 1; }
+.ship-tl-label {
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: #475569;
+    line-height: 1.2;
+}
+.ship-tl-row--done .ship-tl-label { color: #065f46; }
+.ship-tl-date {
+    border: 1px solid #e2e8f0;
+    border-radius: 5px;
+    padding: 0.25rem 0.4rem;
+    font-size: 0.78rem;
+    font-family: inherit;
+    color: #1e293b;
+    background: white;
+    width: 100%;
+    box-sizing: border-box;
+}
+.ship-tl-date:focus { outline: none; border-color: #3b82f6; }
+
 /* ── V3 detail — Shipment Stage track ────────────────────────────── */
 .ship-stage-track {
     display: flex;

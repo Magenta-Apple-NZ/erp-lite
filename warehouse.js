@@ -1336,6 +1336,7 @@ const Warehouse = (() => {
             const line = (s.fixedLines || {})[def.key] || {};
             const nzd  = fixedLineNzdV3(def, line, derived, forex);
             const ccy  = line.ccy || def.defaultCcy;
+            const labelText = line.labelOverride || def.label;
 
             const minAttr = def.allowNegative ? '' : ' min="0"';
             let amountCellInner = '';
@@ -1369,7 +1370,6 @@ const Warehouse = (() => {
                 multCell = localTotal > 0 ? `<span class="ship-fix-localtotal">= ${localTotal.toLocaleString('en-NZ', { maximumFractionDigits: 2 })} ${ccy}</span>` : '';
             }
 
-            const liveFx = ccy && ccy !== 'NZD' && forex[ccy];
             const nzdDisplay = (() => {
                 if (nzd === 0) return '<span class="ship-fix-nil">—</span>';
                 const sign = nzd < 0 ? '-' : '';
@@ -1377,13 +1377,10 @@ const Warehouse = (() => {
             })();
 
             return `<tr class="ship-fix-row${line.paid ? ' ship-fix-row--paid' : ''}" data-ship-id="${escHtml(s.id)}" data-line-key="${escHtml(def.key)}">
-                <td class="ship-fix-td-label">${escHtml(def.label)}</td>
+                <td class="ship-fix-td-label"><input class="ship-fix-label-inp" data-f="labelOverride" value="${escHtml(labelText)}" placeholder="${escHtml(def.label)}"></td>
                 <td class="ship-fix-td-amt">${amountCellInner}${ccySelect}</td>
                 <td class="ship-fix-td-mult">${multCell}</td>
-                <td class="ship-fix-td-nzd">
-                    ${nzdDisplay}
-                    ${liveFx ? `<span class="ship-fix-fxtag">${forex[ccy].toFixed(4)}</span>` : ''}
-                </td>
+                <td class="ship-fix-td-nzd">${nzdDisplay}</td>
                 <td class="ship-fix-td-chk"><input type="checkbox" class="ship-fix-paid" ${line.paid ? 'checked' : ''} title="Paid"></td>
             </tr>`;
         }
@@ -1416,29 +1413,114 @@ const Warehouse = (() => {
         }
 
         function buildPctChartHtmlV3(sectionTotals, total) {
-            const bars = SHIP_SECTIONS_V3.map(sec => {
+            const id = 'ship-pct-' + Math.random().toString(36).slice(2, 9);
+            const labels = SHIP_SECTIONS_V3.map(s => s.label);
+            const data   = SHIP_SECTIONS_V3.map(s => Math.max(0, sectionTotals[s.key] || 0));
+            const colors = SHIP_SECTIONS_V3.map(s => s.colour);
+
+            window._chartQ = window._chartQ || {};
+            window._chartQ[id] = {
+                type: 'doughnut',
+                data: { labels, datasets: [{ data, backgroundColor: colors, borderWidth: 0, hoverOffset: 6 }] },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    cutout: '62%',
+                    animation: { animateRotate: true, animateScale: false, duration: 350 },
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: {
+                            callbacks: {
+                                label: ctx => {
+                                    const v = ctx.parsed;
+                                    const pct = total > 0 ? ((v / total) * 100).toFixed(1) + '%' : '—';
+                                    return ` ${ctx.label}: $${Math.round(v).toLocaleString('en-NZ')} (${pct})`;
+                                },
+                            },
+                        },
+                    },
+                },
+            };
+
+            const legend = SHIP_SECTIONS_V3.map(sec => {
                 const v = sectionTotals[sec.key] || 0;
-                const pct = total > 0 ? (v / total) * 100 : 0;
-                const pctTxt = total > 0 ? pct.toFixed(1) + '%' : '—';
-                const valTxt = v === 0 ? '$0' :
-                    (v < 0 ? '-' : '') + '$' + Math.round(Math.abs(v)).toLocaleString('en-NZ');
-                return `<div class="ship-pct-row">
-                    <div class="ship-pct-row-hd">
-                        <span class="ship-pct-row-name" style="color:${sec.colour}">${sec.label}</span>
-                        <span class="ship-pct-row-pct">${pctTxt}</span>
-                    </div>
-                    <div class="ship-pct-bar"><div class="ship-pct-bar-fill" style="width:${Math.min(100, Math.max(0, pct)).toFixed(2)}%;background:${sec.colour}"></div></div>
-                    <div class="ship-pct-row-val">${valTxt}</div>
+                const pct = total > 0 ? ((v / total) * 100).toFixed(1) + '%' : '—';
+                return `<div class="ship-pct-legend-row">
+                    <span class="ship-pct-legend-dot" style="background:${sec.colour}"></span>
+                    <span class="ship-pct-legend-name">${sec.label}</span>
+                    <span class="ship-pct-legend-pct">${pct}</span>
                 </div>`;
             }).join('');
+
             return `<aside class="ship-pct-chart">
                 <h4 class="ship-pct-title">% of Total</h4>
-                ${bars}
-                <div class="ship-pct-total">
-                    <span>Total</span>
-                    <strong>${total > 0 ? '$' + Math.round(total).toLocaleString('en-NZ') : '$0'}</strong>
+                <div class="ship-pct-canvas-wrap">
+                    <canvas data-chart-id="${id}"></canvas>
+                    <div class="ship-pct-canvas-center">
+                        <div class="ship-pct-canvas-total">${total > 0 ? '$' + Math.round(total).toLocaleString('en-NZ') : '$0'}</div>
+                        <div class="ship-pct-canvas-label">total</div>
+                    </div>
                 </div>
+                <div class="ship-pct-legend">${legend}</div>
             </aside>`;
+        }
+
+        // SVG line-chart timeline for shipment milestones with editable date inputs
+        // beneath. Dots are spaced by date when ≥2 dates exist; otherwise evenly
+        // by index. Done dots fill green; hovered dots show a native title tooltip.
+        function buildStageTimelineV3(s, milestones, stageIcon) {
+            if (!milestones.length) {
+                return '<p class="wh-empty" style="margin:0">No stages yet — click + Add to create one.</p>';
+            }
+
+            const W = 800, H = 56, padX = 32, lineY = 28;
+            const tsValues = milestones.map(m => m.date ? new Date(m.date + 'T00:00:00').getTime() : null).filter(t => t != null);
+            const useDates = tsValues.length >= 2;
+            const minTs = useDates ? Math.min(...tsValues) : 0;
+            const maxTs = useDates ? Math.max(...tsValues) : 0;
+            const range = maxTs - minTs || 1;
+            const xFor = (m, i) => useDates && m.date
+                ? padX + ((W - 2*padX) * (new Date(m.date + 'T00:00:00').getTime() - minTs) / range)
+                : padX + ((W - 2*padX) * i / Math.max(1, milestones.length - 1));
+
+            const lastDoneIdx = milestones.reduce((acc, m, i) => m.done ? i : acc, -1);
+            const lastDoneX = lastDoneIdx >= 0 ? xFor(milestones[lastDoneIdx], lastDoneIdx) : padX;
+
+            const dots = milestones.map((m, i) => {
+                const x = xFor(m, i).toFixed(1);
+                const fill = m.done ? '#10b981' : 'white';
+                const stroke = m.done ? '#10b981' : '#cbd5e1';
+                return `<g class="ship-tl-dot${m.done ? ' ship-tl-dot--done' : ''}">
+                    <title>${escHtml(m.label)}${m.date ? ' · ' + escHtml(m.date) : ''}</title>
+                    <circle cx="${x}" cy="${lineY}" r="7" fill="${fill}" stroke="${stroke}" stroke-width="2"/>
+                </g>`;
+            }).join('');
+
+            const svg = `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" class="ship-tl-svg">
+                <line x1="${padX}" y1="${lineY}" x2="${W-padX}" y2="${lineY}" stroke="#e2e8f0" stroke-width="2"/>
+                ${lastDoneIdx >= 0 ? `<line x1="${padX}" y1="${lineY}" x2="${lastDoneX.toFixed(1)}" y2="${lineY}" stroke="#10b981" stroke-width="3"/>` : ''}
+                ${dots}
+            </svg>`;
+
+            const rows = milestones.map((m, i) => `
+                <div class="ship-tl-row${m.done ? ' ship-tl-row--done' : ''}">
+                    <button type="button" class="ship-tl-toggle ship-stage-step${m.done ? ' ship-stage-step--done' : ''}"
+                            data-ship-id="${escHtml(s.id)}" data-idx="${i}"
+                            title="Click to ${m.done ? 'mark not done' : 'mark done'}">
+                        <span class="ship-tl-icon">${stageIcon(m.label)}</span>
+                        <span class="ship-tl-label">${escHtml(m.label)}</span>
+                    </button>
+                    <input type="date" class="ship-tl-date"
+                        data-ship-id="${escHtml(s.id)}" data-idx="${i}"
+                        value="${escHtml(m.date || '')}"
+                        title="Edit milestone date">
+                </div>
+            `).join('');
+
+            return `<div class="ship-tl-section">
+                ${svg}
+                <div class="ship-tl-rows">${rows}</div>
+            </div>`;
         }
 
         function renderShipDetailV3(s) {
@@ -1451,15 +1533,6 @@ const Warehouse = (() => {
             const paidPct = total > 0 ? Math.round(paid / total * 100) : 0;
             const ppkg    = totals.ppkgYield > 0 ? totals.ppkgYield.toFixed(2) : null;
 
-            const STATUS_META = {
-                planning:    { l: 'Planning',    c: '#94a3b8' },
-                ordered:     { l: 'Ordered',     c: '#3b82f6' },
-                'in-transit':{ l: 'In Transit',  c: '#f59e0b' },
-                customs:     { l: 'Customs',     c: '#8b5cf6' },
-                delivered:   { l: 'Delivered',   c: '#10b981' },
-            };
-            const curStatus  = s.status || 'planning';
-            const statusMeta = STATUS_META[curStatus] || { l: curStatus, c: '#94a3b8' };
             const milestones = s.milestones || [];
 
             const fmtKg = v => (v || 0).toLocaleString('en-NZ', { maximumFractionDigits: 0 });
@@ -1485,14 +1558,6 @@ const Warehouse = (() => {
             <div class="ship-detail-view ship-detail-view--new ship-detail-view--v3">
                 <div class="ship-detail-topbar">
                     <button class="ship-detail-back">← Shipments</button>
-                    <div class="ship-status-wrap">
-                        <span class="ship-status-dot" style="background:${statusMeta.c}"></span>
-                        <select class="ship-status-sel" data-ship-id="${escHtml(s.id)}" data-field="status">
-                            ${Object.entries(STATUS_META).map(([v,{l}]) =>
-                                `<option value="${v}"${curStatus===v?' selected':''}>${l}</option>`
-                            ).join('')}
-                        </select>
-                    </div>
                 </div>
 
                 <div class="ship-detail-layout">
@@ -1536,19 +1601,35 @@ const Warehouse = (() => {
                                 <h3 class="ship-det-title">Shipment Stage</h3>
                                 <button class="btn-link ship-add-milestone" data-ship-id="${escHtml(s.id)}">+ Add</button>
                             </div>
-                            <div class="ship-stage-track">
-                                ${milestones.length
-                                    ? milestones.map((m, i) => `
-                                    <button type="button" class="ship-stage-step${m.done ? ' ship-stage-step--done' : ''}"
-                                            data-ship-id="${escHtml(s.id)}" data-idx="${i}"
-                                            title="${escHtml(m.label)}${m.date ? ' · ' + escHtml(m.date) : ''}">
-                                        <span class="ship-stage-icon">${stageIcon(m.label)}</span>
-                                        <span class="ship-stage-label">${escHtml(m.label)}</span>
-                                        <span class="ship-stage-date">${m.date ? escHtml(m.date) : '—'}</span>
-                                    </button>`).join('')
-                                    : '<p class="wh-empty" style="margin:0">No stages yet — click + Add to create one.</p>'
-                                }
+                            ${buildStageTimelineV3(s, milestones, stageIcon)}
+                        </div>
+
+                        <div class="ship-det-section">
+                            <div class="ship-det-hd"><h3 class="ship-det-title">Cost Breakdown</h3></div>
+                            ${buildFixedSectionHtmlV3(s, 'raw',        totals, forex)}
+                            ${buildFixedSectionHtmlV3(s, 'bangladesh', totals, forex)}
+                            ${buildFixedSectionHtmlV3(s, 'freight',    totals, forex)}
+                            ${buildFixedSectionHtmlV3(s, 'misc',       totals, forex)}
+                        </div>
+
+                        <div class="ship-det-section">
+                            <div class="ship-det-hd"><h3 class="ship-det-title">Shipment Details</h3></div>
+                            <div class="imp-pricing-grid">
+                                <div class="imp-pricing-field">
+                                    <label class="imp-field-label">Start date</label>
+                                    <input type="date" class="imp-detail-input imp-url-input"
+                                        data-ship-id="${escHtml(s.id)}" data-field="startDate"
+                                        value="${escHtml(s.startDate||'')}">
+                                </div>
                             </div>
+                            ${s.ym ? `<p class="imp-startdate-eta">ETA Tauranga: <strong>${ymLabel(s.ym)}</strong> (auto-calculated from start date)</p>` : ''}
+                        </div>
+
+                        <div class="ship-det-section">
+                            <div class="ship-det-hd"><h3 class="ship-det-title">Notes</h3></div>
+                            <textarea class="ship-notes-ta" rows="5"
+                                data-ship-id="${escHtml(s.id)}" data-field="notes"
+                                placeholder="Internal notes, contacts, terms, tracking references…">${escHtml(s.notes||'')}</textarea>
                         </div>
 
                         <div class="ship-det-section">
@@ -1587,34 +1668,6 @@ const Warehouse = (() => {
                             </div>
                         </div>
 
-                        <div class="ship-det-section">
-                            <div class="ship-det-hd"><h3 class="ship-det-title">Cost Breakdown</h3></div>
-                            ${buildFixedSectionHtmlV3(s, 'raw',        totals, forex)}
-                            ${buildFixedSectionHtmlV3(s, 'bangladesh', totals, forex)}
-                            ${buildFixedSectionHtmlV3(s, 'freight',    totals, forex)}
-                            ${buildFixedSectionHtmlV3(s, 'misc',       totals, forex)}
-                        </div>
-
-                        <div class="ship-det-section">
-                            <div class="ship-det-hd"><h3 class="ship-det-title">Shipment Details</h3></div>
-                            <div class="imp-pricing-grid">
-                                <div class="imp-pricing-field">
-                                    <label class="imp-field-label">Start date</label>
-                                    <input type="date" class="imp-detail-input imp-url-input"
-                                        data-ship-id="${escHtml(s.id)}" data-field="startDate"
-                                        value="${escHtml(s.startDate||'')}">
-                                </div>
-                            </div>
-                            ${s.ym ? `<p class="imp-startdate-eta">ETA Tauranga: <strong>${ymLabel(s.ym)}</strong> (auto-calculated from start date)</p>` : ''}
-                        </div>
-
-                        <div class="ship-det-section">
-                            <div class="ship-det-hd"><h3 class="ship-det-title">Notes</h3></div>
-                            <textarea class="ship-notes-ta" rows="5"
-                                data-ship-id="${escHtml(s.id)}" data-field="notes"
-                                placeholder="Internal notes, contacts, terms, tracking references…">${escHtml(s.notes||'')}</textarea>
-                        </div>
-
                         <div class="ship-det-danger">
                             <button class="imp-ship-del" data-id="${escHtml(s.id)}">Remove shipment</button>
                         </div>
@@ -1623,6 +1676,8 @@ const Warehouse = (() => {
                     ${buildPctChartHtmlV3(totals.sectionTotals, total)}
                 </div>
             </div>`;
+
+            if (typeof initCharts === 'function') initCharts(body);
         }
 
         function renderShipDetailNew(s) {
@@ -2517,6 +2572,22 @@ const Warehouse = (() => {
                         l.id === lineId ? { ...l, paid: paidCb.checked } : l
                     )}
                 );
+                await costSave();
+                return;
+            }
+
+            // Milestone date input (per-stage editable date)
+            if (e.target.matches('.ship-tl-date')) {
+                const { shipId } = e.target.dataset;
+                const idx = parseInt(e.target.dataset.idx);
+                const date = e.target.value || '';
+                config.shipments = (config.shipments || []).map(sh => {
+                    if (sh.id !== shipId) return sh;
+                    const milestones = (sh.milestones || []).map((m, i) =>
+                        i === idx ? { ...m, date } : m
+                    );
+                    return { ...sh, milestones };
+                });
                 await costSave();
                 return;
             }
