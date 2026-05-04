@@ -467,6 +467,15 @@ const Warehouse = (() => {
         return `${MONTH_NAMES[parseInt(m) - 1]} ${y}`;
     }
 
+    function shipIncomingKg(s) {
+        if (s.schema === 3) {
+            const net   = (Number(s.whiteRawKg) || 0) + (Number(s.colourRawKg) || 0);
+            const waste = Math.max(0, Math.min(100, Number(s.wastePct ?? 10)));
+            return net * (100 - waste) / 100;
+        }
+        return Number(s.kg) || 0;
+    }
+
     function computeForecast(config, months = 18, actuals = {}) {
         const monthlyAvg = config.monthlyAvg || new Array(12).fill(0);
         const shipments  = config.shipments  || [];
@@ -481,7 +490,7 @@ const Warehouse = (() => {
         for (let i = 0; i < months; i++) {
             const ym = `${yr}-${String(mo + 1).padStart(2, '0')}`;
             const incomingShips = shipments.filter(s => s.ym === ym);
-            const incoming = incomingShips.reduce((sum, s) => sum + (Number(s.kg) || 0), 0);
+            const incoming = incomingShips.reduce((sum, s) => sum + shipIncomingKg(s), 0);
 
             const actualSales = actuals[ym] ?? null;
             const avgSales   = actualSales !== null ? actualSales : (Number(monthlyAvg[mo]) || 0);
@@ -985,7 +994,7 @@ const Warehouse = (() => {
                 const showYear = m.label === 'Jan' || m === months[0];
                 const chips = ships.map(s => {
                     const title  = s.seq ? `#${s.seq}` : (s.campaign || 'ship').slice(0, 8);
-                    const kg     = s.schema === 3 ? (Number(s.netKg) || 0) : (Number(s.kg) || 0);
+                    const kg     = s.schema === 3 ? ((Number(s.whiteRawKg) || 0) + (Number(s.colourRawKg) || 0)) : (Number(s.kg) || 0);
                     const status = s.status || 'planning';
                     const c      = STATUS_C[status] || '#94a3b8';
                     const total  = s.schema === 3 ? computeShipTotalsV3(s, forex).total
@@ -1098,18 +1107,61 @@ const Warehouse = (() => {
             return out;
         }
 
-        // Derived weights from the three primary inputs. Always returns
-        // numbers — missing/invalid fields collapse to 0 rather than NaN.
+        // ── V3 timeline ─────────────────────────────────────────────────
+        // Standard milestone offsets (days from start date). These are the
+        // historical averages — operator can still edit individual dates
+        // in the detail view as actuals come in.
+        const SHIP_MILESTONE_OFFSETS_V3 = [
+            { label: 'Order placed',          days: 0   },
+            { label: 'LC ready',              days: 14  },
+            { label: 'Shipped (Left Italy)',  days: 28  },
+            { label: 'LC presented',          days: 49  }, // shipped + 21
+            { label: 'Landed in Bangladesh',  days: 119 }, // LC + 70
+            { label: 'Left Bangladesh',       days: 161 }, // landed + 42 (6 wk)
+            { label: 'Arrived in Tauranga',   days: 211 }, // left BD + 50
+        ];
+
+        function addDaysIso(iso, days) {
+            if (!iso) return '';
+            const d = new Date(iso + 'T00:00:00');
+            if (isNaN(d)) return '';
+            d.setDate(d.getDate() + days);
+            return d.toISOString().slice(0, 10);
+        }
+
+        function defaultMilestonesV3(startDate) {
+            return SHIP_MILESTONE_OFFSETS_V3.map(m => ({
+                label: m.label,
+                date:  startDate ? addDaysIso(startDate, m.days) : '',
+                done:  m.days === 0 ? !!startDate : false,
+            }));
+        }
+
+        // Arrival month is now derived: it's the YYYY-MM of the final
+        // milestone (Arrived in Tauranga) so the timeline still groups
+        // shipments by ETA.
+        function ymFromStartDate(startDate) {
+            const arrival = addDaysIso(startDate, SHIP_MILESTONE_OFFSETS_V3.at(-1).days);
+            return arrival ? arrival.slice(0, 7) : '';
+        }
+
+        // Derived weights from the three primary inputs (whiteRawKg,
+        // colourRawKg, wastePct — the values that appear on the supplier's
+        // bill of lading). netKg / whitePct are computed from these so the
+        // existing per-kg cost lines (which multiply against derived.whiteKg
+        // / colourKg / yieldKg) keep working without schema churn.
         function computeShipDerivedV3(s) {
-            const netKg     = Number(s.netKg) || 0;
-            const whitePct  = clampPct(s.whitePct, 35);
-            const wastePct  = clampPct(s.wastePct, 10);
-            const colourPct = 100 - whitePct;
-            const yieldPct  = 100 - wastePct;
-            const yieldKg   = netKg * yieldPct / 100;
-            const whiteKg   = yieldKg * whitePct / 100;
-            const colourKg  = yieldKg * colourPct / 100;
-            return { netKg, whitePct, colourPct, wastePct, yieldPct, yieldKg, whiteKg, colourKg };
+            const whiteRawKg  = Number(s.whiteRawKg) || 0;
+            const colourRawKg = Number(s.colourRawKg) || 0;
+            const wastePct    = clampPct(s.wastePct, 10);
+            const netKg       = whiteRawKg + colourRawKg;
+            const whitePct    = netKg > 0 ? (whiteRawKg / netKg) * 100 : 0;
+            const colourPct   = netKg > 0 ? (colourRawKg / netKg) * 100 : 0;
+            const yieldPct    = 100 - wastePct;
+            const yieldKg     = netKg * yieldPct / 100;
+            const whiteKg     = whiteRawKg * yieldPct / 100;
+            const colourKg    = colourRawKg * yieldPct / 100;
+            return { whiteRawKg, colourRawKg, netKg, whitePct, colourPct, wastePct, yieldPct, yieldKg, whiteKg, colourKg };
         }
         function clampPct(v, fallback) {
             if (v === undefined || v === null || v === '') return fallback;
@@ -1455,38 +1507,19 @@ const Warehouse = (() => {
                         </div>
 
                         <div class="ship-det-section">
-                            <div class="ship-det-hd">
-                                <h3 class="ship-det-title">Milestones</h3>
-                                <button class="btn-link ship-add-milestone" data-ship-id="${escHtml(s.id)}">+ Add</button>
-                            </div>
-                            <div class="imp-milestones">
-                                ${milestones.length
-                                    ? milestones.map((m, i) => `
-                                    <label class="imp-milestone${m.done?' imp-milestone--done':''}">
-                                        <input type="checkbox" class="imp-milestone-check"
-                                            data-ship-id="${escHtml(s.id)}" data-idx="${i}" ${m.done?'checked':''}>
-                                        <span class="imp-milestone-label">${escHtml(m.label)}</span>
-                                        ${m.date?`<span class="imp-milestone-date">${escHtml(m.date)}</span>`:''}
-                                    </label>`).join('')
-                                    : '<p class="wh-empty" style="margin:0.25rem 0">No milestones — click + Add to create one.</p>'
-                                }
-                            </div>
-                        </div>
-
-                        <div class="ship-det-section">
                             <div class="ship-det-hd"><h3 class="ship-det-title">Yield</h3></div>
                             <div class="ship-yield-grid">
                                 <div class="ship-yield-field">
-                                    <label class="imp-field-label">Net weight (kg)</label>
+                                    <label class="imp-field-label">White amount (kg)</label>
                                     <input type="number" class="ship-yield-input"
-                                        data-ship-id="${escHtml(s.id)}" data-field="netKg"
-                                        value="${s.netKg ?? ''}" placeholder="20000" step="any" min="0">
+                                        data-ship-id="${escHtml(s.id)}" data-field="whiteRawKg"
+                                        value="${s.whiteRawKg ?? ''}" placeholder="7000" step="any" min="0">
                                 </div>
                                 <div class="ship-yield-field">
-                                    <label class="imp-field-label">White %</label>
+                                    <label class="imp-field-label">Coloured amount (kg)</label>
                                     <input type="number" class="ship-yield-input"
-                                        data-ship-id="${escHtml(s.id)}" data-field="whitePct"
-                                        value="${s.whitePct ?? ''}" placeholder="35" step="0.1" min="0" max="100">
+                                        data-ship-id="${escHtml(s.id)}" data-field="colourRawKg"
+                                        value="${s.colourRawKg ?? ''}" placeholder="13000" step="any" min="0">
                                 </div>
                                 <div class="ship-yield-field">
                                     <label class="imp-field-label">Waste %</label>
@@ -1496,10 +1529,11 @@ const Warehouse = (() => {
                                 </div>
                             </div>
                             <div class="ship-yield-derived">
+                                <div class="ship-yield-stat"><span class="ship-yield-stat-lbl">Net kg</span><span class="ship-yield-stat-val">${fmtKg(d.netKg)} <span class="ship-yield-stat-sub">(${d.whitePct.toFixed(1)}% white)</span></span></div>
                                 <div class="ship-yield-stat"><span class="ship-yield-stat-lbl">Yield %</span><span class="ship-yield-stat-val">${d.yieldPct.toFixed(1)}%</span></div>
                                 <div class="ship-yield-stat"><span class="ship-yield-stat-lbl">Yield kg</span><span class="ship-yield-stat-val">${fmtKg(d.yieldKg)}</span></div>
                                 <div class="ship-yield-stat"><span class="ship-yield-stat-lbl">White kg</span><span class="ship-yield-stat-val">${fmtKg(d.whiteKg)}</span></div>
-                                <div class="ship-yield-stat"><span class="ship-yield-stat-lbl">Colour kg</span><span class="ship-yield-stat-val">${fmtKg(d.colourKg)} <span class="ship-yield-stat-sub">(${d.colourPct.toFixed(1)}%)</span></span></div>
+                                <div class="ship-yield-stat"><span class="ship-yield-stat-lbl">Colour kg</span><span class="ship-yield-stat-val">${fmtKg(d.colourKg)}</span></div>
                             </div>
                         </div>
 
@@ -1515,24 +1549,13 @@ const Warehouse = (() => {
                             <div class="ship-det-hd"><h3 class="ship-det-title">Shipment Details</h3></div>
                             <div class="imp-pricing-grid">
                                 <div class="imp-pricing-field">
-                                    <label class="imp-field-label">Campaign / Ref</label>
-                                    <input type="text" class="imp-detail-input imp-url-input"
-                                        data-ship-id="${escHtml(s.id)}" data-field="campaign"
-                                        value="${escHtml(s.campaign||'')}" placeholder="e.g. Batch 42">
-                                </div>
-                                <div class="imp-pricing-field">
-                                    <label class="imp-field-label">Arrival month</label>
-                                    <input type="month" class="imp-detail-input imp-url-input"
-                                        data-ship-id="${escHtml(s.id)}" data-field="ym"
-                                        value="${escHtml(s.ym||'')}">
-                                </div>
-                                <div class="imp-pricing-field">
-                                    <label class="imp-field-label">Listed price / kg</label>
-                                    <input type="number" class="imp-detail-input imp-url-input"
-                                        data-ship-id="${escHtml(s.id)}" data-field="pricePerKg"
-                                        value="${s.pricePerKg||''}" placeholder="4.50" step="0.01" min="0">
+                                    <label class="imp-field-label">Start date</label>
+                                    <input type="date" class="imp-detail-input imp-url-input"
+                                        data-ship-id="${escHtml(s.id)}" data-field="startDate"
+                                        value="${escHtml(s.startDate||'')}">
                                 </div>
                             </div>
+                            ${s.ym ? `<p class="imp-startdate-eta">ETA Tauranga: <strong>${ymLabel(s.ym)}</strong> (auto-calculated from start date)</p>` : ''}
                         </div>
 
                         <div class="ship-det-section">
@@ -1547,7 +1570,27 @@ const Warehouse = (() => {
                         </div>
                     </div>
 
-                    ${buildPctChartHtmlV3(totals.sectionTotals, total)}
+                    <div class="ship-detail-side">
+                        <aside class="ship-side-card">
+                            <div class="ship-side-hd">
+                                <h4 class="ship-pct-title">Milestones</h4>
+                                <button class="btn-link ship-add-milestone" data-ship-id="${escHtml(s.id)}">+ Add</button>
+                            </div>
+                            <div class="imp-milestones">
+                                ${milestones.length
+                                    ? milestones.map((m, i) => `
+                                    <label class="imp-milestone${m.done?' imp-milestone--done':''}">
+                                        <input type="checkbox" class="imp-milestone-check"
+                                            data-ship-id="${escHtml(s.id)}" data-idx="${i}" ${m.done?'checked':''}>
+                                        <span class="imp-milestone-label">${escHtml(m.label)}</span>
+                                        ${m.date?`<span class="imp-milestone-date">${escHtml(m.date)}</span>`:''}
+                                    </label>`).join('')
+                                    : '<p class="wh-empty" style="margin:0.25rem 0">No milestones — click + Add to create one.</p>'
+                                }
+                            </div>
+                        </aside>
+                        ${buildPctChartHtmlV3(totals.sectionTotals, total)}
+                    </div>
                 </div>
             </div>`;
         }
@@ -1670,12 +1713,6 @@ const Warehouse = (() => {
                         <div class="ship-det-section">
                             <div class="ship-det-hd"><h3 class="ship-det-title">Shipment Details</h3></div>
                             <div class="imp-pricing-grid">
-                                <div class="imp-pricing-field">
-                                    <label class="imp-field-label">Campaign / Ref</label>
-                                    <input type="text" class="imp-detail-input imp-url-input"
-                                        data-ship-id="${escHtml(s.id)}" data-field="campaign"
-                                        value="${escHtml(s.campaign||'')}" placeholder="e.g. Batch 41">
-                                </div>
                                 <div class="imp-pricing-field">
                                     <label class="imp-field-label">Arrival month</label>
                                     <input type="month" class="imp-detail-input imp-url-input"
@@ -1830,12 +1867,6 @@ const Warehouse = (() => {
                 <div class="ship-det-section">
                     <div class="ship-det-hd"><h3 class="ship-det-title">Shipment Details</h3></div>
                     <div class="imp-pricing-grid">
-                        <div class="imp-pricing-field">
-                            <label class="imp-field-label">Campaign / Ref</label>
-                            <input type="text" class="imp-detail-input imp-url-input"
-                                data-ship-id="${escHtml(s.id)}" data-field="campaign"
-                                value="${escHtml(s.campaign||'')}" placeholder="e.g. Batch 41">
-                        </div>
                         <div class="imp-pricing-field">
                             <label class="imp-field-label">Arrival month</label>
                             <input type="month" class="imp-detail-input imp-url-input"
@@ -2131,28 +2162,24 @@ const Warehouse = (() => {
                     <div id="imp-add-ship-form" style="display:none;margin-bottom:1rem;padding:0.75rem;background:#f8fafc;border-radius:6px;border:1px solid #e2e8f0">
                         <div class="imp-add-form-grid">
                             <div>
-                                <label class="imp-field-label">Net weight (kg)</label>
-                                <input type="number" id="ship-netkg" class="imp-url-input" placeholder="e.g. 20000" min="0" step="any">
+                                <label class="imp-field-label">Shipment #</label>
+                                <input type="number" id="ship-seq" class="imp-url-input" min="1" step="1">
                             </div>
                             <div>
-                                <label class="imp-field-label">White %</label>
-                                <input type="number" id="ship-whitepct" class="imp-url-input" placeholder="35" min="0" max="100" step="0.1" value="35">
+                                <label class="imp-field-label">Start date</label>
+                                <input type="date" id="ship-startdate" class="imp-url-input">
+                            </div>
+                            <div>
+                                <label class="imp-field-label">White amount (kg)</label>
+                                <input type="number" id="ship-whitekg" class="imp-url-input" placeholder="e.g. 7000" min="0" step="any">
+                            </div>
+                            <div>
+                                <label class="imp-field-label">Coloured amount (kg)</label>
+                                <input type="number" id="ship-colourkg" class="imp-url-input" placeholder="e.g. 13000" min="0" step="any">
                             </div>
                             <div>
                                 <label class="imp-field-label">Waste %</label>
                                 <input type="number" id="ship-wastepct" class="imp-url-input" placeholder="10" min="0" max="100" step="0.1" value="10">
-                            </div>
-                            <div>
-                                <label class="imp-field-label">Arrival month</label>
-                                <input type="month" id="ship-ym" class="imp-url-input">
-                            </div>
-                            <div>
-                                <label class="imp-field-label">Campaign / Ref <span style="font-weight:400;color:#94a3b8">(optional)</span></label>
-                                <input type="text" id="ship-campaign" class="imp-url-input" placeholder="e.g. Batch 42">
-                            </div>
-                            <div>
-                                <label class="imp-field-label">Price / kg <span style="font-weight:400;color:#94a3b8">(optional)</span></label>
-                                <input type="number" id="ship-price" class="imp-url-input" placeholder="e.g. 4.50" step="0.01" min="0">
                             </div>
                         </div>
                         <p id="ship-yield-preview" class="imp-add-yield-preview"></p>
@@ -2259,57 +2286,74 @@ const Warehouse = (() => {
 
             document.getElementById('imp-add-ship-btn')?.addEventListener('click', () => {
                 const form = document.getElementById('imp-add-ship-form');
-                form.style.display = form.style.display === 'none' ? '' : 'none';
+                const opening = form.style.display === 'none';
+                form.style.display = opening ? '' : 'none';
+                if (opening) {
+                    // Default seq = next available, date = today.
+                    const seqInp = document.getElementById('ship-seq');
+                    if (seqInp && !seqInp.value) {
+                        const existing = (config.shipments || []).map(s => Number(s.seq) || 0);
+                        seqInp.value = Math.max(41, ...existing) + 1;
+                    }
+                    const dateInp = document.getElementById('ship-startdate');
+                    if (dateInp && !dateInp.value) {
+                        dateInp.value = new Date().toISOString().slice(0, 10);
+                    }
+                }
             });
             document.getElementById('ship-cancel-btn')?.addEventListener('click', () => {
                 document.getElementById('imp-add-ship-form').style.display = 'none';
             });
-            // Live yield preview for the add form.
+            // Live preview: yield breakdown + estimated cost-per-yield-kg
+            // (uses default V3 cost lines + current forex so the operator
+            // sees a ballpark before committing the shipment).
             const refreshYieldPreview = () => {
                 const preview = document.getElementById('ship-yield-preview');
                 if (!preview) return;
-                const netKg     = parseFloat(document.getElementById('ship-netkg').value) || 0;
-                const whitePct  = clampPct(document.getElementById('ship-whitepct').value, 35);
-                const wastePct  = clampPct(document.getElementById('ship-wastepct').value, 10);
-                if (!netKg) { preview.textContent = ''; return; }
-                const yieldPct = 100 - wastePct;
-                const yieldKg  = netKg * yieldPct / 100;
-                const whiteKg  = yieldKg * whitePct / 100;
-                const colourKg = yieldKg - whiteKg;
-                preview.textContent = `Yield ${yieldPct.toFixed(1)}% → ${Math.round(yieldKg).toLocaleString('en-NZ')} kg (white ${Math.round(whiteKg).toLocaleString('en-NZ')} / colour ${Math.round(colourKg).toLocaleString('en-NZ')})`;
+                const whiteRawKg  = parseFloat(document.getElementById('ship-whitekg').value)  || 0;
+                const colourRawKg = parseFloat(document.getElementById('ship-colourkg').value) || 0;
+                const wastePct    = clampPct(document.getElementById('ship-wastepct').value, 10);
+                if (!whiteRawKg && !colourRawKg) { preview.textContent = ''; return; }
+                const totals = computeShipTotalsV3(
+                    { whiteRawKg, colourRawKg, wastePct, fixedLines: defaultFixedLinesV3() },
+                    forex
+                );
+                const d = totals.derived;
+                const ppkg = totals.ppkgYield > 0 ? '$' + totals.ppkgYield.toFixed(2) : '—';
+                preview.textContent =
+                    `Net ${Math.round(d.netKg).toLocaleString('en-NZ')} kg ` +
+                    `→ yield ${Math.round(d.yieldKg).toLocaleString('en-NZ')} kg ` +
+                    `(white ${Math.round(d.whiteKg).toLocaleString('en-NZ')} / colour ${Math.round(d.colourKg).toLocaleString('en-NZ')}) ` +
+                    `· est. ${ppkg} / yield kg`;
             };
-            ['ship-netkg', 'ship-whitepct', 'ship-wastepct'].forEach(id => {
+            ['ship-whitekg', 'ship-colourkg', 'ship-wastepct'].forEach(id => {
                 document.getElementById(id)?.addEventListener('input', refreshYieldPreview);
             });
 
             document.getElementById('ship-save-btn')?.addEventListener('click', async () => {
-                const ym         = document.getElementById('ship-ym').value;
-                const netKg      = parseFloat(document.getElementById('ship-netkg').value) || 0;
-                const whitePct   = clampPct(document.getElementById('ship-whitepct').value, 35);
-                const wastePct   = clampPct(document.getElementById('ship-wastepct').value, 10);
-                const campaign   = document.getElementById('ship-campaign').value.trim();
-                const pricePerKg = parseFloat(document.getElementById('ship-price').value) || null;
-                if (!ym)    { showToast('Please select an arrival month'); return; }
-                if (!netKg) { showToast('Please enter a net weight in kg'); return; }
+                const seq         = parseInt(document.getElementById('ship-seq').value, 10);
+                const startDate   = document.getElementById('ship-startdate').value;
+                const whiteRawKg  = parseFloat(document.getElementById('ship-whitekg').value)  || 0;
+                const colourRawKg = parseFloat(document.getElementById('ship-colourkg').value) || 0;
+                const wastePct    = clampPct(document.getElementById('ship-wastepct').value, 10);
+                if (!Number.isFinite(seq) || seq < 1) { showToast('Please enter a shipment number'); return; }
+                if (!startDate) { showToast('Please pick a start date'); return; }
+                if (!whiteRawKg && !colourRawKg) { showToast('Enter white and/or coloured weight'); return; }
+                if ((config.shipments || []).some(s => Number(s.seq) === seq)) {
+                    showToast(`Shipment #${seq} already exists — pick another number`); return;
+                }
                 const btn = document.getElementById('ship-save-btn');
                 btn.disabled = true; btn.textContent = 'Adding…';
                 try {
                     const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
-                    const existingSeqs = (config.shipments || []).map(s => Number(s.seq) || 0);
-                    const seq = Math.max(41, ...existingSeqs) + 1;
                     const newShip = {
                         id, seq, schema: 3,
-                        ym, campaign, pricePerKg,
-                        netKg, whitePct, wastePct,
+                        startDate,
+                        ym: ymFromStartDate(startDate),
+                        whiteRawKg, colourRawKg, wastePct,
                         fixedLines: defaultFixedLinesV3(),
                         status:     'planning',
-                        milestones: [
-                            { label: 'Order placed',           date: '', done: false },
-                            { label: 'Left Italy',             date: '', done: false },
-                            { label: 'Arrived in Bangladesh',  date: '', done: false },
-                            { label: 'Left Bangladesh',        date: '', done: false },
-                            { label: 'Arrived in New Zealand', date: '', done: false },
-                        ],
+                        milestones: defaultMilestonesV3(startDate),
                     };
                     const shipments = [...(config.shipments || []), newShip];
                     await api('/api/import/forecast', {
@@ -2466,6 +2510,30 @@ const Warehouse = (() => {
             if (e.target.matches('.imp-detail-input, .ship-notes-ta')) {
                 const { shipId, field: f } = e.target.dataset;
                 const val = e.target.type === 'number' ? (parseFloat(e.target.value) || null) : e.target.value.trim() || null;
+                // V3 startDate drives the milestone offsets and ETA month —
+                // re-derive both, but preserve any actuals the operator
+                // already ticked off (only fill blank dates from the new
+                // schedule).
+                if (f === 'startDate' && val) {
+                    config.shipments = (config.shipments || []).map(s => {
+                        if (s.id !== shipId || s.schema !== 3) {
+                            return s.id === shipId ? { ...s, [f]: val } : s;
+                        }
+                        const fresh = defaultMilestonesV3(val);
+                        const merged = (s.milestones || []).map((m, i) => {
+                            const f = fresh[i];
+                            if (!f) return m;
+                            return { ...m, date: m.date || f.date };
+                        });
+                        const padded = merged.length < fresh.length
+                            ? [...merged, ...fresh.slice(merged.length)]
+                            : merged;
+                        return { ...s, startDate: val, ym: ymFromStartDate(val), milestones: padded };
+                    });
+                    await quietSave();
+                    renderShipDetail(config.shipments.find(s => s.id === shipId));
+                    return;
+                }
                 config.shipments = (config.shipments || []).map(s => s.id === shipId ? { ...s, [f]: val } : s);
                 await quietSave();
                 return;

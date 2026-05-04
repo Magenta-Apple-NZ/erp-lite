@@ -1102,16 +1102,41 @@ function drawSparkline(values, months) {
             animation: false,
             responsive: true,
             maintainAspectRatio: false,
+            // Padding keeps the spline + 4px hover dots inside the canvas
+            // so they don't clip at the wrapper edge.
+            layout: { padding: { top: 5, bottom: 5, left: 3, right: 3 } },
+            interaction: { mode: 'nearest', intersect: false, axis: 'x' },
             plugins: {
                 legend: { display: false },
+                // Canvas-drawn tooltips would be clipped to the ~30px sparkline
+                // height, so we render an HTML tooltip into the wrapper instead.
                 tooltip: {
-                    callbacks: { label: ctx => ctx.parsed.y.toFixed(4) },
+                    enabled: false,
+                    external: ctx => {
+                        const { chart, tooltip } = ctx;
+                        const wrap = chart.canvas.parentNode;
+                        let tt = wrap.querySelector('.fx-spark-tt');
+                        if (!tt) {
+                            tt = document.createElement('div');
+                            tt.className = 'fx-spark-tt';
+                            wrap.appendChild(tt);
+                        }
+                        if (tooltip.opacity === 0) { tt.style.opacity = 0; return; }
+                        const dp = tooltip.dataPoints?.[0];
+                        if (!dp) return;
+                        tt.innerHTML =
+                            '<span class="fx-spark-tt-label">' + dp.label + '</span>' +
+                            '<span class="fx-spark-tt-val">' + dp.parsed.y.toFixed(4) + '</span>';
+                        tt.style.opacity = 1;
+                        tt.style.left = tooltip.caretX + 'px';
+                        tt.style.top  = tooltip.caretY + 'px';
+                    },
                 },
             },
             scales: { x: { display: false }, y: { display: false } },
         },
     };
-    return `<div style="position:relative;height:32px;margin-top:4px"><canvas data-chart-id="${id}"></canvas></div>`;
+    return `<div class="fx-spark-wrap"><canvas data-chart-id="${id}"></canvas></div>`;
 }
 
 // ── Helpers ──
