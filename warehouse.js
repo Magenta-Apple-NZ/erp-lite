@@ -535,12 +535,16 @@ const Warehouse = (() => {
             };
         }
 
-        // Shipment windows: a translucent band from start month → arrival month,
-        // with solid markers at each end. Replaces the previous single dashed
-        // arrival line. Falls back to arrival-only when start date is unknown
-        // (legacy shipments without s.startDate).
+        // Shipment windows: a translucent band from start month → arrival
+        // month, with markers at each end. Start label sits at the top of
+        // the chart, arrival label (with kg) at the bottom. Overlapping
+        // windows are darkened so concurrent shipments are visible at a
+        // glance. Falls back to arrival-only when the start date is
+        // unknown (legacy shipments without s.startDate).
         const ymToIndex = {};
         rows.forEach((r, i) => { ymToIndex[r.ym] = i; });
+
+        const shipSpans = []; // for overlap calc
         (shipments || []).forEach((s, idx) => {
             const arriveCol = ymToIndex[s.ym];
             if (arriveCol == null) return;
@@ -550,25 +554,26 @@ const Warehouse = (() => {
             const tag = s.seq ? `#${s.seq}` : '';
 
             if (startCol != null && startCol !== arriveCol) {
+                shipSpans.push({ startCol, arriveCol });
                 annotations['shipBox' + idx] = {
                     type: 'box',
                     xMin: startCol - 0.5,
                     xMax: arriveCol + 0.5,
-                    backgroundColor: 'rgba(59,130,246,0.07)',
+                    backgroundColor: 'rgba(59,130,246,0.06)',
                     borderWidth: 0,
                     drawTime: 'beforeDatasetsDraw',
                 };
                 annotations['shipStart' + idx] = {
                     type: 'line',
                     xMin: startCol, xMax: startCol,
-                    borderColor: 'rgba(59,130,246,0.6)',
-                    borderWidth: 1.5,
+                    borderColor: 'rgba(59,130,246,0.55)',
+                    borderWidth: 1.25,
                     label: {
                         display: true,
                         content: tag ? `${tag} start` : 'start',
                         position: 'start',
-                        font: { size: 8 },
-                        color: '#3b82f6',
+                        font: { size: 8.5, weight: '600' },
+                        color: '#1d4ed8',
                         backgroundColor: 'transparent',
                         padding: { x: 2, y: 1 },
                     },
@@ -583,13 +588,64 @@ const Warehouse = (() => {
                 label: {
                     display: true,
                     content: `${tag ? tag + ' · ' : ''}+${fmtFull(kg)}`,
-                    position: 'start',
+                    position: 'end',
                     font: { size: 8.5, weight: '600' },
                     color: '#1d4ed8',
                     backgroundColor: 'transparent',
                     padding: { x: 2, y: 1 },
                 },
             };
+        });
+
+        // Overlap pass: for any contiguous run of months covered by ≥2
+        // shipments, paint an additional translucent box on top so the
+        // overlap reads visually deeper than a single in-transit window.
+        if (shipSpans.length > 1) {
+            const depth = new Array(rows.length).fill(0);
+            shipSpans.forEach(({ startCol, arriveCol }) => {
+                for (let i = startCol; i <= arriveCol; i++) depth[i] += 1;
+            });
+            let runStart = null;
+            for (let i = 0; i <= depth.length; i++) {
+                const isOverlap = i < depth.length && depth[i] >= 2;
+                if (isOverlap && runStart == null) runStart = i;
+                if (!isOverlap && runStart != null) {
+                    annotations['shipOverlap' + runStart] = {
+                        type: 'box',
+                        xMin: runStart - 0.5,
+                        xMax: (i - 1) + 0.5,
+                        backgroundColor: 'rgba(59,130,246,0.10)',
+                        borderWidth: 0,
+                        drawTime: 'beforeDatasetsDraw',
+                    };
+                    runStart = null;
+                }
+            }
+        }
+
+        // Year-boundary reference lines: faint vertical guides at January
+        // (calendar year) and April (NZ financial year). Drawn behind data
+        // so they don't compete with shipment markers.
+        rows.forEach((r, i) => {
+            if (r.mo === 0) {
+                annotations['yrCal' + i] = {
+                    type: 'line',
+                    xMin: i - 0.5, xMax: i - 0.5,
+                    borderColor: 'rgba(148,163,184,0.45)',
+                    borderWidth: 1,
+                    borderDash: [3, 3],
+                    drawTime: 'beforeDatasetsDraw',
+                };
+            } else if (r.mo === 3) {
+                annotations['yrFin' + i] = {
+                    type: 'line',
+                    xMin: i - 0.5, xMax: i - 0.5,
+                    borderColor: 'rgba(148,163,184,0.3)',
+                    borderWidth: 1,
+                    borderDash: [2, 4],
+                    drawTime: 'beforeDatasetsDraw',
+                };
+            }
         });
 
         const datasets = SERIES.map(({ key, color, dash, label, negFill }) => ({
@@ -625,7 +681,16 @@ const Warehouse = (() => {
                 scales: {
                     x: {
                         grid: { color: '#f1f5f9' },
-                        ticks: { font: { size: 8.5 }, color: '#64748b', maxRotation: 0, maxTicksLimit: 8 },
+                        ticks: {
+                            font: { size: 8.5 }, color: '#64748b',
+                            maxRotation: 0, autoSkip: false,
+                            // show every other month label; intermediate ticks stay
+                            // for the gridlines but render blank
+                            callback: function(_v, i) {
+                                const lbl = this.getLabelForValue(i);
+                                return i % 2 === 0 ? lbl : '';
+                            },
+                        },
                     },
                     y: {
                         grid: { color: '#f1f5f9' },
@@ -1041,7 +1106,7 @@ const Warehouse = (() => {
             { key: 'rawColour',      section: 'raw',        label: 'Coloured Toeclips',        kind: 'perKg', kgField: 'colourRawKg', defaultRate: 0.75,    defaultCcy: 'EUR' },
             { key: 'inspection',     section: 'raw',        label: 'Preshipment Inspection',   kind: 'flat',  defaultAmount: 0,    defaultCcy: 'EUR' },
             // Bangladesh
-            { key: 'handlingA',      section: 'bangladesh', label: 'Handling & Sorting (1)',   kind: 'perKg', kgField: 'yieldKg',  defaultRate: 1.18,    defaultCcy: 'USD' },
+            { key: 'handlingA',      section: 'bangladesh', label: 'Handling & Sorting (1)',   kind: 'perKg', kgField: 'netKg',    defaultRate: 1.18,    defaultCcy: 'USD' },
             { key: 'handlingB',      section: 'bangladesh', label: 'LC Deposit',               kind: 'flat',  defaultAmount: 0,    defaultCcy: 'USD' },
             { key: 'lcRefund',       section: 'bangladesh', label: 'LC Refund',                kind: 'flat',  defaultAmount: 0,    defaultCcy: 'NZD', allowNegative: true },
             { key: 'bundling',       section: 'bangladesh', label: 'Bundling',                 kind: 'perKg', kgField: 'yieldKg',  defaultRate: 79,      defaultCcy: 'BDT' },
@@ -1515,25 +1580,34 @@ const Warehouse = (() => {
 
         function buildStageDefaultsPanel(config) {
             const defaults = getStageDefaults(config);
-            const rows = defaults.map((m, i) => `
-                <div class="ship-tl-cfg-row">
+            const rows = defaults.map((m, i) => {
+                const prev = i > 0 ? defaults[i - 1].label : '';
+                if (i === 0) {
+                    return `<div class="ship-tl-cfg-row">
+                        <span class="ship-tl-cfg-num">${String(i + 1).padStart(2, '0')}</span>
+                        <span class="ship-tl-cfg-label">${escHtml(m.label)}</span>
+                        <span class="ship-tl-cfg-anchor">anchor</span>
+                    </div>`;
+                }
+                return `<div class="ship-tl-cfg-row">
                     <span class="ship-tl-cfg-num">${String(i + 1).padStart(2, '0')}</span>
                     <span class="ship-tl-cfg-label">${escHtml(m.label)}</span>
-                    ${i === 0
-                        ? '<span class="ship-tl-cfg-anchor">anchor</span>'
-                        : `<input type="number" class="ship-tl-cfg-gap" data-idx="${i}"
+                    <span class="ship-tl-cfg-rule">
+                        <input type="number" class="ship-tl-cfg-gap" data-idx="${i}"
                               value="${m.gap}" min="0" step="1"
-                              title="Days after previous step"> <span class="ship-tl-cfg-unit">days after step ${i}</span>`}
-                </div>
-            `).join('');
+                              title="Days after previous step">
+                        <span class="ship-tl-cfg-unit">days after ${escHtml(prev)}</span>
+                    </span>
+                </div>`;
+            }).join('');
             return `<div class="ship-tl-cfg" id="ship-tl-cfg" hidden>
                 <div class="ship-tl-cfg-hd">
                     <strong>Default gaps between stages</strong>
-                    <span class="ship-tl-cfg-hint">Used for new shipments and when an existing date is edited.</span>
+                    <span class="ship-tl-cfg-hint">Applied to new shipments and when an existing date is edited.</span>
                 </div>
-                ${rows}
+                <div class="ship-tl-cfg-list">${rows}</div>
                 <div class="ship-tl-cfg-actions">
-                    <button class="btn-secondary btn-sm" id="ship-tl-cfg-reset">Reset to defaults</button>
+                    <button class="btn-link" id="ship-tl-cfg-reset" type="button">Reset to defaults</button>
                     <span class="ship-tl-cfg-saved" id="ship-tl-cfg-saved" hidden>Saved</span>
                 </div>
             </div>`;
