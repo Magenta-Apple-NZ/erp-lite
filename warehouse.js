@@ -823,6 +823,8 @@ const Warehouse = (() => {
         } catch (e) { /* BDT sparkline optional */ }
 
         let scenario  = 'great';
+        let activeTab = 'forecast';
+        let showAllShips = false;
         let currentDetailShipId = null;
 
         // Build line-item cost breakdown HTML for a shipment card
@@ -956,7 +958,7 @@ const Warehouse = (() => {
         ];
 
         // Rigid 7-line schema. Sections + labels match the operator's mental
-        // model — see Business-Hub-Brief.md. `kind` controls how the line is
+        // model — see Business-Hub.md. `kind` controls how the line is
         // computed: 'rawProduct' = rate × own kg field; 'perKg' = rate × ship kg;
         // 'flat' = amount. Raw lines have editable per-line labels (line.labelOverride).
         const FIXED_LINE_SCHEMA = [
@@ -1533,12 +1535,13 @@ const Warehouse = (() => {
         function buildShipAnalyticsSection(allShips, forex, stageDefaults) {
             const v3       = allShips.filter(s => s.schema === 3);
             const v3Cost   = v3.filter(s => !s.historical);
-            const v3Sorted = [...v3].sort((a, b) => (Number(a.seq) || 0) - (Number(b.seq) || 0));
-            const sortedCost = [...v3Cost].sort((a, b) => (Number(a.seq) || 0) - (Number(b.seq) || 0));
+            // Latest shipments first (highest seq number)
+            const v3Sorted = [...v3].sort((a, b) => (Number(b.seq) || 0) - (Number(a.seq) || 0));
+            const sortedCost = [...v3Cost].sort((a, b) => (Number(b.seq) || 0) - (Number(a.seq) || 0));
 
             // ── Cost/Kg + Waste table ────────────────────────────────────
             let totYield = 0, totCost = 0, totWaste = 0, wasteN = 0;
-            const costRows = sortedCost.map(s => {
+            const costRows = sortedCost.map((s, i) => {
                 const t = computeShipTotalsV3(s, forex);
                 const yieldKg = t.derived.yieldKg;
                 const cost    = t.total;
@@ -1547,7 +1550,7 @@ const Warehouse = (() => {
                 totYield += yieldKg;
                 totCost  += cost;
                 if (waste > 0) { totWaste += waste; wasteN++; }
-                return `<tr>
+                return `<tr${i >= 3 ? ' class="sa-row-extra"' : ''}>
                     <td class="sa-td-ship">#${s.seq}</td>
                     <td class="sa-td-num">${fmtFull(yieldKg)}</td>
                     <td class="sa-td-num">$${fmtFull(cost)}</td>
@@ -1585,18 +1588,18 @@ const Warehouse = (() => {
 
             const dated = v3Sorted.filter(s => (s.milestones || []).filter(m => m.date).length >= 2);
             const gapsByCol = stageLabels.slice(1).map(() => []);
-            const tlRows = dated.map(s => {
+            const tlRows = dated.map((s, i) => {
                 const ms = s.milestones || [];
                 let totalDays = 0, anyTotal = false;
-                const cells = stageLabels.slice(1).map((_, i) => {
-                    const prev = ms[i]?.date, curr = ms[i + 1]?.date;
+                const cells = stageLabels.slice(1).map((_, j) => {
+                    const prev = ms[j]?.date, curr = ms[j + 1]?.date;
                     const d = diffDays(prev, curr);
-                    if (d != null) { gapsByCol[i].push(d); totalDays += d; anyTotal = true; }
+                    if (d != null) { gapsByCol[j].push(d); totalDays += d; anyTotal = true; }
                     return d == null ? '<td class="sa-td-num sa-td-na">—</td>' : `<td class="sa-td-num">${d}d</td>`;
                 }).join('');
                 const totalCell = anyTotal ? `<td class="sa-td-num sa-td-emph">${totalDays}d</td>` : '<td class="sa-td-num sa-td-na">—</td>';
                 const tag = s.historical ? '<span class="sa-tag-hist">historical</span>' : '';
-                return `<tr><td class="sa-td-ship">#${s.seq}${tag}</td>${cells}${totalCell}</tr>`;
+                return `<tr${i >= 3 ? ' class="sa-row-extra"' : ''}><td class="sa-td-ship">#${s.seq}${tag}</td>${cells}${totalCell}</tr>`;
             }).join('');
             const avgRow = (() => {
                 if (!dated.length) return '';
@@ -1627,10 +1630,11 @@ const Warehouse = (() => {
             </table>` : '<p class="wh-empty" style="margin:0">Need at least 2 dated stages on a shipment to show timeline gaps.</p>';
 
             // ── % of Total stacked bars ────────────────────────────────
-            const pctRows = sortedCost.map(s => {
+            const pctRows = sortedCost.map((s, i) => {
+                const extraCls = i >= 3 ? ' sa-row-extra' : '';
                 const t = computeShipTotalsV3(s, forex);
                 const total = t.total;
-                if (total <= 0) return `<div class="sa-pct-row sa-pct-row--empty">
+                if (total <= 0) return `<div class="sa-pct-row sa-pct-row--empty${extraCls}">
                     <div class="sa-pct-label">#${s.seq}</div>
                     <div class="sa-pct-bar"><span class="wh-empty" style="font-size:0.75rem">no cost data</span></div>
                 </div>`;
@@ -1641,7 +1645,7 @@ const Warehouse = (() => {
                     return `<div class="sa-pct-seg" style="width:${pct.toFixed(2)}%;background:${sec.colour}"
                         title="${escHtml(sec.label)}: $${fmtFull(v)} (${pct.toFixed(1)}%)"></div>`;
                 }).join('');
-                return `<div class="sa-pct-row">
+                return `<div class="sa-pct-row${extraCls}">
                     <div class="sa-pct-label">#${s.seq}</div>
                     <div class="sa-pct-bar">${segs}</div>
                     <div class="sa-pct-total">$${fmtFull(total)}</div>
@@ -1654,6 +1658,10 @@ const Warehouse = (() => {
                 <div class="sa-pct-rows">${pctRows}</div>
                 <div class="sa-pct-legend">${pctLegend}</div>
             ` : '<p class="wh-empty" style="margin:0">No V3 shipments with cost data yet.</p>';
+
+            const moreBtn = (n) => n > 3
+                ? `<div class="sa-card-foot"><button class="btn-link sa-show-more-btn" data-extra="${n - 3}">Show more (${n - 3})</button></div>`
+                : '';
 
             return `
             <div class="cat-section sa-block">
@@ -1668,6 +1676,7 @@ const Warehouse = (() => {
                         <span class="sa-card-sub">${sortedCost.length} shipment${sortedCost.length !== 1 ? 's' : ''} · historical excluded</span>
                     </div>
                     <div class="sa-card-body">${costTable}</div>
+                    ${moreBtn(sortedCost.length)}
                 </div>
 
                 <div class="sa-card">
@@ -1676,6 +1685,7 @@ const Warehouse = (() => {
                         <span class="sa-card-sub">days between consecutive stages</span>
                     </div>
                     <div class="sa-card-body sa-card-body--wide">${tlTable}</div>
+                    ${moreBtn(dated.length)}
                 </div>
 
                 <div class="sa-card">
@@ -1684,6 +1694,7 @@ const Warehouse = (() => {
                         <span class="sa-card-sub">% of total NZD by section</span>
                     </div>
                     <div class="sa-card-body">${pctBlock}</div>
+                    ${moreBtn(sortedCost.length)}
                 </div>
             </div>`;
         }
@@ -2466,14 +2477,27 @@ const Warehouse = (() => {
                 </div>`;
             };
 
+            const totalShips = upcomingShips.length + pastShips.length;
+            const visibleShips = showAllShips
+                ? [...upcomingShips, ...pastShips.slice().reverse()]
+                : upcomingShips.slice(0, 3);
+
             body.innerHTML = `
             <div>
                 <div class="imp-overview-grid">
                 <div class="imp-overview-main">
+                <div class="imp-tabs">
+                    <button class="imp-tab-btn${activeTab==='forecast'?' imp-tab-btn--active':''}" data-tab="forecast">Forecast</button>
+                    <button class="imp-tab-btn${activeTab==='analytics'?' imp-tab-btn--active':''}" data-tab="analytics">Analytics</button>
+                </div>
+                <div class="imp-tab-pane${activeTab==='forecast'?'':' imp-tab-pane--hidden'}" data-tab-pane="forecast">
                 <div class="cat-section imp-upcoming-card-section">
                     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.75rem;gap:0.75rem">
-                        <h2 class="cat-title" style="margin:0">Upcoming Shipments</h2>
-                        <button class="btn-primary btn-sm" id="imp-add-ship-btn">+ Add</button>
+                        <h2 class="cat-title" style="margin:0">${showAllShips ? 'All Shipments' : 'Upcoming Shipments'}</h2>
+                        <div style="display:flex;gap:0.4rem;align-items:center">
+                            ${totalShips > 3 ? `<button class="btn-link" id="imp-toggle-all-ships">${showAllShips ? 'Show upcoming only' : `View all (${totalShips})`}</button>` : ''}
+                            <button class="btn-primary btn-sm" id="imp-add-ship-btn">+ Add</button>
+                        </div>
                     </div>
                     <div id="imp-add-ship-form" style="display:none;margin-bottom:1rem;padding:0.75rem;background:#f8fafc;border-radius:6px;border:1px solid #e2e8f0">
                         <div class="imp-add-form-grid">
@@ -2505,8 +2529,8 @@ const Warehouse = (() => {
                         </div>
                     </div>
                     <div class="imp-upcoming-grid">
-                        ${upcomingShips.length
-                            ? upcomingShips.slice(0, 3).map(s => upcomingCard(s)).join('')
+                        ${visibleShips.length
+                            ? visibleShips.map(s => upcomingCard(s)).join('')
                             : '<p class="wh-empty" style="margin:0">No upcoming shipments — click + Add to create one.</p>'}
                     </div>
                 </div>
@@ -2560,8 +2584,6 @@ const Warehouse = (() => {
                     </div>
                 </div>
 
-                ${buildShipAnalyticsSection(allShips, forex, getStageDefaults(config))}
-
                 <details class="cat-section" style="margin-top:1.25rem">
                     <summary style="cursor:pointer;list-style:none;display:flex;align-items:center;justify-content:space-between;padding-bottom:0.5rem">
                         <h2 class="cat-title" style="margin:0">Monthly Sales Averages</h2>
@@ -2582,30 +2604,10 @@ const Warehouse = (() => {
                     </div>
                 </details>
 
-                <details class="cat-section" style="margin-top:1.25rem">
-                    <summary style="cursor:pointer;list-style:none;display:flex;align-items:center;justify-content:space-between;padding-bottom:0.5rem">
-                        <h2 class="cat-title" style="margin:0">Historical Backfill</h2>
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
-                    </summary>
-                    <p class="cat-sub" style="margin-bottom:0.75rem">
-                        Paste a CSV of past shipments (one shipment per row, dates as DD/MM/YY).
-                        Imports as <em>historical</em> shipments — milestones populated, no cost or weight data.
-                    </p>
-                    <p class="cat-sub" style="margin:0 0 0.5rem;font-size:0.72rem;color:#94a3b8">
-                        Expected columns: <code>Shipment #N · Packing List · LC ready · Shipped · Presented LC to ANZ · Landed in Bangladesh · Left Bangladesh · Arrived in Tauranga</code>.
-                        Header rows containing "Packing List" or only digits are skipped.
-                    </p>
-                    <textarea id="imp-backfill-csv" class="imp-backfill-csv" rows="8"
-                        placeholder=",Packing List,LC ready,Shipped,Presented LC to ANZ,Landed in Bangladesh,Left Bangladesh,Arrived in Tauranga
-,,14,28,21,70,42,50
-Shipment #33,20/10/21,16/11/21,23/1/22,27/2/22,7/4/22,19/5/22,8/7/22"></textarea>
-                    <div id="imp-backfill-preview" class="imp-backfill-preview" hidden></div>
-                    <div style="display:flex;gap:0.5rem;align-items:center;margin-top:0.75rem">
-                        <button class="btn-secondary btn-sm" id="imp-backfill-parse">Parse</button>
-                        <button class="btn-primary btn-sm" id="imp-backfill-import" disabled>Import</button>
-                        <span id="imp-backfill-status" class="cat-sub" style="margin:0"></span>
-                    </div>
-                </details>
+                </div>
+                <div class="imp-tab-pane${activeTab==='analytics'?'':' imp-tab-pane--hidden'}" data-tab-pane="analytics">
+                ${buildShipAnalyticsSection(allShips, forex, getStageDefaults(config))}
+                </div>
                 </div>
                 ${fxPanelHtml ? `<div class="imp-overview-side">${fxPanelHtml}</div>` : ''}
                 </div>
@@ -2643,108 +2645,30 @@ Shipment #33,20/10/21,16/11/21,23/1/22,27/2/22,7/4/22,19/5/22,8/7/22"></textarea
                 }
             });
 
-            // ── Historical Backfill ──
-            // Parse a CSV of past shipments (date format DD/MM/YY) and stage
-            // them as a parsed[] array. Import button posts them as
-            // historical V3 shipments — milestones populated, no cost or
-            // weight data. Existing shipment numbers are skipped.
-            const BACKFILL_COLS = [
-                { csv: 'Packing List',          label: 'Start LC',              gap: 0  },
-                { csv: 'LC ready',              label: 'LC ready',              gap: 14 },
-                { csv: 'Shipped',               label: 'Shipped (Left Italy)',  gap: 14 },
-                { csv: 'Presented LC to ANZ',   label: 'LC presented',          gap: 21 },
-                { csv: 'Landed in Bangladesh',  label: 'Landed in Bangladesh',  gap: 70 },
-                { csv: 'Left Bangladesh',       label: 'Left Bangladesh',       gap: 42 },
-                { csv: 'Arrived in Tauranga',   label: 'Arrived in Tauranga',   gap: 50 },
-            ];
-            const parseDmy = s => {
-                const m = (s || '').trim().match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/);
-                if (!m) return '';
-                const dd = String(parseInt(m[1])).padStart(2, '0');
-                const mm = String(parseInt(m[2])).padStart(2, '0');
-                let yr = parseInt(m[3]);
-                if (yr < 100) yr += 2000;
-                return `${yr}-${mm}-${dd}`;
-            };
-            let _backfillStaged = [];
-
-            document.getElementById('imp-backfill-parse')?.addEventListener('click', () => {
-                const ta = document.getElementById('imp-backfill-csv');
-                const status = document.getElementById('imp-backfill-status');
-                const preview = document.getElementById('imp-backfill-preview');
-                const importBtn = document.getElementById('imp-backfill-import');
-                const raw = (ta?.value || '').trim();
-                _backfillStaged = [];
-                if (!raw) {
-                    if (status) { status.textContent = 'Paste some CSV first.'; status.style.color = '#ef4444'; }
-                    importBtn.disabled = true;
-                    if (preview) { preview.hidden = true; preview.innerHTML = ''; }
-                    return;
-                }
-                const existingSeqs = new Set((config.shipments || []).map(s => Number(s.seq)).filter(Boolean));
-                const lines = raw.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
-                const errors = [];
-                for (const line of lines) {
-                    const cells = line.split(',').map(c => c.trim());
-                    // Skip header rows (contains 'Packing List') or offset rows (only digits / blanks)
-                    const lower = line.toLowerCase();
-                    if (lower.includes('packing list') || lower.includes('lc ready')) continue;
-                    if (cells.slice(1).every(c => c === '' || /^\d+$/.test(c))) continue;
-                    const seqMatch = cells[0].match(/(\d+)/);
-                    if (!seqMatch) { errors.push(`Skipped: "${cells[0]}" (no shipment number)`); continue; }
-                    const seq = parseInt(seqMatch[1]);
-                    if (existingSeqs.has(seq)) { errors.push(`#${seq} already exists — skipped`); continue; }
-                    const dateCells = cells.slice(1, 1 + BACKFILL_COLS.length);
-                    const milestones = BACKFILL_COLS.map((col, i) => ({
-                        label: col.label,
-                        date:  parseDmy(dateCells[i] || ''),
-                        done:  !!parseDmy(dateCells[i] || ''),
-                    }));
-                    const startDate = milestones[0].date || '';
-                    const arrival = milestones[milestones.length - 1].date;
-                    const ym = arrival ? arrival.slice(0, 7) : (startDate ? startDate.slice(0, 7) : '');
-                    if (!ym) { errors.push(`#${seq}: no usable dates — skipped`); continue; }
-                    _backfillStaged.push({
-                        id: 'h' + seq + '-' + Math.random().toString(36).slice(2, 6),
-                        seq, schema: 3, historical: true,
-                        startDate, ym,
-                        status: 'delivered',
-                        milestones,
-                        fixedLines: {}, costLines: [],
-                    });
-                }
-                const okCount = _backfillStaged.length;
-                if (preview) {
-                    preview.hidden = okCount === 0 && errors.length === 0;
-                    preview.innerHTML = [
-                        okCount ? `<div class="imp-backfill-ok">Ready to import ${okCount} shipment${okCount !== 1 ? 's' : ''}: ${_backfillStaged.map(s => '#' + s.seq).join(', ')}</div>` : '',
-                        errors.length ? `<div class="imp-backfill-warn">${errors.map(escHtml).join('<br>')}</div>` : '',
-                    ].join('');
-                }
-                importBtn.disabled = okCount === 0;
-                if (status) { status.textContent = ''; }
+            // ── Tabs (Forecast / Analytics) ──
+            body.querySelectorAll('.imp-tab-btn').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    activeTab = btn.dataset.tab;
+                    body.querySelectorAll('.imp-tab-btn').forEach(b =>
+                        b.classList.toggle('imp-tab-btn--active', b.dataset.tab === activeTab));
+                    body.querySelectorAll('.imp-tab-pane').forEach(p =>
+                        p.classList.toggle('imp-tab-pane--hidden', p.dataset.tabPane !== activeTab));
+                });
             });
 
-            document.getElementById('imp-backfill-import')?.addEventListener('click', async () => {
-                if (!_backfillStaged.length) return;
-                const btn = document.getElementById('imp-backfill-import');
-                const status = document.getElementById('imp-backfill-status');
-                btn.disabled = true; btn.textContent = 'Importing…';
-                try {
-                    const shipments = [...(config.shipments || []), ..._backfillStaged];
-                    await api('/api/import/forecast', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ shipments }),
-                    });
-                    config.shipments = shipments;
-                    showToast(`Imported ${_backfillStaged.length} historical shipment${_backfillStaged.length !== 1 ? 's' : ''}`);
-                    _backfillStaged = [];
-                    rebuild();
-                } catch (err) {
-                    if (status) { status.textContent = 'Import failed: ' + err.message; status.style.color = '#ef4444'; }
-                    btn.disabled = false; btn.textContent = 'Import';
-                }
+            // ── View all / upcoming-only toggle ──
+            document.getElementById('imp-toggle-all-ships')?.addEventListener('click', () => {
+                showAllShips = !showAllShips;
+                rebuild();
+            });
+
+            // ── Show more / Show less for analytics tables ──
+            body.querySelectorAll('.sa-show-more-btn').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    const card = btn.closest('.sa-card');
+                    const expanded = card.classList.toggle('sa-card--expanded');
+                    btn.textContent = expanded ? 'Show less' : `Show more (${btn.dataset.extra})`;
+                });
             });
 
             document.getElementById('imp-avg-save-btn')?.addEventListener('click', async () => {

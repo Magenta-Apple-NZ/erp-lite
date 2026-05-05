@@ -2087,33 +2087,37 @@ a.xero-inv-linked:hover { background: #d1fae5; border-color: #6ee7b7; }
 .sa-pct-leg-item { display: inline-flex; align-items: center; gap: 0.35rem; }
 .sa-pct-leg-dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
 
-/* Historical Backfill */
-.imp-backfill-csv {
-    width: 100%;
-    min-height: 130px;
-    padding: 0.55rem 0.7rem;
-    border: 1px solid #e2e8f0;
-    border-radius: 6px;
-    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-    font-size: 0.78rem;
-    color: #1e293b;
-    background: #f8fafc;
-    line-height: 1.5;
-    box-sizing: border-box;
-    resize: vertical;
+/* Imports tabs */
+.imp-tabs {
+    display: flex;
+    gap: 0.25rem;
+    border-bottom: 1px solid #e2e8f0;
+    margin-bottom: 1rem;
 }
-.imp-backfill-csv:focus { outline: none; border-color: #3b82f6; background: white; }
-.imp-backfill-preview {
-    margin-top: 0.6rem;
-    padding: 0.55rem 0.75rem;
-    border: 1px solid #e2e8f0;
-    border-radius: 6px;
-    background: #f8fafc;
-    font-size: 0.78rem;
-    line-height: 1.5;
+.imp-tab-btn {
+    background: none;
+    border: none;
+    padding: 0.55rem 0.95rem;
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: #64748b;
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -1px;
 }
-.imp-backfill-ok   { color: #065f46; font-weight: 500; }
-.imp-backfill-warn { color: #b45309; margin-top: 0.35rem; font-size: 0.74rem; }
+.imp-tab-btn:hover { color: #1e293b; }
+.imp-tab-btn--active { color: #1e293b; border-bottom-color: #3b82f6; }
+.imp-tab-pane--hidden { display: none; }
+
+/* Show more / less in analytics cards */
+.sa-row-extra { display: none !important; }
+.sa-card--expanded .sa-row-extra { display: revert !important; }
+.sa-card-foot {
+    padding: 0.5rem 0 0.25rem;
+    text-align: center;
+    border-top: 1px solid #f1f5f9;
+    margin-top: 0.4rem;
+}
 
 /* Monthly forecast — title row with annual Est. Sales chip */
 .imp-table-head {
