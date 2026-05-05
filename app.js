@@ -1247,6 +1247,22 @@ function applyWorkerModeClass() {
 }
 applyWorkerModeClass();
 
+// Role-based UI hiding. Cloudflare Access verifies identity at the edge;
+// /api/me reads that and returns a role. Anything tagged .nav-item--admin-only
+// is hidden when the user's role is not 'admin'.
+let currentRole = 'admin';
+async function applyRole() {
+    try {
+        const me = await fetch('/api/me').then(r => r.json());
+        currentRole = me?.role || 'admin';
+        document.body.classList.toggle('role-warehouse', currentRole === 'warehouse');
+        // Warehouse role lands on orders, not dashboard.
+        if (currentRole === 'warehouse' && (!location.hash || location.hash === '#dashboard')) {
+            location.hash = 'orders';
+        }
+    } catch (_) { /* default admin */ }
+}
+
 async function handleRoute() {
     const hash = location.hash.replace(/^#\/?/, '');
 
@@ -1265,18 +1281,19 @@ async function handleRoute() {
         return;
     }
 
-    // In worker mode, only orders/* routes are reachable; any other hash
-    // (admin, imports, sales, calendar, warehouse, dashboard) bounces to
-    // orders. This is a UI restriction; Cloudflare Access remains the
-    // actual security boundary at the email level.
+    // In worker mode (or warehouse role), only orders/* routes are reachable;
+    // any other hash (admin, imports, sales, calendar, warehouse, dashboard)
+    // bounces to orders. This is a UI restriction; Cloudflare Access remains
+    // the actual security boundary at the email level.
     const inWorkerMode = localStorage.getItem('hub-worker-mode') === '1';
-    if (inWorkerMode && hash && !hash.startsWith('orders')) {
+    const restrictedRole = currentRole === 'warehouse';
+    if ((inWorkerMode || restrictedRole) && hash && !hash.startsWith('orders')) {
         location.hash = 'orders';
         return;
     }
 
     if (!hash || hash === 'dashboard') {
-        if (inWorkerMode) {
+        if (inWorkerMode || restrictedRole) {
             location.hash = 'orders';
             return;
         }
@@ -1461,7 +1478,7 @@ async function fetchGitHubVersion() {
 
 // ── Init ──
 loadConfig();
-handleRoute();
+applyRole().then(handleRoute);
 fetchGitHubVersion();
 setTimeout(() => {
     SalesView?.prefetch?.();

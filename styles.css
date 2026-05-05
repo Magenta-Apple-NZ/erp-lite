@@ -2959,6 +2959,10 @@ body.body--worker .main-wrap { width: 100%; }
 body.body--worker #dashboard-topbar { display: none; }
 body.body--worker .app-shell { padding: 0; }
 
+/* Warehouse role — hide admin-only nav items + the dashboard topbar */
+body.role-warehouse .nav-item--admin-only { display: none !important; }
+body.role-warehouse #dashboard-topbar { display: none; }
+
 /* In worker mode the only routes that should appear are orders/*.
    Direct hash entry to #admin etc. still loads the view (we don't
    block that here), but every visible link points at orders. */

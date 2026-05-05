@@ -26,9 +26,9 @@
         </div>
 
         <nav class="sidebar-nav">
-            <span class="nav-section-label">Workspace</span>
+            <span class="nav-section-label nav-item--admin-only">Workspace</span>
 
-            <a class="nav-item active" href="#" id="nav-dashboard">
+            <a class="nav-item active nav-item--admin-only" href="#" id="nav-dashboard">
                 <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
                     <rect x="1.5" y="1.5" width="5" height="5" rx="1"/>
                     <rect x="9.5" y="1.5" width="5" height="5" rx="1"/>
@@ -51,18 +51,17 @@
             </a>
 
 
-            <a class="nav-item nav-item--soon" href="#" data-phase="Phase 4">
+            <a class="nav-item" href="https://docs.google.com/spreadsheets/d/1UlNjWUBaGlJfQal-rFidtP4meeWTaNB5vrAKBJrEfF8/edit?gid=0#gid=0" target="_blank" rel="noopener" id="nav-dispatch-tally">
                 <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
                     <rect x="1.5" y="1.5" width="13" height="13" rx="1.5"/>
                     <line x1="4.5" y1="5.5" x2="11.5" y2="5.5"/>
                     <line x1="4.5" y1="8" x2="11.5" y2="8"/>
                     <line x1="4.5" y1="10.5" x2="8.5" y2="10.5"/>
                 </svg>
-                Dispatch Log
-                <span class="nav-soon-badge">Soon</span>
+                Dispatch Tally
             </a>
 
-            <a class="nav-item nav-item--soon" href="#" data-phase="Phase 5">
+            <a class="nav-item nav-item--soon nav-item--admin-only" href="#" data-phase="Phase 5">
                 <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
                     <path d="M1 4.5h8v6.5H1z"/>
                     <path d="M9 7h3l2 2.2v1.8H9z"/>
@@ -73,7 +72,7 @@
                 <span class="nav-soon-badge">Soon</span>
             </a>
 
-            <a class="nav-item nav-item--soon" href="#" data-phase="Sales">
+            <a class="nav-item nav-item--soon nav-item--admin-only" href="#" data-phase="Sales">
                 <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
                     <polyline points="1 12 5 7 9 10 13 4 15 6"/>
                     <polyline points="11 4 15 4 15 8"/>
@@ -82,7 +81,7 @@
                 <span class="nav-soon-badge">Soon</span>
             </a>
 
-            <a class="nav-item nav-item--soon" href="#" data-phase="Calendar">
+            <a class="nav-item nav-item--soon nav-item--admin-only" href="#" data-phase="Calendar">
                 <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
                     <rect x="1.5" y="2.5" width="13" height="12" rx="1.5"/>
                     <line x1="1.5" y1="6.5" x2="14.5" y2="6.5"/>
@@ -95,7 +94,7 @@
                 <span class="nav-soon-badge">Soon</span>
             </a>
 
-            <a class="nav-item" href="#" id="nav-admin">
+            <a class="nav-item nav-item--admin-only" href="#" id="nav-admin">
                 <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
                     <circle cx="8" cy="8" r="2"/>
                     <path d="M8 1v2M8 13v2M1 8h2M13 8h2M3.2 3.2l1.4 1.4M11.4 11.4l1.4 1.4M3.2 12.8l1.4-1.4M11.4 4.6l1.4-1.4"/>
@@ -106,7 +105,7 @@
 
         <div class="sidebar-version">v25.04.25.5</div>
 
-        <div class="sidebar-admin">
+        <div class="sidebar-admin nav-item--admin-only">
             <span class="nav-section-label">Admin</span>
 
             <button id="edit-btn" class="sidebar-btn">
