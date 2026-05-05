@@ -1104,6 +1104,16 @@ const Orders = (() => {
             return;
         }
 
+        // Opening the detail view counts as reviewing — auto-advance new → reviewed.
+        if (order.status === 'new') {
+            order.status = 'reviewed';
+            api('/api/orders/' + orderId, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ status: 'reviewed' }),
+            }).catch(() => {});
+        }
+
         await checkXeroStatus();
 
         const body = document.getElementById('order-detail-body');
@@ -1636,18 +1646,7 @@ const Orders = (() => {
             win.focus();
             setTimeout(() => { win.print(); win.close(); }, 400);
 
-            // Log the print event and advance new → reviewed
             logEvent(orderId, 'Printed packing slip', order.xeroInvoiceNumber || order.id);
-            if (order.status === 'new') {
-                api('/api/orders/' + orderId, {
-                    method: 'PATCH',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ status: 'reviewed' }),
-                }).then(updated => {
-                    order.status = 'reviewed';
-                    refreshActionBar(order);
-                }).catch(err => showErrorBanner('Could not update status: ' + err.message));
-            }
         });
 
         // Send to Xero — advances reviewed → sent_to_xero

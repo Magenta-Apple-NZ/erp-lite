@@ -35,7 +35,7 @@ export async function onRequestPost({ env, request }) {
             Date: today,
             DueDate: dueDate,
             InvoiceNumber: invoiceNumber,
-            Reference: order.id,
+            Reference: order.poNumber || '',
             Contact: { ContactID: order.customer.xeroContactId },
             LineItems: order.lines.map(l => {
                 const item = {
@@ -52,25 +52,6 @@ export async function onRequestPost({ env, request }) {
             }),
         };
 
-        if (order.shipTo?.branch || order.shipTo?.address) {
-            const deliveryNote = [order.shipTo.branch, order.shipTo.address]
-                .filter(Boolean).join(' — ');
-            invoice.DeliveryAddress = deliveryNote;
-        }
-
-        // Text-only notes line: ship-to summary + packing notes
-        const noteParts = [];
-        if (order.shipTo?.branch) noteParts.push(`Ship to: ${order.shipTo.branch}`);
-        if (order.shipTo?.address) noteParts.push(order.shipTo.address);
-        if (order.packingNotes) noteParts.push(order.packingNotes);
-        if (noteParts.length) {
-            invoice.LineItems.push({
-                Description: noteParts.join('\n'),
-                Quantity: 0,
-                UnitAmount: 0,
-            });
-        }
-
         const resp = await fetch('https://api.xero.com/api.xro/2.0/Invoices', {
             method: 'POST',
             headers: xeroHeaders(token),
@@ -85,6 +66,20 @@ export async function onRequestPost({ env, request }) {
         const data = await resp.json();
         const created = data.Invoices?.[0];
         if (!created) return errResponse('Unexpected Xero response', 502);
+
+        // Ship-to + packing notes go into the invoice's History & Notes
+        // (audit trail in Xero UI; not on the printed invoice).
+        const noteParts = [];
+        if (order.shipTo?.branch) noteParts.push(`Ship to: ${order.shipTo.branch}`);
+        if (order.shipTo?.address) noteParts.push(order.shipTo.address);
+        if (order.packingNotes) noteParts.push(order.packingNotes);
+        if (noteParts.length) {
+            await fetch(`https://api.xero.com/api.xro/2.0/Invoices/${created.InvoiceID}/History`, {
+                method: 'PUT',
+                headers: xeroHeaders(token),
+                body: JSON.stringify({ HistoryRecords: [{ Details: noteParts.join('\n') }] }),
+            }).catch(() => {});
+        }
 
         // Write invoice details back to the order
         order.xeroInvoiceId = created.InvoiceID;
