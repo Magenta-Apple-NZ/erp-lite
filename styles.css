@@ -2972,18 +2972,10 @@ body.role-warehouse .xero-not-connected,
 body.role-warehouse #push-xero-btn,
 body.role-warehouse #link-xero-btn { display: none !important; }
 
-/* Warehouse role — hide the three "shop tooling" affordances:
-   1. Open delivery-address popup (truck row icon + #print-address-btn).
-   2. Send packing slip via PrintNode (data-print-doc="slip").
-   3. Download packing slip as PDF (data-download-slip + #download-slip-btn).
-   Edit and View-slip row icons stay; the ••• menu does too. */
-body.role-warehouse .row-action-btn[data-pa-id],
-body.role-warehouse #print-address-btn,
-body.role-warehouse [data-print-doc="slip"],
-body.role-warehouse [data-download-slip],
-body.role-warehouse #download-slip-btn,
-body.role-warehouse #print-slip-btn,
-body.role-warehouse .overflow-section--slip {
+/* Warehouse role — hide PrintNode (admin-only) items + the redundant
+   Print-Address overflow item (the row-level truck icon covers it). */
+body.role-warehouse [data-print-doc],
+body.role-warehouse #print-address-btn {
     display: none !important;
 }
 

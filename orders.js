@@ -251,9 +251,6 @@ const Orders = (() => {
                     </thead>
                     <tbody>
                         ${els.map(o => {
-                            const xeroUrl = o.xeroInvoiceId
-                                ? `https://go.xero.com/AccountsReceivable/Edit.aspx?InvoiceID=${encodeURIComponent(o.xeroInvoiceId)}`
-                                : null;
                             return `
                         <tr class="order-row" data-id="${o.id}">
                             <td class="order-id">${o.id}</td>
@@ -268,14 +265,11 @@ const Orders = (() => {
                                 : '<span class="xero-pending">—</span>'}</td>
                             <td class="order-actions-col">
                                 <div class="row-actions">
-                                    <a class="row-action-btn" href="#orders/${o.id}/edit" title="Edit order" onclick="event.stopPropagation()">
-                                        <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-                                    </a>
-                                    <a class="row-action-btn" href="#orders/${o.id}" title="View packing slip" onclick="event.stopPropagation()">
+                                    <a class="row-action-btn" href="#orders/${o.id}" title="Packing slip" onclick="event.stopPropagation()">
                                         <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
                                     </a>
                                     <button class="row-action-btn"
-                                        title="Print delivery address"
+                                        title="Delivery address"
                                         data-pa-to="${escHtml(o.shipTo?.branch || o.customer.name)}"
                                         data-pa-addr="${escHtml(o.shipTo?.address || '')}"
                                         data-pa-ref="${escHtml(o.xeroInvoiceNumber || o.id)}"
@@ -283,9 +277,13 @@ const Orders = (() => {
                                         data-pa-po="${escHtml(o.poNumber || '')}">
                                         <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="6" width="14" height="11" rx="1"/><path d="M15 9h4l3 3v5h-7"/><circle cx="5.5" cy="18.5" r="2"/><circle cx="18.5" cy="18.5" r="2"/></svg>
                                     </button>
-                                    ${xeroUrl
-                                        ? `<a class="row-action-btn row-action-btn--xero" href="${xeroUrl}" target="_blank" rel="noopener" title="Open in Xero" onclick="event.stopPropagation()">${xeroBadgeSVG()}</a>`
-                                        : `<span class="row-action-btn row-action-btn--xero row-action-btn--dim" title="Not yet synced to Xero">${xeroBadgeSVG()}</span>`}
+                                    ${o.status === 'dispatched'
+                                        ? `<span class="row-action-btn row-action-btn--dim" title="Dispatched">
+                                            <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="5 12 10 17 19 8"/></svg>
+                                          </span>`
+                                        : `<button class="row-action-btn" title="Mark as dispatched" data-dispatch-order="${o.id}">
+                                            <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+                                          </button>`}
                                     <div class="overflow-menu">
                                         <button class="row-action-btn overflow-trigger" title="More actions" onclick="event.stopPropagation();this.closest('.overflow-menu').classList.toggle('open')">•••</button>
                                         <div class="overflow-dropdown">
@@ -348,6 +346,22 @@ const Orders = (() => {
                 api('/api/orders/' + orderId, { method: 'DELETE' })
                     .then(() => { orders = orders.filter(o => o.id !== orderId); renderTable(); })
                     .catch(err => alert('Delete failed: ' + err.message));
+                return;
+            }
+            // Mark as dispatched (right-arrow icon on each row)
+            const dispatchBtn = e.target.closest('[data-dispatch-order]');
+            if (dispatchBtn) {
+                const orderId = dispatchBtn.dataset.dispatchOrder;
+                api('/api/orders/' + orderId, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ status: 'dispatched' }),
+                }).then(() => {
+                    const o = orders.find(x => x.id === orderId);
+                    if (o) o.status = 'dispatched';
+                    renderTable();
+                    showToast(`Order ${orderId} marked as dispatched`);
+                }).catch(err => showToast('Update failed: ' + err.message));
                 return;
             }
             if (e.target.closest('.overflow-menu')) return;
@@ -1035,8 +1049,6 @@ const Orders = (() => {
 
     // ── Action bar buttons — driven by order status ──
     function actionButtons(order, xeroConnected) {
-        const edit = `<a href="#orders/${order.id}/edit" class="btn-secondary btn-sm" id="edit-order-btn">Edit</a>`;
-
         let primaryAction = '';
         let xeroMenuItem  = '';
 
@@ -1077,7 +1089,7 @@ const Orders = (() => {
                 </div>
             </div>`;
 
-        return `${edit}${primaryAction}${menu}`;
+        return `${primaryAction}${menu}`;
     }
 
     function refreshActionBar(order) {
