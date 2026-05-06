@@ -287,6 +287,10 @@ const Orders = (() => {
                                     <div class="overflow-menu">
                                         <button class="row-action-btn overflow-trigger" title="More actions" onclick="event.stopPropagation();this.closest('.overflow-menu').classList.toggle('open')">•••</button>
                                         <div class="overflow-dropdown">
+                                            ${o.xeroInvoiceId
+                                                ? `<a href="https://go.xero.com/AccountsReceivable/Edit.aspx?InvoiceID=${encodeURIComponent(o.xeroInvoiceId)}" target="_blank" rel="noopener" class="overflow-item xero-only">Go to Xero invoice ${escHtml(o.xeroInvoiceNumber || '')} ↗</a>
+                                                   <hr class="overflow-divider xero-only">`
+                                                : ''}
                                             <div class="overflow-section overflow-section--slip">Send Packing Slip</div>
                                             ${printerMenuItems('slip', { indent: true, orderId: o.id })}
                                             <button class="overflow-item overflow-indent" data-download-slip="${o.id}">Download as PDF</button>
