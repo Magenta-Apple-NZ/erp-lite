@@ -19,6 +19,15 @@ function meResponse(data) {
 
 export async function onRequestGet({ request }) {
     const email = request.headers.get('CF-Access-Authenticated-User-Email');
+
+    // TEMP DEBUG: dump all incoming headers when ?debug=1 is passed.
+    const url = new URL(request.url);
+    if (url.searchParams.get('debug') === '1') {
+        const headers = {};
+        for (const [k, v] of request.headers) headers[k] = v;
+        return meResponse({ email, headers });
+    }
+
     if (!email) {
         return meResponse({ email: null, name: 'Unknown', role: 'admin' });
     }
