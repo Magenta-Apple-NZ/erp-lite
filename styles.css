@@ -2979,6 +2979,10 @@ body.role-warehouse #print-address-btn {
     display: none !important;
 }
 
+/* Dispatch Log table — right-align the count column. */
+.dl-table .dl-num { text-align: right; font-variant-numeric: tabular-nums; }
+.dl-table tfoot td { font-weight: 600; background: #f8fafc; }
+
 /* In worker mode the only routes that should appear are orders/*.
    Direct hash entry to #admin etc. still loads the view (we don't
    block that here), but every visible link points at orders. */

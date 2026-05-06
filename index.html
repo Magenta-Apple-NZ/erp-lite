@@ -61,7 +61,7 @@
                 Dispatch Tally
             </a>
 
-            <span class="nav-item nav-item--soon nav-item--admin-only" data-phase="Phase 4">
+            <a class="nav-item nav-item--admin-only" href="#dispatch-log" id="nav-dispatch-log">
                 <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
                     <path d="M2 2h9l3 3v9a1 1 0 0 1-1 1H2a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1z"/>
                     <line x1="4" y1="7" x2="11" y2="7"/>
@@ -69,8 +69,7 @@
                     <line x1="4" y1="13" x2="8" y2="13"/>
                 </svg>
                 Dispatch Log
-                <span class="nav-soon-badge">Soon</span>
-            </span>
+            </a>
 
             <a class="nav-item nav-item--soon nav-item--admin-only" href="#" data-phase="Phase 5">
                 <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
@@ -206,6 +205,11 @@
             <div class="orders-view-inner" id="imports-container"></div>
         </div>
 
+        <!-- ── View: Dispatch Log ── -->
+        <div id="view-dispatch-log" class="app-view" style="display:none">
+            <div class="orders-view-inner" id="dispatch-log-container"></div>
+        </div>
+
         <!-- ── View: Sales History ── -->
         <div id="view-sales" class="app-view" style="display:none">
             <div class="orders-view-inner" id="sales-container"></div>
@@ -267,6 +271,7 @@
 <script src="admin.js"></script>
 <script src="warehouse.js"></script>
 <script src="imports.js"></script>
+<script src="dispatch-log.js"></script>
 <script src="sales.js"></script>
 <script src="calendar.js"></script>
 <script src="app.js"></script>

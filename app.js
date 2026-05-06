@@ -1216,7 +1216,7 @@ document.addEventListener('keydown', e => {
 });
 
 // ── Hash router ──
-const VIEWS = ['view-dashboard', 'view-orders', 'view-orders-new', 'view-orders-detail', 'view-orders-edit', 'view-warehouse', 'view-admin', 'view-imports', 'view-sales', 'view-calendar'];
+const VIEWS = ['view-dashboard', 'view-orders', 'view-orders-new', 'view-orders-detail', 'view-orders-edit', 'view-warehouse', 'view-admin', 'view-imports', 'view-dispatch-log', 'view-sales', 'view-calendar'];
 
 function setActiveView(viewId) {
     VIEWS.forEach(id => {
@@ -1354,6 +1354,13 @@ async function handleRoute() {
         setActiveView('view-imports');
         setActiveNav('nav-imports');
         await ImportsView.render(document.getElementById('imports-container'));
+        return;
+    }
+
+    if (hash === 'dispatch-log') {
+        setActiveView('view-dispatch-log');
+        setActiveNav('nav-dispatch-log');
+        await DispatchLog.render(document.getElementById('dispatch-log-container'));
         return;
     }
 

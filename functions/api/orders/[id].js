@@ -43,6 +43,11 @@ export async function onRequestPatch({ env, params, request }) {
             if (!VALID_STATUSES.includes(updates.status)) {
                 return errResponse('Invalid status: ' + updates.status, 400);
             }
+            // Stamp the moment of dispatch so the Dispatch Log can group by date.
+            // Only stamp on the first transition into 'dispatched'.
+            if (updates.status === 'dispatched' && order.status !== 'dispatched') {
+                order.dispatchedAt = new Date().toISOString();
+            }
             order.status = updates.status;
         }
 
