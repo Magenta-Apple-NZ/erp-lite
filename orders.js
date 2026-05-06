@@ -55,8 +55,16 @@ const Orders = (() => {
         </svg>`;
     }
 
+    function isWarehouseRole() {
+        return document.body.classList.contains('role-warehouse');
+    }
+    function statusLabelForRole(status) {
+        if (isWarehouseRole() && status === 'sent_to_xero') return 'Invoiced';
+        return STATUS_LABELS[status] || status;
+    }
+
     function statusBadge(status) {
-        const label = STATUS_LABELS[status] || status;
+        const label = statusLabelForRole(status);
         const colour = STATUS_COLOURS[status] || '#94a3b8';
         return `<span class="order-status-badge" style="background:${colour}20;color:${colour};border:1px solid ${colour}40">${label}</span>`;
     }
@@ -159,7 +167,7 @@ const Orders = (() => {
                 <option value="">All statuses</option>
                 <option value="new">New</option>
                 <option value="reviewed">Reviewed</option>
-                <option value="sent_to_xero">Sent to Xero</option>
+                <option value="sent_to_xero">${statusLabelForRole('sent_to_xero')}</option>
                 <option value="dispatched">Dispatched</option>
                 <option value="paid">Paid</option>
             </select>
@@ -237,7 +245,7 @@ const Orders = (() => {
                             <th>Date</th>
                             <th>Total</th>
                             <th>Status</th>
-                            <th>Xero</th>
+                            <th class="order-xero">Xero</th>
                             <th></th>
                         </tr>
                     </thead>
@@ -505,7 +513,7 @@ const Orders = (() => {
 
         if (order.xeroInvoiceId) {
             body.insertAdjacentHTML('afterbegin', `
-                <div class="form-warn">This order has already been pushed to Xero (${escHtml(order.xeroInvoiceNumber)}). Editing it here will not update the Xero invoice.</div>`);
+                <div class="form-warn xero-only">This order has already been pushed to Xero (${escHtml(order.xeroInvoiceNumber)}). Editing it here will not update the Xero invoice.</div>`);
         }
 
         body.innerHTML += orderFormHtml({
@@ -564,7 +572,7 @@ const Orders = (() => {
                             <input type="text" id="order-number" placeholder="e.g. 1021" pattern="[0-9]*" inputmode="numeric"
                                 value="${escHtml(numericId)}"${defaults.id ? ' readonly style="background:#f8fafc;color:#64748b"' : ''}>
                         </div>
-                        <span class="form-hint" style="display:block;margin-top:4px">Xero invoice: INV-<span id="order-num-preview">${numericId || '…'}</span></span>
+                        <span class="form-hint xero-only" style="display:block;margin-top:4px">Xero invoice: INV-<span id="order-num-preview">${numericId || '…'}</span></span>
                     </div>
                     <div class="form-field" style="flex:1">
                         <label>PO Number <span class="form-hint">optional</span></label>
@@ -1040,13 +1048,13 @@ const Orders = (() => {
             primaryAction = `<button id="dispatch-btn" class="btn-primary">Mark as Dispatched</button>`;
             if (order.xeroInvoiceId) {
                 const url = `https://go.xero.com/AccountsReceivable/Edit.aspx?InvoiceID=${encodeURIComponent(order.xeroInvoiceId)}`;
-                xeroMenuItem = `<a href="${url}" target="_blank" rel="noopener" class="overflow-item">✓ ${escHtml(order.xeroInvoiceNumber)} — View in Xero ↗</a>`;
+                xeroMenuItem = `<a href="${url}" target="_blank" rel="noopener" class="overflow-item xero-only">✓ ${escHtml(order.xeroInvoiceNumber)} — View in Xero ↗</a>`;
             }
         } else {
             primaryAction = `<span class="status-dispatched-tag">✓ Dispatched</span>`;
             if (order.xeroInvoiceId) {
                 const url = `https://go.xero.com/AccountsReceivable/Edit.aspx?InvoiceID=${encodeURIComponent(order.xeroInvoiceId)}`;
-                xeroMenuItem = `<a href="${url}" target="_blank" rel="noopener" class="overflow-item">✓ ${escHtml(order.xeroInvoiceNumber)} — View in Xero ↗</a>`;
+                xeroMenuItem = `<a href="${url}" target="_blank" rel="noopener" class="overflow-item xero-only">✓ ${escHtml(order.xeroInvoiceNumber)} — View in Xero ↗</a>`;
             }
         }
 
@@ -1123,7 +1131,7 @@ const Orders = (() => {
             <div class="order-actions-left">
                 <a href="#orders" class="btn-secondary btn-sm">← Orders</a>
                 <select id="order-status-sel" class="order-status-sel">
-                    ${Object.entries(STATUS_LABELS).map(([k, v]) => `<option value="${k}"${order.status === k ? ' selected' : ''}>${v}</option>`).join('')}
+                    ${Object.keys(STATUS_LABELS).map(k => `<option value="${k}"${order.status === k ? ' selected' : ''}>${statusLabelForRole(k)}</option>`).join('')}
                 </select>
             </div>
             <div class="order-actions-right" id="action-btns">

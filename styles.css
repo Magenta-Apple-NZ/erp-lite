@@ -2963,6 +2963,15 @@ body.body--worker .app-shell { padding: 0; }
 body.role-warehouse .nav-item--admin-only { display: none !important; }
 body.role-warehouse #dashboard-topbar { display: none; }
 
+/* Warehouse role — hide every Xero-flavoured UI inside the orders view */
+body.role-warehouse .xero-banner,
+body.role-warehouse .xero-only,
+body.role-warehouse .row-action-btn--xero,
+body.role-warehouse .order-xero,
+body.role-warehouse .xero-not-connected,
+body.role-warehouse #push-xero-btn,
+body.role-warehouse #link-xero-btn { display: none !important; }
+
 /* In worker mode the only routes that should appear are orders/*.
    Direct hash entry to #admin etc. still loads the view (we don't
    block that here), but every visible link points at orders. */
