@@ -1,6 +1,8 @@
-// Dispatch Log — daily tally of dispatched orders.
-// v1: just a count per date. Box-counts and hours come later.
+// Dispatch Log — daily tally of dispatched orders, split by dispatcher.
+// Admin sees per-dispatcher columns; warehouse role only sees their own.
 const DispatchLog = (() => {
+
+    const DISPATCHERS = ['Jake', 'Andrew'];
 
     async function api(path) {
         const r = await fetch(path);
@@ -9,13 +11,11 @@ const DispatchLog = (() => {
     }
 
     function fmtDay(iso) {
-        const d = new Date(iso + 'T00:00:00');
-        return d.toLocaleDateString('en-NZ', { weekday: 'long' });
+        return new Date(iso + 'T00:00:00').toLocaleDateString('en-NZ', { weekday: 'long' });
     }
 
     function fmtDate(iso) {
-        const d = new Date(iso + 'T00:00:00');
-        return d.toLocaleDateString('en-NZ', { day: 'numeric', month: 'short', year: 'numeric' });
+        return new Date(iso + 'T00:00:00').toLocaleDateString('en-NZ', { day: 'numeric', month: 'short', year: 'numeric' });
     }
 
     async function render(container) {
@@ -28,35 +28,65 @@ const DispatchLog = (() => {
         </div>
         <div id="dl-body"><div class="orders-loading">Loading…</div></div>`;
 
-        let orders;
+        let orders, me;
         try {
-            orders = await api('/api/orders');
+            [orders, me] = await Promise.all([api('/api/orders'), api('/api/me')]);
         } catch (e) {
             document.getElementById('dl-body').innerHTML =
-                `<div class="orders-error">Could not load orders: ${e.message}</div>`;
+                `<div class="orders-error">Could not load: ${e.message}</div>`;
             return;
         }
 
-        // Group dispatched orders by YYYY-MM-DD. Prefer dispatchedAt; fall back
-        // to updatedAt for orders that were dispatched before the field was added.
+        const isWarehouse = me?.role === 'warehouse';
+        const myName = me?.name || 'Jake';
+
+        // Filter to dispatched orders. Warehouse only sees their own attribution.
+        let dispatched = orders.filter(o => o.status === 'dispatched');
+        if (isWarehouse) {
+            dispatched = dispatched.filter(o => (o.dispatchedBy || 'Jake') === myName);
+        }
+
+        // Group by date with sub-counts per dispatcher.
         const byDate = new Map();
-        for (const o of orders) {
-            if (o.status !== 'dispatched') continue;
+        for (const o of dispatched) {
             const ts = o.dispatchedAt || o.updatedAt;
             if (!ts) continue;
             const day = ts.slice(0, 10);
-            if (!byDate.has(day)) byDate.set(day, []);
-            byDate.get(day).push(o);
+            const by = o.dispatchedBy || 'Jake';
+            if (!byDate.has(day)) byDate.set(day, {});
+            const counts = byDate.get(day);
+            counts[by] = (counts[by] || 0) + 1;
         }
 
         const rows = [...byDate.entries()].sort((a, b) => b[0].localeCompare(a[0]));
-        const totalOrders = rows.reduce((s, [, list]) => s + list.length, 0);
-
         const body = document.getElementById('dl-body');
+
         if (!rows.length) {
             body.innerHTML = `<p class="wh-empty">No orders have been dispatched yet.</p>`;
             return;
         }
+
+        // Columns: warehouse sees just their own count; admin sees both + total.
+        const cols = isWarehouse ? [myName] : DISPATCHERS;
+        const totals = Object.fromEntries(cols.map(c => [c, 0]));
+        let grandTotal = 0;
+
+        const tbody = rows.map(([d, counts]) => {
+            const cells = cols.map(c => {
+                const n = counts[c] || 0;
+                totals[c] += n;
+                return `<td class="dl-num">${n || ''}</td>`;
+            }).join('');
+            const dayTotal = cols.reduce((s, c) => s + (counts[c] || 0), 0);
+            grandTotal += dayTotal;
+            const totalCell = isWarehouse ? '' : `<td class="dl-num dl-total">${dayTotal}</td>`;
+            return `<tr><td>${fmtDate(d)}</td><td>${fmtDay(d)}</td>${cells}${totalCell}</tr>`;
+        }).join('');
+
+        const headerCols = cols.map(c => `<th class="dl-num">${c}</th>`).join('');
+        const totalHeader = isWarehouse ? '' : `<th class="dl-num">Total</th>`;
+        const footCols = cols.map(c => `<td class="dl-num">${totals[c]}</td>`).join('');
+        const footTotal = isWarehouse ? '' : `<td class="dl-num dl-total">${grandTotal}</td>`;
 
         body.innerHTML = `
         <div class="cat-section">
@@ -65,21 +95,16 @@ const DispatchLog = (() => {
                     <tr>
                         <th>Date</th>
                         <th>Day</th>
-                        <th class="dl-num">Dispatches</th>
+                        ${headerCols}
+                        ${totalHeader}
                     </tr>
                 </thead>
-                <tbody>
-                    ${rows.map(([d, list]) => `
-                    <tr>
-                        <td>${fmtDate(d)}</td>
-                        <td>${fmtDay(d)}</td>
-                        <td class="dl-num">${list.length}</td>
-                    </tr>`).join('')}
-                </tbody>
+                <tbody>${tbody}</tbody>
                 <tfoot>
                     <tr>
                         <td colspan="2">Total · ${rows.length} day${rows.length === 1 ? '' : 's'}</td>
-                        <td class="dl-num">${totalOrders}</td>
+                        ${footCols}
+                        ${footTotal}
                     </tr>
                 </tfoot>
             </table>

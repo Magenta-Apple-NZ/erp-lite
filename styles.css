@@ -2984,9 +2984,22 @@ body.role-warehouse #print-address-btn {
     display: none !important;
 }
 
-/* Dispatch Log table — right-align the count column. */
+/* Dispatch Log table — right-align numeric columns. */
 .dl-table .dl-num { text-align: right; font-variant-numeric: tabular-nums; }
+.dl-table .dl-total { font-weight: 600; }
 .dl-table tfoot td { font-weight: 600; background: #f8fafc; }
+
+/* Dispatcher dropdown next to "Mark as Dispatched". */
+.dispatch-by-sel {
+    height: 32px;
+    padding: 0 0.5rem;
+    border: 1px solid #cbd5e1;
+    border-radius: 6px;
+    background: white;
+    font-size: 0.85rem;
+    color: #1e293b;
+    margin-right: 0.4rem;
+}
 
 /* In worker mode the only routes that should appear are orders/*.
    Direct hash entry to #admin etc. still loads the view (we don't

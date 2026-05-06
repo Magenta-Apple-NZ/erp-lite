@@ -1281,13 +1281,13 @@ async function handleRoute() {
         return;
     }
 
-    // In worker mode (or warehouse role), only orders/* routes are reachable;
-    // any other hash (admin, imports, sales, calendar, warehouse, dashboard)
-    // bounces to orders. This is a UI restriction; Cloudflare Access remains
-    // the actual security boundary at the email level.
+    // In worker mode (or warehouse role), only orders/* and dispatch-log are
+    // reachable; any other hash bounces to orders. UI restriction only;
+    // Cloudflare Access remains the actual security boundary at email level.
     const inWorkerMode = localStorage.getItem('hub-worker-mode') === '1';
     const restrictedRole = currentRole === 'warehouse';
-    if ((inWorkerMode || restrictedRole) && hash && !hash.startsWith('orders')) {
+    const allowedForRestricted = (h) => h.startsWith('orders') || h === 'dispatch-log';
+    if ((inWorkerMode || restrictedRole) && hash && !allowedForRestricted(hash)) {
         location.hash = 'orders';
         return;
     }

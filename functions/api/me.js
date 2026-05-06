@@ -1,9 +1,10 @@
 // GET /api/me — returns the current user's identity from Cloudflare Access JWT
 
-// Email → role. Anyone not listed defaults to 'admin'.
-// Frontend hides nav/views based on role; this is UX-only, not access enforcement.
-const ROLE_MAP = {
-    'tetleyshed@gmail.com': 'warehouse',
+// Email → { name, role }. Anyone not listed defaults to admin and a name
+// derived from the email prefix. Frontend hides nav/views based on role
+// (UX-only, not access enforcement) and uses `name` for dispatch attribution.
+const USER_MAP = {
+    'tetleyshed@gmail.com': { name: 'Jake', role: 'warehouse' },
 };
 
 function meResponse(data) {
@@ -43,8 +44,9 @@ export async function onRequestGet({ request }) {
     if (!email) {
         return meResponse({ email: null, name: 'Unknown', role: 'admin' });
     }
-    const nameParts = email.split('@')[0].split('.');
-    const name = nameParts.map(p => p.charAt(0).toUpperCase() + p.slice(1)).join(' ');
-    const role = ROLE_MAP[email.toLowerCase()] || 'admin';
+    const mapped = USER_MAP[email.toLowerCase()];
+    const role = mapped?.role || 'admin';
+    const name = mapped?.name
+        || email.split('@')[0].split('.').map(p => p.charAt(0).toUpperCase() + p.slice(1)).join(' ');
     return meResponse({ email, name, role });
 }

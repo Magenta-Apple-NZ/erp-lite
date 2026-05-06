@@ -1061,7 +1061,14 @@ const Orders = (() => {
                 ? `<button id="push-xero-btn" class="btn-primary">Send to Xero</button>`
                 : `<span class="xero-not-connected">Xero not connected</span>`;
         } else if (order.status === 'sent_to_xero') {
-            primaryAction = `<button id="dispatch-btn" class="btn-primary">Mark as Dispatched</button>`;
+            // Admin can pick the dispatcher; warehouse always dispatches as themselves (Jake).
+            const picker = isWarehouseRole()
+                ? ''
+                : `<select id="dispatch-by-sel" class="dispatch-by-sel" title="Dispatched by">
+                       <option value="Jake" selected>Jake</option>
+                       <option value="Andrew">Andrew</option>
+                   </select>`;
+            primaryAction = `${picker}<button id="dispatch-btn" class="btn-primary">Mark as Dispatched</button>`;
             if (order.xeroInvoiceId) {
                 const url = `https://go.xero.com/AccountsReceivable/Edit.aspx?InvoiceID=${encodeURIComponent(order.xeroInvoiceId)}`;
                 xeroMenuItem = `<a href="${url}" target="_blank" rel="noopener" class="overflow-item xero-only">✓ ${escHtml(order.xeroInvoiceNumber)} — View in Xero ↗</a>`;
@@ -1726,6 +1733,7 @@ const Orders = (() => {
         // Mark as Dispatched
         document.getElementById('dispatch-btn')?.addEventListener('click', async () => {
             const btn = document.getElementById('dispatch-btn');
+            const dispatchedBy = document.getElementById('dispatch-by-sel')?.value || 'Jake';
             btn.disabled = true;
             btn.textContent = 'Saving…';
             clearErrorBanner();
@@ -1733,12 +1741,13 @@ const Orders = (() => {
                 await api('/api/orders/' + orderId, {
                     method: 'PATCH',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ status: 'dispatched' }),
+                    body: JSON.stringify({ status: 'dispatched', dispatchedBy }),
                 });
                 order.status = 'dispatched';
+                order.dispatchedBy = dispatchedBy;
                 refreshActionBar(order);
-                logEvent(orderId, 'Marked as dispatched');
-                showToast('Order marked as dispatched');
+                logEvent(orderId, `Marked as dispatched by ${dispatchedBy}`);
+                showToast(`Order marked as dispatched by ${dispatchedBy}`);
             } catch (e) {
                 showErrorBanner('Error: ' + e.message);
                 btn.disabled = false;
