@@ -272,8 +272,7 @@ const Orders = (() => {
                                         data-pa-addr="${escHtml(o.shipTo?.address || '')}"
                                         data-pa-ref="${escHtml(o.xeroInvoiceNumber || o.id)}"
                                         data-pa-id="${o.id}"
-                                        data-pa-po="${escHtml(o.poNumber || '')}"
-                                        onclick="event.stopPropagation()">
+                                        data-pa-po="${escHtml(o.poNumber || '')}">
                                         <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="6" width="14" height="11" rx="1"/><path d="M15 9h4l3 3v5h-7"/><circle cx="5.5" cy="18.5" r="2"/><circle cx="18.5" cy="18.5" r="2"/></svg>
                                     </button>
                                     ${xeroUrl
