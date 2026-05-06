@@ -1211,6 +1211,18 @@ const Orders = (() => {
     // Inner content of the printable .packing-slip element. Pulled out so the
     // same markup can be rendered on the detail view, off-screen for PrintNode
     // sends, or in a popup for browser-print.
+    // Render an address as one element per line. Accepts comma- or newline-
+    // separated input ("62 Hautapu Road, Cambridge, 3493" or with \n).
+    function formatAddressLines(addr) {
+        if (!addr) return '';
+        return addr
+            .split(/[,\n]/)
+            .map(s => s.trim())
+            .filter(Boolean)
+            .map(escHtml)
+            .join('<br>');
+    }
+
     function slipBodyHTML(order) {
         return `
             <div class="slip-top">
@@ -1231,9 +1243,9 @@ const Orders = (() => {
                         ${order.xeroInvoiceNumber
                             ? `<div class="slip-inv-row"><span>Invoice No.</span><strong>${escHtml(order.xeroInvoiceNumber)}</strong></div>`
                             : ''}
-                        <div class="slip-inv-row"><span>Order</span><strong>${escHtml(order.id)}</strong></div>
+                        <div class="slip-inv-row"><span>Packing Slip No.</span><strong>${escHtml(order.id)}</strong></div>
                         ${order.poNumber
-                            ? `<div class="slip-inv-row"><span>PO</span><strong>${escHtml(order.poNumber)}</strong></div>`
+                            ? `<div class="slip-inv-row"><span>Purchase Order</span><strong>${escHtml(order.poNumber)}</strong></div>`
                             : ''}
                     </div>
                 </div>
@@ -1244,7 +1256,7 @@ const Orders = (() => {
                         ? `<div class="slip-shipto-name">${escHtml(order.shipTo.branch)}</div>`
                         : `<div class="slip-shipto-name">${escHtml(order.customer.name)}</div>`}
                     ${order.shipTo?.address
-                        ? `<div class="slip-shipto-addr">${escHtml(order.shipTo.address).replace(/\n/g, '<br>')}</div>`
+                        ? `<div class="slip-shipto-addr">${formatAddressLines(order.shipTo.address)}</div>`
                         : ''}
                 </div>
             </div>
@@ -1303,7 +1315,7 @@ const Orders = (() => {
                 <div class="addr-label">Deliver to</div>
                 <div class="addr-to">
                     <div class="addr-name">${escHtml(to)}</div>
-                    ${addr ? `<div class="addr-street">${escHtml(addr)}</div>` : ''}
+                    ${addr ? `<div class="addr-street">${formatAddressLines(addr)}</div>` : ''}
                 </div>
                 <div class="addr-refs">
                     <span>Order: <strong>${escHtml(order.id)}</strong></span>
@@ -1656,8 +1668,8 @@ const Orders = (() => {
             win.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8">
                 <title>${escHtml(order.xeroInvoiceNumber || order.id)}</title>
                 <style>${styles}
-                body { margin: 0; padding: 0; background: white; }
-                .packing-slip { box-shadow: none; border-radius: 0; width: 100%; min-height: auto; padding: 14mm 18mm; box-sizing: border-box; }
+                html, body { margin: 0; padding: 0; background: white; height: 100%; }
+                .packing-slip { box-shadow: none; border-radius: 0; width: 100%; min-height: 100vh; padding: 14mm 18mm; box-sizing: border-box; }
                 @media print { @page { margin: 0; size: A4; } }
                 </style>
                 </head><body>${slipEl.outerHTML}</body></html>`);
