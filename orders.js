@@ -289,7 +289,7 @@ const Orders = (() => {
                                     <div class="overflow-menu">
                                         <button class="row-action-btn overflow-trigger" title="More actions" onclick="event.stopPropagation();this.closest('.overflow-menu').classList.toggle('open')">•••</button>
                                         <div class="overflow-dropdown">
-                                            <div class="overflow-section">Send Packing Slip</div>
+                                            <div class="overflow-section overflow-section--slip">Send Packing Slip</div>
                                             ${printerMenuItems('slip', { indent: true, orderId: o.id })}
                                             <button class="overflow-item overflow-indent" data-download-slip="${o.id}">Download as PDF</button>
                                             <hr class="overflow-divider">
@@ -1063,7 +1063,7 @@ const Orders = (() => {
                 <button class="overflow-trigger btn-secondary btn-sm" title="More actions" onclick="event.stopPropagation();this.closest('.overflow-menu').classList.toggle('open')">•••</button>
                 <div class="overflow-dropdown">
                     ${xeroMenuItem}
-                    <div class="overflow-section">Send Packing Slip</div>
+                    <div class="overflow-section overflow-section--slip">Send Packing Slip</div>
                     ${printerMenuItems('slip', { indent: true })}
                     <button class="overflow-item overflow-indent" id="print-slip-btn">Local Printer</button>
                     <button class="overflow-item overflow-indent" id="download-slip-btn">Download as PDF</button>

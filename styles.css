@@ -2972,6 +2972,21 @@ body.role-warehouse .xero-not-connected,
 body.role-warehouse #push-xero-btn,
 body.role-warehouse #link-xero-btn { display: none !important; }
 
+/* Warehouse role — hide the three "shop tooling" affordances:
+   1. Open delivery-address popup (truck row icon + #print-address-btn).
+   2. Send packing slip via PrintNode (data-print-doc="slip").
+   3. Download packing slip as PDF (data-download-slip + #download-slip-btn).
+   Edit and View-slip row icons stay; the ••• menu does too. */
+body.role-warehouse .row-action-btn[data-pa-id],
+body.role-warehouse #print-address-btn,
+body.role-warehouse [data-print-doc="slip"],
+body.role-warehouse [data-download-slip],
+body.role-warehouse #download-slip-btn,
+body.role-warehouse #print-slip-btn,
+body.role-warehouse .overflow-section--slip {
+    display: none !important;
+}
+
 /* In worker mode the only routes that should appear are orders/*.
    Direct hash entry to #admin etc. still loads the view (we don't
    block that here), but every visible link points at orders. */
