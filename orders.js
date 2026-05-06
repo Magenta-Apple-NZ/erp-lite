@@ -1298,7 +1298,7 @@ const Orders = (() => {
         const to   = order.shipTo?.branch || order.customer?.name || '';
         const addr = order.shipTo?.address || '';
         const ref  = order.xeroInvoiceNumber || order.id;
-        const po   = order.poNumber ? `PO: ${order.poNumber}` : '';
+        const po   = order.poNumber ? `Purchase Order: ${order.poNumber}` : '';
         return `
             <div class="page">
                 <div class="addr-header">
@@ -1318,7 +1318,7 @@ const Orders = (() => {
                     ${addr ? `<div class="addr-street">${formatAddressLines(addr)}</div>` : ''}
                 </div>
                 <div class="addr-refs">
-                    <span>Order: <strong>${escHtml(order.id)}</strong></span>
+                    <span>Packing Slip No.: <strong>${escHtml(order.id)}</strong></span>
                     ${po ? `<span>${escHtml(po)}</span>` : ''}
                 </div>
             </div>`;
