@@ -370,7 +370,11 @@ const Orders = (() => {
             }
             if (e.target.closest('.overflow-menu')) return;
             const row = e.target.closest('tr.order-row');
-            if (row) location.hash = 'orders/' + row.dataset.id;
+            if (row) {
+                // Admin defaults to the edit form; warehouse to the packing slip.
+                const suffix = isWarehouseRole() ? '' : '/edit';
+                location.hash = 'orders/' + row.dataset.id + suffix;
+            }
         });
 
         renderTable();
@@ -1053,6 +1057,10 @@ const Orders = (() => {
 
     // ── Action bar buttons — driven by order status ──
     function actionButtons(order, xeroConnected) {
+        // Admin can edit order fields; warehouse does not need to.
+        const edit = isWarehouseRole()
+            ? ''
+            : `<a href="#orders/${order.id}/edit" class="btn-secondary btn-sm" id="edit-order-btn">Edit</a>`;
         let primaryAction = '';
         let xeroMenuItem  = '';
 
@@ -1100,7 +1108,7 @@ const Orders = (() => {
                 </div>
             </div>`;
 
-        return `${primaryAction}${menu}`;
+        return `${edit}${primaryAction}${menu}`;
     }
 
     function refreshActionBar(order) {
