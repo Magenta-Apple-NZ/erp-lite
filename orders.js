@@ -1316,8 +1316,6 @@ const Orders = (() => {
     function addressPageBodyHTML(order) {
         const to   = order.shipTo?.branch || order.customer?.name || '';
         const addr = order.shipTo?.address || '';
-        const ref  = order.xeroInvoiceNumber || order.id;
-        const po   = order.poNumber ? `Purchase Order: ${order.poNumber}` : '';
         return `
             <div class="page">
                 <div class="addr-header">
@@ -1326,10 +1324,6 @@ const Orders = (() => {
                         93 Tetley Road, Katikati<br>
                         orders@primetie.co.nz · (07) 549-1716
                     </div>
-                    <div style="text-align:right; font-size:10pt; color:#64748b">
-                        <strong style="color:#1e293b">${escHtml(ref)}</strong>
-                        ${po ? `<br>${escHtml(po)}` : ''}
-                    </div>
                 </div>
                 <div class="addr-label">Deliver to</div>
                 <div class="addr-to">
@@ -1337,8 +1331,13 @@ const Orders = (() => {
                     ${addr ? `<div class="addr-street">${formatAddressLines(addr)}</div>` : ''}
                 </div>
                 <div class="addr-refs">
-                    <span>Packing Slip No.: <strong>${escHtml(order.id)}</strong></span>
-                    ${po ? `<span>${escHtml(po)}</span>` : ''}
+                    <span>Packing Slip No. : <strong>${escHtml(order.id)}</strong></span>
+                    ${order.xeroInvoiceNumber
+                        ? `<span>Invoice No. : <strong>${escHtml(order.xeroInvoiceNumber)}</strong></span>`
+                        : ''}
+                    ${order.poNumber
+                        ? `<span>Purchase Order : <strong>${escHtml(order.poNumber)}</strong></span>`
+                        : ''}
                 </div>
             </div>`;
     }
