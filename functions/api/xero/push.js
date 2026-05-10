@@ -24,16 +24,16 @@ export async function onRequestPost({ env, request }) {
         const token = await getValidToken(env);
 
         const today = new Date().toISOString().split('T')[0];
-        const dueDate = new Date(Date.now() + 30 * 86400_000).toISOString().split('T')[0];
 
         // Derive Xero invoice number: PKS-1021 → INV-1021 (also handles legacy ORD- prefix)
         const invoiceNumber = order.id.replace(/^(?:PKS|ORD)-/, 'INV-');
 
+        // DueDate intentionally omitted — Xero applies the contact's configured
+        // payment terms (e.g. 20th-of-following-month) to each invoice.
         const invoice = {
             Type: 'ACCREC',
             Status: 'DRAFT',
             Date: today,
-            DueDate: dueDate,
             InvoiceNumber: invoiceNumber,
             Reference: order.poNumber || '',
             Contact: { ContactID: order.customer.xeroContactId },
