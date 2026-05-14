@@ -533,17 +533,27 @@ const Orders = (() => {
         const body = document.getElementById('new-order-body');
         if (!xeroConnected) body.insertAdjacentHTML('beforebegin', xeroConnectBanner());
 
-        if (order.xeroInvoiceId) {
-            body.insertAdjacentHTML('afterbegin', `
-                <div class="form-warn xero-only">This order has already been pushed to Xero (${escHtml(order.xeroInvoiceNumber)}). Editing it here will not update the Xero invoice.</div>`);
-        }
+        const xeroWarn = order.xeroInvoiceId
+            ? `<div class="form-warn xero-only">This order has already been pushed to Xero (${escHtml(order.xeroInvoiceNumber)}). Editing it here will not update the Xero invoice.</div>`
+            : '';
 
-        body.innerHTML += orderFormHtml({
+        const formHtml = orderFormHtml({
             customers,
             catalogStores,
             submitLabel: 'Save Changes',
             defaults: order,
         });
+
+        body.innerHTML = `
+            <div class="edit-with-preview">
+                <div class="edit-form-col">${xeroWarn}${formHtml}</div>
+                <aside class="edit-preview no-print" aria-label="Saved packing slip preview">
+                    <div class="edit-preview-label">Saved packing slip</div>
+                    <div class="edit-preview-scaler">
+                        <div class="packing-slip">${slipBodyHTML(order)}</div>
+                    </div>
+                </aside>
+            </div>`;
 
         wireOrderForm({ customers, catalogStores, catalogItems, defaults: order });
         document.getElementById('submit-order-btn').addEventListener('click', () => submitEditOrder(orderId));
@@ -791,6 +801,7 @@ const Orders = (() => {
         const tr = document.createElement('tr');
         tr.className = 'line-item-row';
         tr.dataset.idx = idx;
+        if (prefill?.kgPerUnit != null) tr.dataset.kgPerUnit = prefill.kgPerUnit;
         tr.innerHTML = `
             <td style="flex:1.5">
                 <input type="text" class="line-sku" placeholder="e.g. PT-I-10" autocomplete="off" value="${escHtml(prefill?.sku || '')}">
@@ -849,6 +860,8 @@ const Orders = (() => {
         if (catalogItems.length) {
             const pickCatalogItem = item => {
                 tr._catalogItem = item;
+                if (item.kgPerUnit != null) tr.dataset.kgPerUnit = item.kgPerUnit;
+                else delete tr.dataset.kgPerUnit;
                 descEl.value = item.name;
                 skuEl.value = item.id;
                 if (item.isLoose) {
@@ -944,7 +957,10 @@ const Orders = (() => {
             const qty = parseFloat(tr.querySelector('.line-qty').value);
             const price = parseFloat(tr.querySelector('.line-price').value);
             if (desc && !isNaN(price)) {
-                lines.push({ sku, description: desc, quantity: isNaN(qty) ? 0 : qty, unitPrice: price });
+                const line = { sku, description: desc, quantity: isNaN(qty) ? 0 : qty, unitPrice: price };
+                const kgPerUnit = parseFloat(tr.dataset.kgPerUnit);
+                if (!isNaN(kgPerUnit)) line.kgPerUnit = kgPerUnit;
+                lines.push(line);
             }
         });
         return lines;

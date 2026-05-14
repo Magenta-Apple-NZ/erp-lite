@@ -45,13 +45,19 @@ export async function onRequestPost({ env, request }) {
         if (!Array.isArray(rawLines)) rawLines = [rawLines];
         if (!rawLines.length) return errResponse('at least one line item is required', 400);
 
-        const lines = rawLines.map(l => ({
-            sku:         l.sku || l.itemCode || l.ItemCode || l.item_code || '',
-            description: l.description || l.Description || l.name || l.item_description || '',
-            quantity:    Number(l.quantity ?? l.Quantity ?? l.qty ?? 1),
-            unitPrice:   Number(l.unitPrice ?? l.UnitAmount ?? l.unit_price ?? l.price ?? 0),
-            accountCode: (l.accountCode || l.AccountCode || l.account_code || '200').split(' ')[0],
-        })).filter(l => l.description);
+        const lines = rawLines.map(l => {
+            const line = {
+                sku:         l.sku || l.itemCode || l.ItemCode || l.item_code || '',
+                description: l.description || l.Description || l.name || l.item_description || '',
+                quantity:    Number(l.quantity ?? l.Quantity ?? l.qty ?? 1),
+                unitPrice:   Number(l.unitPrice ?? l.UnitAmount ?? l.unit_price ?? l.price ?? 0),
+                accountCode: (l.accountCode || l.AccountCode || l.account_code || '200').split(' ')[0],
+            };
+            const kgRaw = l.kgPerUnit ?? l.kg_per_unit ?? l.kg;
+            const kg = kgRaw != null ? Number(kgRaw) : NaN;
+            if (!isNaN(kg)) line.kgPerUnit = kg;
+            return line;
+        }).filter(l => l.description);
 
         if (!lines.length) return errResponse('no valid line items', 400);
 

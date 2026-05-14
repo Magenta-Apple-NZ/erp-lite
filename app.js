@@ -12,6 +12,21 @@ let modalCallback = null;
 window._chartQ    = {};
 window._chartInst = {};
 
+// Order line → kg. Prefers an explicit kgPerUnit field (stamped from the
+// catalog), falls back to parsing "1kg"/"10kg" out of the text, then to
+// 1 kg/unit so missing data doesn't silently zero totals.
+function lineKg(l) {
+    let kgPer;
+    if (l?.kgPerUnit != null && !isNaN(Number(l.kgPerUnit))) {
+        kgPer = Number(l.kgPerUnit);
+    } else {
+        const text = `${l?.description || ''} ${l?.name || ''} ${l?.sku || ''}`;
+        const m = text.match(/\b(10|1)\s*kg\b/i);
+        kgPer = m ? Number(m[1]) : 1;
+    }
+    return (Number(l?.quantity) || 0) * kgPer;
+}
+
 function initCharts(container) {
     if (typeof Chart === 'undefined') return;
     (container || document).querySelectorAll('canvas[data-chart-id]').forEach(canvas => {
@@ -909,7 +924,7 @@ function renderDashboardWidgets(config) {
         (orders || []).forEach(o => {
             const ym = (o.createdAt || '').slice(0, 7);
             if (!kgByMonth.hasOwnProperty(ym)) return;
-            const kg = (o.lines || []).reduce((s, l) => s + (Number(l.quantity) || 0), 0);
+            const kg = (o.lines || []).reduce((s, l) => s + lineKg(l), 0);
             kgByMonth[ym] += kg;
             cntByMonth[ym]++;
         });

@@ -4,10 +4,11 @@
 // of KV. The sheet is the single source of truth — no upload UI, no manual
 // edits in the Hub. Cloudflare's edge fetch cache (60s) absorbs load.
 //
-// Sheet headers expected: Id, Name, Unit Price, 150+ kg, 500+ kg, 2000+ kg
+// Sheet headers expected: Id, Name, Unit Price, KG, 150+ kg, 500+ kg, 2000+ kg
 // Mapped to the shape orders.js consumes:
-//   { id, name, defaultPrice, pb1Quantity:150, pb1Price, pb2Quantity:500,
-//     pb2Price, pb3Quantity:2000, pb3Price }
+//   { id, name, defaultPrice, kgPerUnit, pb1Quantity:150, pb1Price,
+//     pb2Quantity:500, pb2Price, pb3Quantity:2000, pb3Price }
+// KG is the kg-per-unit for the SKU (typically 10 for bundles, 1 for bags).
 
 import { jsonResponse, errResponse } from '../_xero.js';
 
@@ -63,6 +64,7 @@ export async function onRequestGet({ env }) {
         const idCol    = col('id');
         const nameCol  = col('name');
         const priceCol = col('unit price');
+        const kgCol    = col('kg');
         const t1Col    = col('150+ kg');
         const t2Col    = col('500+ kg');
         const t3Col    = col('2000+ kg');
@@ -75,6 +77,8 @@ export async function onRequestGet({ env }) {
                     name:         nameCol  >= 0 ? (r[nameCol] || '').trim() : '',
                     defaultPrice: priceCol >= 0 ? num(r[priceCol]) : null,
                 };
+                const kg = kgCol >= 0 ? num(r[kgCol]) : null;
+                if (kg != null) item.kgPerUnit = kg;
                 const t1 = t1Col >= 0 ? num(r[t1Col]) : null;
                 const t2 = t2Col >= 0 ? num(r[t2Col]) : null;
                 const t3 = t3Col >= 0 ? num(r[t3Col]) : null;

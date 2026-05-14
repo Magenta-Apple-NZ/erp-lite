@@ -56,13 +56,19 @@ export async function onRequestPost({ env, request }) {
             customer,
             poNumber: poNumber || '',
             shipTo: shipTo || {},
-            lines: lines.map(l => ({
-                sku: l.sku || '',
-                description: l.description,
-                quantity: Number(l.quantity),
-                unitPrice: Number(l.unitPrice),
-                accountCode: l.accountCode || '200',
-            })),
+            lines: lines.map(l => {
+                const line = {
+                    sku: l.sku || '',
+                    description: l.description,
+                    quantity: Number(l.quantity),
+                    unitPrice: Number(l.unitPrice),
+                    accountCode: l.accountCode || '200',
+                };
+                if (l.kgPerUnit != null && !isNaN(Number(l.kgPerUnit))) {
+                    line.kgPerUnit = Number(l.kgPerUnit);
+                }
+                return line;
+            }),
             packingNotes: packingNotes || '',
             xeroInvoiceId: null,
             xeroInvoiceNumber: null,

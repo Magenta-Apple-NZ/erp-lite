@@ -28,6 +28,20 @@ const SalesView = (() => {
         return String(v);
     }
 
+    // Order lines store qty as number-of-units. The catalog stamps each line
+    // with kgPerUnit (1 or 10). Legacy lines without that field fall back to
+    // parsing "1kg" / "10kg" out of the description/name/sku, then default
+    // to 1 so a missing value doesn't silently zero the total.
+    function lineKgPerUnit(l) {
+        if (l?.kgPerUnit != null && !isNaN(Number(l.kgPerUnit))) return Number(l.kgPerUnit);
+        const text = `${l?.description || ''} ${l?.name || ''} ${l?.sku || ''}`;
+        const m = text.match(/\b(10|1)\s*kg\b/i);
+        return m ? Number(m[1]) : 1;
+    }
+    function lineKg(l) {
+        return (Number(l?.quantity) || 0) * lineKgPerUnit(l);
+    }
+
     // Historical actuals from FY25/FY26 CSV [Jan..Dec], null = no data that month
     const SALES_HISTORY = {
         2024: [null, null, null, 110, 4740, 2131, 7840, 4214, 972, 80, 80, 990],
@@ -35,6 +49,26 @@ const SalesView = (() => {
         2026: [1450, 360, 2700, null, null, null, null, null, null, null, null, null],
     };
     const MO_NAMES = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    const FY_MO_NAMES = ['Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec','Jan','Feb','Mar'];
+
+    // Reshape { calYear: [12 Jan..Dec] } → { fyEndYear: [12 Apr..Mar] }.
+    // NZ FY ends 31 Mar, named by end year: FY26 = Apr 2025 → Mar 2026.
+    function toFinancialYear(calData) {
+        const fy = {};
+        for (const [yrStr, vals] of Object.entries(calData)) {
+            const yr = parseInt(yrStr, 10);
+            if (!yr || !Array.isArray(vals)) continue;
+            for (let mo = 0; mo < 12; mo++) {
+                const v = vals[mo];
+                if (v == null) continue;
+                const fyEnd = mo >= 3 ? yr + 1 : yr;
+                const idx   = mo >= 3 ? mo - 3 : mo + 9;
+                if (!fy[fyEnd]) fy[fyEnd] = new Array(12).fill(null);
+                fy[fyEnd][idx] = (fy[fyEnd][idx] || 0) + v;
+            }
+        }
+        return fy;
+    }
 
     // Background prefetch cache — populated on dashboard load, consumed once on first render
     let _prefetchP = null;
@@ -353,21 +387,25 @@ const SalesView = (() => {
         return `<div style="position:relative;height:210px;width:100%"><canvas data-chart-id="${id}"></canvas></div>`;
     }
 
-    function buildCumulativeChart(data) {
-        const years = Object.keys(data).sort();
+    function buildCumulativeChart(data, mode = 'cal') {
+        const useFy = mode === 'fy';
+        const source = useFy ? toFinancialYear(data) : data;
+        const years = Object.keys(source).sort();
         if (!years.length) return '';
         const id = 'cumulative-chart';
+        const labels = useFy ? FY_MO_NAMES : MO_NAMES;
+        const yrLabel = yr => useFy ? `FY${String(yr).slice(-2)}` : yr;
         const cumData = {};
         for (const yr of years) {
             let run = 0;
-            cumData[yr] = (data[yr] || []).map(v => { run += (v || 0); return v !== null ? run : null; });
+            cumData[yr] = (source[yr] || []).map(v => { run += (v || 0); return v !== null ? run : null; });
         }
         window._chartQ[id] = {
             type: 'line',
             data: {
-                labels: MO_NAMES,
+                labels,
                 datasets: years.map((yr, yi) => ({
-                    label: yr,
+                    label: yrLabel(yr),
                     data: cumData[yr],
                     borderColor: CHART_COLORS[yi] || '#94a3b8',
                     backgroundColor: 'transparent',
@@ -613,7 +651,7 @@ const SalesView = (() => {
         for (const o of allOrders) {
             const created = o.createdAt || '';
             if (!created) continue;
-            const kg = (o.lines || []).reduce((s, l) => s + (Number(l.quantity) || 0), 0);
+            const kg = (o.lines || []).reduce((s, l) => s + lineKg(l), 0);
             const store = o.shipTo?.branch || o.customer?.name || '—';
             if (!byStore[store]) byStore[store] = { kg: 0, orders: 0, lastOrder: '', curYtd: 0, prevYtd: 0 };
             byStore[store].kg += kg;
@@ -636,6 +674,7 @@ const SalesView = (() => {
         // ── Filter state ──
         let filterCustomer = '', filterBranch = '', filterProduct = '';
         let selectedYears = new Set(defaultYears);
+        let cumMode = localStorage.getItem('sales-cum-mode') === 'fy' ? 'fy' : 'cal';
 
         function getFilteredActuals() {
             const filtered = allOrders.filter(o => {
@@ -652,10 +691,10 @@ const SalesView = (() => {
                 let kg = 0;
                 if (filterProduct) {
                     for (const l of (o.lines || [])) {
-                        if (l.name === filterProduct) kg += Number(l.quantity) || 0;
+                        if (l.name === filterProduct) kg += lineKg(l);
                     }
                 } else {
-                    kg = (o.lines || []).reduce((s, l) => s + (Number(l.quantity) || 0), 0);
+                    kg = (o.lines || []).reduce((s, l) => s + lineKg(l), 0);
                 }
                 if (kg > 0) actuals[ym] = (actuals[ym] || 0) + kg;
             }
@@ -715,7 +754,7 @@ const SalesView = (() => {
 
             const cumulativeArea = document.getElementById('sales-chart-area-cumulative');
             if (cumulativeArea) {
-                cumulativeArea.innerHTML = buildCumulativeChart(data);
+                cumulativeArea.innerHTML = buildCumulativeChart(data, cumMode);
                 if (typeof initCharts === 'function') initCharts(cumulativeArea);
             }
 
@@ -763,9 +802,17 @@ const SalesView = (() => {
                     <div id="sales-chart-area">${buildSalesByMonthChart(initData)}</div>
                 </div>
                 <div class="cat-section sales-chart-block">
-                    <h2 class="cat-title" style="margin-bottom:0.4rem">Cumulative Sales</h2>
-                    <p class="cat-sub" style="margin-bottom:0.75rem">Running total kg by year.</p>
-                    <div id="sales-chart-area-cumulative">${buildCumulativeChart(initData)}</div>
+                    <div class="sales-chart-head">
+                        <div>
+                            <h2 class="cat-title" style="margin-bottom:0.4rem">Cumulative Sales</h2>
+                            <p class="cat-sub" style="margin-bottom:0">Running total kg by year.</p>
+                        </div>
+                        <div class="sales-mode-toggle" role="tablist" aria-label="Year mode">
+                            <button class="sales-mode-btn${cumMode === 'cal' ? ' active' : ''}" data-mode="cal" role="tab" aria-selected="${cumMode === 'cal'}">Calendar</button>
+                            <button class="sales-mode-btn${cumMode === 'fy' ? ' active' : ''}" data-mode="fy" role="tab" aria-selected="${cumMode === 'fy'}">Financial</button>
+                        </div>
+                    </div>
+                    <div id="sales-chart-area-cumulative">${buildCumulativeChart(initData, cumMode)}</div>
                 </div>
             </div>
             <div id="sales-data-table">${buildDataTable(initData)}</div>
@@ -872,6 +919,22 @@ const SalesView = (() => {
             document.getElementById('sales-settings-panel').style.display = '';
             document.getElementById('sales-tab-settings').classList.add('active');
             document.getElementById('sales-tab-charts').classList.remove('active');
+        });
+
+        // ── Cumulative chart Cal/FY toggle ──
+        bodyEl.querySelectorAll('.sales-mode-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const mode = btn.dataset.mode;
+                if (mode === cumMode) return;
+                cumMode = mode;
+                localStorage.setItem('sales-cum-mode', cumMode);
+                bodyEl.querySelectorAll('.sales-mode-btn').forEach(b => {
+                    const on = b.dataset.mode === cumMode;
+                    b.classList.toggle('active', on);
+                    b.setAttribute('aria-selected', on);
+                });
+                rebuildCharts();
+            });
         });
 
         // ── Filters ──

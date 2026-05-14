@@ -33,6 +33,21 @@ const Warehouse = (() => {
         setTimeout(() => t.classList.remove('show'), 3000);
     }
 
+    // Order line → kg. Prefers an explicit kgPerUnit field (stamped from the
+    // catalog), falls back to parsing "1kg"/"10kg" out of the text, then to
+    // 1 kg/unit so missing data doesn't silently zero totals.
+    function lineKg(l) {
+        let kgPer;
+        if (l?.kgPerUnit != null && !isNaN(Number(l.kgPerUnit))) {
+            kgPer = Number(l.kgPerUnit);
+        } else {
+            const text = `${l?.description || ''} ${l?.name || ''} ${l?.sku || ''}`;
+            const m = text.match(/\b(10|1)\s*kg\b/i);
+            kgPer = m ? Number(m[1]) : 1;
+        }
+        return (Number(l?.quantity) || 0) * kgPer;
+    }
+
     // ── CSV parser for Enviroware stocktake format ──
     // Finds the header row automatically, handles $-formatted and comma-formatted numbers
     function parseStocktakeCsv(text) {
@@ -723,7 +738,7 @@ const Warehouse = (() => {
                 for (const o of (ordersData || [])) {
                     const ym = (o.createdAt || '').slice(0, 7);
                     if (!ym) continue;
-                    const kg = (o.lines || []).reduce((s, l) => s + (Number(l.quantity) || 0), 0);
+                    const kg = (o.lines || []).reduce((s, l) => s + lineKg(l), 0);
                     if (kg > 0) actuals[ym] = (actuals[ym] || 0) + kg;
                 }
             } catch (e) { /* prefetch optional */ }
@@ -753,7 +768,7 @@ const Warehouse = (() => {
                 for (const o of (orders || [])) {
                     const ym = (o.createdAt || '').slice(0, 7);
                     if (!ym) continue;
-                    const kg = (o.lines || []).reduce((s, l) => s + (Number(l.quantity) || 0), 0);
+                    const kg = (o.lines || []).reduce((s, l) => s + lineKg(l), 0);
                     if (kg > 0) actuals[ym] = (actuals[ym] || 0) + kg;
                 }
             } catch (e) { /* orders unavailable */ }

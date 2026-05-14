@@ -1036,6 +1036,44 @@ li.drag-over { background: #eff6ff; }
 /* ── Order form ── */
 .order-form { max-width: 780px; }
 
+/* Edit Order side-by-side preview. Reflects the *saved* order, not live
+   edits — the page navigates away on Save, so a re-render isn't needed. */
+.edit-with-preview {
+    display: flex;
+    align-items: flex-start;
+    gap: 1.5rem;
+}
+.edit-form-col { flex: 0 1 780px; min-width: 0; }
+.edit-preview {
+    position: sticky;
+    top: 0;
+    flex: 0 0 auto;
+}
+.edit-preview-label {
+    font-size: 0.72rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: #64748b;
+    margin: 0 0 0.5rem 4px;
+}
+.edit-preview-scaler {
+    --preview-scale: 0.65;
+    width: calc(794px * var(--preview-scale));
+    height: calc(1123px * var(--preview-scale));
+    overflow: hidden;
+    border-radius: 4px;
+}
+.edit-preview-scaler .packing-slip {
+    transform: scale(var(--preview-scale));
+    transform-origin: top left;
+    box-shadow: 0 4px 18px rgba(0,0,0,0.14);
+}
+@media (max-width: 1280px) {
+    .edit-preview { display: none; }
+    .edit-form-col { flex-basis: 100%; }
+}
+
 .form-section {
     background: white;
     border-radius: 10px;
@@ -2937,6 +2975,38 @@ a.xero-inv-linked:hover { background: #d1fae5; border-color: #6ee7b7; }
 .sales-chart-block {
     margin-bottom: 0 !important;
 }
+.sales-chart-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 1rem;
+    margin-bottom: 0.75rem;
+}
+.sales-mode-toggle {
+    display: inline-flex;
+    background: #f1f5f9;
+    border: 1px solid #e2e8f0;
+    border-radius: 6px;
+    padding: 2px;
+    flex-shrink: 0;
+}
+.sales-mode-btn {
+    background: transparent;
+    border: 0;
+    padding: 0.25rem 0.65rem;
+    font-size: 0.78rem;
+    font-weight: 500;
+    color: #64748b;
+    cursor: pointer;
+    border-radius: 4px;
+    line-height: 1.4;
+}
+.sales-mode-btn:hover { color: #1e293b; }
+.sales-mode-btn.active {
+    background: white;
+    color: #1e293b;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.08);
+}
 @media (max-width: 900px) {
     .sales-charts-row { grid-template-columns: 1fr; }
 }
@@ -2988,6 +3058,18 @@ body.role-warehouse #print-address-btn {
 .dl-table .dl-num { text-align: right; font-variant-numeric: tabular-nums; }
 .dl-table .dl-total { font-weight: 600; }
 .dl-table tfoot td { font-weight: 600; background: #f8fafc; }
+.dl-order-link { color: #1e40af; text-decoration: none; }
+.dl-order-link:hover { text-decoration: underline; }
+
+.dl-tabs { display: flex; gap: 0.5rem; margin-bottom: 1rem; }
+.dl-tab-count {
+    display: inline-block; margin-left: 0.35rem; padding: 0 0.4rem;
+    border-radius: 10px; background: rgba(255,255,255,0.25);
+    font-size: 0.72rem; font-weight: 600;
+}
+.imp-view-btn:not(.active) .dl-tab-count { background: #e2e8f0; color: #64748b; }
+.dl-pane { display: none; }
+.dl-pane.active { display: block; }
 
 /* Dispatcher dropdown next to "Mark as Dispatched". */
 .dispatch-by-sel {
