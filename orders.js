@@ -611,6 +611,12 @@ const Orders = (() => {
                         <input type="text" id="po-number" placeholder="e.g. PO-12345" value="${escHtml(defaults.poNumber || '')}">
                     </div>
                 </div>
+                <div class="form-row">
+                    <label class="form-checkbox-row">
+                        <input type="checkbox" id="xero-sourced"${defaults.xeroSourced ? ' checked' : ''}>
+                        <span>Don't push to Xero — invoice was created in Xero, I'll link it manually</span>
+                    </label>
+                </div>
             </section>
 
             <!-- Line Items -->
@@ -1005,6 +1011,7 @@ const Orders = (() => {
                     },
                     lines,
                     packingNotes: document.getElementById('packing-notes').value.trim(),
+                    xeroSourced: document.getElementById('xero-sourced')?.checked === true,
                 }),
             });
             await logEvent(order.id, 'Order created');
@@ -1038,6 +1045,7 @@ const Orders = (() => {
                     },
                     lines,
                     packingNotes: document.getElementById('packing-notes').value.trim(),
+                    xeroSourced: document.getElementById('xero-sourced')?.checked === true,
                 }),
             });
             await logEvent(orderId, 'Order edited');
@@ -1081,9 +1089,14 @@ const Orders = (() => {
         let xeroMenuItem  = '';
 
         if (order.status === 'new' || order.status === 'reviewed') {
-            primaryAction = xeroConnected
-                ? `<button id="push-xero-btn" class="btn-primary">Send to Xero</button>`
-                : `<span class="xero-not-connected">Xero not connected</span>`;
+            if (order.xeroSourced && !order.xeroInvoiceId) {
+                // Order was created in Xero — push would duplicate. Link instead.
+                primaryAction = `<button id="link-xero-primary-btn" class="btn-primary">Link Xero Invoice</button>`;
+            } else {
+                primaryAction = xeroConnected
+                    ? `<button id="push-xero-btn" class="btn-primary">Send to Xero</button>`
+                    : `<span class="xero-not-connected">Xero not connected</span>`;
+            }
         } else if (order.status === 'sent_to_xero') {
             // Admin can pick the dispatcher; warehouse always dispatches as themselves (Jake).
             const picker = isWarehouseRole()
@@ -1630,14 +1643,21 @@ const Orders = (() => {
             });
         }
 
-        // Link to existing Xero invoice (manual reconciliation)
-        document.getElementById('link-xero-btn')?.addEventListener('click', async () => {
+        // Link to an existing Xero invoice (manual reconciliation). Same flow
+        // for both the overflow menu item and, when the order was created
+        // externally in Xero, the primary action button.
+        async function runLinkXero() {
             const result = await openLinkXeroModal({
                 invoiceId: order.xeroInvoiceId || '',
                 invoiceNumber: order.xeroInvoiceNumber || '',
             });
             if (!result) return;
             const { invoiceId, invoiceNumber } = result;
+            // xeroSourced orders skip 'reviewed' — once linked they're ready
+            // for dispatch, since the invoice already exists in Xero.
+            const nextStatus = order.xeroSourced
+                ? 'sent_to_xero'
+                : (order.status === 'new' ? 'reviewed' : order.status);
             try {
                 const updated = await api('/api/orders/' + orderId, {
                     method: 'PATCH',
@@ -1645,7 +1665,7 @@ const Orders = (() => {
                     body: JSON.stringify({
                         xeroInvoiceId: invoiceId,
                         xeroInvoiceNumber: invoiceNumber,
-                        status: order.status === 'new' ? 'reviewed' : order.status,
+                        status: nextStatus,
                         event: { ts: new Date().toISOString(), msg: `Linked to Xero invoice ${invoiceNumber || invoiceId}` },
                     }),
                 });
@@ -1655,7 +1675,9 @@ const Orders = (() => {
             } catch (e) {
                 showErrorBanner('Link failed: ' + e.message);
             }
-        });
+        }
+        document.getElementById('link-xero-btn')?.addEventListener('click', runLinkXero);
+        document.getElementById('link-xero-primary-btn')?.addEventListener('click', runLinkXero);
 
 
         // Delete order

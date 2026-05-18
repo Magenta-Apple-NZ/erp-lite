@@ -78,6 +78,7 @@ export async function onRequestPost({ env, request }) {
             packingNotes:     body.packingNotes || body.packing_notes || body.notes || '',
             xeroInvoiceId:    null,
             xeroInvoiceNumber: null,
+            xeroSourced:      body.xeroSourced === true || body.xero_sourced === true,
         };
 
         await env.ORDERS_KV.put('order:' + id, JSON.stringify(order));
