@@ -9,8 +9,15 @@ export async function onRequestGet({ env }) {
         if (!indexRaw) return jsonResponse([]);
 
         const ids = JSON.parse(indexRaw);
+        // Self-heal: if a concurrent-POST race ever doubled an id in the
+        // index, dedupe in-memory for this response and persist the cleaned
+        // index so the dupe doesn't reappear on the next read.
+        const dedupedIds = [...new Set(ids)];
+        if (dedupedIds.length !== ids.length) {
+            await env.ORDERS_KV.put('orders_index', JSON.stringify(dedupedIds));
+        }
         const orders = await Promise.all(
-            ids.map(id => env.ORDERS_KV.get('order:' + id, { type: 'json' }))
+            dedupedIds.map(id => env.ORDERS_KV.get('order:' + id, { type: 'json' }))
         );
         return jsonResponse(orders.filter(Boolean));
     } catch (e) {
@@ -77,9 +84,13 @@ export async function onRequestPost({ env, request }) {
 
         await env.ORDERS_KV.put('order:' + id, JSON.stringify(order));
 
+        // Dedupe on write — KV has no atomic ops, so a concurrent POST that
+        // read the same orders_index snapshot can unshift the same id twice.
+        // Worst case is now one duplicated entry that gets squashed on the
+        // next write rather than a permanently doubled list row.
         const existing = JSON.parse(await env.ORDERS_KV.get('orders_index') || '[]');
         existing.unshift(id);
-        await env.ORDERS_KV.put('orders_index', JSON.stringify(existing));
+        await env.ORDERS_KV.put('orders_index', JSON.stringify([...new Set(existing)]));
 
         return jsonResponse(order, 201);
     } catch (e) {

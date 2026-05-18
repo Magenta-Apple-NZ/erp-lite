@@ -1310,7 +1310,11 @@ a.xero-inv-linked:hover { background: #d1fae5; border-color: #6ee7b7; }
     padding: 14mm 18mm;
     box-shadow: 0 4px 24px rgba(0,0,0,0.18), 0 1px 4px rgba(0,0,0,0.08);
     width: 794px;   /* A4 at 96dpi */
-    min-height: 1123px; /* A4 height at 96dpi */
+    /* A4 is 1123.4px at 96dpi. Sitting at exactly 1123px caused subpixel
+       rounding to push the printed/PDF height past 297mm, producing a
+       blank second page. 1118px gives a ~1.3mm buffer without affecting
+       layout — content longer than 1118px still grows the slip naturally. */
+    min-height: 1118px;
     box-sizing: border-box;
     /* Flex column lets .slip-footer use margin-top:auto to sit at the very
        bottom of the page even when content is short — keeps the slip on a
@@ -1446,7 +1450,10 @@ a.xero-inv-linked:hover { background: #d1fae5; border-color: #6ee7b7; }
 @media print {
     @page { margin: 0; size: A4; }
     .no-print, .sidebar, .topbar, .view-header, .order-actions { display: none !important; }
-    body { overflow: visible; background: white; margin: 0; padding: 0; }
+    /* height: auto so the screen-only `height: 100%` doesn't resolve against
+       the print viewport and push the page past A4 (which produced a blank
+       second page on browser print). */
+    body { overflow: visible; background: white; margin: 0; padding: 0; height: auto; }
     html { height: auto; }
     .app-shell { display: block; height: auto; }
     .main-wrap { overflow: visible; }

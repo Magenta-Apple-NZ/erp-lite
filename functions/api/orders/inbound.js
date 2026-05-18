@@ -83,9 +83,12 @@ export async function onRequestPost({ env, request }) {
 
         await env.ORDERS_KV.put('order:' + id, JSON.stringify(order));
 
+        // Dedupe on write — KV is eventually consistent; if Make.com retries
+        // a webhook (e.g. on 504) two invocations can both unshift the same
+        // id from the same snapshot. Set squashes the duplicate.
         const existing = JSON.parse(await env.ORDERS_KV.get('orders_index') || '[]');
         existing.unshift(id);
-        await env.ORDERS_KV.put('orders_index', JSON.stringify(existing));
+        await env.ORDERS_KV.put('orders_index', JSON.stringify([...new Set(existing)]));
 
         return jsonResponse({ id, status: order.status, createdAt: order.createdAt }, 201);
 

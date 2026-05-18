@@ -23,7 +23,8 @@ export async function onRequestDelete({ env, params }) {
         await env.ORDERS_KV.delete('order:' + params.id);
 
         const index = JSON.parse(await env.ORDERS_KV.get('orders_index') || '[]');
-        const updated = index.filter(id => id !== params.id);
+        // Filter out the deleted id AND dedupe any pre-existing duplicates.
+        const updated = [...new Set(index.filter(id => id !== params.id))];
         await env.ORDERS_KV.put('orders_index', JSON.stringify(updated));
 
         return jsonResponse({ deleted: params.id });

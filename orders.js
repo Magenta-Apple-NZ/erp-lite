@@ -1724,8 +1724,10 @@ const Orders = (() => {
             win.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8">
                 <title>${escHtml(order.xeroInvoiceNumber || order.id)}</title>
                 <style>${styles}
-                html, body { margin: 0; padding: 0; background: white; height: 100%; }
-                .packing-slip { box-shadow: none; border-radius: 0; width: 100%; min-height: 100vh; padding: 14mm 18mm; box-sizing: border-box; }
+                html, body { margin: 0; padding: 0; background: white; height: auto; }
+                /* 290mm leaves an 7mm buffer under A4 (297mm) so subpixel
+                   rounding can't push the slip onto a second page. */
+                .packing-slip { box-shadow: none; border-radius: 0; width: 100%; min-height: 290mm; padding: 14mm 18mm; box-sizing: border-box; }
                 @media print { @page { margin: 0; size: A4; } }
                 </style>
                 </head><body>${slipEl.outerHTML}</body></html>`);
