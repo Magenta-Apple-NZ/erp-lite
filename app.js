@@ -13,8 +13,8 @@ window._chartQ    = {};
 window._chartInst = {};
 
 // Order line → kg. Prefers an explicit kgPerUnit field (stamped from the
-// catalog), falls back to parsing "1kg"/"10kg" out of the text, then to
-// 1 kg/unit so missing data doesn't silently zero totals.
+// catalog), falls back to parsing "1kg"/"10kg" out of the text, otherwise
+// 0 so non-product lines (freight, fees) don't inflate kg/box totals.
 function lineKg(l) {
     let kgPer;
     if (l?.kgPerUnit != null && !isNaN(Number(l.kgPerUnit))) {
@@ -22,7 +22,7 @@ function lineKg(l) {
     } else {
         const text = `${l?.description || ''} ${l?.name || ''} ${l?.sku || ''}`;
         const m = text.match(/\b(10|1)\s*kg\b/i);
-        kgPer = m ? Number(m[1]) : 1;
+        kgPer = m ? Number(m[1]) : 0;
     }
     return (Number(l?.quantity) || 0) * kgPer;
 }

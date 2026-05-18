@@ -30,13 +30,14 @@ const SalesView = (() => {
 
     // Order lines store qty as number-of-units. The catalog stamps each line
     // with kgPerUnit (1 or 10). Legacy lines without that field fall back to
-    // parsing "1kg" / "10kg" out of the description/name/sku, then default
-    // to 1 so a missing value doesn't silently zero the total.
+    // parsing "1kg" / "10kg" out of the description/name/sku. Lines that
+    // match neither (freight, fees, custom packaging) return 0 so they don't
+    // inflate kg / box totals — they're not product.
     function lineKgPerUnit(l) {
         if (l?.kgPerUnit != null && !isNaN(Number(l.kgPerUnit))) return Number(l.kgPerUnit);
         const text = `${l?.description || ''} ${l?.name || ''} ${l?.sku || ''}`;
         const m = text.match(/\b(10|1)\s*kg\b/i);
-        return m ? Number(m[1]) : 1;
+        return m ? Number(m[1]) : 0;
     }
     function lineKg(l) {
         return (Number(l?.quantity) || 0) * lineKgPerUnit(l);

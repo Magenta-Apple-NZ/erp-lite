@@ -27,7 +27,8 @@ const DispatchLog = (() => {
     // A box holds 10kg of product, whether that's 1 × 10kg bundle or
     // 10 × 1kg bags. Each line contributes (qty × kgPerUnit) kg; boxes is
     // the total kg / 10. kgPerUnit is stamped by the catalog (falls back to
-    // parsing "1kg"/"10kg" out of the line text, then to 1 if not found).
+    // parsing "1kg"/"10kg" out of the line text, otherwise 0 — freight and
+    // other non-product lines shouldn't appear in the box count).
     function lineKg(l) {
         let kgPer;
         if (l?.kgPerUnit != null && !isNaN(Number(l.kgPerUnit))) {
@@ -35,7 +36,7 @@ const DispatchLog = (() => {
         } else {
             const text = `${l?.description || ''} ${l?.name || ''} ${l?.sku || ''}`;
             const m = text.match(/\b(10|1)\s*kg\b/i);
-            kgPer = m ? Number(m[1]) : 1;
+            kgPer = m ? Number(m[1]) : 0;
         }
         return (Number(l?.quantity) || 0) * kgPer;
     }
