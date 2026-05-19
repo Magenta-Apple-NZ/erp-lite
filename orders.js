@@ -1185,6 +1185,15 @@ const Orders = (() => {
 
         const body = document.getElementById('order-detail-body');
 
+        // Promote the Xero push when an order is still awaiting it — easy to
+        // miss the small button in the action bar when reviewing API-received
+        // orders for the first time. Hidden once invoiced, dispatched, or
+        // flagged as xeroSourced (created in Xero).
+        const needsXeroPush = xeroConnected
+            && (order.status === 'new' || order.status === 'reviewed')
+            && !order.xeroInvoiceId
+            && !order.xeroSourced;
+
         body.innerHTML = `
         <!-- Action bar (hidden when printing) -->
         <div class="order-actions no-print">
@@ -1198,6 +1207,15 @@ const Orders = (() => {
                 ${actionButtons(order, xeroConnected)}
             </div>
         </div>
+
+        ${needsXeroPush ? `
+        <div class="xero-push-banner no-print" id="xero-push-banner">
+            <div class="xero-push-banner-text">
+                <strong>Ready to push to Xero</strong>
+                <span>${order.source === 'inbound' ? 'This order came in via API and has no invoice yet.' : 'No Xero invoice linked yet.'}</span>
+            </div>
+            <button id="xero-push-banner-btn" class="btn-primary">Send to Xero</button>
+        </div>` : ''}
 
         <!-- Packing Slip (printable) -->
         <div class="packing-slip" id="packing-slip">${slipBodyHTML(order)}</div>
@@ -1738,11 +1756,11 @@ const Orders = (() => {
             logEvent(orderId, 'Printed packing slip', order.xeroInvoiceNumber || order.id);
         });
 
-        // Send to Xero — advances reviewed → sent_to_xero
-        document.getElementById('push-xero-btn')?.addEventListener('click', async () => {
-            const btn = document.getElementById('push-xero-btn');
-            btn.disabled = true;
-            btn.textContent = 'Sending to Xero…';
+        // Send to Xero — advances reviewed → sent_to_xero. Wired to both the
+        // action-bar button and the prominent banner so the user can push
+        // from either spot.
+        async function pushToXero(btn) {
+            if (btn) { btn.disabled = true; btn.textContent = 'Sending to Xero…'; }
             clearErrorBanner();
             try {
                 const result = await api('/api/xero/push', {
@@ -1750,20 +1768,18 @@ const Orders = (() => {
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ orderId }),
                 });
-                // Persist status change
                 await api('/api/orders/' + orderId, {
                     method: 'PATCH',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ status: 'sent_to_xero' }),
                 });
-                // Update invoice on the slip
                 const invRow = document.querySelector('.slip-inv-details .slip-inv-row strong');
                 if (invRow) invRow.textContent = result.invoiceNumber;
                 order.status = 'sent_to_xero';
                 order.xeroInvoiceNumber = result.invoiceNumber;
-                // Update status select to reflect new status
                 const sel = document.getElementById('order-status-sel');
                 if (sel) sel.value = 'sent_to_xero';
+                document.getElementById('xero-push-banner')?.remove();
                 refreshActionBar(order);
                 logEvent(orderId, 'Sent to Xero', result.invoiceNumber);
                 showToast('Invoice created in Xero: ' + result.invoiceNumber);
@@ -1772,10 +1788,11 @@ const Orders = (() => {
                 const msg = e.message || 'Unknown error — check browser console';
                 showErrorBanner('Xero push failed: ' + msg);
                 showToast('Xero push failed: ' + msg);
-                btn.disabled = false;
-                btn.textContent = 'Send to Xero';
+                if (btn) { btn.disabled = false; btn.textContent = 'Send to Xero'; }
             }
-        });
+        }
+        document.getElementById('push-xero-btn')?.addEventListener('click', e => pushToXero(e.currentTarget));
+        document.getElementById('xero-push-banner-btn')?.addEventListener('click', e => pushToXero(e.currentTarget));
 
         // Mark as Dispatched
         document.getElementById('dispatch-btn')?.addEventListener('click', async () => {

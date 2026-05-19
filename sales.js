@@ -99,18 +99,32 @@ const SalesView = (() => {
         })();
     }
 
-    // Merge history + order actuals, optionally restricting to visibleYears
+    // Business Hub went live on 2026-04-01. Months before that are sourced
+    // from the historical sheet (closed/audited); months from then on come
+    // from Hub orders (live). This guarantees no double-counting where the
+    // sheet and the imported HST-* orders both cover the same period.
+    const HUB_LIVE_YM = '2026-04';
+
+    // Merge history + order actuals, optionally restricting to visibleYears.
+    // For each month:
+    //   ym <  HUB_LIVE_YM → sheet/history wins
+    //   ym >= HUB_LIVE_YM → orders win (history is ignored even if present)
     function getMergedData(orderActuals, visibleYears, historyData = SALES_HISTORY) {
         const data = {};
         for (const [yr, vals] of Object.entries(historyData)) {
-            if (!visibleYears || visibleYears.includes(yr)) data[yr] = [...vals];
+            if (visibleYears && !visibleYears.includes(yr)) continue;
+            data[yr] = vals.map((v, mo) => {
+                const ym = `${yr}-${String(mo + 1).padStart(2, '0')}`;
+                return ym >= HUB_LIVE_YM ? null : v;
+            });
         }
         for (const [ym, kg] of Object.entries(orderActuals || {})) {
+            if (ym < HUB_LIVE_YM) continue;
             const yr = ym.slice(0, 4);
             const mo = parseInt(ym.slice(5)) - 1;
             if (visibleYears && !visibleYears.includes(yr)) continue;
             if (!data[yr]) data[yr] = new Array(12).fill(null);
-            if (data[yr][mo] === null) data[yr][mo] = kg;
+            data[yr][mo] = (data[yr][mo] || 0) + kg;
         }
         return data;
     }
@@ -648,19 +662,40 @@ const SalesView = (() => {
         const cutCur  = curYr  + '-' + todayMd;
         const cutPrev = prevYr + '-' + todayMd;
 
+        // Aggregate by store with the same Hub-live cutoff used for the
+        // monthly charts: sheet customer rows for ym < HUB_LIVE_YM, orders
+        // from then on. Keeps Top Stores aligned with the chart totals and
+        // avoids double-counting where HST-* imports overlap the sheet.
         const byStore = {};
+        const ensureStore = (name) => {
+            if (!byStore[name]) byStore[name] = { kg: 0, orders: 0, lastOrder: '', curYtd: 0, prevYtd: 0 };
+            return byStore[name];
+        };
+        if (sheetCustomerRows) {
+            for (const r of sheetCustomerRows) {
+                if (r.ym >= HUB_LIVE_YM) continue;
+                const s = ensureStore(r.customer);
+                s.kg += r.kg;
+                const iso = r.ym + '-01';
+                if (iso > s.lastOrder) s.lastOrder = iso;
+                if (r.ym.startsWith(curYr)  && iso <= cutCur)  s.curYtd  += r.kg;
+                if (r.ym.startsWith(prevYr) && iso <= cutPrev) s.prevYtd += r.kg;
+            }
+        }
         for (const o of allOrders) {
             const created = o.createdAt || '';
             if (!created) continue;
+            const ym = created.slice(0, 7);
+            if (ym < HUB_LIVE_YM) continue;
             const kg = (o.lines || []).reduce((s, l) => s + lineKg(l), 0);
             const store = o.shipTo?.branch || o.customer?.name || '—';
-            if (!byStore[store]) byStore[store] = { kg: 0, orders: 0, lastOrder: '', curYtd: 0, prevYtd: 0 };
-            byStore[store].kg += kg;
-            byStore[store].orders++;
-            if (created > byStore[store].lastOrder) byStore[store].lastOrder = created;
+            const s = ensureStore(store);
+            s.kg += kg;
+            s.orders++;
+            if (created > s.lastOrder) s.lastOrder = created;
             const d10 = created.slice(0, 10);
-            if (created.startsWith(curYr)  && d10 <= cutCur)  byStore[store].curYtd  += kg;
-            if (created.startsWith(prevYr) && d10 <= cutPrev) byStore[store].prevYtd += kg;
+            if (created.startsWith(curYr)  && d10 <= cutCur)  s.curYtd  += kg;
+            if (created.startsWith(prevYr) && d10 <= cutPrev) s.prevYtd += kg;
         }
         const storeActuals = Object.entries(byStore)
             .map(([name, d]) => ({ name, ...d }))
@@ -689,6 +724,9 @@ const SalesView = (() => {
             for (const o of filtered) {
                 const ym = (o.createdAt || '').slice(0, 7);
                 if (!ym) continue;
+                // Pre-Hub-live months come from the sheet (added below); skip
+                // the corresponding HST-* orders to avoid double counting.
+                if (ym < HUB_LIVE_YM) continue;
                 let kg = 0;
                 if (filterProduct) {
                     for (const l of (o.lines || [])) {
@@ -700,9 +738,11 @@ const SalesView = (() => {
                 if (kg > 0) actuals[ym] = (actuals[ym] || 0) + kg;
             }
 
-            // Include filtered historical sheet rows (customer-filterable long-form sheets only)
+            // Sheet customer rows cover the pre-Hub-live period authoritatively.
+            // (Post-cutoff rows would double-count with live orders.)
             if (sheetCustomerRows) {
                 for (const r of sheetCustomerRows) {
+                    if (r.ym >= HUB_LIVE_YM) continue;
                     if (filterCustomer && r.customer !== filterCustomer) continue;
                     if (filterProduct && r.product !== filterProduct) continue;
                     actuals[r.ym] = (actuals[r.ym] || 0) + r.kg;

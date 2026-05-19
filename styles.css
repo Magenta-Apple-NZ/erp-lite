@@ -788,6 +788,63 @@ li.drag-over { background: #eff6ff; }
     .main-wrap { overflow: visible; }
     #dashboard { grid-template-columns: 1fr; padding: 0.75rem; }
     .pinned-section { padding: 0.75rem; }
+
+    /* ── Mobile nav: keep only Orders + Calendar visible ── */
+    .sidebar-nav .nav-item:not(#nav-orders):not(#nav-calendar) { display: none; }
+    .sidebar-nav .nav-soon-badge { display: none; }
+
+    /* ── Orders list: table → cards ── */
+    .orders-view-inner { padding: 0.75rem; }
+    .orders-table-wrap { overflow: visible; border: none; }
+    .orders-table, .orders-table tbody { display: block; width: 100%; }
+    .orders-table thead { display: none; }
+    .orders-table tr.order-row {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        grid-template-areas:
+            "id       status"
+            "customer customer"
+            "shipto   shipto"
+            "date     total"
+            "actions  actions";
+        gap: 0.25rem 0.5rem;
+        padding: 0.7rem 0.85rem;
+        margin-bottom: 0.55rem;
+        border: 1px solid #e2e8f0;
+        border-radius: 8px;
+        background: white;
+        cursor: pointer;
+    }
+    .orders-table tr.order-row > td { display: block; padding: 0; border: none; }
+    .orders-table tr.order-row > td.order-po,
+    .orders-table tr.order-row > td.order-xero { display: none; }
+    .orders-table tr.order-row > td.order-id { grid-area: id; font-weight: 700; font-size: 0.92rem; }
+    .orders-table tr.order-row > td:nth-child(2) { grid-area: customer; color: #1e293b; font-size: 0.88rem; }
+    .orders-table tr.order-row > td.order-ship-to { grid-area: shipto; color: #64748b; font-size: 0.8rem; }
+    .orders-table tr.order-row > td.order-date  { grid-area: date;   color: #94a3b8; font-size: 0.78rem; }
+    .orders-table tr.order-row > td.order-total { grid-area: total;  font-weight: 600; font-size: 0.88rem; text-align: right; }
+    .orders-table tr.order-row > td:nth-child(7) { grid-area: status; text-align: right; }
+    .orders-table tr.order-row > td.order-actions-col { grid-area: actions; margin-top: 0.35rem; }
+    .orders-table tr.order-row .row-actions { gap: 0.4rem; flex-wrap: wrap; }
+    .orders-table tr.order-row .row-action-btn { min-width: 36px; min-height: 36px; }
+
+    /* ── Order form: single column + room to tap ── */
+    .order-form { max-width: 100%; }
+    .form-section { padding: 1rem; }
+    .form-row { flex-direction: column; gap: 0.6rem; }
+    .form-field { width: 100%; }
+    .line-items-wrap { overflow-x: auto; }
+    .line-items-table { min-width: 560px; }
+
+    /* ── Order detail action bar: stack, full-width primary ── */
+    .order-actions { flex-direction: column; align-items: stretch; gap: 0.5rem; }
+    .order-actions-left, .order-actions-right { width: 100%; display: flex; flex-wrap: wrap; gap: 0.4rem; }
+    .order-actions-right .btn-primary,
+    .order-actions-right .btn-secondary { flex: 1 1 auto; }
+
+    /* Slip is 794px wide — let mobile users scroll horizontally to see it
+       rather than centering it off-screen. */
+    .orders-view-inner.slip-view { padding: 0.5rem; align-items: stretch; overflow-x: auto; }
 }
 
 /* ═══════════════════════════════════════════════
@@ -855,6 +912,27 @@ li.drag-over { background: #eff6ff; }
 }
 .xero-banner-text { flex: 1; }
 .xero-connect-btn { white-space: nowrap; text-decoration: none; }
+
+/* Prominent "Send to Xero" prompt on the order detail page. Sits between
+   the action bar and the slip so it can't be missed on first review. */
+.xero-push-banner {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    background: #fff7ed;
+    border: 1px solid #fed7aa;
+    border-radius: 8px;
+    padding: 0.85rem 1.1rem;
+    margin: 0 auto 1rem;
+    max-width: 794px;
+    width: 100%;
+    box-sizing: border-box;
+}
+.xero-push-banner-text { display: flex; flex-direction: column; gap: 0.1rem; }
+.xero-push-banner-text strong { color: #9a3412; font-size: 0.92rem; }
+.xero-push-banner-text span { font-size: 0.78rem; color: #b45309; }
+.xero-push-banner .btn-primary { flex-shrink: 0; }
 
 /* ── Orders table ── */
 .orders-table-wrap { overflow-x: auto; }

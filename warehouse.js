@@ -33,6 +33,11 @@ const Warehouse = (() => {
         setTimeout(() => t.classList.remove('show'), 3000);
     }
 
+    // Business Hub went live on 2026-04-01. Forecast actuals for months
+    // before this come from the historical sales sheet (see Sales History
+    // view); from this month on, Hub orders are authoritative.
+    const HUB_LIVE_YM = '2026-04';
+
     // Order line → kg. Prefers an explicit kgPerUnit field (stamped from the
     // catalog), falls back to parsing "1kg"/"10kg" out of the text, otherwise
     // 0 so non-product lines (freight, fees) don't inflate kg/box totals.
@@ -738,6 +743,12 @@ const Warehouse = (() => {
                 for (const o of (ordersData || [])) {
                     const ym = (o.createdAt || '').slice(0, 7);
                     if (!ym) continue;
+                    // Pre-Hub-live months are sourced from the sales sheet
+                    // (Sales History view); imported HST-* orders for those
+                    // months would just duplicate the sheet's authoritative
+                    // figure here. The forecast starts from "now" anyway, so
+                    // dropping pre-cutoff actuals doesn't change projections.
+                    if (ym < HUB_LIVE_YM) continue;
                     const kg = (o.lines || []).reduce((s, l) => s + lineKg(l), 0);
                     if (kg > 0) actuals[ym] = (actuals[ym] || 0) + kg;
                 }
@@ -2936,11 +2947,16 @@ const Warehouse = (() => {
                         }
                     }
                     const patch = { ...sh, milestones: ms };
-                    if (idx === 0 && date) {
-                        patch.startDate = date;
-                        patch.ym = ymFromStartDate(date, stageDefaults);
-                    } else if (date) {
-                        patch.ym = ymFromStartDate(ms[0]?.date || sh.startDate || date, stageDefaults);
+                    if (idx === 0 && date) patch.startDate = date;
+                    // ym = the actual arrival milestone date (last one). Earlier
+                    // logic computed it from startDate + default gaps, which
+                    // ignored manual edits to the arrival or any intermediate
+                    // stage — leaving the forecast pinned to the wrong month.
+                    if (date) {
+                        const arrival = ms[ms.length - 1]?.date;
+                        patch.ym = arrival
+                            ? arrival.slice(0, 7)
+                            : ymFromStartDate(ms[0]?.date || sh.startDate || date, stageDefaults);
                     }
                     return patch;
                 });
