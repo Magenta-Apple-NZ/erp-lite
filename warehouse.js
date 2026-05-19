@@ -2625,8 +2625,12 @@ const Warehouse = (() => {
                             <span class="fcst-avg-unit">kg</span>
                         </div>`).join('')}
                     </div>
-                    <div style="margin-top:1rem">
+                    <div style="margin-top:1rem;display:flex;gap:0.5rem;flex-wrap:wrap">
                         <button class="btn-primary btn-sm" id="imp-avg-save-btn">Save Averages</button>
+                        <button class="btn-secondary btn-sm" id="imp-avg-recompute-btn"
+                            title="Average each calendar month's kg from /api/sales/monthly (the same weaved series the Sales History uses)">
+                            Recompute from history
+                        </button>
                     </div>
                 </details>
 
@@ -2695,6 +2699,40 @@ const Warehouse = (() => {
                     const expanded = card.classList.toggle('sa-card--expanded');
                     btn.textContent = expanded ? 'Show less' : `Show more (${btn.dataset.extra})`;
                 });
+            });
+
+            // Pull the weaved monthly series, group by calendar month across
+            // all available history, and average. Populates the input fields
+            // — user still has to click Save to commit. The series weaves
+            // sheet (pre-2026-04) with Hub orders (from cutoff on), so this
+            // averages real sales, not the manual baseline.
+            document.getElementById('imp-avg-recompute-btn')?.addEventListener('click', async () => {
+                const btn = document.getElementById('imp-avg-recompute-btn');
+                btn.disabled = true; btn.textContent = 'Loading…';
+                try {
+                    const resp = await fetch('/api/sales/monthly');
+                    if (!resp.ok) throw new Error('Failed to fetch sales/monthly');
+                    const { monthly } = await resp.json();
+                    const bucket = Array.from({ length: 12 }, () => ({ sum: 0, count: 0 }));
+                    for (const [ym, kg] of Object.entries(monthly || {})) {
+                        const mo = parseInt(ym.slice(5), 10) - 1;
+                        if (mo < 0 || mo > 11) continue;
+                        const v = Number(kg) || 0;
+                        if (v <= 0) continue;
+                        bucket[mo].sum += v;
+                        bucket[mo].count++;
+                    }
+                    const averages = bucket.map(b => b.count ? Math.round(b.sum / b.count) : 0);
+                    averages.forEach((avg, i) => {
+                        const inp = body.querySelector('.fcst-avg-input[data-mo="' + i + '"]');
+                        if (inp) inp.value = avg;
+                    });
+                    showToast('Averaged from history — click Save Averages to commit');
+                } catch (err) {
+                    showToast('Recompute failed: ' + err.message);
+                } finally {
+                    btn.disabled = false; btn.textContent = 'Recompute from history';
+                }
             });
 
             document.getElementById('imp-avg-save-btn')?.addEventListener('click', async () => {

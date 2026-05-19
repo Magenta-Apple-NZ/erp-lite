@@ -12,21 +12,6 @@ let modalCallback = null;
 window._chartQ    = {};
 window._chartInst = {};
 
-// Order line → kg. Prefers an explicit kgPerUnit field (stamped from the
-// catalog), falls back to parsing "1kg"/"10kg" out of the text, otherwise
-// 0 so non-product lines (freight, fees) don't inflate kg/box totals.
-function lineKg(l) {
-    let kgPer;
-    if (l?.kgPerUnit != null && !isNaN(Number(l.kgPerUnit))) {
-        kgPer = Number(l.kgPerUnit);
-    } else {
-        const text = `${l?.description || ''} ${l?.name || ''} ${l?.sku || ''}`;
-        const m = text.match(/\b(10|1)\s*kg\b/i);
-        kgPer = m ? Number(m[1]) : 0;
-    }
-    return (Number(l?.quantity) || 0) * kgPer;
-}
-
 function initCharts(container) {
     if (typeof Chart === 'undefined') return;
     (container || document).querySelectorAll('canvas[data-chart-id]').forEach(canvas => {
@@ -909,8 +894,15 @@ function renderDashboardWidgets(config) {
     // Calendar fetches in parallel with orders (independent endpoints).
     loadDashboardCalendar(config);
 
-    // Async: load orders and draw mini charts
-    fetch('/api/orders').then(r => r.ok ? r.json() : []).then(orders => {
+    // Async: load orders + weaved monthly series and draw mini charts.
+    // /api/sales/monthly is the single source of truth for kg (sheet pre-
+    // cutoff, Hub orders from cutoff on). Orders are still fetched directly
+    // for order-count, latest-orders, and alerts.
+    Promise.all([
+        fetch('/api/orders').then(r => r.ok ? r.json() : []).catch(() => []),
+        fetch('/api/sales/monthly').then(r => r.ok ? r.json() : { monthly: {} }).catch(() => ({ monthly: {} })),
+    ]).then(([orders, salesResp]) => {
+        const monthlyKg = salesResp?.monthly || {};
         const MO = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
         const now = new Date();
         // Build last 6 months
@@ -920,12 +912,10 @@ function renderDashboardWidgets(config) {
             months.push(d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0'));
         }
         const kgByMonth = {}, cntByMonth = {};
-        months.forEach(m => { kgByMonth[m] = 0; cntByMonth[m] = 0; });
+        months.forEach(m => { kgByMonth[m] = Number(monthlyKg[m]) || 0; cntByMonth[m] = 0; });
         (orders || []).forEach(o => {
             const ym = (o.createdAt || '').slice(0, 7);
-            if (!kgByMonth.hasOwnProperty(ym)) return;
-            const kg = (o.lines || []).reduce((s, l) => s + lineKg(l), 0);
-            kgByMonth[ym] += kg;
+            if (!cntByMonth.hasOwnProperty(ym)) return;
             cntByMonth[ym]++;
         });
 

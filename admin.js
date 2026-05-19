@@ -181,6 +181,11 @@ const Admin = (() => {
                 <h1 class="view-title">Catalogue</h1>
                 <p class="view-subtitle">Manage product pricing, store locations, and printers.</p>
             </div>
+            <a class="btn-secondary btn-sm" href="/api/sales/monthly?format=csv"
+               download="sales-monthly.csv"
+               title="Download the weaved monthly sales series — sheet (pre-2026-04) and Hub orders (from cutoff)">
+                Export sales CSV ↓
+            </a>
         </div>
         <div class="imp-tabs">
             <button class="imp-view-btn active" id="cat-tab-prices">Prices</button>
