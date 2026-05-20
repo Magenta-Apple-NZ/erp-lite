@@ -2045,6 +2045,39 @@ a.xero-inv-linked:hover { background: #d1fae5; border-color: #6ee7b7; }
 }
 .stk-del-btn:hover { color: #ef4444; background: #fee2e2; }
 
+/* Catalogue header actions row (top-right group of export/admin links). */
+.cat-header-actions { display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center; }
+
+/* Bulk Edit tab — step-by-step flow + diff/error tables. */
+.bulk-step {
+    display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap;
+    margin: 0.85rem 0;
+}
+.bulk-step strong { color: #64748b; font-weight: 600; min-width: 1.2rem; }
+.bulk-step-hint  { font-size: 0.8rem; color: #94a3b8; }
+.bulk-loading    { color: #64748b; font-size: 0.9rem; }
+.bulk-error      { color: #b91c1c; font-size: 0.9rem; background: #fef2f2; border: 1px solid #fecaca; border-radius: 6px; padding: 0.6rem 0.85rem; }
+.bulk-empty      { color: #94a3b8; font-size: 0.9rem; margin-top: 0.75rem; }
+.bulk-summary {
+    margin-top: 1rem; padding: 0.7rem 0.9rem;
+    background: #fff7ed; border: 1px solid #fed7aa; border-radius: 8px;
+    font-size: 0.88rem; color: #9a3412;
+}
+.bulk-summary--applied { background: #ecfdf5; border-color: #a7f3d0; color: #065f46; }
+.bulk-backup { font-size: 0.78rem; }
+.bulk-backup code { background: rgba(0,0,0,0.05); padding: 1px 4px; border-radius: 3px; }
+.bulk-table-title { margin: 1rem 0 0.4rem; font-size: 0.95rem; font-weight: 600; color: #1e293b; }
+.bulk-errors-title { color: #b91c1c; }
+.bulk-table-wrap { max-height: 360px; overflow: auto; border: 1px solid #e2e8f0; border-radius: 6px; }
+.bulk-table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+.bulk-table th, .bulk-table td { padding: 0.4rem 0.6rem; text-align: left; border-bottom: 1px solid #f1f5f9; }
+.bulk-table th { background: #f8fafc; position: sticky; top: 0; font-weight: 600; color: #64748b; }
+.bulk-fields { color: #475569; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.78rem; }
+.bulk-err-row td { color: #b91c1c; }
+.bulk-csvrow { color: #94a3b8; font-size: 0.75rem; }
+.bulk-apply-bar { display: flex; align-items: center; gap: 0.75rem; margin-top: 1rem; }
+.bulk-apply-hint { font-size: 0.78rem; color: #94a3b8; }
+
 /* Catalogue section dim tag */
 .cat-dim { color: #cbd5e1 !important; }
 

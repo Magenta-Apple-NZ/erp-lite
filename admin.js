@@ -213,16 +213,24 @@ const Admin = (() => {
                 <h1 class="view-title">Catalogue</h1>
                 <p class="view-subtitle">Manage product pricing, store locations, and printers.</p>
             </div>
-            <a class="btn-secondary btn-sm" href="/api/sales/monthly?format=csv"
-               download="sales-monthly.csv"
-               title="Download the weaved monthly sales series — sheet (pre-2026-04) and Hub orders (from cutoff)">
-                Export sales CSV ↓
-            </a>
+            <div class="cat-header-actions">
+                <a class="btn-secondary btn-sm" href="/api/sales/monthly?format=csv"
+                   download="sales-monthly.csv"
+                   title="Download the weaved monthly sales series — sheet (pre-2026-04) and Hub orders (from cutoff)">
+                    Export sales CSV ↓
+                </a>
+                <a class="btn-secondary btn-sm" href="/api/orders/export.csv"
+                   download="orders.csv"
+                   title="Download all orders as a flat one-row-per-line-item CSV">
+                    Export orders CSV ↓
+                </a>
+            </div>
         </div>
         <div class="imp-tabs">
             <button class="imp-view-btn active" id="cat-tab-prices">Prices</button>
             <button class="imp-view-btn" id="cat-tab-stores">Stores</button>
             <button class="imp-view-btn" id="cat-tab-printers">Printers</button>
+            <button class="imp-view-btn" id="cat-tab-bulk">Bulk Edit</button>
         </div>
         <div id="admin-body"><div class="orders-loading">Loading…</div></div>`;
 
@@ -240,14 +248,17 @@ const Admin = (() => {
             document.getElementById('cat-tab-prices').classList.toggle('active', tab === 'prices');
             document.getElementById('cat-tab-stores').classList.toggle('active', tab === 'stores');
             document.getElementById('cat-tab-printers').classList.toggle('active', tab === 'printers');
+            document.getElementById('cat-tab-bulk').classList.toggle('active', tab === 'bulk');
             if (tab === 'prices')        renderPricesTab(body, items, updated => { items = updated; });
             else if (tab === 'stores')   renderStoresTab(body, stores, updated => { stores = updated; });
             else if (tab === 'printers') renderPrintersTab(body);
+            else if (tab === 'bulk')     renderBulkEditTab(body);
         }
 
         document.getElementById('cat-tab-prices').addEventListener('click',   () => switchTab('prices'));
         document.getElementById('cat-tab-stores').addEventListener('click',   () => switchTab('stores'));
         document.getElementById('cat-tab-printers').addEventListener('click', () => switchTab('printers'));
+        document.getElementById('cat-tab-bulk').addEventListener('click',     () => switchTab('bulk'));
 
         switchTab('prices');
     }
@@ -330,6 +341,133 @@ const Admin = (() => {
                 }
             });
         });
+    }
+
+    // ── Bulk Edit tab ──
+    // Upload a CSV in the same shape as /api/orders/export.csv to bulk-edit
+    // existing orders. The flow is always dry-run first → review diff →
+    // apply. Edits only (no adds, no deletes); modified orders are backed
+    // up to a timestamped KV key before each apply, in case anything needs
+    // to be rolled back.
+    function renderBulkEditTab(body) {
+        body.innerHTML = `
+        <div class="cat-section">
+            <h2 class="cat-title">Bulk Edit Orders</h2>
+            <p class="cat-sub">Download orders, edit in a spreadsheet, re-upload here. Edits only — rows missing from your CSV are left untouched; new line indexes are rejected. Each apply takes a snapshot of every modified order to a backup key first.</p>
+
+            <div class="bulk-step">
+                <strong>1.</strong>
+                <a class="btn-secondary btn-sm" href="/api/orders/export.csv" download="orders.csv">Download orders.csv</a>
+                <span class="bulk-step-hint">One row per order line. Editable columns: status, customer, branch, sku, description, quantity, kg_per_unit, unit_price, xero_invoice.</span>
+            </div>
+
+            <div class="bulk-step">
+                <strong>2.</strong>
+                <input type="file" id="bulk-csv-file" accept=".csv,text/csv">
+                <button class="btn-secondary btn-sm" id="bulk-dryrun-btn">Preview changes (dry-run)</button>
+            </div>
+
+            <div id="bulk-results"></div>
+        </div>`;
+
+        let lastFile = null;
+        const resultsEl = document.getElementById('bulk-results');
+
+        document.getElementById('bulk-dryrun-btn').addEventListener('click', async () => {
+            const file = document.getElementById('bulk-csv-file').files[0];
+            if (!file) { showToast('Choose a CSV file first'); return; }
+            lastFile = file;
+            resultsEl.innerHTML = '<p class="bulk-loading">Running dry-run…</p>';
+            try {
+                const csv = await file.text();
+                const resp = await fetch('/api/orders/import', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'text/csv' },
+                    body: csv,
+                });
+                if (!resp.ok) {
+                    const err = await resp.json().catch(() => ({ error: resp.statusText }));
+                    throw new Error(err.error || resp.statusText);
+                }
+                const result = await resp.json();
+                renderBulkDiff(result, false);
+            } catch (e) {
+                resultsEl.innerHTML = `<p class="bulk-error">${escHtml(e.message)}</p>`;
+            }
+        });
+
+        function renderBulkDiff(result, applied) {
+            const { summary, changes, errors } = result;
+            const changeRows = changes.slice(0, 200).map(c => `
+                <tr>
+                    <td><a href="#orders/${escHtml(c.orderId)}">${escHtml(c.orderId)}</a></td>
+                    <td class="bulk-fields">${c.fieldsChanged.map(escHtml).join(', ')}</td>
+                </tr>`).join('');
+            const errorRows = errors.slice(0, 200).map(e => `
+                <tr class="bulk-err-row">
+                    <td>${escHtml(e.orderId || '—')} ${e.csvRow ? `<span class="bulk-csvrow">row ${e.csvRow}</span>` : ''}</td>
+                    <td>${escHtml(e.error)}</td>
+                </tr>`).join('');
+
+            resultsEl.innerHTML = `
+            <div class="bulk-summary ${applied ? 'bulk-summary--applied' : ''}">
+                <strong>${applied ? 'Applied' : 'Dry run'}:</strong>
+                ${summary.changes} change${summary.changes === 1 ? '' : 's'} across
+                ${summary.orders} order${summary.orders === 1 ? '' : 's'};
+                ${summary.errors} error${summary.errors === 1 ? '' : 's'};
+                ${summary.rows} CSV row${summary.rows === 1 ? '' : 's'} read.
+                ${applied && summary.backupTs ? `<br><span class="bulk-backup">Backup key prefix: <code>backup:orders:${escHtml(summary.backupTs)}</code></span>` : ''}
+            </div>
+
+            ${changes.length ? `
+            <h3 class="bulk-table-title">Changes ${changes.length > 200 ? `(showing first 200 of ${changes.length})` : ''}</h3>
+            <div class="bulk-table-wrap">
+                <table class="bulk-table">
+                    <thead><tr><th>Order</th><th>Fields changed</th></tr></thead>
+                    <tbody>${changeRows}</tbody>
+                </table>
+            </div>` : '<p class="bulk-empty">No changes detected.</p>'}
+
+            ${errors.length ? `
+            <h3 class="bulk-table-title bulk-errors-title">Errors ${errors.length > 200 ? `(showing first 200 of ${errors.length})` : ''}</h3>
+            <div class="bulk-table-wrap">
+                <table class="bulk-table">
+                    <thead><tr><th>Order</th><th>Error</th></tr></thead>
+                    <tbody>${errorRows}</tbody>
+                </table>
+            </div>` : ''}
+
+            ${!applied && changes.length ? `
+            <div class="bulk-apply-bar">
+                <button class="btn-primary" id="bulk-apply-btn">Apply ${changes.length} change${changes.length === 1 ? '' : 's'}</button>
+                <span class="bulk-apply-hint">A backup of every modified order is taken before writes.</span>
+            </div>` : ''}`;
+
+            document.getElementById('bulk-apply-btn')?.addEventListener('click', async (e) => {
+                if (!lastFile) return;
+                if (!confirm(`Apply ${changes.length} change(s) to ORDERS_KV? A backup will be taken first.`)) return;
+                const btn = e.currentTarget;
+                btn.disabled = true; btn.textContent = 'Applying…';
+                try {
+                    const csv = await lastFile.text();
+                    const resp = await fetch('/api/orders/import?apply=true', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'text/csv' },
+                        body: csv,
+                    });
+                    if (!resp.ok) {
+                        const err = await resp.json().catch(() => ({ error: resp.statusText }));
+                        throw new Error(err.error || resp.statusText);
+                    }
+                    const applyResult = await resp.json();
+                    renderBulkDiff(applyResult, true);
+                    showToast(`Applied ${applyResult.summary.changes} changes`);
+                } catch (err) {
+                    showToast('Apply failed: ' + err.message);
+                    btn.disabled = false; btn.textContent = `Apply ${changes.length} change${changes.length === 1 ? '' : 's'}`;
+                }
+            });
+        }
     }
 
     return { renderAdmin };
