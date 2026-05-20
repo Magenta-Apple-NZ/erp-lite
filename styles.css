@@ -785,6 +785,16 @@ li.drag-over { background: #eff6ff; }
     }
     .sidebar-admin .nav-section-label { display: none; }
     .sidebar-btn { width: auto; padding: 0.4rem 0.6rem; }
+
+    /* Mobile header slim: Edit Layout is dashboard-only chrome that has
+       no purpose on the orders flow. Version stamp shrinks to a tiny
+       corner badge so the brand row stays tight. */
+    .sidebar-admin #edit-btn { display: none; }
+    .sidebar-version {
+        position: absolute; top: 0.4rem; right: 0.6rem;
+        margin: 0; padding: 0; font-size: 0.62rem; opacity: 0.5;
+    }
+    .sidebar-brand { padding: 0.55rem 0.85rem; }
     .main-wrap { overflow: visible; }
     #dashboard { grid-template-columns: 1fr; padding: 0.75rem; }
     .pinned-section { padding: 0.75rem; }
@@ -825,8 +835,23 @@ li.drag-over { background: #eff6ff; }
     .orders-table tr.order-row > td.order-total { grid-area: total;  font-weight: 600; font-size: 0.88rem; text-align: right; }
     .orders-table tr.order-row > td:nth-child(7) { grid-area: status; text-align: right; }
     .orders-table tr.order-row > td.order-actions-col { grid-area: actions; margin-top: 0.35rem; }
-    .orders-table tr.order-row .row-actions { gap: 0.4rem; flex-wrap: wrap; }
-    .orders-table tr.order-row .row-action-btn { min-width: 36px; min-height: 36px; }
+    /* Force a horizontal row — without `display: flex` and explicit row
+       direction the inline-flex inheritance was rendering the SVG-only
+       anchors/buttons as block siblings on iOS, stacking the icons. */
+    .orders-table tr.order-row .row-actions {
+        display: flex;
+        flex-direction: row;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 0.4rem;
+    }
+    .orders-table tr.order-row .row-action-btn,
+    .orders-table tr.order-row .overflow-menu {
+        flex: 0 0 auto;
+        min-width: 36px;
+        min-height: 36px;
+    }
+    .orders-table tr.order-row .overflow-trigger { width: 36px; height: 36px; }
 
     /* ── Order form: single column + room to tap ── */
     .order-form { max-width: 100%; }
@@ -845,6 +870,48 @@ li.drag-over { background: #eff6ff; }
     /* Slip is 794px wide — let mobile users scroll horizontally to see it
        rather than centering it off-screen. */
     .orders-view-inner.slip-view { padding: 0.5rem; align-items: stretch; overflow-x: auto; }
+
+    /* Filter disclosure: collapsed by default on mobile. The Filters button
+       appears, the bar is hidden until expanded. Both desktop-only "New
+       Order" header link and the new FAB are present in markup; CSS
+       decides which is visible per viewport. */
+    .orders-filters-toggle {
+        display: inline-flex; align-items: center; gap: 0.4rem;
+        padding: 0.5rem 0.85rem;
+        background: white; border: 1px solid #e2e8f0; border-radius: 8px;
+        font-size: 0.85rem; font-weight: 500; color: #1e293b;
+        margin-bottom: 0.5rem; cursor: pointer;
+    }
+    .orders-filters-toggle:active { background: #f1f5f9; }
+    .orders-filter-bar { display: none; flex-direction: column; gap: 0.5rem; padding: 0.75rem; }
+    .orders-filter-bar.orders-filter-bar--open { display: flex; }
+    .orders-filter-bar .orders-filter-input,
+    .orders-filter-bar .orders-filter-select { width: 100%; }
+
+    /* Hide the inline header New-Order button; the FAB takes over. */
+    .view-header .orders-new-btn { display: none; }
+    .orders-new-fab {
+        position: fixed;
+        bottom: 1rem; right: 1rem;
+        width: 56px; height: 56px;
+        border-radius: 50%;
+        background: #2563eb; color: white;
+        display: flex; align-items: center; justify-content: center;
+        font-size: 1.75rem; font-weight: 400; line-height: 1;
+        text-decoration: none;
+        box-shadow: 0 4px 12px rgba(37, 99, 235, 0.35), 0 2px 4px rgba(0, 0, 0, 0.12);
+        z-index: 100;
+    }
+    .orders-new-fab:active { transform: scale(0.96); }
+
+    /* Keep the last card out from under the FAB. */
+    #orders-list-body { padding-bottom: 5rem; }
+}
+
+/* Desktop: hide mobile-only affordances. */
+@media (min-width: 641px) {
+    .orders-filters-toggle { display: none; }
+    .orders-new-fab { display: none; }
 }
 
 /* ═══════════════════════════════════════════════

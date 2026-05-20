@@ -165,9 +165,15 @@ const Orders = (() => {
                 <h1 class="view-title">Orders</h1>
                 <p class="view-subtitle">Track orders from creation through to dispatch.</p>
             </div>
-            <a href="#orders/new" class="btn-primary">+ New Order</a>
+            <a href="#orders/new" class="btn-primary orders-new-btn">+ New Order</a>
         </div>
-        <div class="orders-filter-bar">
+        <button class="orders-filters-toggle" id="orders-filters-toggle" type="button" aria-expanded="false" aria-controls="orders-filter-bar">
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="2" y1="4" x2="14" y2="4"/><line x1="4" y1="8" x2="12" y2="8"/><line x1="6" y1="12" x2="10" y2="12"/>
+            </svg>
+            Filters
+        </button>
+        <div class="orders-filter-bar" id="orders-filter-bar">
             <input type="text" id="filter-customer" placeholder="Customer…" class="orders-filter-input">
             <input type="text" id="filter-branch" placeholder="Branch…" class="orders-filter-input">
             <select id="filter-status" class="orders-filter-select">
@@ -180,6 +186,7 @@ const Orders = (() => {
             </select>
             <button class="btn-secondary btn-sm" id="filter-clear">Clear</button>
         </div>
+        <a href="#orders/new" class="orders-new-fab" aria-label="New order" title="New order">+</a>
         <div id="orders-list-body"><div class="orders-loading">Loading…</div></div>`;
 
         await checkXeroStatus();
@@ -221,6 +228,19 @@ const Orders = (() => {
             document.getElementById('filter-status').value = '';
             renderTable();
         });
+
+        // Mobile-only filter disclosure. Toggle button is hidden on desktop
+        // (filter bar always visible there). On narrow viewports the bar
+        // starts collapsed; tapping the toggle expands it and updates the
+        // aria-expanded state for screen readers.
+        const filterToggle = document.getElementById('orders-filters-toggle');
+        const filterBar    = document.getElementById('orders-filter-bar');
+        if (filterToggle && filterBar) {
+            filterToggle.addEventListener('click', () => {
+                const expanded = filterBar.classList.toggle('orders-filter-bar--open');
+                filterToggle.setAttribute('aria-expanded', String(expanded));
+            });
+        }
 
         if (!xeroConnected) {
             body.insertAdjacentHTML('beforebegin', xeroConnectBanner());
