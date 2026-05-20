@@ -115,7 +115,7 @@ const Admin = (() => {
 
     function fmtPrice(v) { return v == null ? '<span class="cat-price-nil">—</span>' : '$' + Number(v).toFixed(2); }
 
-    function renderPricesTab(body, items) {
+    function renderPricesTab(body, items, onUpdate) {
         body.innerHTML = `
         <div class="cat-section">
             <div class="cat-section-head">
@@ -123,6 +123,8 @@ const Admin = (() => {
                     <h2 class="cat-title">Price Matrix</h2>
                     <p class="cat-sub">Read-only. Source: <a href="${ITEMS_SHEET_VIEW_URL}" target="_blank" rel="noopener">Pricing sheet ↗</a> (cached ~60s).</p>
                 </div>
+                <button class="btn-secondary btn-sm" id="cat-prices-refresh"
+                    title="Bypass the 60s edge cache and re-read the sheet now">Refresh from Sheet</button>
             </div>
             <div class="matrix-wrap">
                 <table class="matrix-table matrix-table--readonly">
@@ -151,10 +153,24 @@ const Admin = (() => {
                 </table>
             </div>
         </div>`;
+
+        document.getElementById('cat-prices-refresh')?.addEventListener('click', async (e) => {
+            const btn = e.currentTarget;
+            btn.disabled = true; btn.textContent = 'Refreshing…';
+            try {
+                const fresh = await api('/api/catalog/items?bust=1');
+                if (typeof onUpdate === 'function') onUpdate(fresh);
+                renderPricesTab(body, fresh, onUpdate);
+                showToast('Prices reloaded from sheet');
+            } catch (err) {
+                showToast('Refresh failed: ' + err.message);
+                btn.disabled = false; btn.textContent = 'Refresh from Sheet';
+            }
+        });
     }
 
     // ── Stores tab (read-only, sourced from published Google Sheet) ──
-    function renderStoresTab(body, stores) {
+    function renderStoresTab(body, stores, onUpdate) {
         body.innerHTML = `
         <div class="cat-section" id="cat-stores">
             <div class="cat-section-head">
@@ -162,6 +178,8 @@ const Admin = (() => {
                     <h2 class="cat-title">Store Locations</h2>
                     <p class="cat-sub">Read-only. Source: <a href="${STORES_SHEET_VIEW_URL}" target="_blank" rel="noopener">Stores sheet ↗</a> (cached ~60s). ${stores.length} store${stores.length !== 1 ? 's' : ''}.</p>
                 </div>
+                <button class="btn-secondary btn-sm" id="cat-stores-refresh"
+                    title="Bypass the 60s edge cache and re-read the sheet now">Refresh from Sheet</button>
             </div>
             <table class="cat-table">
                 <thead><tr><th>Code</th><th>Customer</th><th>Branch</th><th>City</th><th>Postcode</th></tr></thead>
@@ -172,6 +190,20 @@ const Admin = (() => {
                 </tbody>
             </table>
         </div>`;
+
+        document.getElementById('cat-stores-refresh')?.addEventListener('click', async (e) => {
+            const btn = e.currentTarget;
+            btn.disabled = true; btn.textContent = 'Refreshing…';
+            try {
+                const fresh = await api('/api/catalog/stores?bust=1');
+                if (typeof onUpdate === 'function') onUpdate(fresh);
+                renderStoresTab(body, fresh, onUpdate);
+                showToast('Stores reloaded from sheet');
+            } catch (err) {
+                showToast('Refresh failed: ' + err.message);
+                btn.disabled = false; btn.textContent = 'Refresh from Sheet';
+            }
+        });
     }
 
     async function renderAdmin(container) {

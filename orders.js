@@ -6,6 +6,7 @@ const Orders = (() => {
     // ── State ──
     let xeroConnected = false;
     let customersCache = null;
+    let storesCache = null;
     let currentUser = null;
 
     // label = display name, xeroName = exact Xero contact name, xeroCode = Xero account number for lookup
@@ -118,6 +119,12 @@ const Orders = (() => {
         if (customersCache && !bust) return customersCache;
         customersCache = await api('/api/xero/customers' + (bust ? '?bust=1' : ''));
         return customersCache;
+    }
+
+    async function loadCatalogStores(bust = false) {
+        if (storesCache && !bust) return storesCache;
+        storesCache = await api('/api/catalog/stores' + (bust ? '?bust=1' : ''));
+        return storesCache;
     }
 
     // ── Currency format ──
@@ -481,7 +488,7 @@ const Orders = (() => {
         try {
             if (xeroConnected) customers = await loadCustomers();
         } catch (e) { /* manual entry fallback */ }
-        try { catalogStores = await api('/api/catalog/stores'); } catch (e) { /* optional */ }
+        try { catalogStores = await loadCatalogStores(true); } catch (e) { /* optional */ }
         try { catalogItems = await api('/api/catalog/items'); } catch (e) { /* optional */ }
 
         // Compute next sequential PKS ID for pre-population
@@ -527,7 +534,7 @@ const Orders = (() => {
             return;
         }
         try { if (xeroConnected) customers = await loadCustomers(); } catch (e) {}
-        try { catalogStores = await api('/api/catalog/stores'); } catch (e) {}
+        try { catalogStores = await loadCatalogStores(); } catch (e) {}
         try { catalogItems = await api('/api/catalog/items'); } catch (e) {}
 
         const body = document.getElementById('new-order-body');

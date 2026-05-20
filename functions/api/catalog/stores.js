@@ -41,10 +41,12 @@ function parseCsv(text) {
     return rows;
 }
 
-export async function onRequestGet({ env }) {
+export async function onRequestGet({ env, request }) {
     try {
         const url = (env && env.CATALOG_STORES_CSV_URL) || STORES_CSV_URL;
-        const resp = await fetch(url, { cf: { cacheTtl: 60, cacheEverything: true } });
+        const { searchParams } = new URL(request.url);
+        const bust = searchParams.has('bust');
+        const resp = await fetch(url, { cf: bust ? {} : { cacheTtl: 60, cacheEverything: true } });
         if (!resp.ok) return errResponse('Sheet fetch failed: ' + resp.status, 502);
         const csv = await resp.text();
         const rows = parseCsv(csv);

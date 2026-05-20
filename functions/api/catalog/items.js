@@ -48,10 +48,11 @@ function num(v) {
     return isFinite(n) ? n : null;
 }
 
-export async function onRequestGet({ env }) {
+export async function onRequestGet({ env, request }) {
     try {
         const url = (env && env.CATALOG_ITEMS_CSV_URL) || ITEMS_CSV_URL;
-        const resp = await fetch(url, { cf: { cacheTtl: 60, cacheEverything: true } });
+        const bust = new URL(request.url).searchParams.has('bust');
+        const resp = await fetch(url, { cf: bust ? {} : { cacheTtl: 60, cacheEverything: true } });
         if (!resp.ok) return errResponse('Sheet fetch failed: ' + resp.status, 502);
         const csv = await resp.text();
         const rows = parseCsv(csv);
