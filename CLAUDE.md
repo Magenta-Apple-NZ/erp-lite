@@ -8,7 +8,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **End state (Jul 17):** Warehouse staff work autonomously from the Hub queue. Orders enter once, generate packing slips natively, and push to Xero. Manual logs and triple-keying are gone.
 
-See `ROADMAP.md` for the full 5-phase plan and success criteria.
+See `Business-Hub.md` for the full context (users, architecture, source-of-truth decisions) and the 5-phase roadmap with success criteria.
 
 ## Running locally
 
