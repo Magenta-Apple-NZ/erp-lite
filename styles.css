@@ -3966,6 +3966,19 @@ body.body--worker .orders-view-inner { padding-top: 1rem; }
     border-color: #94a3b8;
     box-shadow: 0 4px 12px rgba(15, 23, 42, 0.06);
 }
+/* New shipment card layout (mirrors the dashboard card): #N + status,
+   arrival line, % paid / outstanding, 7-segment green milestone bar. */
+.imp-upcoming-row1 {
+    display: flex; align-items: center; justify-content: space-between; gap: 0.5rem;
+}
+.imp-upcoming-num {
+    font-size: 1rem; font-weight: 700; color: #0f172a;
+    font-variant-numeric: tabular-nums;
+}
+.imp-upcoming-arrival { font-size: 0.85rem; color: #334155; }
+.imp-upcoming-arrival-label { color: #94a3b8; font-weight: 500; }
+.imp-upcoming-arrival strong { font-weight: 600; color: #0f172a; }
+.imp-upcoming-cost { font-size: 0.82rem; color: #475569; font-variant-numeric: tabular-nums; }
 .imp-upcoming-card-hd {
     display: flex;
     justify-content: space-between;

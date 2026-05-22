@@ -2406,38 +2406,58 @@ const Warehouse = (() => {
                 map['Order placed'] = map['Start LC'];
                 return map;
             })();
+            const STATUS_C = { planning:'#94a3b8', ordered:'#3b82f6', 'in-transit':'#f59e0b', customs:'#8b5cf6', delivered:'#10b981' };
+            const STATUS_L = { planning:'Planning', ordered:'Ordered', 'in-transit':'In transit', customs:'Customs', delivered:'Delivered' };
+            const STAGE_GREENS = ['#d1fae5', '#a7f3d0', '#6ee7b7', '#34d399', '#10b981', '#059669', '#047857'];
+
+            function fmtKshort(n) {
+                const v = Math.round(n);
+                if (Math.abs(v) >= 10000) return '$' + Math.round(v / 1000) + 'k';
+                if (Math.abs(v) >= 1000)  return '$' + (v / 1000).toFixed(1).replace(/\.0$/, '') + 'k';
+                return '$' + v.toLocaleString('en-NZ');
+            }
+
             const upcomingCard = (s) => {
-                let totalNzd = 0, paidNzd = 0, yieldKg = 0;
+                let totalNzd = 0, paidNzd = 0;
                 if (s.schema === 3) {
                     const t = computeShipTotalsV3(s, forex);
-                    totalNzd = t.total; paidNzd = t.paid; yieldKg = t.derived.yieldKg;
+                    totalNzd = t.total; paidNzd = t.paid;
                 } else if (s.seq) {
                     const t = computeShipTotalsNew(s, forex);
-                    totalNzd = t.total; paidNzd = t.paid; yieldKg = Number(s.kg) || 0;
-                } else {
-                    yieldKg = Number(s.kg) || 0;
+                    totalNzd = t.total; paidNzd = t.paid;
                 }
+
+                const outstandingNzd = totalNzd - paidNzd;
+                const pctPaid = totalNzd > 0 ? Math.round(paidNzd / totalNzd * 100) : 0;
+                const costLine = totalNzd > 0
+                    ? `${pctPaid}% paid · ${fmtKshort(outstandingNzd)} outstanding`
+                    : 'No costs entered';
+
+                const status = s.status || 'planning';
+                const sc     = STATUS_C[status] || '#94a3b8';
+                const sl     = STATUS_L[status] || status;
+
                 const milestones = s.milestones || [];
-                const lastDone   = [...milestones].reverse().find(m => m.done);
-                const displayLabel = lastDone ? (lastDone.label === 'Order placed' ? 'Start LC' : lastDone.label) : 'Not started';
-                const stageBadge = lastDone ? (STAGE_STEP_NUMS[lastDone.label] || '·') : '–';
+                const segs = STAGE_GREENS.map((bg, i) => {
+                    const m = milestones[i];
+                    const done = !!(m && m.done);
+                    const label = (m && m.label) || `Stage ${i + 1}`;
+                    const dateTxt = m && m.date ? ' · ' + m.date : '';
+                    return `<span class="db-ms-seg${done ? ' db-ms-seg--done' : ''}"
+                        style="background:${bg}"
+                        title="${escHtml(label + dateTxt)}"></span>`;
+                }).join('');
+
                 const seqForTitle = displaySeqOf(s);
                 return `
                 <div class="imp-upcoming-card imp-event-card--nav" data-ship-id="${escHtml(s.id)}">
-                    <div class="imp-upcoming-card-hd">
-                        <span class="imp-upcoming-card-num">Shipment #${seqForTitle}</span>
-                        <span class="imp-upcoming-card-eta">${escHtml(ymLabel(s.ym))}</span>
+                    <div class="imp-upcoming-row1">
+                        <span class="imp-upcoming-num">#${seqForTitle}</span>
+                        <span class="db-row-tag" style="color:${sc};background:${sc}18;border-color:${sc}30">${sl}</span>
                     </div>
-                    <div class="imp-upcoming-card-kg">${fmtFull(yieldKg)} kg</div>
-                    <div class="imp-upcoming-card-money">
-                        <span class="imp-upcoming-card-paid">$${Math.round(paidNzd).toLocaleString('en-NZ')}</span>
-                        <span class="imp-upcoming-card-sep">/</span>
-                        <span class="imp-upcoming-card-total">$${Math.round(totalNzd).toLocaleString('en-NZ')}</span>
-                    </div>
-                    <div class="imp-upcoming-card-stage">
-                        <span class="imp-upcoming-card-stage-icon">${stageBadge}</span>
-                        <span class="imp-upcoming-card-stage-label">${escHtml(displayLabel)}</span>
-                    </div>
+                    <div class="imp-upcoming-arrival"><span class="imp-upcoming-arrival-label">Arriving:</span> Landed in Tauranga · <strong>${escHtml(ymLabel(s.ym))}</strong></div>
+                    <div class="imp-upcoming-cost">${escHtml(costLine)}</div>
+                    <div class="db-ship-ms" role="img" aria-label="Milestone progress">${segs}</div>
                 </div>`;
             };
 
