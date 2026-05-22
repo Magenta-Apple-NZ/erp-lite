@@ -219,7 +219,7 @@ const Admin = (() => {
                    title="Download the weaved monthly sales series — sheet (pre-2026-04) and Hub orders (from cutoff)">
                     Export sales CSV ↓
                 </a>
-                <a class="btn-secondary btn-sm" href="/api/orders/export.csv"
+                <a class="btn-secondary btn-sm" href="/api/orders/export"
                    download="orders.csv"
                    title="Download all orders as a flat one-row-per-line-item CSV">
                     Export orders CSV ↓
@@ -357,7 +357,7 @@ const Admin = (() => {
 
             <div class="bulk-step">
                 <strong>1.</strong>
-                <a class="btn-secondary btn-sm" href="/api/orders/export.csv" download="orders.csv">Download orders.csv</a>
+                <a class="btn-secondary btn-sm" href="/api/orders/export" download="orders.csv">Download orders.csv</a>
                 <span class="bulk-step-hint">One row per order line. Editable columns: status, customer, branch, sku, description, quantity, kg_per_unit, unit_price, xero_invoice.</span>
             </div>
 

@@ -549,12 +549,15 @@ function renderLatestOrdersBody(orders) {
 
 // Next 4 shipments by ym (ascending), reading config.shipments synchronously.
 // "Incoming" = ym ≥ current month.
-function renderIncomingShipmentsBody(config) {
+function renderIncomingShipmentsBody(config, forex) {
     const all = (config?.shipments || []).slice();
     if (!all.length) return '<p class="db-mod-empty">No shipments scheduled.</p>';
 
     const now    = new Date();
     const curYm  = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
+    // s.ym is the arrival month (Arrived in Tauranga). The Imports forecast
+    // uses the same field for "incoming" stock — so what's displayed here
+    // and what feeds the stock projection always agree.
     const upcoming = all
         .filter(s => (s.ym || '') >= curYm)
         .sort((a, b) => (a.ym || '').localeCompare(b.ym || ''))
@@ -565,18 +568,65 @@ function renderIncomingShipmentsBody(config) {
     const STATUS_C = { planning:'#94a3b8', ordered:'#3b82f6', 'in-transit':'#f59e0b', customs:'#8b5cf6', delivered:'#10b981' };
     const STATUS_L = { planning:'Planning', ordered:'Ordered', 'in-transit':'In transit', customs:'Customs', delivered:'Delivered' };
 
+    // Light → dark green across 7 milestones. Done stages render at full
+    // saturation; pending ones dim to ~25% opacity.
+    const STAGE_GREENS = ['#d1fae5', '#a7f3d0', '#6ee7b7', '#34d399', '#10b981', '#059669', '#047857'];
+
+    function fmtK(n) {
+        const v = Math.round(n);
+        if (Math.abs(v) >= 10000) return '$' + Math.round(v / 1000) + 'k';
+        if (Math.abs(v) >= 1000)  return '$' + (v / 1000).toFixed(1).replace(/\.0$/, '') + 'k';
+        return '$' + v.toLocaleString('en-NZ');
+    }
+
+    function lineNzd(l) {
+        const amt = Number(l.amount) || 0;
+        if (!amt) return 0;
+        if (!l.ccy || l.ccy === 'NZD') return amt;
+        const rate = forex && forex[l.ccy];
+        return rate ? amt / rate : 0;
+    }
+
+    function costSummary(s) {
+        const lines = Array.isArray(s.costLines) ? s.costLines : [];
+        if (!lines.length) return { hasCosts: false };
+        const total = lines.reduce((t, l) => t + lineNzd(l), 0);
+        if (total <= 0) return { hasCosts: false };
+        const paid  = lines.filter(l => l.paid).reduce((t, l) => t + lineNzd(l), 0);
+        const pct   = Math.round(paid / total * 100);
+        return { hasCosts: true, pct, outstanding: total - paid };
+    }
+
     const rows = upcoming.map(s => {
-        const title = s.seq ? `Shipment #${s.seq}` : (s.campaign || 'Shipment');
-        const sub   = s.campaign && s.seq ? s.campaign : '';
-        const kg    = Number(s.kg) || 0;
+        const seq   = s.seq != null ? s.seq : '?';
         const ymTxt = s.ym ? new Date(s.ym + '-01').toLocaleDateString('en-NZ', { month: 'short', year: 'numeric' }) : '';
         const st    = s.status || 'planning';
         const c     = STATUS_C[st] || '#94a3b8';
-        return `<div class="db-row">
-            <span class="db-row-main">${_ehDb(title)}${sub ? ' · <span class="db-row-sub">' + _ehDb(sub) + '</span>' : ''}</span>
-            <span class="db-row-meta">${kg ? kg.toLocaleString('en-NZ') + ' kg' : ''}</span>
-            <span class="db-row-date">${_ehDb(ymTxt)}</span>
-            <span class="db-row-tag" style="color:${c};background:${c}18;border-color:${c}30">${STATUS_L[st] || st}</span>
+
+        const cs = costSummary(s);
+        const costLine = cs.hasCosts
+            ? `${cs.pct}% paid · ${fmtK(cs.outstanding)} outstanding`
+            : (forex ? 'No costs entered' : 'Costs pending FX');
+
+        const milestones = Array.isArray(s.milestones) ? s.milestones : [];
+        const segs = STAGE_GREENS.map((bg, i) => {
+            const m = milestones[i];
+            const done = !!(m && m.done);
+            const label = (m && m.label) || `Stage ${i + 1}`;
+            const dateTxt = m && m.date ? ' · ' + m.date : '';
+            return `<span class="db-ms-seg${done ? ' db-ms-seg--done' : ''}"
+                style="background:${bg}"
+                title="${_ehDb(label + dateTxt)}"></span>`;
+        }).join('');
+
+        return `<div class="db-ship-card">
+            <div class="db-ship-row1">
+                <span class="db-ship-num">#${_ehDb(seq)}</span>
+                <span class="db-row-tag" style="color:${c};background:${c}18;border-color:${c}30">${STATUS_L[st] || st}</span>
+            </div>
+            <div class="db-ship-arrival"><span class="db-ship-arrival-label">Arriving:</span> Landed in Tauranga · <strong>${_ehDb(ymTxt)}</strong></div>
+            <div class="db-ship-cost">${_ehDb(costLine)}</div>
+            <div class="db-ship-ms" role="img" aria-label="Milestone progress">${segs}</div>
         </div>`;
     }).join('');
     return `<div class="db-rows">${rows}</div>`;
@@ -832,8 +882,10 @@ function renderDashboardWidgets(config) {
         `<a class="db-quick-card" href="#${a.hash}">${a.icon}<span>${a.label}</span></a>`
     ).join('')}</div>`;
 
-    // Forex from today's cache (or fetch live)
+    // Forex from today's cache (or fetch live). Rates are also fed to the
+    // Incoming Shipments card so it can show paid % and outstanding NZD.
     let fxHtml = '';
+    let fxRates = null;
     const currencies = config?.currencies;
     if (currencies?.base && Array.isArray(currencies?.targets)) {
         const buildFx = data => {
@@ -847,6 +899,7 @@ function renderDashboardWidgets(config) {
         const today = new Date().toISOString().split('T')[0];
         const cached = localStorage.getItem('hub-fx-' + today);
         if (cached) {
+            try { fxRates = JSON.parse(cached).rates || null; } catch (e) {}
             fxHtml = buildFx(JSON.parse(cached));
         } else {
             const url = 'https://api.frankfurter.dev/v1/latest?base=' + currencies.base + '&symbols=' + currencies.targets.join(',');
@@ -854,6 +907,9 @@ function renderDashboardWidgets(config) {
                 localStorage.setItem('hub-fx-' + today, JSON.stringify(data));
                 const fxEl = document.getElementById('db-forex-bar');
                 if (fxEl) fxEl.outerHTML = buildFx(data);
+                // Refresh shipment card now that we can convert costs to NZD.
+                const shipBody = document.querySelector('#db-mod-incoming-ships .db-mod-body');
+                if (shipBody) shipBody.innerHTML = renderIncomingShipmentsBody(config, data.rates || null);
             }).catch(() => {});
             fxHtml = '<div class="db-forex-bar" id="db-forex-bar"><span class="db-fx-label" style="opacity:0.4">Loading rates…</span></div>';
         }
@@ -880,7 +936,7 @@ function renderDashboardWidgets(config) {
         '<div class="db-grid db-grid-3">' +
             '<section class="db-mod" id="db-mod-incoming-ships">' +
                 '<div class="db-mod-hd"><h3 class="db-mod-title">Incoming Shipments</h3><a class="db-mod-link" href="#imports">All →</a></div>' +
-                '<div class="db-mod-body">' + renderIncomingShipmentsBody(config) + '</div>' +
+                '<div class="db-mod-body">' + renderIncomingShipmentsBody(config, fxRates) + '</div>' +
             '</section>' +
             '<section class="db-mod db-mod--chart" id="db-sales-chart"><span class="db-mod-loading">Loading sales…</span></section>' +
             '<section class="db-mod db-mod--chart" id="db-orders-chart"><span class="db-mod-loading">Loading orders…</span></section>' +

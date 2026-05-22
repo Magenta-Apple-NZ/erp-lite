@@ -4125,6 +4125,58 @@ a.db-row:hover { background: #f8fafc; border-color: #e2e8f0; }
     white-space: nowrap;
 }
 
+/* ── Incoming Shipments card (dashboard) ── */
+.db-ship-card {
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+    padding: 0.55rem 0.7rem;
+    border: 1px solid #f1f5f9;
+    border-radius: 6px;
+    background: #fafbfc;
+}
+.db-ship-card + .db-ship-card { margin-top: 0.25rem; }
+.db-ship-row1 {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+}
+.db-ship-num {
+    font-weight: 700;
+    font-size: 0.92rem;
+    color: #1e293b;
+    font-variant-numeric: tabular-nums;
+}
+.db-ship-arrival {
+    font-size: 0.8rem;
+    color: #334155;
+}
+.db-ship-arrival-label { color: #94a3b8; font-weight: 500; }
+.db-ship-arrival strong { font-weight: 600; }
+.db-ship-cost {
+    font-size: 0.78rem;
+    color: #64748b;
+    font-variant-numeric: tabular-nums;
+}
+/* Seven milestone segments laid edge-to-edge. Done = full saturation
+   (background colour from the inline style); pending = dimmed. */
+.db-ship-ms {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 2px;
+    height: 6px;
+    margin-top: 0.15rem;
+}
+.db-ms-seg {
+    border-radius: 2px;
+    opacity: 0.25;
+    transition: opacity 0.15s;
+}
+.db-ms-seg--done { opacity: 1; }
+.db-ms-seg:first-child { border-top-left-radius: 4px; border-bottom-left-radius: 4px; }
+.db-ms-seg:last-child  { border-top-right-radius: 4px; border-bottom-right-radius: 4px; }
+
 /* Calendar 14-day list */
 .db-cal-day { display: flex; flex-direction: column; gap: 0.15rem; }
 .db-cal-day-hd {
