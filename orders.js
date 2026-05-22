@@ -762,10 +762,10 @@ const Orders = (() => {
             const q = input.value.toLowerCase().trim();
             if (!q) { dropdown.style.display = 'none'; return; }
             // Match across customer/branch/city, sort alphabetically by
-            // customer then branch so wholesalers with many branches (e.g.
-            // Farmlands) return a stable, predictable list. Bumped cap from
-            // 8 → 25 — at 8 a search like "Farmlands" was hiding branches
-            // that fell late alphabetically (Te Puke, Whangarei, etc.).
+            // customer then branch so wholesalers with many branches return
+            // a stable, predictable list. Cap is mostly a safety net — the
+            // dropdown's max-height + overflow:auto handles long lists, so
+            // it's fine to show everything that matches up to ~200 rows.
             const matches = stores.filter(s =>
                 (s.customer || '').toLowerCase().includes(q) ||
                 (s.branch || '').toLowerCase().includes(q) ||
@@ -773,7 +773,7 @@ const Orders = (() => {
             ).sort((a, b) =>
                 (a.customer || '').localeCompare(b.customer || '') ||
                 (a.branch || '').localeCompare(b.branch || '')
-            ).slice(0, 25);
+            ).slice(0, 200);
             if (!matches.length) { dropdown.style.display = 'none'; return; }
             dropdown.innerHTML = matches.map(s => {
                 const label = [s.customer, s.branch].filter(Boolean).join(' — ');
