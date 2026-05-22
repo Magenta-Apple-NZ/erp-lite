@@ -231,6 +231,7 @@ const Admin = (() => {
             <button class="imp-view-btn" id="cat-tab-stores">Stores</button>
             <button class="imp-view-btn" id="cat-tab-printers">Printers</button>
             <button class="imp-view-btn" id="cat-tab-bulk">Bulk Edit</button>
+            <button class="imp-view-btn" id="cat-tab-histimport">Historical Import</button>
         </div>
         <div id="admin-body"><div class="orders-loading">Loading…</div></div>`;
 
@@ -249,16 +250,19 @@ const Admin = (() => {
             document.getElementById('cat-tab-stores').classList.toggle('active', tab === 'stores');
             document.getElementById('cat-tab-printers').classList.toggle('active', tab === 'printers');
             document.getElementById('cat-tab-bulk').classList.toggle('active', tab === 'bulk');
-            if (tab === 'prices')        renderPricesTab(body, items, updated => { items = updated; });
-            else if (tab === 'stores')   renderStoresTab(body, stores, updated => { stores = updated; });
-            else if (tab === 'printers') renderPrintersTab(body);
-            else if (tab === 'bulk')     renderBulkEditTab(body);
+            document.getElementById('cat-tab-histimport').classList.toggle('active', tab === 'histimport');
+            if (tab === 'prices')          renderPricesTab(body, items, updated => { items = updated; });
+            else if (tab === 'stores')     renderStoresTab(body, stores, updated => { stores = updated; });
+            else if (tab === 'printers')   renderPrintersTab(body);
+            else if (tab === 'bulk')       renderBulkEditTab(body);
+            else if (tab === 'histimport') renderHistoricalImportTab(body);
         }
 
-        document.getElementById('cat-tab-prices').addEventListener('click',   () => switchTab('prices'));
-        document.getElementById('cat-tab-stores').addEventListener('click',   () => switchTab('stores'));
-        document.getElementById('cat-tab-printers').addEventListener('click', () => switchTab('printers'));
-        document.getElementById('cat-tab-bulk').addEventListener('click',     () => switchTab('bulk'));
+        document.getElementById('cat-tab-prices').addEventListener('click',     () => switchTab('prices'));
+        document.getElementById('cat-tab-stores').addEventListener('click',     () => switchTab('stores'));
+        document.getElementById('cat-tab-printers').addEventListener('click',   () => switchTab('printers'));
+        document.getElementById('cat-tab-bulk').addEventListener('click',       () => switchTab('bulk'));
+        document.getElementById('cat-tab-histimport').addEventListener('click', () => switchTab('histimport'));
 
         switchTab('prices');
     }
@@ -465,6 +469,124 @@ const Admin = (() => {
                 } catch (err) {
                     showToast('Apply failed: ' + err.message);
                     btn.disabled = false; btn.textContent = `Apply ${changes.length} change${changes.length === 1 ? '' : 's'}`;
+                }
+            });
+        }
+    }
+
+    // ── Historical Import tab ──
+    // Uploads the Prime Tie sales CSV and creates HST-* orders, one per
+    // non-empty data row. Dry-run by default; apply commits after a
+    // snapshot of orders_index has been written to a backup key.
+    function renderHistoricalImportTab(body) {
+        body.innerHTML = `
+        <div class="cat-section">
+            <h2 class="cat-title">Historical Sales Import</h2>
+            <p class="cat-sub">Upload the Prime Tie sales CSV to populate the database with HST-* orders covering pre-Hub-live history. Each non-empty row becomes one locked order. Re-uploading the same CSV is idempotent — existing HST keys are overwritten in place, not duplicated.</p>
+
+            <div class="bulk-step">
+                <strong>1.</strong>
+                <input type="file" id="histimport-file" accept=".csv,text/csv">
+                <button class="btn-secondary btn-sm" id="histimport-dryrun-btn">Preview (dry-run)</button>
+            </div>
+
+            <div id="histimport-results"></div>
+        </div>`;
+
+        let lastFile = null;
+        const resultsEl = document.getElementById('histimport-results');
+
+        document.getElementById('histimport-dryrun-btn').addEventListener('click', async () => {
+            const file = document.getElementById('histimport-file').files[0];
+            if (!file) { showToast('Choose a CSV file first'); return; }
+            lastFile = file;
+            resultsEl.innerHTML = '<p class="bulk-loading">Parsing CSV…</p>';
+            try {
+                const csv = await file.text();
+                const resp = await fetch('/api/orders/import-historical', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'text/csv' },
+                    body: csv,
+                });
+                if (!resp.ok) {
+                    const err = await resp.json().catch(() => ({ error: resp.statusText }));
+                    throw new Error(err.error || resp.statusText);
+                }
+                renderHistResults(await resp.json(), false);
+            } catch (e) {
+                resultsEl.innerHTML = `<p class="bulk-error">${escHtml(e.message)}</p>`;
+            }
+        });
+
+        function renderHistResults(result, applied) {
+            const s = result.summary;
+            const skip = s.skipped || {};
+            const skipRow = (label, n) => n
+                ? `<li>${escHtml(label)}: ${n}</li>`
+                : '';
+            const yearRows = Object.keys(s.byYear || {}).sort().map(y => {
+                const v = s.byYear[y];
+                return `<tr>
+                    <td>${escHtml(y)}</td>
+                    <td class="bulk-num">${v.count.toLocaleString('en-NZ')}</td>
+                    <td class="bulk-num">${Math.round(v.kg).toLocaleString('en-NZ')}</td>
+                </tr>`;
+            }).join('');
+
+            resultsEl.innerHTML = `
+            <div class="bulk-summary ${applied ? 'bulk-summary--applied' : ''}">
+                <strong>${applied ? 'Applied' : 'Dry run'}:</strong>
+                ${s.ordersToImport.toLocaleString('en-NZ')} order${s.ordersToImport === 1 ? '' : 's'} from
+                ${s.csvRows.toLocaleString('en-NZ')} CSV row${s.csvRows === 1 ? '' : 's'}.
+                ${s.negativeLineOrders ? `<br>${s.negativeLineOrders} order${s.negativeLineOrders === 1 ? '' : 's'} include negative-quantity lines (credit notes / returns).` : ''}
+                ${applied ? `<br><span class="bulk-backup">Backup: <code>backup:orders_index:${escHtml(s.backupTs)}</code> · index ${s.indexBefore} → ${s.indexAfter} (added ${s.newlyAdded}, overwrote ${s.overwritten})</span>` : ''}
+            </div>
+
+            <h3 class="bulk-table-title">By year</h3>
+            <div class="bulk-table-wrap">
+                <table class="bulk-table">
+                    <thead><tr><th>Year</th><th class="bulk-num">Orders</th><th class="bulk-num">kg</th></tr></thead>
+                    <tbody>${yearRows || '<tr><td colspan="3" class="bulk-empty">(none)</td></tr>'}</tbody>
+                </table>
+            </div>
+
+            ${(skip.blank || skip.noDate || skip.noCustomer || skip.allZero || skip.cancelled) ? `
+            <h3 class="bulk-table-title">Skipped rows</h3>
+            <ul class="bulk-skip-list">
+                ${skipRow('Blank', skip.blank)}
+                ${skipRow('Missing date', skip.noDate)}
+                ${skipRow('Missing customer', skip.noCustomer)}
+                ${skipRow('All-zero volumes', skip.allZero)}
+                ${skipRow('CANCELLED invoice', skip.cancelled)}
+            </ul>` : ''}
+
+            ${!applied && s.ordersToImport > 0 ? `
+            <div class="bulk-apply-bar">
+                <button class="btn-primary" id="histimport-apply-btn">Apply ${s.ordersToImport.toLocaleString('en-NZ')} order${s.ordersToImport === 1 ? '' : 's'}</button>
+                <span class="bulk-apply-hint">A snapshot of orders_index is saved to a backup key first.</span>
+            </div>` : ''}`;
+
+            document.getElementById('histimport-apply-btn')?.addEventListener('click', async (e) => {
+                if (!lastFile) return;
+                if (!confirm(`Import ${s.ordersToImport} historical orders into ORDERS_KV?\n\nA backup of orders_index will be taken first.\nExisting HST-* keys (if any) will be overwritten in place.`)) return;
+                const btn = e.currentTarget;
+                btn.disabled = true; btn.textContent = 'Importing…';
+                try {
+                    const csv = await lastFile.text();
+                    const resp = await fetch('/api/orders/import-historical?apply=true', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'text/csv' },
+                        body: csv,
+                    });
+                    if (!resp.ok) {
+                        const err = await resp.json().catch(() => ({ error: resp.statusText }));
+                        throw new Error(err.error || resp.statusText);
+                    }
+                    renderHistResults(await resp.json(), true);
+                    showToast(`Imported ${s.ordersToImport} historical orders`);
+                } catch (err) {
+                    showToast('Import failed: ' + err.message);
+                    btn.disabled = false; btn.textContent = `Apply ${s.ordersToImport} orders`;
                 }
             });
         }

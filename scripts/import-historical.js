@@ -97,9 +97,19 @@ const customerCol = col('Customer');
 const branchCol   = col('Branch');
 const poCol       = header.findIndex(h => /^po#?$/i.test(h.trim()));
 const invCol      = col('Invoice');
-const bundleCol   = header.findIndex(h => /prime tie bundles? volume/i.test(h));
-const looseCol    = header.findIndex(h => /prime tie loose volume/i.test(h));
-const ecoTieCol   = header.findIndex(h => /eco ?ties? volume/i.test(h));
+// Tolerant of "Prime Tie Bundles Volume" (old) and "Prime Tie (Bundled) Volume" (current).
+const bundleCol = header.findIndex(h => {
+    const l = h.toLowerCase();
+    return l.includes('prime tie') && /bundle/.test(l) && l.includes('volume');
+});
+const looseCol = header.findIndex(h => {
+    const l = h.toLowerCase();
+    return l.includes('prime tie') && /loose/.test(l) && l.includes('volume');
+});
+const ecoTieCol = header.findIndex(h => {
+    const l = h.toLowerCase();
+    return /eco\s*ties?/.test(l) && l.includes('volume');
+});
 
 if (dateCol < 0 || customerCol < 0) {
     console.error('CSV missing required Date / Customer columns');
