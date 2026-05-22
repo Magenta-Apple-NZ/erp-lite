@@ -231,7 +231,7 @@ const Admin = (() => {
             <button class="imp-view-btn" id="cat-tab-stores">Stores</button>
             <button class="imp-view-btn" id="cat-tab-printers">Printers</button>
             <button class="imp-view-btn" id="cat-tab-bulk">Bulk Edit</button>
-            <button class="imp-view-btn" id="cat-tab-histimport">Historical Import</button>
+            <button class="imp-view-btn" id="cat-tab-saleshistory">Sales History</button>
         </div>
         <div id="admin-body"><div class="orders-loading">Loading…</div></div>`;
 
@@ -250,19 +250,19 @@ const Admin = (() => {
             document.getElementById('cat-tab-stores').classList.toggle('active', tab === 'stores');
             document.getElementById('cat-tab-printers').classList.toggle('active', tab === 'printers');
             document.getElementById('cat-tab-bulk').classList.toggle('active', tab === 'bulk');
-            document.getElementById('cat-tab-histimport').classList.toggle('active', tab === 'histimport');
-            if (tab === 'prices')          renderPricesTab(body, items, updated => { items = updated; });
-            else if (tab === 'stores')     renderStoresTab(body, stores, updated => { stores = updated; });
-            else if (tab === 'printers')   renderPrintersTab(body);
-            else if (tab === 'bulk')       renderBulkEditTab(body);
-            else if (tab === 'histimport') renderHistoricalImportTab(body);
+            document.getElementById('cat-tab-saleshistory').classList.toggle('active', tab === 'saleshistory');
+            if (tab === 'prices')            renderPricesTab(body, items, updated => { items = updated; });
+            else if (tab === 'stores')       renderStoresTab(body, stores, updated => { stores = updated; });
+            else if (tab === 'printers')     renderPrintersTab(body);
+            else if (tab === 'bulk')         renderBulkEditTab(body);
+            else if (tab === 'saleshistory') renderSalesHistoryTab(body);
         }
 
-        document.getElementById('cat-tab-prices').addEventListener('click',     () => switchTab('prices'));
-        document.getElementById('cat-tab-stores').addEventListener('click',     () => switchTab('stores'));
-        document.getElementById('cat-tab-printers').addEventListener('click',   () => switchTab('printers'));
-        document.getElementById('cat-tab-bulk').addEventListener('click',       () => switchTab('bulk'));
-        document.getElementById('cat-tab-histimport').addEventListener('click', () => switchTab('histimport'));
+        document.getElementById('cat-tab-prices').addEventListener('click',       () => switchTab('prices'));
+        document.getElementById('cat-tab-stores').addEventListener('click',       () => switchTab('stores'));
+        document.getElementById('cat-tab-printers').addEventListener('click',     () => switchTab('printers'));
+        document.getElementById('cat-tab-bulk').addEventListener('click',         () => switchTab('bulk'));
+        document.getElementById('cat-tab-saleshistory').addEventListener('click', () => switchTab('saleshistory'));
 
         switchTab('prices');
     }
@@ -474,10 +474,168 @@ const Admin = (() => {
         }
     }
 
-    // ── Historical Import tab ──
-    // Uploads the Prime Tie sales CSV and creates HST-* orders, one per
-    // non-empty data row. Dry-run by default; apply commits after a
-    // snapshot of orders_index has been written to a backup key.
+    // ── Sales History tab ──
+    // The combined sales history table is the source of truth for the Sales
+    // History view going forward. This tab:
+    //   - Shows current row count + by-year stats
+    //   - Lets you download the full table as CSV
+    //   - Lets you (re-)seed historical rows from the legacy sales CSV.
+    //     Apply also wipes the legacy HST-* orders left over from an earlier
+    //     attempt and preserves any source:'hub' rows already in the table.
+    async function renderSalesHistoryTab(body) {
+        body.innerHTML = `
+        <div class="cat-section">
+            <h2 class="cat-title">Sales History</h2>
+            <p class="cat-sub">Single denormalised table — one row per sale. Historical seed from the legacy CSV, live Hub orders append a row on Xero push (next iteration). Powers the Sales History view and exports cleanly to CSV.</p>
+            <div id="sh-stats" class="cat-sub">Loading current state…</div>
+
+            <div class="bulk-step" style="margin-top:1rem">
+                <strong>Download</strong>
+                <a class="btn-secondary btn-sm" href="/api/sales-history?format=csv" download="sales-history.csv">Export sales-history.csv ↓</a>
+                <span class="bulk-step-hint">Same column shape as the seed input — round-trips cleanly.</span>
+            </div>
+
+            <h3 class="bulk-table-title" style="margin-top:1.5rem">Seed / re-seed historical rows</h3>
+            <p class="cat-sub" style="margin-bottom:0.5rem">Upload the Prime Tie sales CSV. Apply replaces all <code>source:historical</code> rows; <code>source:hub</code> rows (live orders) are preserved. The legacy HST-* orders are removed from KV at the same time.</p>
+
+            <div class="bulk-step">
+                <strong>1.</strong>
+                <input type="file" id="sh-file" accept=".csv,text/csv">
+                <button class="btn-secondary btn-sm" id="sh-dryrun-btn">Preview (dry-run)</button>
+            </div>
+
+            <div id="sh-results"></div>
+        </div>`;
+
+        // Current state at top
+        try {
+            const resp = await fetch('/api/sales-history');
+            if (resp.ok) {
+                const data = await resp.json();
+                const yrs = Object.keys(data.byYear || {}).sort();
+                const stats = document.getElementById('sh-stats');
+                if (stats) {
+                    stats.innerHTML = data.count
+                        ? `<strong>${data.count.toLocaleString('en-NZ')}</strong> rows in the table; years: ${yrs.join(', ') || '(none)'}.`
+                        : `Table is empty — seed it below.`;
+                }
+            }
+        } catch (e) { /* stats are nice-to-have */ }
+
+        let lastFile = null;
+        const resultsEl = document.getElementById('sh-results');
+
+        document.getElementById('sh-dryrun-btn').addEventListener('click', async () => {
+            const file = document.getElementById('sh-file').files[0];
+            if (!file) { showToast('Choose a CSV file first'); return; }
+            lastFile = file;
+            resultsEl.innerHTML = '<p class="bulk-loading">Parsing CSV…</p>';
+            try {
+                const csv = await file.text();
+                const resp = await fetch('/api/sales-history', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'text/csv' },
+                    body: csv,
+                });
+                if (!resp.ok) {
+                    const err = await resp.json().catch(() => ({ error: resp.statusText }));
+                    throw new Error(err.error || resp.statusText);
+                }
+                renderShResults(await resp.json(), false);
+            } catch (e) {
+                resultsEl.innerHTML = `<p class="bulk-error">${escHtml(e.message)}</p>`;
+            }
+        });
+
+        function renderShResults(result, applied) {
+            const s = result.summary;
+            const skip = s.skipped || {};
+            const yearRows = Object.keys(s.byYear || {}).sort().map(y => {
+                const v = s.byYear[y];
+                const totalKg = (v.bundlesKg || 0) + (v.looseKg || 0) + (v.ecoTiesKg || 0);
+                return `<tr>
+                    <td>${escHtml(y)}</td>
+                    <td class="bulk-num">${v.count.toLocaleString('en-NZ')}</td>
+                    <td class="bulk-num">${Math.round(v.bundlesKg).toLocaleString('en-NZ')}</td>
+                    <td class="bulk-num">${Math.round(v.looseKg).toLocaleString('en-NZ')}</td>
+                    <td class="bulk-num">${Math.round(v.ecoTiesKg).toLocaleString('en-NZ')}</td>
+                    <td class="bulk-num">${Math.round(totalKg).toLocaleString('en-NZ')}</td>
+                </tr>`;
+            }).join('');
+            const skipRow = (label, n) => n ? `<li>${escHtml(label)}: ${n}</li>` : '';
+
+            resultsEl.innerHTML = `
+            <div class="bulk-summary ${applied ? 'bulk-summary--applied' : ''}">
+                <strong>${applied ? 'Applied' : 'Dry run'}:</strong>
+                ${s.csvRowsParsed.toLocaleString('en-NZ')} row${s.csvRowsParsed === 1 ? '' : 's'} parsed from CSV.
+                ${s.negativeRows ? `<br>${s.negativeRows} row${s.negativeRows === 1 ? '' : 's'} contain negative volumes (credit notes / returns).` : ''}
+                ${applied ? `<br><span class="bulk-backup">
+                    Backup keys: <code>backup:sales_history:${escHtml(s.backupTs)}</code> + <code>backup:orders_index:${escHtml(s.backupTs)}</code><br>
+                    HST orders wiped: ${s.hstOrdersDeleted} · Hub rows preserved: ${s.hubRowsPreserved} · Table size: ${s.totalRowsAfter} rows
+                </span>` : ''}
+            </div>
+
+            <h3 class="bulk-table-title">Breakdown by year</h3>
+            <div class="bulk-table-wrap">
+                <table class="bulk-table">
+                    <thead><tr>
+                        <th>Year</th>
+                        <th class="bulk-num">Rows</th>
+                        <th class="bulk-num">Bundles kg</th>
+                        <th class="bulk-num">Loose kg</th>
+                        <th class="bulk-num">eco Ties kg</th>
+                        <th class="bulk-num">Total kg</th>
+                    </tr></thead>
+                    <tbody>${yearRows || '<tr><td colspan="6" class="bulk-empty">(none)</td></tr>'}</tbody>
+                </table>
+            </div>
+
+            ${(skip.blank || skip.noDate || skip.noCustomer || skip.allZero || skip.cancelled) ? `
+            <h3 class="bulk-table-title">Skipped rows</h3>
+            <ul class="bulk-skip-list">
+                ${skipRow('Blank', skip.blank)}
+                ${skipRow('Missing date', skip.noDate)}
+                ${skipRow('Missing customer', skip.noCustomer)}
+                ${skipRow('All-zero volumes', skip.allZero)}
+                ${skipRow('CANCELLED invoice', skip.cancelled)}
+            </ul>` : ''}
+
+            ${!applied && s.csvRowsParsed > 0 ? `
+            <div class="bulk-apply-bar">
+                <button class="btn-primary" id="sh-apply-btn">Apply seed (${s.csvRowsParsed.toLocaleString('en-NZ')} rows)</button>
+                <span class="bulk-apply-hint">Replaces historical rows · preserves Hub rows · wipes HST-* orders · backs up before write.</span>
+            </div>` : ''}`;
+
+            document.getElementById('sh-apply-btn')?.addEventListener('click', async (e) => {
+                if (!lastFile) return;
+                if (!confirm(`Seed sales history with ${s.csvRowsParsed} historical rows?\n\nThis will:\n  • Replace all source:historical rows\n  • Preserve source:hub rows (live orders)\n  • Delete the legacy HST-* orders from ORDERS_KV\n  • Back up sales_history + orders_index to backup keys first`)) return;
+                const btn = e.currentTarget;
+                btn.disabled = true; btn.textContent = 'Applying…';
+                try {
+                    const csv = await lastFile.text();
+                    const resp = await fetch('/api/sales-history?apply=true', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'text/csv' },
+                        body: csv,
+                    });
+                    if (!resp.ok) {
+                        const err = await resp.json().catch(() => ({ error: resp.statusText }));
+                        throw new Error(err.error || resp.statusText);
+                    }
+                    renderShResults(await resp.json(), true);
+                    showToast(`Seeded ${s.csvRowsParsed} historical rows`);
+                } catch (err) {
+                    showToast('Apply failed: ' + err.message);
+                    btn.disabled = false; btn.textContent = `Apply seed (${s.csvRowsParsed} rows)`;
+                }
+            });
+        }
+    }
+
+    // ── (deprecated) Historical Import tab ──
+    // Left in place temporarily in case anything else references it. The
+    // new "Sales History" tab supersedes it and the underlying endpoint
+    // (/api/orders/import-historical) is no longer wired into the UI.
     function renderHistoricalImportTab(body) {
         body.innerHTML = `
         <div class="cat-section">
