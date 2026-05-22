@@ -761,15 +761,27 @@ const Orders = (() => {
         input.addEventListener('input', () => {
             const q = input.value.toLowerCase().trim();
             if (!q) { dropdown.style.display = 'none'; return; }
+            // Match across customer/branch/city, sort alphabetically by
+            // customer then branch so wholesalers with many branches (e.g.
+            // Farmlands) return a stable, predictable list. Bumped cap from
+            // 8 → 25 — at 8 a search like "Farmlands" was hiding branches
+            // that fell late alphabetically (Te Puke, Whangarei, etc.).
             const matches = stores.filter(s =>
                 (s.customer || '').toLowerCase().includes(q) ||
                 (s.branch || '').toLowerCase().includes(q) ||
                 (s.city || '').toLowerCase().includes(q)
-            ).slice(0, 8);
+            ).sort((a, b) =>
+                (a.customer || '').localeCompare(b.customer || '') ||
+                (a.branch || '').localeCompare(b.branch || '')
+            ).slice(0, 25);
             if (!matches.length) { dropdown.style.display = 'none'; return; }
             dropdown.innerHTML = matches.map(s => {
                 const label = [s.customer, s.branch].filter(Boolean).join(' — ');
-                const addr  = [s.streetAddress, s.city, s.postcode].filter(Boolean).join('\n');
+                // The stores endpoint returns the street column as `address`
+                // (see functions/api/catalog/stores.js); reading
+                // `s.streetAddress` was always undefined and silently
+                // dropped the street line from the delivery address.
+                const addr  = [s.address, s.city, s.postcode].filter(Boolean).join('\n');
                 const displayName = [s.customer, s.branch].filter(Boolean).join(' - ');
                 return `<div class="customer-option"
                     data-name="${escHtml(displayName)}"
@@ -1502,6 +1514,9 @@ const Orders = (() => {
                 margin: 0,
                 html2canvas: { scale: 2, backgroundColor: '#ffffff', useCORS: true, logging: false },
                 jsPDF: { unit: 'mm', format: 'a4', orientation },
+                // avoid-all + an explicit avoid selector keeps html2pdf
+                // from splitting the slip across pages on near-overflow.
+                pagebreak: { mode: 'avoid-all', avoid: '.packing-slip, .page' },
             })
             .from(el)
             .outputPdf('datauristring');

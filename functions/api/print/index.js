@@ -94,6 +94,15 @@ export async function onRequestPost({ env, request }) {
                 contentType: 'pdf_base64',
                 content: pdfBase64,
                 source: 'Business Hub',
+                // Force monochrome — the warehouse printer was burning colour
+                // toner on the brand logo and dispatch markings unnecessarily.
+                // fit_to_page:false stops PrintNode auto-scaling, which was
+                // pushing a 1-page A4 slip into a 2-page job on some drivers.
+                options: {
+                    color: false,
+                    paper: 'A4',
+                    fit_to_page: false,
+                },
             }),
         });
 
