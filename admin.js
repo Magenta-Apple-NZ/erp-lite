@@ -445,32 +445,14 @@ const Admin = (() => {
         <div class="view-header">
             <div>
                 <h1 class="view-title">Catalogue</h1>
-                <p class="view-subtitle">Manage product pricing, store locations, and printers.</p>
-            </div>
-            <div class="cat-header-actions">
-                <a class="btn-secondary btn-sm" href="/api/orders/export-summary"
-                   download="orders-summary.csv"
-                   title="Hub orders only — one row per order with operational metadata (dispatched by/at, status, totals). Freight excluded from kg.">
-                    Hub orders (summary) ↓
-                </a>
-                <a class="btn-secondary btn-sm" href="/api/sales-history?format=csv"
-                   download="sales-history.csv"
-                   title="Combined historical + Hub sales. One row per order, three product columns. Same shape as the seed input — round-trips cleanly via the Sales History tab.">
-                    Sales history (combined) ↓
-                </a>
-                <a class="btn-secondary btn-sm" href="/api/orders/export"
-                   download="orders.csv"
-                   title="Hub orders as one row per line item. Used by the Bulk Edit tab for round-trip line-level corrections.">
-                    Orders (lines) ↓
-                </a>
+                <p class="view-subtitle">Manage product pricing, store locations, printers, and sales data exports.</p>
             </div>
         </div>
         <div class="imp-tabs">
             <button class="imp-view-btn active" id="cat-tab-prices">Prices</button>
             <button class="imp-view-btn" id="cat-tab-stores">Stores</button>
             <button class="imp-view-btn" id="cat-tab-printers">Printers</button>
-            <button class="imp-view-btn" id="cat-tab-bulk">Bulk Edit</button>
-            <button class="imp-view-btn" id="cat-tab-saleshistory">Sales History</button>
+            <button class="imp-view-btn" id="cat-tab-salesdata">Sales Data</button>
         </div>
         <div id="admin-body"><div class="orders-loading">Loading…</div></div>`;
 
@@ -488,20 +470,17 @@ const Admin = (() => {
             document.getElementById('cat-tab-prices').classList.toggle('active', tab === 'prices');
             document.getElementById('cat-tab-stores').classList.toggle('active', tab === 'stores');
             document.getElementById('cat-tab-printers').classList.toggle('active', tab === 'printers');
-            document.getElementById('cat-tab-bulk').classList.toggle('active', tab === 'bulk');
-            document.getElementById('cat-tab-saleshistory').classList.toggle('active', tab === 'saleshistory');
-            if (tab === 'prices')            renderPricesTab(body, items, updated => { items = updated; });
-            else if (tab === 'stores')       renderStoresTab(body, stores, updated => { stores = updated; });
-            else if (tab === 'printers')     renderPrintersTab(body);
-            else if (tab === 'bulk')         renderBulkEditTab(body);
-            else if (tab === 'saleshistory') renderSalesHistoryTab(body);
+            document.getElementById('cat-tab-salesdata').classList.toggle('active', tab === 'salesdata');
+            if (tab === 'prices')         renderPricesTab(body, items, updated => { items = updated; });
+            else if (tab === 'stores')    renderStoresTab(body, stores, updated => { stores = updated; });
+            else if (tab === 'printers')  renderPrintersTab(body);
+            else if (tab === 'salesdata') renderSalesDataTab(body);
         }
 
-        document.getElementById('cat-tab-prices').addEventListener('click',       () => switchTab('prices'));
-        document.getElementById('cat-tab-stores').addEventListener('click',       () => switchTab('stores'));
-        document.getElementById('cat-tab-printers').addEventListener('click',     () => switchTab('printers'));
-        document.getElementById('cat-tab-bulk').addEventListener('click',         () => switchTab('bulk'));
-        document.getElementById('cat-tab-saleshistory').addEventListener('click', () => switchTab('saleshistory'));
+        document.getElementById('cat-tab-prices').addEventListener('click',     () => switchTab('prices'));
+        document.getElementById('cat-tab-stores').addEventListener('click',     () => switchTab('stores'));
+        document.getElementById('cat-tab-printers').addEventListener('click',   () => switchTab('printers'));
+        document.getElementById('cat-tab-salesdata').addEventListener('click',  () => switchTab('salesdata'));
 
         switchTab('prices');
     }
@@ -586,324 +565,134 @@ const Admin = (() => {
         });
     }
 
-    // ── Bulk Edit tab ──
-    // Upload a CSV in the same shape as /api/orders/export.csv to bulk-edit
-    // existing orders. The flow is always dry-run first → review diff →
-    // apply. Edits only (no adds, no deletes); modified orders are backed
-    // up to a timestamped KV key before each apply, in case anything needs
-    // to be rolled back.
-    function renderBulkEditTab(body) {
+
+
+    // ── Sales Data tab ──
+    // One tab for all sales-related data ops. Two prominent downloads at
+    // top; admin actions (seed historical, backfill Hub orders, upload
+    // round-trip CSV) collapsed in a details section below.
+    async function renderSalesDataTab(body) {
         body.innerHTML = `
         <div class="cat-section">
-            <h2 class="cat-title">Bulk Edit Orders</h2>
-            <p class="cat-sub">Download orders, edit in a spreadsheet, re-upload here. Edits only — rows missing from your CSV are left untouched; new line indexes are rejected. Each apply takes a snapshot of every modified order to a backup key first.</p>
+            <div class="cat-section-head">
+                <div>
+                    <h2 class="cat-title">Sales Data</h2>
+                    <p class="cat-sub">All exports + historical data management.</p>
+                </div>
+            </div>
+            <div id="sd-stats" class="cat-sub" style="margin:0.75rem 0 1rem">Loading current state…</div>
 
-            <div class="bulk-step">
-                <strong>1.</strong>
-                <a class="btn-secondary btn-sm" href="/api/orders/export" download="orders.csv">Download orders.csv</a>
-                <span class="bulk-step-hint">One row per order line. Editable columns: status, customer, branch, sku, description, quantity, kg_per_unit, unit_price, xero_invoice.</span>
+            <div class="sd-download-grid">
+                <a class="sd-download-card" href="/api/orders/export-summary" download="orders-summary.csv">
+                    <div class="sd-download-title">Detailed Hub Orders ↓</div>
+                    <div class="sd-download-desc">One row per Hub order. Operational view — created/dispatched timestamps, who dispatched, status, customer, branch, PO, Xero invoice + product-kg totals. Hub orders only (no historicals). Freight excluded from kg.</div>
+                </a>
+                <a class="sd-download-card" href="/api/sales-history?format=csv" download="sales-history.csv">
+                    <div class="sd-download-title">Historical &amp; Hub orders (combined) ↓</div>
+                    <div class="sd-download-desc">One row per sale, historical seed + live Hub rows in the same shape. Three product columns (PT Bundles · PT Loose · eco Ties). Round-trips cleanly via the upload section below.</div>
+                </a>
             </div>
 
-            <div class="bulk-step">
-                <strong>2.</strong>
-                <input type="file" id="bulk-csv-file" accept=".csv,text/csv">
-                <button class="btn-secondary btn-sm" id="bulk-dryrun-btn">Preview changes (dry-run)</button>
-            </div>
+            <details class="cat-section sd-admin">
+                <summary>
+                    <strong>Admin actions</strong>
+                    <span class="cat-sub">— seed historical CSV · backfill Hub orders · round-trip edits</span>
+                </summary>
 
-            <div id="bulk-results"></div>
+                <div class="sd-admin-body">
+                    <h3 class="bulk-table-title">Backfill Hub orders</h3>
+                    <p class="cat-sub">Walks orders_index and adds a row for every Hub order missing one. Existing rows untouched. Run this once if Hub orders aren't appearing in the combined export.</p>
+                    <div class="bulk-step">
+                        <button class="btn-secondary btn-sm" id="sd-backfill-btn">Backfill Hub orders</button>
+                    </div>
+                    <div id="sd-backfill-results"></div>
+
+                    <h3 class="bulk-table-title" style="margin-top:1.5rem">Upload CSV</h3>
+                    <p class="cat-sub">Auto-detects the format. Upload the original Prime Tie sales CSV to <strong>seed historicals</strong>, or a downloaded <code>sales-history.csv</code> (with Id + Source columns) to <strong>round-trip edits</strong> — rows match by Id and update in place; missing rows are left untouched.</p>
+                    <div class="bulk-step">
+                        <input type="file" id="sd-file" accept=".csv,text/csv">
+                        <button class="btn-secondary btn-sm" id="sd-dryrun-btn">Preview (dry-run)</button>
+                    </div>
+                    <div id="sd-upload-results"></div>
+                </div>
+            </details>
         </div>`;
 
-        let lastFile = null;
-        const resultsEl = document.getElementById('bulk-results');
-
-        document.getElementById('bulk-dryrun-btn').addEventListener('click', async () => {
-            const file = document.getElementById('bulk-csv-file').files[0];
-            if (!file) { showToast('Choose a CSV file first'); return; }
-            lastFile = file;
-            resultsEl.innerHTML = '<p class="bulk-loading">Running dry-run…</p>';
-            try {
-                const csv = await file.text();
-                const resp = await fetch('/api/orders/import', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'text/csv' },
-                    body: csv,
-                });
-                if (!resp.ok) {
-                    const err = await resp.json().catch(() => ({ error: resp.statusText }));
-                    throw new Error(err.error || resp.statusText);
-                }
-                const result = await resp.json();
-                renderBulkDiff(result, false);
-            } catch (e) {
-                resultsEl.innerHTML = `<p class="bulk-error">${escHtml(e.message)}</p>`;
-            }
-        });
-
-        function renderBulkDiff(result, applied) {
-            const { summary, changes, errors } = result;
-            const changeRows = changes.slice(0, 200).map(c => `
-                <tr>
-                    <td><a href="#orders/${escHtml(c.orderId)}">${escHtml(c.orderId)}</a></td>
-                    <td class="bulk-fields">${c.fieldsChanged.map(escHtml).join(', ')}</td>
-                </tr>`).join('');
-            const errorRows = errors.slice(0, 200).map(e => `
-                <tr class="bulk-err-row">
-                    <td>${escHtml(e.orderId || '—')} ${e.csvRow ? `<span class="bulk-csvrow">row ${e.csvRow}</span>` : ''}</td>
-                    <td>${escHtml(e.error)}</td>
-                </tr>`).join('');
-
-            resultsEl.innerHTML = `
-            <div class="bulk-summary ${applied ? 'bulk-summary--applied' : ''}">
-                <strong>${applied ? 'Applied' : 'Dry run'}:</strong>
-                ${summary.changes} change${summary.changes === 1 ? '' : 's'} across
-                ${summary.orders} order${summary.orders === 1 ? '' : 's'};
-                ${summary.errors} error${summary.errors === 1 ? '' : 's'};
-                ${summary.rows} CSV row${summary.rows === 1 ? '' : 's'} read.
-                ${applied && summary.backupTs ? `<br><span class="bulk-backup">Backup key prefix: <code>backup:orders:${escHtml(summary.backupTs)}</code></span>` : ''}
-            </div>
-
-            ${changes.length ? `
-            <h3 class="bulk-table-title">Changes ${changes.length > 200 ? `(showing first 200 of ${changes.length})` : ''}</h3>
-            <div class="bulk-table-wrap">
-                <table class="bulk-table">
-                    <thead><tr><th>Order</th><th>Fields changed</th></tr></thead>
-                    <tbody>${changeRows}</tbody>
-                </table>
-            </div>` : '<p class="bulk-empty">No changes detected.</p>'}
-
-            ${errors.length ? `
-            <h3 class="bulk-table-title bulk-errors-title">Errors ${errors.length > 200 ? `(showing first 200 of ${errors.length})` : ''}</h3>
-            <div class="bulk-table-wrap">
-                <table class="bulk-table">
-                    <thead><tr><th>Order</th><th>Error</th></tr></thead>
-                    <tbody>${errorRows}</tbody>
-                </table>
-            </div>` : ''}
-
-            ${!applied && changes.length ? `
-            <div class="bulk-apply-bar">
-                <button class="btn-primary" id="bulk-apply-btn">Apply ${changes.length} change${changes.length === 1 ? '' : 's'}</button>
-                <span class="bulk-apply-hint">A backup of every modified order is taken before writes.</span>
-            </div>` : ''}`;
-
-            document.getElementById('bulk-apply-btn')?.addEventListener('click', async (e) => {
-                if (!lastFile) return;
-                if (!confirm(`Apply ${changes.length} change(s) to ORDERS_KV? A backup will be taken first.`)) return;
-                const btn = e.currentTarget;
-                btn.disabled = true; btn.textContent = 'Applying…';
-                try {
-                    const csv = await lastFile.text();
-                    const resp = await fetch('/api/orders/import?apply=true', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'text/csv' },
-                        body: csv,
-                    });
-                    if (!resp.ok) {
-                        const err = await resp.json().catch(() => ({ error: resp.statusText }));
-                        throw new Error(err.error || resp.statusText);
-                    }
-                    const applyResult = await resp.json();
-                    renderBulkDiff(applyResult, true);
-                    showToast(`Applied ${applyResult.summary.changes} changes`);
-                } catch (err) {
-                    showToast('Apply failed: ' + err.message);
-                    btn.disabled = false; btn.textContent = `Apply ${changes.length} change${changes.length === 1 ? '' : 's'}`;
-                }
-            });
-        }
-    }
-
-    // ── Sales History tab ──
-    // The combined sales history table is the source of truth for the Sales
-    // History view going forward. This tab:
-    //   - Shows current row count + by-year stats
-    //   - Lets you download the full table as CSV
-    //   - Lets you (re-)seed historical rows from the legacy sales CSV.
-    //     Apply also wipes the legacy HST-* orders left over from an earlier
-    //     attempt and preserves any source:'hub' rows already in the table.
-    async function renderSalesHistoryTab(body) {
-        body.innerHTML = `
-        <div class="cat-section">
-            <h2 class="cat-title">Sales History</h2>
-            <p class="cat-sub">Single denormalised table — one row per sale. Historical seed from the legacy CSV; live Hub orders append a row on Xero push. Powers the Sales History view and exports cleanly to CSV.</p>
-            <div id="sh-stats" class="cat-sub">Loading current state…</div>
-
-            <div class="bulk-step" style="margin-top:1rem">
-                <strong>Download</strong>
-                <a class="btn-secondary btn-sm" href="/api/sales-history?format=csv" download="sales-history.csv">Export sales-history.csv ↓</a>
-                <span class="bulk-step-hint">Edit in a spreadsheet, re-upload below — rows match by Id and update in place.</span>
-            </div>
-
-            <div class="bulk-step">
-                <strong>Backfill</strong>
-                <button class="btn-secondary btn-sm" id="sh-backfill-btn">Backfill Hub orders</button>
-                <span class="bulk-step-hint">Walks orders_index and adds a row for every Hub order missing one (existing rows untouched). Run this once if Hub orders aren't showing.</span>
-            </div>
-
-            <h3 class="bulk-table-title" style="margin-top:1.5rem">Upload CSV</h3>
-            <p class="cat-sub" style="margin-bottom:0.5rem">Auto-detects the format. Upload the original sales CSV to <strong>seed historicals</strong>, or a downloaded <code>sales-history.csv</code> (with Id + Source columns) to <strong>round-trip edits</strong> — rows match by Id and update in place; missing rows are left untouched.</p>
-
-            <div class="bulk-step">
-                <strong>1.</strong>
-                <input type="file" id="sh-file" accept=".csv,text/csv">
-                <button class="btn-secondary btn-sm" id="sh-dryrun-btn">Preview (dry-run)</button>
-            </div>
-
-            <div id="sh-results"></div>
-        </div>`;
-
-        // Current state at top
+        // Current-state line
         try {
             const resp = await fetch('/api/sales-history');
             if (resp.ok) {
                 const data = await resp.json();
                 const yrs = Object.keys(data.byYear || {}).sort();
-                const stats = document.getElementById('sh-stats');
+                const stats = document.getElementById('sd-stats');
                 if (stats) {
                     stats.innerHTML = data.count
-                        ? `<strong>${data.count.toLocaleString('en-NZ')}</strong> rows in the table; years: ${yrs.join(', ') || '(none)'}.`
-                        : `Table is empty — seed it below.`;
+                        ? `<strong>${data.count.toLocaleString('en-NZ')}</strong> rows in the sales history table; years: ${yrs.join(', ') || '(none)'}.`
+                        : `Sales history is empty — seed it from the Admin actions section below.`;
                 }
             }
-        } catch (e) { /* stats are nice-to-have */ }
+        } catch (e) { /* nice-to-have */ }
 
         let lastFile = null;
-        const resultsEl = document.getElementById('sh-results');
+        const uploadResults = document.getElementById('sd-upload-results');
+        const backfillResults = document.getElementById('sd-backfill-results');
 
-        document.getElementById('sh-dryrun-btn').addEventListener('click', async () => {
-            const file = document.getElementById('sh-file').files[0];
+        // ── Upload (seed or round-trip, auto-detected) ──
+        document.getElementById('sd-dryrun-btn').addEventListener('click', async () => {
+            const file = document.getElementById('sd-file').files[0];
             if (!file) { showToast('Choose a CSV file first'); return; }
             lastFile = file;
-            resultsEl.innerHTML = '<p class="bulk-loading">Parsing CSV…</p>';
+            uploadResults.innerHTML = '<p class="bulk-loading">Parsing CSV…</p>';
             try {
                 const csv = await file.text();
                 const resp = await fetch('/api/sales-history', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'text/csv' },
-                    body: csv,
+                    method: 'POST', headers: { 'Content-Type': 'text/csv' }, body: csv,
                 });
                 if (!resp.ok) {
                     const err = await resp.json().catch(() => ({ error: resp.statusText }));
                     throw new Error(err.error || resp.statusText);
                 }
-                renderShResults(await resp.json(), false);
+                renderUploadResults(await resp.json(), false);
             } catch (e) {
-                resultsEl.innerHTML = `<p class="bulk-error">${escHtml(e.message)}</p>`;
+                uploadResults.innerHTML = `<p class="bulk-error">${escHtml(e.message)}</p>`;
             }
         });
 
-        function renderShResults(result, applied) {
+        function renderUploadResults(result, applied) {
             const s = result.summary;
             const isRoundTrip = s.mode === 'round-trip';
-            const skip = s.skipped || {};
-
-            // Mode-specific summary blocks.
-            const summaryHtml = isRoundTrip ? `
-                <strong>${applied ? 'Applied' : 'Dry run'} (round-trip):</strong>
-                ${s.csvRowsParsed.toLocaleString('en-NZ')} row${s.csvRowsParsed === 1 ? '' : 's'} parsed.
-                <strong>${s.updates}</strong> update${s.updates === 1 ? '' : 's'},
-                <strong>${s.adds}</strong> new row${s.adds === 1 ? '' : 's'},
-                ${s.unchanged} unchanged.
-                ${applied ? `<br><span class="bulk-backup">Backup: <code>backup:sales_history:${escHtml(s.backupTs)}</code> · Table size: ${s.totalRowsAfter}</span>` : ''}
-            ` : `
-                <strong>${applied ? 'Applied' : 'Dry run'} (seed):</strong>
-                ${s.csvRowsParsed.toLocaleString('en-NZ')} row${s.csvRowsParsed === 1 ? '' : 's'} parsed from CSV.
-                ${s.negativeRows ? `<br>${s.negativeRows} row${s.negativeRows === 1 ? '' : 's'} contain negative volumes (credit notes / returns).` : ''}
-                ${applied ? `<br><span class="bulk-backup">
-                    Backup keys: <code>backup:sales_history:${escHtml(s.backupTs)}</code> + <code>backup:orders_index:${escHtml(s.backupTs)}</code><br>
-                    HST orders wiped: ${s.hstOrdersDeleted} · Hub rows preserved: ${s.hubRowsPreserved} · Table size: ${s.totalRowsAfter} rows
-                </span>` : ''}
-            `;
-
-            const yearTable = !isRoundTrip ? (() => {
-                const yearRows = Object.keys(s.byYear || {}).sort().map(y => {
-                    const v = s.byYear[y];
-                    const totalKg = (v.bundlesKg || 0) + (v.looseKg || 0) + (v.ecoTiesKg || 0);
-                    return `<tr>
-                        <td>${escHtml(y)}</td>
-                        <td class="bulk-num">${v.count.toLocaleString('en-NZ')}</td>
-                        <td class="bulk-num">${Math.round(v.bundlesKg).toLocaleString('en-NZ')}</td>
-                        <td class="bulk-num">${Math.round(v.looseKg).toLocaleString('en-NZ')}</td>
-                        <td class="bulk-num">${Math.round(v.ecoTiesKg).toLocaleString('en-NZ')}</td>
-                        <td class="bulk-num">${Math.round(totalKg).toLocaleString('en-NZ')}</td>
-                    </tr>`;
-                }).join('');
-                return `
-                <h3 class="bulk-table-title">Breakdown by year</h3>
-                <div class="bulk-table-wrap">
-                    <table class="bulk-table">
-                        <thead><tr>
-                            <th>Year</th>
-                            <th class="bulk-num">Rows</th>
-                            <th class="bulk-num">Bundles kg</th>
-                            <th class="bulk-num">Loose kg</th>
-                            <th class="bulk-num">eco Ties kg</th>
-                            <th class="bulk-num">Total kg</th>
-                        </tr></thead>
-                        <tbody>${yearRows || '<tr><td colspan="6" class="bulk-empty">(none)</td></tr>'}</tbody>
-                    </table>
-                </div>`;
-            })() : '';
-
-            const sampleList = isRoundTrip
-                ? `
-                ${s.sampleUpdates?.length ? `<h3 class="bulk-table-title">Sample updates</h3><ul class="bulk-skip-list">${s.sampleUpdates.map(id => `<li><code>${escHtml(id)}</code></li>`).join('')}</ul>` : ''}
-                ${s.sampleAdds?.length ? `<h3 class="bulk-table-title">Sample new rows</h3><ul class="bulk-skip-list">${s.sampleAdds.map(id => `<li><code>${escHtml(id)}</code></li>`).join('')}</ul>` : ''}
-            ` : '';
-
-            const skipRow = (label, n) => n ? `<li>${escHtml(label)}: ${n}</li>` : '';
-            const skippedBlock = (skip.blank || skip.noDate || skip.noCustomer || skip.allZero || skip.cancelled || skip.noId) ? `
-            <h3 class="bulk-table-title">Skipped rows</h3>
-            <ul class="bulk-skip-list">
-                ${skipRow('Blank', skip.blank)}
-                ${skipRow('Missing date', skip.noDate)}
-                ${skipRow('Missing customer', skip.noCustomer)}
-                ${skipRow('All-zero volumes', skip.allZero)}
-                ${skipRow('CANCELLED invoice', skip.cancelled)}
-                ${skipRow('Missing id', skip.noId)}
-            </ul>` : '';
-
-            const changesPending = isRoundTrip
-                ? (s.adds + s.updates)
-                : s.csvRowsParsed;
+            const summaryHtml = isRoundTrip
+                ? `<strong>${applied ? 'Applied' : 'Dry run'} (round-trip):</strong> ${s.csvRowsParsed} parsed · ${s.adds} new · ${s.updates} updated · ${s.unchanged} unchanged.${applied ? `<br><span class="bulk-backup">Backup: <code>backup:sales_history:${escHtml(s.backupTs)}</code></span>` : ''}`
+                : `<strong>${applied ? 'Applied' : 'Dry run'} (seed):</strong> ${s.csvRowsParsed} rows parsed.${applied ? `<br><span class="bulk-backup">Backup: <code>backup:sales_history:${escHtml(s.backupTs)}</code> · ${s.hstOrdersDeleted} HST orders wiped · ${s.hubRowsPreserved} hub rows preserved</span>` : ''}`;
+            const changesPending = isRoundTrip ? (s.adds + s.updates) : s.csvRowsParsed;
             const applyLabel = isRoundTrip
-                ? `Apply ${(s.adds + s.updates).toLocaleString('en-NZ')} change${(s.adds + s.updates) === 1 ? '' : 's'}`
-                : `Apply seed (${s.csvRowsParsed.toLocaleString('en-NZ')} rows)`;
-            const applyHint = isRoundTrip
-                ? 'Upserts by Id · missing rows left untouched · backs up before write.'
-                : 'Replaces historical rows · preserves Hub rows · wipes HST-* orders · backs up before write.';
-
-            resultsEl.innerHTML = `
+                ? `Apply ${(s.adds + s.updates)} change${(s.adds + s.updates) === 1 ? '' : 's'}`
+                : `Apply seed (${s.csvRowsParsed} rows)`;
+            uploadResults.innerHTML = `
             <div class="bulk-summary ${applied ? 'bulk-summary--applied' : ''}">${summaryHtml}</div>
-            ${yearTable}
-            ${sampleList}
-            ${skippedBlock}
             ${!applied && changesPending > 0 ? `
             <div class="bulk-apply-bar">
-                <button class="btn-primary" id="sh-apply-btn">${applyLabel}</button>
-                <span class="bulk-apply-hint">${applyHint}</span>
+                <button class="btn-primary" id="sd-apply-btn">${applyLabel}</button>
+                <span class="bulk-apply-hint">${isRoundTrip ? 'Upserts by Id · missing rows left untouched · backs up first.' : 'Replaces source:historical rows · preserves source:hub rows · backs up first.'}</span>
             </div>` : ''}`;
 
-            document.getElementById('sh-apply-btn')?.addEventListener('click', async (e) => {
+            document.getElementById('sd-apply-btn')?.addEventListener('click', async (e) => {
                 if (!lastFile) return;
-                const confirmMsg = isRoundTrip
-                    ? `Apply ${s.adds + s.updates} change(s) to sales history?\n\nUpserts by Id; rows missing from the CSV are left untouched. A backup is taken first.`
-                    : `Seed sales history with ${s.csvRowsParsed} historical rows?\n\n  • Replaces all source:historical rows\n  • Preserves source:hub rows\n  • Deletes legacy HST-* orders from ORDERS_KV\n  • Backs up before write`;
-                if (!confirm(confirmMsg)) return;
+                if (!confirm(isRoundTrip
+                    ? `Apply ${s.adds + s.updates} change(s)?\n\nUpserts by Id; missing rows left alone. Backup taken first.`
+                    : `Seed ${s.csvRowsParsed} historical rows?\n\nReplaces source:historical rows. Preserves source:hub rows. Backup taken first.`)) return;
                 const btn = e.currentTarget;
                 btn.disabled = true; btn.textContent = 'Applying…';
                 try {
                     const csv = await lastFile.text();
                     const resp = await fetch('/api/sales-history?apply=true', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'text/csv' },
-                        body: csv,
+                        method: 'POST', headers: { 'Content-Type': 'text/csv' }, body: csv,
                     });
                     if (!resp.ok) {
                         const err = await resp.json().catch(() => ({ error: resp.statusText }));
                         throw new Error(err.error || resp.statusText);
                     }
-                    renderShResults(await resp.json(), true);
+                    renderUploadResults(await resp.json(), true);
                     showToast(isRoundTrip ? `Applied ${s.adds + s.updates} changes` : `Seeded ${s.csvRowsParsed} rows`);
                 } catch (err) {
                     showToast('Apply failed: ' + err.message);
@@ -912,35 +701,30 @@ const Admin = (() => {
             });
         }
 
-        // Backfill Hub orders → sales_history.
-        document.getElementById('sh-backfill-btn').addEventListener('click', async () => {
-            resultsEl.innerHTML = '<p class="bulk-loading">Scanning Hub orders…</p>';
+        // ── Backfill Hub orders ──
+        document.getElementById('sd-backfill-btn').addEventListener('click', async () => {
+            backfillResults.innerHTML = '<p class="bulk-loading">Scanning Hub orders…</p>';
             try {
                 const resp = await fetch('/api/sales-history/backfill', { method: 'POST' });
                 if (!resp.ok) {
                     const err = await resp.json().catch(() => ({ error: resp.statusText }));
                     throw new Error(err.error || resp.statusText);
                 }
-                const result = await resp.json();
-                const s = result.summary;
-                resultsEl.innerHTML = `
+                const r = await resp.json();
+                const s = r.summary;
+                backfillResults.innerHTML = `
                 <div class="bulk-summary">
-                    <strong>Dry run (backfill):</strong>
-                    Scanned ${s.ordersScanned} Hub order${s.ordersScanned === 1 ? '' : 's'}.
-                    <strong>${s.wouldAdd}</strong> would be added,
-                    <strong>${s.wouldUpdate}</strong> would be updated.
-                    ${s.existingHubRows} Hub row${s.existingHubRows === 1 ? '' : 's'} already in the table.
-                    ${s.skipped.noProductKg ? `<br>${s.skipped.noProductKg} order${s.skipped.noProductKg === 1 ? '' : 's'} skipped (no countable product kg — e.g. freight-only).` : ''}
+                    <strong>Dry run:</strong> Scanned ${s.ordersScanned} Hub order${s.ordersScanned === 1 ? '' : 's'}.
+                    <strong>${s.wouldAdd}</strong> to add, <strong>${s.wouldUpdate}</strong> to update.
+                    ${s.existingHubRows} hub row${s.existingHubRows === 1 ? '' : 's'} already in the table.
                 </div>
-                ${s.sampleAdd.length ? `<h3 class="bulk-table-title">Sample to add</h3><ul class="bulk-skip-list">${s.sampleAdd.map(id => `<li><code>${escHtml(id)}</code></li>`).join('')}</ul>` : ''}
                 ${s.wouldAdd + s.wouldUpdate > 0 ? `
                 <div class="bulk-apply-bar">
-                    <button class="btn-primary" id="sh-backfill-apply-btn">Apply (${s.wouldAdd + s.wouldUpdate} rows)</button>
-                    <span class="bulk-apply-hint">Adds missing Hub rows + updates changed ones. Existing untouched. Backs up first.</span>
-                </div>` : '<p class="bulk-empty">Nothing to backfill — every Hub order already has a row.</p>'}`;
-
-                document.getElementById('sh-backfill-apply-btn')?.addEventListener('click', async (e) => {
-                    if (!confirm(`Backfill ${s.wouldAdd + s.wouldUpdate} Hub order rows into sales_history?\n\nA backup is taken before write.`)) return;
+                    <button class="btn-primary" id="sd-backfill-apply-btn">Apply (${s.wouldAdd + s.wouldUpdate} rows)</button>
+                    <span class="bulk-apply-hint">Backs up sales_history first.</span>
+                </div>` : '<p class="bulk-empty">Nothing to backfill — every Hub order is already in the table.</p>'}`;
+                document.getElementById('sd-backfill-apply-btn')?.addEventListener('click', async (e) => {
+                    if (!confirm(`Backfill ${s.wouldAdd + s.wouldUpdate} Hub-order row(s) into sales_history?\n\nBackup taken first.`)) return;
                     const btn = e.currentTarget;
                     btn.disabled = true; btn.textContent = 'Applying…';
                     try {
@@ -949,13 +733,11 @@ const Admin = (() => {
                             const err = await apply.json().catch(() => ({ error: apply.statusText }));
                             throw new Error(err.error || apply.statusText);
                         }
-                        const r = await apply.json();
-                        showToast(`Backfilled ${r.summary.wouldAdd} added · ${r.summary.wouldUpdate} updated`);
-                        resultsEl.innerHTML = `<div class="bulk-summary bulk-summary--applied">
-                            <strong>Backfill applied.</strong>
-                            ${r.summary.wouldAdd} added, ${r.summary.wouldUpdate} updated.
-                            Table size now ${r.summary.totalRowsAfter} rows.
-                            <br><span class="bulk-backup">Backup: <code>backup:sales_history:${escHtml(r.summary.backupTs)}</code></span>
+                        const ar = await apply.json();
+                        showToast(`Backfilled · table size: ${ar.summary.totalRowsAfter}`);
+                        backfillResults.innerHTML = `<div class="bulk-summary bulk-summary--applied">
+                            <strong>Backfill applied.</strong> ${ar.summary.wouldAdd} added · ${ar.summary.wouldUpdate} updated · table size ${ar.summary.totalRowsAfter}.
+                            <br><span class="bulk-backup">Backup: <code>backup:sales_history:${escHtml(ar.summary.backupTs)}</code></span>
                         </div>`;
                     } catch (err) {
                         showToast('Apply failed: ' + err.message);
@@ -963,11 +745,10 @@ const Admin = (() => {
                     }
                 });
             } catch (err) {
-                resultsEl.innerHTML = `<p class="bulk-error">${escHtml(err.message)}</p>`;
+                backfillResults.innerHTML = `<p class="bulk-error">${escHtml(err.message)}</p>`;
             }
         });
     }
-
 
     return { renderAdmin };
 })();
