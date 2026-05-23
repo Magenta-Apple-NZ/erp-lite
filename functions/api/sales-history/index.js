@@ -222,6 +222,85 @@ export async function onRequestGet({ env, request }) {
     }
 }
 
+// Detect whether the upload is the original historical sales CSV (no
+// Id column, kg in "Volume" columns) or a round-trip edit of our own
+// export (has Id + Source columns). Each takes a different code path.
+function looksLikeRoundTripExport(headerCells) {
+    const lower = headerCells.map(h => h.trim().toLowerCase());
+    return lower.includes('id') && lower.some(h => h === 'source');
+}
+
+// Parse our own export shape (one row per sale with id + source columns
+// and per-product "kg" columns). Returns parsed rows ready to upsert.
+function parseRoundTripExport(csv) {
+    const lines = parseCsv(csv);
+    if (lines.length < 2) throw new Error('CSV has no data rows');
+
+    const header = lines[0].map(h => h.trim());
+    const lower = header.map(h => h.toLowerCase());
+    const col = name => lower.indexOf(name);
+
+    const idCol       = col('id');
+    const sourceCol   = col('source');
+    const dateCol     = col('date');
+    const customerCol = col('customer');
+    const branchCol   = col('branch');
+    const poCol       = col('po#');
+    const invCol      = col('invoice');
+    // Tolerate "Bundles kg" / "Bundles Volume" / "Bundled Volume" etc.
+    const bundleCol = header.findIndex(h => {
+        const l = h.toLowerCase();
+        return /bundle/.test(l) && (l.includes('kg') || l.includes('volume'));
+    });
+    const looseCol = header.findIndex(h => {
+        const l = h.toLowerCase();
+        return /loose/.test(l) && (l.includes('kg') || l.includes('volume'));
+    });
+    const ecoCol = header.findIndex(h => {
+        const l = h.toLowerCase();
+        return /eco\s*ti/.test(l) && (l.includes('kg') || l.includes('volume'));
+    });
+
+    const rows = [];
+    const skipped = { blank: 0, noId: 0, noDate: 0 };
+    let nextHistIdx = 0;
+
+    for (let i = 1; i < lines.length; i++) {
+        const r = lines[i];
+        if (!r.length || r.every(c => !String(c || '').trim())) { skipped.blank++; continue; }
+
+        const isoDate = (r[dateCol] || '').trim();
+        if (!isoDate) { skipped.noDate++; continue; }
+
+        let id = idCol >= 0 ? (r[idCol] || '').trim() : '';
+        // Allow new rows (blank id) by minting a fresh historical id. Keeps
+        // the workflow flexible for spreadsheet additions, not just edits.
+        if (!id) {
+            id = 'historical-edit-' + (++nextHistIdx).toString().padStart(4, '0');
+        }
+        const source = (sourceCol >= 0 ? (r[sourceCol] || '').trim().toLowerCase() : '')
+                       || (id.startsWith('PKS-') ? 'hub' : 'historical');
+
+        const [yr, mo] = isoDate.split('-').map(n => parseInt(n, 10));
+        rows.push({
+            id,
+            source,
+            date: isoDate,
+            month: mo,
+            year: yr,
+            fy: fyLabel(yr, mo),
+            customer: customerCol >= 0 ? (r[customerCol] || '').trim() : '',
+            branch:   branchCol   >= 0 ? (r[branchCol]   || '').trim() : '',
+            poNumber: poCol       >= 0 ? (r[poCol]       || '').trim() : '',
+            invoice:  invCol      >= 0 ? (r[invCol]      || '').trim() : '',
+            bundlesKg: bundleCol >= 0 ? parseNum(r[bundleCol]) : 0,
+            looseKg:   looseCol  >= 0 ? parseNum(r[looseCol])  : 0,
+            ecoTiesKg: ecoCol    >= 0 ? parseNum(r[ecoCol])    : 0,
+        });
+    }
+    return { rows, skipped };
+}
+
 export async function onRequestPost({ env, request }) {
     try {
         const { searchParams } = new URL(request.url);
@@ -230,6 +309,15 @@ export async function onRequestPost({ env, request }) {
         const csv = await request.text();
         if (!csv || !csv.trim()) return errResponse('Empty CSV body', 400);
 
+        // Branch on column shape: round-trip edit vs seed-from-source.
+        const headerLine = parseCsv(csv)[0] || [];
+        const isRoundTrip = looksLikeRoundTripExport(headerLine);
+
+        if (isRoundTrip) {
+            return await handleRoundTrip(env, csv, apply);
+        }
+        // Fall through to legacy seed mode (the original Prime Tie sales CSV).
+
         const { rows: parsedRows, skipped } = parseHistoricalCsv(csv);
         const byYear = statsByYear(parsedRows);
         const negativeCount = parsedRows.filter(r =>
@@ -237,6 +325,7 @@ export async function onRequestPost({ env, request }) {
         ).length;
 
         const summary = {
+            mode: 'seed',
             csvRowsParsed: parsedRows.length,
             skipped,
             byYear,
@@ -248,7 +337,7 @@ export async function onRequestPost({ env, request }) {
             return jsonResponse({ mode: 'dry-run', summary });
         }
 
-        // ── Apply ──
+        // ── Apply seed ──
         // 1) Snapshot current sales_history + orders_index to backup keys
         // 2) Wipe HST-* legacy orders (the misstep this seed replaces)
         // 3) Replace historical rows in sales_history, preserve hub rows
@@ -291,4 +380,52 @@ export async function onRequestPost({ env, request }) {
     } catch (e) {
         return errResponse(e.message);
     }
+}
+
+// Round-trip edit flow: user downloads sales-history.csv, fixes things
+// in a spreadsheet, uploads the file back. Match rows by id and update
+// in place. Rows present in KV but absent from the upload are left
+// alone (no deletes). Rows with a blank id are added as new historicals.
+async function handleRoundTrip(env, csv, apply) {
+    const { rows: parsed, skipped } = parseRoundTripExport(csv);
+    const existing = await loadAll(env);
+    const byId = new Map(existing.map(r => [r.id, r]));
+
+    const updates = []; // id whose tracked fields changed
+    const adds = [];    // id new to KV
+    const tracked = ['date','customer','branch','poNumber','invoice',
+                     'bundlesKg','looseKg','ecoTiesKg','source'];
+
+    for (const row of parsed) {
+        const prev = byId.get(row.id);
+        if (!prev) { adds.push(row); continue; }
+        const changed = tracked.some(k => (prev[k] ?? null) !== (row[k] ?? null));
+        if (changed) updates.push(row);
+    }
+
+    const summary = {
+        mode: 'round-trip',
+        csvRowsParsed: parsed.length,
+        skipped,
+        adds: adds.length,
+        updates: updates.length,
+        unchanged: parsed.length - adds.length - updates.length,
+        sampleAdds:    adds.slice(0, 5).map(r => r.id),
+        sampleUpdates: updates.slice(0, 5).map(r => r.id),
+    };
+
+    if (!apply) return jsonResponse({ mode: 'dry-run', summary });
+
+    const backupTs = new Date().toISOString().replace(/[:.]/g, '-');
+    await env.ORDERS_KV.put(`backup:sales_history:${backupTs}`, JSON.stringify(existing));
+
+    for (const r of adds) byId.set(r.id, r);
+    for (const r of updates) byId.set(r.id, r);
+    const merged = [...byId.values()];
+    await env.ORDERS_KV.put('sales_history', JSON.stringify(merged));
+
+    return jsonResponse({
+        mode: 'apply',
+        summary: { ...summary, backupTs, totalRowsAfter: merged.length },
+    });
 }
