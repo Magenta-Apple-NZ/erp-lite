@@ -5,26 +5,51 @@
 const HUB_LIVE_YM = '2026-04'; // (Reference; sales_history doesn't gate on it)
 
 // Classify an order line into one of three product buckets, or 'other'
-// for freight / fees / anything not in the catalog. Looks at SKU first
-// (catalog items have stable SKUs) then falls back to description text
-// and finally to kgPerUnit, so manually-entered lines still get binned.
+// for freight / fees / anything not in the catalog. Layered fallbacks:
+//   1. SKU prefix (Prime Tie convention — most reliable for inbound /
+//      Farmlands-extension orders that may have only a SKU).
+//        PT-L*  → loose      e.g. PT-L-10, PT-L-1B, PT-LOOSE-10
+//        PT-B*  → bundles    e.g. PT-B-10, PT-BUNDLE-10
+//        ET*    → ecoTies    e.g. ET-10, ET-1B
+//   2. Description text keywords (legacy / manual entries).
+//   3. Catalog-stamped kgPerUnit (Hub-created orders).
 function classifyLine(l) {
     const sku  = String(l?.sku || '').toUpperCase();
     const desc = String(l?.description || '').toLowerCase();
-    if (sku.includes('ECOTIE') || /eco\s*ti/.test(desc)) return 'ecoTies';
-    if (sku.includes('BUNDLE') || /bundle/.test(desc)) return 'bundles';
-    if (sku.includes('LOOSE')  || /loose/.test(desc))  return 'loose';
-    // kgPerUnit fallback for catalog lines that don't expose obvious text.
+
+    if (/^PT[-_]?L/.test(sku))   return 'loose';
+    if (/^PT[-_]?B/.test(sku))   return 'bundles';
+    if (/^ET([-_]|$)/.test(sku)) return 'ecoTies';
+
+    if (/eco\s*ti/.test(desc)) return 'ecoTies';
+    if (/bundle/.test(desc))   return 'bundles';
+    if (/loose/.test(desc))    return 'loose';
+
     const kpu = Number(l?.kgPerUnit);
     if (kpu === 10) return 'bundles';
     if (kpu === 1)  return 'loose';
     return 'other';
 }
 
+// Kg per unit for the line. Prefer the catalog-stamped value, otherwise
+// derive from the SKU suffix (-10 → 10kg, -1B → 1kg), otherwise look
+// for "10kg" / "1kg" anywhere in the description.
+function inferKgPerUnit(l) {
+    if (l?.kgPerUnit != null && !isNaN(Number(l.kgPerUnit))) return Number(l.kgPerUnit);
+    const sku = String(l?.sku || '').toUpperCase();
+    if (/-10$/.test(sku))    return 10;
+    if (/-1B?$/.test(sku))   return 1;
+    const desc = String(l?.description || '');
+    const m = desc.match(/\b(\d+)\s*kg\b/i);
+    if (m) {
+        const v = parseInt(m[1], 10);
+        if (v === 10 || v === 1) return v;
+    }
+    return 0;
+}
+
 function lineKg(l) {
-    const q   = Number(l?.quantity)  || 0;
-    const kpu = Number(l?.kgPerUnit) || 0;
-    return q * kpu;
+    return (Number(l?.quantity) || 0) * inferKgPerUnit(l);
 }
 
 function fyLabel(year, month) {
