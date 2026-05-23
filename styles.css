@@ -2080,6 +2080,39 @@ a.xero-inv-linked:hover { background: #d1fae5; border-color: #6ee7b7; }
 .bulk-num { text-align: right; font-variant-numeric: tabular-nums; }
 .bulk-skip-list { margin: 0.4rem 0 0; padding-left: 1.25rem; font-size: 0.85rem; color: #64748b; }
 
+/* ── Stores (Catalogue) editable table ── */
+.store-table-wrap { overflow-x: auto; }
+.store-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+.store-table th {
+    background: #f8fafc; text-align: left; padding: 0.4rem 0.5rem;
+    border-bottom: 1px solid #e2e8f0; font-weight: 600; color: #64748b; font-size: 0.75rem;
+    text-transform: uppercase; letter-spacing: 0.04em;
+}
+.store-table td { padding: 0.25rem 0.35rem; border-bottom: 1px solid #f1f5f9; vertical-align: middle; }
+.store-row--archived td { opacity: 0.5; background: #f8fafc; }
+.store-cell {
+    width: 100%; box-sizing: border-box;
+    padding: 0.35rem 0.5rem; border: 1px solid transparent; border-radius: 4px;
+    background: transparent; font-size: 0.85rem; color: #1e293b;
+    transition: border-color 0.12s, background 0.12s;
+}
+.store-cell:hover  { background: #f8fafc; border-color: #e2e8f0; }
+.store-cell:focus  { outline: none; background: white; border-color: #3b82f6; box-shadow: 0 0 0 2px #3b82f622; }
+.store-cell:disabled { opacity: 0.5; }
+.store-id-cell { white-space: nowrap; }
+.store-src {
+    display: inline-block; margin-left: 0.35rem; padding: 0 0.35rem;
+    font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.05em;
+    background: #f1f5f9; color: #64748b; border-radius: 3px;
+}
+.store-src--hub { background: #ddd6fe; color: #5b21b6; }
+.store-actions-cell { white-space: nowrap; text-align: right; }
+.store-toggle-archived {
+    display: inline-flex; align-items: center; gap: 0.3rem;
+    font-size: 0.8rem; color: #64748b; cursor: pointer;
+}
+.store-toggle-archived input { margin: 0; }
+
 /* Catalogue section dim tag */
 .cat-dim { color: #cbd5e1 !important; }
 

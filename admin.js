@@ -78,17 +78,8 @@ const Admin = (() => {
         return [headers.join(','), ...rows].join('\n');
     }
 
-    function storesTableRows(stores) {
-        return stores.slice(0, 20).map(s => `
-            <tr>
-                <td class="cat-mono">${escHtml(s.customerCode || '')}</td>
-                <td>${escHtml(s.customer || s.name || '')}</td>
-                <td>${escHtml(s.branch || '')}</td>
-                <td>${escHtml(s.city || '')}</td>
-                <td>${escHtml(s.postcode || '')}</td>
-            </tr>`).join('') +
-            (stores.length > 20 ? `<tr><td colspan="5" class="cat-more">…and ${stores.length - 20} more</td></tr>` : '');
-    }
+    // (storesTableRows removed — the Stores tab now renders an editable
+    // table inline rather than a short read-only preview.)
 
     // ── Price matrix row HTML ──
     function matrixRow(item) {
@@ -111,7 +102,6 @@ const Admin = (() => {
     // longer accepts edits — the sheet is the source of truth. This tab is
     // a read-only viewer plus a link out for editing.
     const ITEMS_SHEET_VIEW_URL  = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSf_VXDqVAC5KqHJZTil7H-2MoeK5lSqx5OWmCaigi6Xn7wNdznlp0mS-D5rgI35-X4Vh-itflowh1j/pubhtml?gid=0';
-    const STORES_SHEET_VIEW_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSf_VXDqVAC5KqHJZTil7H-2MoeK5lSqx5OWmCaigi6Xn7wNdznlp0mS-D5rgI35-X4Vh-itflowh1j/pubhtml?gid=1005144257';
 
     function fmtPrice(v) { return v == null ? '<span class="cat-price-nil">—</span>' : '$' + Number(v).toFixed(2); }
 
@@ -169,41 +159,285 @@ const Admin = (() => {
         });
     }
 
-    // ── Stores tab (read-only, sourced from published Google Sheet) ──
-    function renderStoresTab(body, stores, onUpdate) {
-        body.innerHTML = `
-        <div class="cat-section" id="cat-stores">
-            <div class="cat-section-head">
-                <div>
-                    <h2 class="cat-title">Store Locations</h2>
-                    <p class="cat-sub">Read-only. Source: <a href="${STORES_SHEET_VIEW_URL}" target="_blank" rel="noopener">Stores sheet ↗</a> (cached ~60s). ${stores.length} store${stores.length !== 1 ? 's' : ''}.</p>
-                </div>
-                <button class="btn-secondary btn-sm" id="cat-stores-refresh"
-                    title="Bypass the 60s edge cache and re-read the sheet now">Refresh from Sheet</button>
-            </div>
-            <table class="cat-table">
-                <thead><tr><th>Code</th><th>Customer</th><th>Branch</th><th>City</th><th>Postcode</th></tr></thead>
-                <tbody>
-                    ${stores.length
-                        ? storesTableRows(stores)
-                        : '<tr><td colspan="5" class="cat-empty">No stores yet. Add rows in the source sheet.</td></tr>'}
-                </tbody>
-            </table>
-        </div>`;
+    // ── Stores tab — editable, Hub-owned ──
+    // Stores live in the `stores` KV blob; sheet is now only the one-time
+    // seed bootstrap (and the optional "Re-seed from Sheet" admin button).
+    // Inline edit / add / archive / CSV round-trip are all in one tab.
+    async function renderStoresTab(body, _initialStores, onUpdate) {
+        body.innerHTML = '<div class="orders-loading">Loading stores…</div>';
 
-        document.getElementById('cat-stores-refresh')?.addEventListener('click', async (e) => {
-            const btn = e.currentTarget;
-            btn.disabled = true; btn.textContent = 'Refreshing…';
-            try {
-                const fresh = await api('/api/catalog/stores?bust=1');
-                if (typeof onUpdate === 'function') onUpdate(fresh);
-                renderStoresTab(body, fresh, onUpdate);
-                showToast('Stores reloaded from sheet');
-            } catch (err) {
-                showToast('Refresh failed: ' + err.message);
-                btn.disabled = false; btn.textContent = 'Refresh from Sheet';
+        let stores = [];
+        let showArchived = false;
+
+        async function reload() {
+            const url = '/api/catalog/stores' + (showArchived ? '?archived=true' : '');
+            stores = await api(url);
+            if (typeof onUpdate === 'function') onUpdate(stores);
+            render();
+        }
+
+        const STORE_HEADERS = [
+            { key: 'customerCode', label: 'Code',     width: '90px' },
+            { key: 'customer',     label: 'Customer', width: '140px' },
+            { key: 'branch',       label: 'Branch',   width: '140px' },
+            { key: 'address',      label: 'Address' },
+            { key: 'city',         label: 'City',     width: '110px' },
+            { key: 'postcode',     label: 'Postcode', width: '80px' },
+            { key: 'phone',        label: 'Phone',    width: '110px' },
+        ];
+
+        function rowHtml(s) {
+            const cells = STORE_HEADERS.map(h => `
+                <td>
+                    <input class="store-cell" data-id="${escHtml(s.id)}" data-field="${h.key}"
+                        value="${escHtml(s[h.key] || '')}" placeholder="${escHtml(h.label)}">
+                </td>`).join('');
+            const srcBadge = s.source === 'hub'
+                ? '<span class="store-src store-src--hub" title="Manually added in the Hub">hub</span>'
+                : '<span class="store-src" title="Seeded from the sheet">sheet</span>';
+            return `
+            <tr class="store-row${s.archived ? ' store-row--archived' : ''}" data-id="${escHtml(s.id)}">
+                <td class="store-id-cell">
+                    <span class="cat-mono">${escHtml(s.id)}</span>
+                    ${srcBadge}
+                </td>
+                ${cells}
+                <td class="store-actions-cell">
+                    ${s.archived
+                        ? `<button class="btn-secondary btn-sm" data-action="restore" data-id="${escHtml(s.id)}">Restore</button>`
+                        : `<button class="btn-secondary btn-sm" data-action="archive" data-id="${escHtml(s.id)}">Archive</button>`}
+                </td>
+            </tr>`;
+        }
+
+        function render() {
+            const visible = stores.filter(s => showArchived || !s.archived);
+            body.innerHTML = `
+            <div class="cat-section" id="cat-stores">
+                <div class="cat-section-head">
+                    <div>
+                        <h2 class="cat-title">Store Locations</h2>
+                        <p class="cat-sub">Hub-owned. ${visible.length} store${visible.length === 1 ? '' : 's'}${showArchived ? ' (incl. archived)' : ''}. Edit any cell and click outside to save. Use Archive to soft-delete (data is preserved for historical references).</p>
+                    </div>
+                    <div class="cat-header-actions">
+                        <a class="btn-secondary btn-sm" href="/api/catalog/stores?format=csv" download="stores.csv">Export CSV ↓</a>
+                        <button class="btn-secondary btn-sm" id="stores-add-btn">+ Add store</button>
+                        <label class="store-toggle-archived">
+                            <input type="checkbox" id="stores-show-archived" ${showArchived ? 'checked' : ''}> Show archived
+                        </label>
+                    </div>
+                </div>
+
+                <div class="store-table-wrap">
+                    <table class="store-table">
+                        <thead>
+                            <tr>
+                                <th style="width:120px">Id</th>
+                                ${STORE_HEADERS.map(h => `<th${h.width ? ` style="width:${h.width}"` : ''}>${h.label}</th>`).join('')}
+                                <th style="width:80px"></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${visible.length
+                                ? visible.map(rowHtml).join('')
+                                : '<tr><td colspan="9" class="cat-empty">No stores. Click "+ Add store" to create one.</td></tr>'}
+                        </tbody>
+                    </table>
+                </div>
+
+                <details class="cat-section" style="margin-top:1rem">
+                    <summary style="cursor:pointer;list-style:none;padding:0.5rem 0">
+                        <strong>Upload CSV</strong> &nbsp;<span class="cat-sub">— round-trip an edited stores.csv, or re-seed from the sheet</span>
+                    </summary>
+                    <div style="margin-top:0.75rem">
+                        <div class="bulk-step">
+                            <input type="file" id="stores-upload-file" accept=".csv,text/csv">
+                            <button class="btn-secondary btn-sm" id="stores-upload-dryrun-btn">Preview (dry-run)</button>
+                            <span class="bulk-step-hint">Auto-detects round-trip (Id column) vs seed (sheet format).</span>
+                        </div>
+                        <div id="stores-upload-results"></div>
+                        <div style="margin-top:1rem;border-top:1px solid #f1f5f9;padding-top:0.75rem">
+                            <button class="btn-secondary btn-sm" id="stores-reseed-btn"
+                                title="Refetch the published Google Sheet and replace all sheet-sourced rows. Hub-added stores are preserved.">Re-seed from Sheet</button>
+                            <span class="cat-sub" style="margin-left:0.5rem">Backs up the current table first.</span>
+                        </div>
+                    </div>
+                </details>
+            </div>`;
+
+            wireRow();
+        }
+
+        function wireRow() {
+            // Save-on-blur for every editable cell.
+            body.querySelectorAll('.store-cell').forEach(input => {
+                let originalValue = input.value;
+                input.addEventListener('focus', () => { originalValue = input.value; });
+                input.addEventListener('blur', async () => {
+                    if (input.value === originalValue) return;
+                    const id    = input.dataset.id;
+                    const field = input.dataset.field;
+                    input.disabled = true;
+                    try {
+                        await api(`/api/catalog/stores/${encodeURIComponent(id)}`, {
+                            method: 'PATCH',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ [field]: input.value }),
+                        });
+                        const local = stores.find(s => s.id === id);
+                        if (local) local[field] = input.value;
+                    } catch (err) {
+                        showToast('Save failed: ' + err.message);
+                        input.value = originalValue;
+                    } finally {
+                        input.disabled = false;
+                    }
+                });
+            });
+
+            body.querySelectorAll('[data-action]').forEach(btn => {
+                btn.addEventListener('click', async (e) => {
+                    const id = e.currentTarget.dataset.id;
+                    const action = e.currentTarget.dataset.action;
+                    if (action === 'archive') {
+                        if (!confirm(`Archive store ${id}?\n\nIt'll be hidden but kept in KV for historical references.`)) return;
+                        try {
+                            await api(`/api/catalog/stores/${encodeURIComponent(id)}`, { method: 'DELETE' });
+                            await reload();
+                            showToast('Archived');
+                        } catch (err) { showToast('Archive failed: ' + err.message); }
+                    } else if (action === 'restore') {
+                        try {
+                            await api(`/api/catalog/stores/${encodeURIComponent(id)}`, {
+                                method: 'PATCH',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ archived: false }),
+                            });
+                            await reload();
+                            showToast('Restored');
+                        } catch (err) { showToast('Restore failed: ' + err.message); }
+                    }
+                });
+            });
+
+            // Show / hide archived rows.
+            document.getElementById('stores-show-archived')?.addEventListener('change', async (e) => {
+                showArchived = e.target.checked;
+                await reload();
+            });
+
+            // Add a new store inline — minimal flow: prompt for customer + branch,
+            // then the user can edit the other fields in the table.
+            document.getElementById('stores-add-btn')?.addEventListener('click', async () => {
+                const customer = prompt('Customer name (e.g. Farmlands):');
+                if (customer == null) return;
+                const branch = prompt('Branch (e.g. Te Puke):');
+                if (branch == null) return;
+                if (!customer.trim() && !branch.trim()) {
+                    showToast('Customer or Branch is required');
+                    return;
+                }
+                try {
+                    await api('/api/catalog/stores', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ action: 'add', store: { customer: customer.trim(), branch: branch.trim() } }),
+                    });
+                    await reload();
+                    showToast('Store added — fill in the remaining columns inline');
+                } catch (err) { showToast('Add failed: ' + err.message); }
+            });
+
+            // CSV upload — dry-run + apply.
+            let lastFile = null;
+            const resultsEl = document.getElementById('stores-upload-results');
+            document.getElementById('stores-upload-dryrun-btn')?.addEventListener('click', async () => {
+                const file = document.getElementById('stores-upload-file').files[0];
+                if (!file) { showToast('Choose a CSV file first'); return; }
+                lastFile = file;
+                resultsEl.innerHTML = '<p class="bulk-loading">Parsing CSV…</p>';
+                try {
+                    const csv = await file.text();
+                    const resp = await fetch('/api/catalog/stores', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'text/csv' },
+                        body: csv,
+                    });
+                    if (!resp.ok) {
+                        const err = await resp.json().catch(() => ({ error: resp.statusText }));
+                        throw new Error(err.error || resp.statusText);
+                    }
+                    const result = await resp.json();
+                    renderUploadResults(result);
+                } catch (err) {
+                    resultsEl.innerHTML = `<p class="bulk-error">${escHtml(err.message)}</p>`;
+                }
+            });
+
+            function renderUploadResults(result) {
+                const s = result.summary;
+                const summaryText = s.mode === 'round-trip'
+                    ? `<strong>Dry run (round-trip):</strong> ${s.csvRowsParsed} parsed · ${s.adds} new · ${s.updates} updated · ${s.unchanged} unchanged.`
+                    : `<strong>Dry run (seed):</strong> ${s.csvRowsParsed} rows parsed. Apply replaces sheet-sourced rows; hub-added stores are preserved.`;
+                resultsEl.innerHTML = `
+                <div class="bulk-summary">${summaryText}</div>
+                ${(s.adds + s.updates > 0) || s.mode === 'seed' ? `
+                <div class="bulk-apply-bar">
+                    <button class="btn-primary" id="stores-upload-apply-btn">Apply</button>
+                    <span class="bulk-apply-hint">Backs up the current stores table first.</span>
+                </div>` : '<p class="bulk-empty">Nothing to apply — the CSV matches what's already stored.</p>'}`;
+
+                document.getElementById('stores-upload-apply-btn')?.addEventListener('click', async (e) => {
+                    if (!confirm('Apply this upload to the stores table?\n\nA backup is taken first.')) return;
+                    const btn = e.currentTarget;
+                    btn.disabled = true; btn.textContent = 'Applying…';
+                    try {
+                        const csv = await lastFile.text();
+                        const resp = await fetch('/api/catalog/stores?apply=true', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'text/csv' },
+                            body: csv,
+                        });
+                        if (!resp.ok) {
+                            const err = await resp.json().catch(() => ({ error: resp.statusText }));
+                            throw new Error(err.error || resp.statusText);
+                        }
+                        const r = await resp.json();
+                        showToast(`Applied · table size: ${r.summary.totalRowsAfter}`);
+                        await reload();
+                    } catch (err) {
+                        showToast('Apply failed: ' + err.message);
+                        btn.disabled = false; btn.textContent = 'Apply';
+                    }
+                });
             }
-        });
+
+            // Re-seed from the published sheet (admin action — wipes sheet-sourced rows).
+            document.getElementById('stores-reseed-btn')?.addEventListener('click', async (e) => {
+                if (!confirm('Re-seed from the published sheet?\n\nThis fetches the latest sheet, replaces all sheet-sourced rows, and preserves hub-added stores. A backup of the current table is taken first.')) return;
+                const btn = e.currentTarget;
+                btn.disabled = true; btn.textContent = 'Re-seeding…';
+                try {
+                    const resp = await fetch('/api/catalog/stores', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ action: 'reseed-from-sheet' }),
+                    });
+                    if (!resp.ok) {
+                        const err = await resp.json().catch(() => ({ error: resp.statusText }));
+                        throw new Error(err.error || resp.statusText);
+                    }
+                    const r = await resp.json();
+                    showToast(`Re-seeded ${r.seeded} stores from sheet`);
+                    await reload();
+                } catch (err) {
+                    showToast('Re-seed failed: ' + err.message);
+                    btn.disabled = false; btn.textContent = 'Re-seed from Sheet';
+                }
+            });
+        }
+
+        await reload();
     }
 
     async function renderAdmin(container) {
