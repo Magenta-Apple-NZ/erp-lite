@@ -416,9 +416,35 @@ const SalesView = (() => {
             });
         });
 
+        // Cross-aware filter options: each select rebuilds its options from
+        // the rows that match the OTHER filters. Picking Customer = Horticentre
+        // shrinks the Branch dropdown to Horticentre's three branches; the
+        // reverse holds for Branch → Customer. If a currently-selected value
+        // no longer matches (e.g. you pick Branch then change Customer to one
+        // that doesn't have it), the orphaned filter resets to "all".
+        function rebuildFilterOptions() {
+            const branchesForCustomer = filterCustomer
+                ? [...new Set(rows.filter(r => r.customer === filterCustomer).map(r => r.branch).filter(Boolean))].sort()
+                : [...branchSet].sort();
+            if (filterBranch && !branchesForCustomer.includes(filterBranch)) filterBranch = '';
+            const branchEl = document.getElementById('sf-branch');
+            if (branchEl) branchEl.innerHTML = makeOpts(branchesForCustomer, filterBranch, 'Branches');
+
+            const customersForBranch = filterBranch
+                ? [...new Set(rows.filter(r => r.branch === filterBranch).map(r => r.customer).filter(Boolean))].sort()
+                : [...custSet].sort();
+            if (filterCustomer && !customersForBranch.includes(filterCustomer)) filterCustomer = '';
+            const customerEl = document.getElementById('sf-customer');
+            if (customerEl) customerEl.innerHTML = makeOpts(customersForBranch, filterCustomer, 'Customers');
+        }
+
         // ── Filter event handlers ──
-        document.getElementById('sf-customer')?.addEventListener('change', e => { filterCustomer = e.target.value; rebuildCharts(); });
-        document.getElementById('sf-branch')?.addEventListener('change',   e => { filterBranch   = e.target.value; rebuildCharts(); });
+        document.getElementById('sf-customer')?.addEventListener('change', e => {
+            filterCustomer = e.target.value; rebuildFilterOptions(); rebuildCharts();
+        });
+        document.getElementById('sf-branch')?.addEventListener('change',   e => {
+            filterBranch   = e.target.value; rebuildFilterOptions(); rebuildCharts();
+        });
         document.getElementById('sf-product')?.addEventListener('change',  e => { filterProduct  = e.target.value; rebuildCharts(); });
 
         document.getElementById('sf-years')?.querySelectorAll('[data-year]').forEach(btn => {
@@ -436,8 +462,9 @@ const SalesView = (() => {
         document.getElementById('sf-clear')?.addEventListener('click', () => {
             filterCustomer = ''; filterBranch = ''; filterProduct = '';
             selectedYears = new Set(defaultYears);
-            document.getElementById('sf-customer').value = '';
-            document.getElementById('sf-branch').value = '';
+            // Restore the customer + branch dropdowns to their full option
+            // sets so prior cross-filter narrowing doesn't linger.
+            rebuildFilterOptions();
             document.getElementById('sf-product').value = '';
             document.querySelectorAll('#sf-years [data-year]').forEach(btn => {
                 btn.classList.toggle('active', selectedYears.has(btn.dataset.year));
