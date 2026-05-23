@@ -2,7 +2,7 @@
 // Creates a DRAFT invoice in Xero from the order, stores the invoice ID back.
 
 import { getValidToken, xeroHeaders, jsonResponse, errResponse, XeroAuthError } from '../_xero.js';
-import { rowFromOrder, upsertRow } from '../sales-history/_writer.js';
+import { syncSalesHistory } from '../sales-history/_writer.js';
 
 export async function onRequestPost({ env, request }) {
     try {
@@ -88,15 +88,11 @@ export async function onRequestPost({ env, request }) {
         order.updatedAt = new Date().toISOString();
         await env.ORDERS_KV.put('order:' + orderId, JSON.stringify(order));
 
-        // Append (or update) a row in the denormalised sales_history table.
-        // This is what the Sales History view + dashboard mini-chart +
-        // forecast actuals all read from going forward. Idempotent by
-        // order.id, so a re-push corrects the existing row in place.
-        const salesRow = rowFromOrder(order);
-        if (salesRow) {
-            try { await upsertRow(env, salesRow); }
-            catch (err) { console.error('sales_history upsert failed:', err); }
-        }
+        // Sync sales_history. /api/orders POST + inbound already do this
+        // at creation time, so for already-existing orders this just
+        // updates the invoice number in-place. The shared helper means
+        // every write path uses the same logic.
+        await syncSalesHistory(env, order);
 
         return jsonResponse({
             invoiceId: created.InvoiceID,

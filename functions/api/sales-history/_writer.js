@@ -79,4 +79,34 @@ export async function upsertRow(env, row) {
     await env.ORDERS_KV.put('sales_history', JSON.stringify(rows));
 }
 
+// Drop a row from sales_history by id. No-op if not present.
+export async function removeRow(env, id) {
+    if (!id) return;
+    const raw = await env.ORDERS_KV.get('sales_history');
+    if (!raw) return;
+    const rows = JSON.parse(raw);
+    const filtered = rows.filter(r => r.id !== id);
+    if (filtered.length !== rows.length) {
+        await env.ORDERS_KV.put('sales_history', JSON.stringify(filtered));
+    }
+}
+
+// Single canonical sync hook. Called from every order write path so
+// sales_history stays in lock-step with ORDERS_KV — irrespective of
+// whether the order arrived via /api/orders (manual), /api/orders/inbound
+// (API webhook), or /api/xero/push (invoice creation). An order with no
+// countable product kg (e.g. freight-only) has its sales_history row
+// removed if one exists.
+export async function syncSalesHistory(env, order) {
+    if (!order || !order.id) return;
+    const row = rowFromOrder(order);
+    if (row) {
+        try { await upsertRow(env, row); }
+        catch (err) { console.error('sales_history upsert failed for', order.id, err); }
+    } else {
+        try { await removeRow(env, order.id); }
+        catch (err) { console.error('sales_history remove failed for', order.id, err); }
+    }
+}
+
 export { HUB_LIVE_YM };

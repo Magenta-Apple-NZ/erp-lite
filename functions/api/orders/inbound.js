@@ -4,6 +4,7 @@
 // Also add an Access bypass policy for /api/orders/inbound in Zero Trust dashboard.
 
 import { jsonResponse, errResponse } from '../_xero.js';
+import { syncSalesHistory } from '../sales-history/_writer.js';
 
 export async function onRequestPost({ env, request }) {
     // ── Auth: shared secret ──
@@ -89,6 +90,10 @@ export async function onRequestPost({ env, request }) {
         const existing = JSON.parse(await env.ORDERS_KV.get('orders_index') || '[]');
         existing.unshift(id);
         await env.ORDERS_KV.put('orders_index', JSON.stringify([...new Set(existing)]));
+
+        // Webhook-received orders go straight into sales_history too. This
+        // is the path Farmlands / Make.com / DocuPipe orders arrive on.
+        await syncSalesHistory(env, order);
 
         return jsonResponse({ id, status: order.status, createdAt: order.createdAt }, 201);
 

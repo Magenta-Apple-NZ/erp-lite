@@ -2,6 +2,7 @@
 // POST /api/orders       — create a new order
 
 import { jsonResponse, errResponse } from '../_xero.js';
+import { syncSalesHistory } from '../sales-history/_writer.js';
 
 export async function onRequestGet({ env }) {
     try {
@@ -91,6 +92,11 @@ export async function onRequestPost({ env, request }) {
         const existing = JSON.parse(await env.ORDERS_KV.get('orders_index') || '[]');
         existing.unshift(id);
         await env.ORDERS_KV.put('orders_index', JSON.stringify([...new Set(existing)]));
+
+        // Every Hub order is reflected in sales_history at creation time —
+        // not waiting for a Xero push. Inbound webhooks + xeroSourced
+        // orders that never go through /api/xero/push now show up too.
+        await syncSalesHistory(env, order);
 
         return jsonResponse(order, 201);
     } catch (e) {

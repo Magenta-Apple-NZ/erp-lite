@@ -2,6 +2,7 @@
 // PATCH /api/orders/:id   — update status, fields, or append an event
 
 import { jsonResponse, errResponse } from '../_xero.js';
+import { syncSalesHistory, removeRow } from '../sales-history/_writer.js';
 
 const VALID_STATUSES = ['new', 'reviewed', 'sent_to_xero', 'dispatched'];
 
@@ -26,6 +27,10 @@ export async function onRequestDelete({ env, params }) {
         // Filter out the deleted id AND dedupe any pre-existing duplicates.
         const updated = [...new Set(index.filter(id => id !== params.id))];
         await env.ORDERS_KV.put('orders_index', JSON.stringify(updated));
+
+        // Drop the corresponding sales_history row so the reporting view
+        // doesn't keep a sale that no longer has an underlying order.
+        await removeRow(env, params.id);
 
         return jsonResponse({ deleted: params.id });
     } catch (e) {
@@ -72,6 +77,12 @@ export async function onRequestPatch({ env, params, request }) {
 
         order.updatedAt = new Date().toISOString();
         await env.ORDERS_KV.put('order:' + params.id, JSON.stringify(order));
+
+        // Any field that affects sales reporting (customer/branch/lines/
+        // invoice/date) might have changed — re-derive and upsert. No-op
+        // if nothing material moved.
+        await syncSalesHistory(env, order);
+
         return jsonResponse(order);
     } catch (e) {
         return errResponse(e.message);
