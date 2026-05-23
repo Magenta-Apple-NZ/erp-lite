@@ -453,6 +453,7 @@ const Admin = (() => {
             <button class="imp-view-btn" id="cat-tab-stores">Stores</button>
             <button class="imp-view-btn" id="cat-tab-printers">Printers</button>
             <button class="imp-view-btn" id="cat-tab-salesdata">Sales Data</button>
+            <button class="imp-view-btn" id="cat-tab-payroll">Payroll</button>
         </div>
         <div id="admin-body"><div class="orders-loading">Loading…</div></div>`;
 
@@ -471,16 +472,19 @@ const Admin = (() => {
             document.getElementById('cat-tab-stores').classList.toggle('active', tab === 'stores');
             document.getElementById('cat-tab-printers').classList.toggle('active', tab === 'printers');
             document.getElementById('cat-tab-salesdata').classList.toggle('active', tab === 'salesdata');
+            document.getElementById('cat-tab-payroll').classList.toggle('active', tab === 'payroll');
             if (tab === 'prices')         renderPricesTab(body, items, updated => { items = updated; });
             else if (tab === 'stores')    renderStoresTab(body, stores, updated => { stores = updated; });
             else if (tab === 'printers')  renderPrintersTab(body);
             else if (tab === 'salesdata') renderSalesDataTab(body);
+            else if (tab === 'payroll')   renderPayrollTab(body);
         }
 
         document.getElementById('cat-tab-prices').addEventListener('click',     () => switchTab('prices'));
         document.getElementById('cat-tab-stores').addEventListener('click',     () => switchTab('stores'));
         document.getElementById('cat-tab-printers').addEventListener('click',   () => switchTab('printers'));
         document.getElementById('cat-tab-salesdata').addEventListener('click',  () => switchTab('salesdata'));
+        document.getElementById('cat-tab-payroll').addEventListener('click',    () => switchTab('payroll'));
 
         switchTab('prices');
     }
@@ -747,6 +751,240 @@ const Admin = (() => {
                 backfillResults.innerHTML = `<p class="bulk-error">${escHtml(err.message)}</p>`;
             }
         });
+    }
+
+    // ── Payroll tab ──
+    // Rates, packing log (CSV round-trip), timesheets (CSV round-trip),
+    // payslip preview (one month at a time), PDF download.
+    async function renderPayrollTab(body) {
+        body.innerHTML = '<div class="orders-loading">Loading payroll…</div>';
+
+        let config = { employees: [] };
+        try { config = await api('/api/payroll/config'); }
+        catch (e) { showToast('Could not load config: ' + e.message); }
+        const employees = (config.employees || []).filter(e => !e.archived);
+        if (!employees.length) { body.innerHTML = '<p class="cat-sub">No employees configured.</p>'; return; }
+
+        // Default to "this month" — start of current month → today
+        const now = new Date();
+        const yr = now.getFullYear(), mo = now.getMonth() + 1;
+        const monthStart = `${yr}-${String(mo).padStart(2, '0')}-01`;
+        const monthEnd   = `${yr}-${String(mo).padStart(2, '0')}-${String(new Date(yr, mo, 0).getDate()).padStart(2, '0')}`;
+
+        body.innerHTML = `
+        <div class="cat-section">
+            <h2 class="cat-title">Payroll</h2>
+            <p class="cat-sub">Rates, daily packing + hours via CSV, and a monthly payslip generator. Dispatched boxes are sourced from the Dispatch Log (orders attributed to the employee in the selected month).</p>
+
+            <h3 class="bulk-table-title" style="margin-top:1.5rem">Rates</h3>
+            <p class="cat-sub">NZD per unit. Saved values are applied to all future payslip calculations.</p>
+            <div id="payroll-rates"></div>
+
+            <h3 class="bulk-table-title" style="margin-top:1.75rem">Daily inputs</h3>
+            <p class="cat-sub">Two CSVs — daily packing log and timesheets. Download to see the current state, fill / edit in a spreadsheet, upload back. Same round-trip pattern as Sales Data.</p>
+
+            <div class="payroll-csv-grid">
+                <div class="payroll-csv-card">
+                    <div class="payroll-csv-title">Packing log</div>
+                    <p class="cat-sub">Columns: Id, Date, Employee, Boxes 10kg, Boxes 1kg, Notes. Leave Id blank for new rows.</p>
+                    <div class="bulk-step">
+                        <a class="btn-secondary btn-sm" href="/api/payroll/packing-log?format=csv" download="packing-log.csv">Export ↓</a>
+                        <input type="file" id="pack-file" accept=".csv,text/csv">
+                        <button class="btn-secondary btn-sm" id="pack-dryrun-btn">Preview upload</button>
+                    </div>
+                    <div id="pack-results"></div>
+                </div>
+                <div class="payroll-csv-card">
+                    <div class="payroll-csv-title">Timesheets</div>
+                    <p class="cat-sub">Columns: Id, Date, Employee, Hours, Notes. Leave Id blank for new rows.</p>
+                    <div class="bulk-step">
+                        <a class="btn-secondary btn-sm" href="/api/payroll/timesheets?format=csv" download="timesheets.csv">Export ↓</a>
+                        <input type="file" id="ts-file" accept=".csv,text/csv">
+                        <button class="btn-secondary btn-sm" id="ts-dryrun-btn">Preview upload</button>
+                    </div>
+                    <div id="ts-results"></div>
+                </div>
+            </div>
+
+            <h3 class="bulk-table-title" style="margin-top:1.75rem">Generate payslip</h3>
+            <div class="payroll-period-bar">
+                <label>Employee
+                    <select id="payslip-employee">
+                        ${employees.map(e => `<option value="${escHtml(e.id)}">${escHtml(e.name)}</option>`).join('')}
+                    </select>
+                </label>
+                <label>From
+                    <input type="date" id="payslip-start" value="${monthStart}">
+                </label>
+                <label>To
+                    <input type="date" id="payslip-end" value="${monthEnd}">
+                </label>
+                <button class="btn-primary btn-sm" id="payslip-generate-btn">Generate</button>
+            </div>
+            <div id="payslip-result"></div>
+        </div>`;
+
+        renderRates();
+        wireUpload('pack', '/api/payroll/packing-log');
+        wireUpload('ts',   '/api/payroll/timesheets');
+        document.getElementById('payslip-generate-btn').addEventListener('click', generatePayslip);
+
+        function renderRates() {
+            const ratesEl = document.getElementById('payroll-rates');
+            ratesEl.innerHTML = employees.map((e, i) => `
+                <div class="payroll-rates-row" data-emp="${escHtml(e.id)}">
+                    <span class="payroll-rates-name">${escHtml(e.name)}</span>
+                    <label>$ / box dispatched
+                        <input type="number" step="0.01" min="0" class="payroll-rate-input" data-field="perBoxDispatched" value="${e.rates?.perBoxDispatched ?? 0}">
+                    </label>
+                    <label>$ / box packed (10kg)
+                        <input type="number" step="0.01" min="0" class="payroll-rate-input" data-field="perBox10kgPacked" value="${e.rates?.perBox10kgPacked ?? 0}">
+                    </label>
+                    <label>$ / box packed (1kg)
+                        <input type="number" step="0.01" min="0" class="payroll-rate-input" data-field="perBox1kgPacked" value="${e.rates?.perBox1kgPacked ?? 0}">
+                    </label>
+                    <label>$ / hour
+                        <input type="number" step="0.01" min="0" class="payroll-rate-input" data-field="perHour" value="${e.rates?.perHour ?? 0}">
+                    </label>
+                    <button class="btn-secondary btn-sm payroll-rates-save" data-emp="${escHtml(e.id)}">Save</button>
+                </div>`).join('');
+            ratesEl.querySelectorAll('.payroll-rates-save').forEach(btn => {
+                btn.addEventListener('click', async (e) => {
+                    const empId = e.currentTarget.dataset.emp;
+                    const row = ratesEl.querySelector(`.payroll-rates-row[data-emp="${empId}"]`);
+                    const newRates = {};
+                    row.querySelectorAll('.payroll-rate-input').forEach(inp => {
+                        newRates[inp.dataset.field] = Number(inp.value) || 0;
+                    });
+                    const next = employees.map(emp => emp.id === empId ? { ...emp, rates: newRates } : emp);
+                    btn.disabled = true; btn.textContent = 'Saving…';
+                    try {
+                        await api('/api/payroll/config', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ employees: next }),
+                        });
+                        for (let i = 0; i < employees.length; i++) if (employees[i].id === empId) employees[i] = next.find(e => e.id === empId);
+                        showToast('Rates saved');
+                    } catch (err) { showToast('Save failed: ' + err.message); }
+                    finally { btn.disabled = false; btn.textContent = 'Save'; }
+                });
+            });
+        }
+
+        function wireUpload(prefix, endpoint) {
+            let lastFile = null;
+            const resultsEl = document.getElementById(`${prefix}-results`);
+            document.getElementById(`${prefix}-dryrun-btn`).addEventListener('click', async () => {
+                const file = document.getElementById(`${prefix}-file`).files[0];
+                if (!file) { showToast('Choose a CSV file first'); return; }
+                lastFile = file;
+                resultsEl.innerHTML = '<p class="bulk-loading">Parsing CSV…</p>';
+                try {
+                    const csv = await file.text();
+                    const resp = await fetch(endpoint, { method: 'POST', headers: { 'Content-Type': 'text/csv' }, body: csv });
+                    if (!resp.ok) {
+                        const err = await resp.json().catch(() => ({ error: resp.statusText }));
+                        throw new Error(err.error || resp.statusText);
+                    }
+                    const r = await resp.json();
+                    const s = r.summary;
+                    resultsEl.innerHTML = `
+                    <div class="bulk-summary">
+                        <strong>Dry run:</strong> ${s.csvRowsParsed} parsed · ${s.adds} new · ${s.updates} updated · ${s.unchanged} unchanged.
+                    </div>
+                    ${(s.adds + s.updates) > 0 ? `
+                    <div class="bulk-apply-bar">
+                        <button class="btn-primary" id="${prefix}-apply-btn">Apply ${s.adds + s.updates} change${(s.adds + s.updates) === 1 ? '' : 's'}</button>
+                    </div>` : ''}`;
+                    document.getElementById(`${prefix}-apply-btn`)?.addEventListener('click', async (ev) => {
+                        if (!confirm(`Apply ${s.adds + s.updates} change(s)? A backup is taken first.`)) return;
+                        const btn = ev.currentTarget;
+                        btn.disabled = true; btn.textContent = 'Applying…';
+                        try {
+                            const csv2 = await lastFile.text();
+                            const resp2 = await fetch(endpoint + '?apply=true', { method: 'POST', headers: { 'Content-Type': 'text/csv' }, body: csv2 });
+                            if (!resp2.ok) {
+                                const err = await resp2.json().catch(() => ({ error: resp2.statusText }));
+                                throw new Error(err.error || resp2.statusText);
+                            }
+                            const ar = await resp2.json();
+                            resultsEl.innerHTML = `<div class="bulk-summary bulk-summary--applied"><strong>Applied.</strong> Table size: ${ar.summary.totalRowsAfter} · backup: <code>${escHtml(ar.summary.backupTs)}</code></div>`;
+                            showToast('Applied');
+                        } catch (err) {
+                            showToast('Apply failed: ' + err.message);
+                            btn.disabled = false; btn.textContent = `Apply ${s.adds + s.updates} change${(s.adds + s.updates) === 1 ? '' : 's'}`;
+                        }
+                    });
+                } catch (err) {
+                    resultsEl.innerHTML = `<p class="bulk-error">${escHtml(err.message)}</p>`;
+                }
+            });
+        }
+
+        async function generatePayslip() {
+            const empId = document.getElementById('payslip-employee').value;
+            const start = document.getElementById('payslip-start').value;
+            const end   = document.getElementById('payslip-end').value;
+            if (!empId || !start || !end) { showToast('Pick employee + dates'); return; }
+            const resultEl = document.getElementById('payslip-result');
+            resultEl.innerHTML = '<p class="bulk-loading">Computing…</p>';
+            try {
+                const slip = await api(`/api/payroll/payslip?employee=${encodeURIComponent(empId)}&start=${start}&end=${end}`);
+                renderPayslip(slip);
+            } catch (err) {
+                resultEl.innerHTML = `<p class="bulk-error">${escHtml(err.message)}</p>`;
+            }
+        }
+
+        function renderPayslip(slip) {
+            const fmtMoney = n => '$' + Number(n).toLocaleString('en-NZ', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+            const fmtQty   = n => Number.isInteger(n) ? String(n) : Number(n).toFixed(2);
+            const resultEl = document.getElementById('payslip-result');
+            resultEl.innerHTML = `
+            <div class="payslip" id="payslip-printable">
+                <div class="payslip-hd">
+                    <div>
+                        <h3 class="payslip-title">Payslip</h3>
+                        <p class="payslip-meta">${escHtml(slip.employee.name)} · ${escHtml(slip.period.start)} → ${escHtml(slip.period.end)}</p>
+                    </div>
+                    <button class="btn-secondary btn-sm no-print" id="payslip-pdf-btn">Download PDF ↓</button>
+                </div>
+                <table class="payslip-table">
+                    <thead><tr><th>Component</th><th>Qty</th><th>Rate</th><th>Amount</th></tr></thead>
+                    <tbody>
+                        ${slip.lines.map(l => `
+                        <tr>
+                            <td>${escHtml(l.label)}${l.note ? ` <span class="payslip-note">${escHtml(l.note)}</span>` : ''}</td>
+                            <td class="bulk-num">${fmtQty(l.qty)}</td>
+                            <td class="bulk-num">${fmtMoney(l.rate)}</td>
+                            <td class="bulk-num">${fmtMoney(l.amount)}</td>
+                        </tr>`).join('')}
+                    </tbody>
+                    <tfoot>
+                        <tr><td colspan="3" class="payslip-total-label">Total</td><td class="bulk-num payslip-total">${fmtMoney(slip.total)}</td></tr>
+                    </tfoot>
+                </table>
+            </div>`;
+            document.getElementById('payslip-pdf-btn').addEventListener('click', () => downloadPayslipPdf(slip));
+        }
+
+        async function downloadPayslipPdf(slip) {
+            if (typeof html2pdf === 'undefined') { showToast('PDF library not loaded'); return; }
+            const el = document.getElementById('payslip-printable');
+            const filename = `Payslip — ${slip.employee.name} ${slip.period.start} to ${slip.period.end}.pdf`;
+            await html2pdf().set({
+                margin: 15,
+                filename,
+                html2canvas: {
+                    scale: 2,
+                    backgroundColor: '#ffffff',
+                    ignoreElements: (n) => n.classList && n.classList.contains('no-print'),
+                },
+                jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
+                pagebreak: { mode: 'avoid-all' },
+            }).from(el).save();
+        }
     }
 
     return { renderAdmin };

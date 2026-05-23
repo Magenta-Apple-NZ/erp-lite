@@ -4394,3 +4394,141 @@ a.db-row:hover { background: #f8fafc; border-color: #e2e8f0; }
     color: #64748b;
 }
 .db-quick-actions--footer .db-quick-card svg { width: 14px; height: 14px; }
+
+/* Payroll tab — rates form, side-by-side CSV cards, payslip preview/PDF. */
+.payroll-rates-row {
+    display: flex;
+    align-items: flex-end;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+    padding: 0.75rem 0.9rem;
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    margin: 0.5rem 0;
+}
+.payroll-rates-row label {
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+    font-size: 0.75rem;
+    color: #64748b;
+    font-weight: 500;
+}
+.payroll-rates-name {
+    font-size: 0.95rem;
+    font-weight: 700;
+    color: #1e293b;
+    align-self: center;
+    min-width: 4rem;
+    padding-right: 0.5rem;
+    border-right: 1px solid #e2e8f0;
+    margin-right: 0.25rem;
+}
+.payroll-rate-input {
+    width: 6rem;
+    padding: 0.35rem 0.5rem;
+    font-size: 0.88rem;
+    border: 1px solid #cbd5e1;
+    border-radius: 5px;
+    background: #fff;
+    font-variant-numeric: tabular-nums;
+}
+.payroll-rates-save { align-self: center; margin-left: auto; }
+
+.payroll-csv-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+    gap: 0.85rem;
+    margin: 0.5rem 0 1rem;
+}
+.payroll-csv-card {
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    padding: 0.9rem 1rem;
+    background: #fff;
+}
+.payroll-csv-title {
+    font-size: 0.9rem;
+    font-weight: 700;
+    color: #1e293b;
+    margin-bottom: 0.2rem;
+}
+
+.payroll-period-bar {
+    display: flex;
+    align-items: flex-end;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+    margin: 0.4rem 0 0.85rem;
+}
+.payroll-period-bar label {
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+    font-size: 0.75rem;
+    color: #64748b;
+    font-weight: 500;
+}
+.payroll-period-bar select,
+.payroll-period-bar input[type="date"] {
+    padding: 0.35rem 0.5rem;
+    font-size: 0.88rem;
+    border: 1px solid #cbd5e1;
+    border-radius: 5px;
+    background: #fff;
+}
+
+/* Payslip preview — also the element captured by html2pdf. */
+.payslip {
+    margin-top: 1rem;
+    padding: 1.25rem 1.5rem;
+    background: #fff;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    max-width: 720px;
+}
+.payslip-hd {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+    margin-bottom: 1rem;
+    padding-bottom: 0.75rem;
+    border-bottom: 1px solid #e2e8f0;
+}
+.payslip-title { margin: 0 0 0.2rem; font-size: 1.15rem; color: #1e293b; }
+.payslip-meta  { margin: 0; font-size: 0.85rem; color: #64748b; }
+.payslip-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.9rem;
+}
+.payslip-table th,
+.payslip-table td {
+    padding: 0.55rem 0.7rem;
+    text-align: left;
+    border-bottom: 1px solid #f1f5f9;
+}
+.payslip-table th {
+    background: #f8fafc;
+    font-weight: 600;
+    color: #64748b;
+    font-size: 0.78rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+.payslip-table tfoot td {
+    border-top: 2px solid #1e293b;
+    border-bottom: none;
+    padding-top: 0.75rem;
+    font-weight: 700;
+    color: #1e293b;
+}
+.payslip-note {
+    font-size: 0.75rem;
+    color: #94a3b8;
+    margin-left: 0.4rem;
+}
+.payslip-total-label { text-align: right; }
+.payslip-total { font-size: 1.05rem; }
