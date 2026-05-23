@@ -280,6 +280,8 @@ function parseRoundTripExport(csv) {
     const idCol       = col('id');
     const sourceCol   = col('source');
     const dateCol     = col('date');
+    const monthCol    = col('month');
+    const yearCol     = col('year');
     const customerCol = col('customer');
     const branchCol   = col('branch');
     const poCol       = col('po#');
@@ -306,10 +308,37 @@ function parseRoundTripExport(csv) {
         const r = lines[i];
         if (!r.length || r.every(c => !String(c || '').trim())) { skipped.blank++; continue; }
 
-        // Date column might be ISO (our own export) or NZ slash (Excel/Sheets
-        // helpfully reformatted on save). parseAnyDate normalises both.
-        const isoDate = parseAnyDate(r[dateCol] || '');
-        if (!isoDate) { skipped.noDate++; continue; }
+        // Date column normalises ISO / NZ slash / Excel-reformatted alike.
+        let isoDate = parseAnyDate(r[dateCol] || '');
+
+        // Month and Year columns are first-class — if the user edits Month
+        // or Year in the spreadsheet, those wins over what the Date column
+        // says. The Date is then reconstructed using the day component
+        // from the original Date + the user's month/year, so stored
+        // `date`, `month`, and `year` always agree.
+        const rawMonth = monthCol >= 0 ? String(r[monthCol] || '').trim() : '';
+        const rawYear  = yearCol  >= 0 ? String(r[yearCol]  || '').trim() : '';
+        let yr = NaN, mo = NaN, day = 1;
+        if (isoDate) {
+            [yr, mo, day] = isoDate.split('-').map(n => parseInt(n, 10));
+        }
+        if (rawMonth) {
+            const m = parseInt(rawMonth, 10);
+            if (m >= 1 && m <= 12) mo = m;
+        }
+        if (rawYear) {
+            let y = parseInt(rawYear, 10);
+            if (y > 0 && y < 100) y += 2000;
+            if (y >= 1900 && y <= 2100) yr = y;
+        }
+        if (!Number.isInteger(yr) || !Number.isInteger(mo) || mo < 1 || mo > 12) {
+            skipped.noDate++;
+            continue;
+        }
+        // Rebuild a consistent ISO date so the stored row is internally
+        // coherent regardless of which column the user edited.
+        if (!day || day < 1 || day > 31) day = 1;
+        isoDate = `${yr}-${String(mo).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
 
         let id = idCol >= 0 ? (r[idCol] || '').trim() : '';
         // Allow new rows (blank id) by minting a fresh historical id. Keeps
@@ -320,7 +349,6 @@ function parseRoundTripExport(csv) {
         const source = (sourceCol >= 0 ? (r[sourceCol] || '').trim().toLowerCase() : '')
                        || (id.startsWith('PKS-') ? 'hub' : 'historical');
 
-        const [yr, mo] = isoDate.split('-').map(n => parseInt(n, 10));
         rows.push({
             id,
             source,
