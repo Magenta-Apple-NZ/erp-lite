@@ -96,10 +96,19 @@ const SalesView = (() => {
         const id = 'cumulative-chart';
         const labels = useFy ? FY_MO_NAMES : MO_NAMES;
         const yrLabel = yr => useFy ? `FY${String(yr).slice(-2)}` : yr;
+        // Cumulative line: carry the running total forward through null
+        // months so the chart shows a flat segment instead of a gap. We
+        // still leave leading null months (before the first data point of
+        // a year) as null so the line doesn't start at zero before the
+        // year has actually started selling.
         const cumData = {};
         for (const yr of years) {
             let run = 0;
-            cumData[yr] = (source[yr] || []).map(v => { run += (v || 0); return v !== null ? run : null; });
+            let started = false;
+            cumData[yr] = (source[yr] || []).map(v => {
+                if (v != null) { run += v; started = true; return run; }
+                return started ? run : null;
+            });
         }
         window._chartQ[id] = {
             type: 'line',
