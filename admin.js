@@ -600,7 +600,14 @@ const Admin = (() => {
                 </summary>
 
                 <div class="sd-admin-body">
-                    <h3 class="bulk-table-title">Backfill Hub orders</h3>
+                    <h3 class="bulk-table-title">Repair dates</h3>
+                    <p class="cat-sub">Re-parses every row's date column and rebuilds month/year/fy. Run this if a round-trip upload landed dates in a format the parser couldn't read (symptom: byYear in /api/sales-history shows 1–31 instead of actual years).</p>
+                    <div class="bulk-step">
+                        <button class="btn-secondary btn-sm" id="sd-repair-btn">Repair dates</button>
+                    </div>
+                    <div id="sd-repair-results"></div>
+
+                    <h3 class="bulk-table-title" style="margin-top:1.5rem">Backfill Hub orders</h3>
                     <p class="cat-sub">Walks orders_index and adds a row for every Hub order missing one. Existing rows untouched. Run this once if Hub orders aren't appearing in the combined export.</p>
                     <div class="bulk-step">
                         <button class="btn-secondary btn-sm" id="sd-backfill-btn">Backfill Hub orders</button>
@@ -636,6 +643,62 @@ const Admin = (() => {
         let lastFile = null;
         const uploadResults = document.getElementById('sd-upload-results');
         const backfillResults = document.getElementById('sd-backfill-results');
+        const repairResults = document.getElementById('sd-repair-results');
+
+        // ── Repair dates ──
+        // Re-parses every row's date column and rebuilds month/year/fy.
+        // Two-step: dry-run preview, then apply with backup.
+        document.getElementById('sd-repair-btn').addEventListener('click', async () => {
+            repairResults.innerHTML = '<p class="bulk-loading">Re-parsing dates…</p>';
+            try {
+                const resp = await fetch('/api/sales-history/repair-dates', { method: 'POST' });
+                if (!resp.ok) {
+                    const err = await resp.json().catch(() => ({ error: resp.statusText }));
+                    throw new Error(err.error || resp.statusText);
+                }
+                const r = await resp.json();
+                const s = r.summary;
+                const samples = (s.sampleRepaired || []).map(x =>
+                    `<li><code>${escHtml(x.id)}</code> → ${escHtml(x.date)} (yr ${x.year}, mo ${x.month})</li>`
+                ).join('');
+                repairResults.innerHTML = `
+                <div class="bulk-summary">
+                    <strong>Dry run:</strong>
+                    ${s.total} row${s.total === 1 ? '' : 's'} scanned.
+                    <strong>${s.repaired}</strong> need repair · ${s.unchanged} already correct · ${s.unparseable} unparseable.
+                    ${samples ? `<br><span class="bulk-backup">Sample fixes:<ul style="margin:0.3rem 0 0;padding-left:1.25rem">${samples}</ul></span>` : ''}
+                    ${s.sampleUnparseable?.length ? `<br><span class="bulk-error">Unparseable ids (will be left alone): ${s.sampleUnparseable.map(escHtml).join(', ')}</span>` : ''}
+                </div>
+                ${s.repaired > 0 ? `
+                <div class="bulk-apply-bar">
+                    <button class="btn-primary" id="sd-repair-apply-btn">Apply repair (${s.repaired} rows)</button>
+                    <span class="bulk-apply-hint">Backs up sales_history before writing.</span>
+                </div>` : '<p class="bulk-empty">Nothing to repair.</p>'}`;
+                document.getElementById('sd-repair-apply-btn')?.addEventListener('click', async (e) => {
+                    if (!confirm(`Repair ${s.repaired} row date(s)?\n\nA backup of sales_history is taken first.`)) return;
+                    const btn = e.currentTarget;
+                    btn.disabled = true; btn.textContent = 'Applying…';
+                    try {
+                        const apply = await fetch('/api/sales-history/repair-dates?apply=true', { method: 'POST' });
+                        if (!apply.ok) {
+                            const err = await apply.json().catch(() => ({ error: apply.statusText }));
+                            throw new Error(err.error || apply.statusText);
+                        }
+                        const ar = await apply.json();
+                        showToast(`Repaired ${ar.summary.repaired} rows`);
+                        repairResults.innerHTML = `<div class="bulk-summary bulk-summary--applied">
+                            <strong>Repair applied.</strong> ${ar.summary.repaired} rows updated.
+                            <br><span class="bulk-backup">Backup: <code>backup:sales_history:${escHtml(ar.summary.backupTs)}</code></span>
+                        </div>`;
+                    } catch (err) {
+                        showToast('Apply failed: ' + err.message);
+                        btn.disabled = false; btn.textContent = `Apply repair (${s.repaired} rows)`;
+                    }
+                });
+            } catch (err) {
+                repairResults.innerHTML = `<p class="bulk-error">${escHtml(err.message)}</p>`;
+            }
+        });
 
         // ── Upload (seed or round-trip, auto-detected) ──
         document.getElementById('sd-dryrun-btn').addEventListener('click', async () => {

@@ -50,16 +50,43 @@ function parseNum(s) {
     return isNaN(n) ? 0 : n;
 }
 
-function parseNzDate(s) {
-    const m = String(s || '').trim().match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/);
-    if (!m) return null;
-    const dy = parseInt(m[1], 10);
-    const mo = parseInt(m[2], 10);
-    let   yr = parseInt(m[3], 10);
-    if (yr < 100) yr += 2000;
-    if (mo < 1 || mo > 12 || dy < 1 || dy > 31) return null;
-    return `${yr}-${String(mo).padStart(2, '0')}-${String(dy).padStart(2, '0')}`;
+// Parse any reasonable date string we might receive from a CSV column
+// and return ISO `YYYY-MM-DD`. Handles:
+//   - ISO: 2019-12-02
+//   - NZ slash:  2/12/19, 02/12/2019  (DD/MM/[YY]YY)
+//   - US slash (heuristic): treated as DD/MM only when the first part is > 12
+//     so an actual US-format date that's ambiguous still parses as NZ.
+function parseAnyDate(s) {
+    const raw = String(s || '').trim();
+    if (!raw) return null;
+
+    // ISO YYYY-MM-DD (allow time suffix)
+    const iso = raw.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+    if (iso) {
+        const yr = parseInt(iso[1], 10);
+        const mo = parseInt(iso[2], 10);
+        const dy = parseInt(iso[3], 10);
+        if (mo >= 1 && mo <= 12 && dy >= 1 && dy <= 31) {
+            return `${yr}-${String(mo).padStart(2, '0')}-${String(dy).padStart(2, '0')}`;
+        }
+    }
+
+    // D/M/Y or D-M-Y with 2- or 4-digit year. NZ convention is DD/MM.
+    const slash = raw.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
+    if (slash) {
+        let dy = parseInt(slash[1], 10);
+        let mo = parseInt(slash[2], 10);
+        let yr = parseInt(slash[3], 10);
+        if (yr < 100) yr += 2000;
+        if (mo < 1 || mo > 12 || dy < 1 || dy > 31) return null;
+        return `${yr}-${String(mo).padStart(2, '0')}-${String(dy).padStart(2, '0')}`;
+    }
+
+    return null;
 }
+
+// Legacy alias — historical-sales-CSV path still uses this name.
+function parseNzDate(s) { return parseAnyDate(s); }
 
 // NZ financial year ends 31 Mar. April–Dec belong to FY ending the next year.
 function fyLabel(year, month) {
@@ -269,7 +296,9 @@ function parseRoundTripExport(csv) {
         const r = lines[i];
         if (!r.length || r.every(c => !String(c || '').trim())) { skipped.blank++; continue; }
 
-        const isoDate = (r[dateCol] || '').trim();
+        // Date column might be ISO (our own export) or NZ slash (Excel/Sheets
+        // helpfully reformatted on save). parseAnyDate normalises both.
+        const isoDate = parseAnyDate(r[dateCol] || '');
         if (!isoDate) { skipped.noDate++; continue; }
 
         let id = idCol >= 0 ? (r[idCol] || '').trim() : '';
