@@ -194,6 +194,15 @@ function statsByMonth(rows) {
     return out;
 }
 
+function statsBySource(rows) {
+    const out = {};
+    for (const r of rows) {
+        const src = r.source || 'unknown';
+        out[src] = (out[src] || 0) + 1;
+    }
+    return out;
+}
+
 function csvEscape(v) {
     const s = v == null ? '' : String(v);
     return /[",\n\r]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
@@ -238,6 +247,7 @@ export async function onRequestGet({ env, request }) {
 
         return jsonResponse({
             count: rows.length,
+            bySource: statsBySource(rows),
             byYear: statsByYear(rows),
             byMonth: statsByMonth(rows),
             // Only ship rows when explicitly requested — payload grows fast
