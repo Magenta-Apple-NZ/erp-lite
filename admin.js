@@ -448,15 +448,20 @@ const Admin = (() => {
                 <p class="view-subtitle">Manage product pricing, store locations, and printers.</p>
             </div>
             <div class="cat-header-actions">
-                <a class="btn-secondary btn-sm" href="/api/sales/monthly?format=csv"
-                   download="sales-monthly.csv"
-                   title="Download the weaved monthly sales series — sheet (pre-2026-04) and Hub orders (from cutoff)">
-                    Export sales CSV ↓
+                <a class="btn-secondary btn-sm" href="/api/orders/export-summary"
+                   download="orders-summary.csv"
+                   title="Hub orders only — one row per order with operational metadata (dispatched by/at, status, totals). Freight excluded from kg.">
+                    Hub orders (summary) ↓
+                </a>
+                <a class="btn-secondary btn-sm" href="/api/sales-history?format=csv"
+                   download="sales-history.csv"
+                   title="Combined historical + Hub sales. One row per order, three product columns. Same shape as the seed input — round-trips cleanly via the Sales History tab.">
+                    Sales history (combined) ↓
                 </a>
                 <a class="btn-secondary btn-sm" href="/api/orders/export"
                    download="orders.csv"
-                   title="Download all orders as a flat one-row-per-line-item CSV">
-                    Export orders CSV ↓
+                   title="Hub orders as one row per line item. Used by the Bulk Edit tab for round-trip line-level corrections.">
+                    Orders (lines) ↓
                 </a>
             </div>
         </div>
