@@ -385,7 +385,7 @@ const Admin = (() => {
                 <div class="bulk-apply-bar">
                     <button class="btn-primary" id="stores-upload-apply-btn">Apply</button>
                     <span class="bulk-apply-hint">Backs up the current stores table first.</span>
-                </div>` : '<p class="bulk-empty">Nothing to apply — the CSV matches what's already stored.</p>'}`;
+                </div>` : '<p class="bulk-empty">Nothing to apply — the CSV matches what is already stored.</p>'}`;
 
                 document.getElementById('stores-upload-apply-btn')?.addEventListener('click', async (e) => {
                     if (!confirm('Apply this upload to the stores table?\n\nA backup is taken first.')) return;
