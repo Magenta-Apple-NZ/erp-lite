@@ -139,6 +139,37 @@ Not part of the Phase 1 critical path. Sized and queued by warehouse impact.
 | WooCommerce order intake | 2+ | Med | 🟡 Varies | Diversifies sources beyond Farmlands. Scope first: one store vs. multi-vendor. |
 | DocuPipe reduction | 2 | ? | 🟠 Med | Audit what DocuPipe actually does today before scoping. |
 | Calendar (tax / payment dates / shipment milestones) | 2–5 | Low–Med | 🟡 Low | Already drafted (`calendar.js`); now picks up V3 shipment milestones. Administrative, not business-critical. |
+| Xero Payroll push (employee self-service) | Post-sprint | Med | 🟠 Med | Hub-side payroll already shipped (rates, packing/timesheets CSV, payslip preview + PDF). Next: push timesheets to Xero Payroll API so it produces the official payslip. See section below. |
+
+---
+
+## Payroll → Xero Payroll API integration
+
+**Already shipped (May 2026):** Hub-side payroll captures the four inputs — boxes dispatched (from Dispatch Log), boxes packed 10kg / 1kg (CSV round-trip), hours worked (CSV round-trip) — multiplies by per-employee rates, and renders an on-screen payslip + PDF. Stored in `payroll_config`, `packing_log`, `timesheets` KV blobs. This is enough for Andrew to compute pay, but the official payslip still gets keyed into Xero Payroll by hand.
+
+**Goal:** Hub prepares the period inputs; Xero Payroll computes PAYE / KiwiSaver / ESCT / Holiday Pay accrual and produces the official payslip PDF. Eventually Jake submits his own numbers from a stripped-down view, with dispatched boxes pre-populated from his Dispatch Log activity.
+
+**Pre-req:** Confirm Enviroware/Prime Tie has Xero Payroll enabled on the same org we already OAuth against. NZ Payroll API is a separate product subscription to standard Xero.
+
+### Phase P1 — Plumbing & one-employee push (~1 week)
+- Add OAuth scopes: `payroll.timesheets`, `payroll.employees.read`, `payroll.payruns.read`, `payroll.settings.read`. User re-consents Xero.
+- `/api/xero/payroll/settings` — fetch Xero `EarningsRates` + `Employees`, cache in KV.
+- Mapping screen in Payroll tab: each Hub line item → Xero `EarningsRateID`; each Hub employee → Xero `EmployeeID`. Persisted as a small KV blob (`payroll_xero_map`).
+- "Push to Xero" button on the existing payslip preview. Builds a Xero **Timesheet** (`payroll.xro/1.0/Timesheets`) for the period — one line per Hub line item, units = our quantity — and POSTs it. Xero handles tax / KiwiSaver / leave at pay-run time.
+- Inline response with link to the timesheet in Xero.
+
+**Exit:** Andrew clicks "Generate payslip" then "Push to Xero" and the timesheet appears in Xero ready for pay run, no retyping.
+
+### Phase P2 — Self-service view for Jake (~3–4 days)
+- New `/payroll-submit` route — stripped-down employee view. Period selector defaults to current month. Dispatched boxes pre-filled from his Dispatch Log activity (read-only). Hours + packed boxes editable. Submit pushes the timesheet to Xero.
+- Add Jake to Cloudflare Access. Gate admin vs. submit views by `CF-Access-Authenticated-User-Email` header — Jake only sees the submit view; Andrew sees both.
+
+**Exit:** Jake submits his own period from his phone; Andrew approves the pay run in Xero.
+
+### Phase P3 — Polish
+- "Already submitted this period" guard — read timesheets back from Xero, show status.
+- Optional reimbursements field (petrol, sundries) wired to Xero Reimbursement Pay Items.
+- YTD figures on the on-screen preview (read from Xero pay run history).
 
 ---
 
