@@ -14,10 +14,13 @@ export async function onRequestPost({ env, request }) {
         if (order.xeroInvoiceId) {
             return errResponse('Invoice already created: ' + order.xeroInvoiceNumber, 409);
         }
-        if (!order.customer?.xeroContactId) {
+        const contactId = order.customer?.xeroContactId || '';
+        const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(contactId);
+        if (!isUuid) {
             return errResponse(
-                `No Xero contact ID for "${order.customer?.name}". ` +
-                `Edit the order and select the customer from the Xero search dropdown so the contact ID is resolved.`,
+                `Xero contact ID for "${order.customer?.name}" is missing or invalid` +
+                (contactId ? ` (got "${contactId}")` : '') +
+                `. Edit the order and re-select the customer from the Xero search dropdown so a real contact ID is resolved.`,
                 422
             );
         }
