@@ -1391,6 +1391,12 @@ async function handleRoute() {
 
     if (hash.startsWith('orders/')) {
         const orderId = hash.slice('orders/'.length);
+        // Admin's home for an order is the merged edit/preview view.
+        // Warehouse stays on the slip-only view (no form, no admin actions).
+        if (currentRole !== 'warehouse') {
+            location.hash = 'orders/' + orderId + '/edit';
+            return;
+        }
         setActiveView('view-orders-detail');
         setActiveNav('nav-orders');
         await Orders.renderDetail(document.getElementById('orders-detail-container'), orderId);

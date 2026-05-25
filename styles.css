@@ -1615,6 +1615,22 @@ a.xero-inv-linked:hover { background: #d1fae5; border-color: #6ee7b7; }
         box-sizing: border-box;
     }
     .slip-lines td, .slip-lines th { padding: 0.4rem 0.5rem; }
+
+    /* On the merged edit view, the slip lives inside a sidebar scaler.
+       At print time we hide the form column, drop the scaler's clipping
+       and the scale transform, and let the slip render full-width. */
+    .edit-with-preview { display: block !important; }
+    .edit-form-col, .event-log, .xero-push-banner, .edit-preview-label,
+    .form-warn { display: none !important; }
+    .edit-preview { position: static !important; display: block !important; }
+    .edit-preview-scaler {
+        width: auto !important; height: auto !important;
+        overflow: visible !important;
+    }
+    .edit-preview-scaler .packing-slip {
+        transform: none !important;
+        box-shadow: none !important;
+    }
 }
 
 /* ═══════════════════════════════════════════════

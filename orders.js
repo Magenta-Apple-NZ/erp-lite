@@ -534,14 +534,7 @@ const Orders = (() => {
 
     // ── Edit order form ──
     async function renderEdit(container, orderId) {
-        container.innerHTML = `
-        <div class="view-header">
-            <div>
-                <h1 class="view-title">Edit Order</h1>
-            </div>
-            <a href="#orders/${orderId}" class="btn-secondary">← Cancel</a>
-        </div>
-        <div id="new-order-body"><div class="orders-loading">Loading…</div></div>`;
+        container.innerHTML = `<div id="new-order-body"><div class="orders-loading">Loading…</div></div>`;
 
         await checkXeroStatus();
 
@@ -557,8 +550,33 @@ const Orders = (() => {
         try { catalogStores = await loadCatalogStores(); } catch (e) {}
         try { catalogItems = await api('/api/catalog/items'); } catch (e) {}
 
+        // Opening the edit view counts as reviewing — auto-advance new → reviewed
+        // (matches the old detail-view behaviour now that detail is gone for admin).
+        if (order.status === 'new') {
+            order.status = 'reviewed';
+            api('/api/orders/' + orderId, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ status: 'reviewed' }),
+            }).catch(() => {});
+        }
+
+        // Render the Xero-not-connected banner once at the top of the container.
+        // renderEditBody can be called repeatedly (after each save) so don't
+        // inject the banner from there or it'll duplicate.
+        if (!xeroConnected) {
+            const container = document.getElementById('new-order-body');
+            container?.insertAdjacentHTML('beforebegin', xeroConnectBanner());
+        }
+
+        renderEditBody(order, customers, catalogStores, catalogItems);
+    }
+
+    // Pulled out so submitEditOrder can re-render after save without re-fetching
+    // customers/catalog (those don't change between saves).
+    function renderEditBody(order, customers, catalogStores, catalogItems) {
         const body = document.getElementById('new-order-body');
-        if (!xeroConnected) body.insertAdjacentHTML('beforebegin', xeroConnectBanner());
+        if (!body) return;
 
         const xeroWarn = order.xeroInvoiceId
             ? `<div class="form-warn xero-only">This order has already been pushed to Xero (${escHtml(order.xeroInvoiceNumber)}). Editing it here will not update the Xero invoice.</div>`
@@ -571,19 +589,51 @@ const Orders = (() => {
             defaults: order,
         });
 
+        // Same Xero-push promotion logic as the old review/detail view.
+        const needsXeroPush = xeroConnected
+            && (order.status === 'new' || order.status === 'reviewed')
+            && !order.xeroInvoiceId
+            && !order.xeroSourced;
+
         body.innerHTML = `
-            <div class="edit-with-preview">
-                <div class="edit-form-col">${xeroWarn}${formHtml}</div>
-                <aside class="edit-preview no-print" aria-label="Saved packing slip preview">
-                    <div class="edit-preview-label">Saved packing slip</div>
-                    <div class="edit-preview-scaler">
-                        <div class="packing-slip">${slipBodyHTML(order)}</div>
-                    </div>
-                </aside>
-            </div>`;
+        <!-- Action bar (hidden when printing) -->
+        <div class="order-actions no-print">
+            <div class="order-actions-left">
+                <a href="#orders" class="btn-secondary btn-sm">← Orders</a>
+                <select id="order-status-sel" class="order-status-sel">
+                    ${Object.keys(STATUS_LABELS).map(k => `<option value="${k}"${order.status === k ? ' selected' : ''}>${statusLabelForRole(k)}</option>`).join('')}
+                </select>
+            </div>
+            <div class="order-actions-right" id="action-btns">
+                ${actionButtons(order, xeroConnected)}
+            </div>
+        </div>
+
+        ${needsXeroPush ? `
+        <div class="xero-push-banner no-print" id="xero-push-banner">
+            <div class="xero-push-banner-text">
+                <strong>Ready to push to Xero</strong>
+                <span>${order.source === 'inbound' ? 'This order came in via API and has no invoice yet.' : 'No Xero invoice linked yet.'}</span>
+            </div>
+            <button id="xero-push-banner-btn" class="btn-primary">Send to Xero</button>
+        </div>` : ''}
+
+        <div class="edit-with-preview">
+            <div class="edit-form-col">${xeroWarn}${formHtml}</div>
+            <aside class="edit-preview" aria-label="Packing slip preview">
+                <div class="edit-preview-label no-print">Packing slip</div>
+                <div class="edit-preview-scaler">
+                    <div class="packing-slip" id="packing-slip">${slipBodyHTML(order)}</div>
+                </div>
+            </aside>
+        </div>
+
+        ${renderEventLog(order.events || [])}`;
 
         wireOrderForm({ customers, catalogStores, catalogItems, defaults: order });
-        document.getElementById('submit-order-btn').addEventListener('click', () => submitEditOrder(orderId));
+        wireDetailButtons(order);
+        document.getElementById('submit-order-btn').addEventListener('click',
+            () => submitEditOrder(order.id, customers, catalogStores, catalogItems));
     }
 
     // ── Shared order form HTML ──
@@ -1061,7 +1111,7 @@ const Orders = (() => {
         }
     }
 
-    async function submitEditOrder(orderId) {
+    async function submitEditOrder(orderId, customers, catalogStores, catalogItems) {
         showFormError('');
         const customer = getCustomerFromForm();
         if (!customer.name) { showFormError('Customer name is required.'); return; }
@@ -1072,7 +1122,7 @@ const Orders = (() => {
         btn.disabled = true; btn.textContent = 'Saving…';
 
         try {
-            await api('/api/orders/' + orderId, {
+            const updated = await api('/api/orders/' + orderId, {
                 method: 'PATCH',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -1088,7 +1138,10 @@ const Orders = (() => {
                 }),
             });
             await logEvent(orderId, 'Order edited');
-            location.hash = 'orders/' + orderId;
+            showToast('Saved');
+            // Re-render in place so the slip preview, activity log, and action
+            // bar reflect the saved state (status / xeroInvoiceNumber etc.).
+            renderEditBody(updated, customers, catalogStores, catalogItems);
         } catch (e) {
             showFormError(e.message);
             btn.disabled = false; btn.textContent = 'Save Changes';
@@ -1120,10 +1173,10 @@ const Orders = (() => {
 
     // ── Action bar buttons — driven by order status ──
     function actionButtons(order, xeroConnected) {
-        // Admin can edit order fields; warehouse does not need to.
-        const edit = isWarehouseRole()
-            ? ''
-            : `<a href="#orders/${order.id}/edit" class="btn-secondary btn-sm" id="edit-order-btn">Edit</a>`;
+        // Admin now lives on the edit view (which has the form), so there's
+        // no "Edit" affordance — they're already editing. Warehouse never
+        // got the button.
+        const edit = '';
         let primaryAction = '';
         let xeroMenuItem  = '';
 
@@ -1731,7 +1784,13 @@ const Orders = (() => {
                 });
                 Object.assign(order, updated);
                 showToast('Linked to Xero');
-                await Orders.renderDetail(getDetailContainer(), orderId);
+                // Refresh the slip preview, drop the banner, redraw action bar.
+                // Works for both the edit view and the warehouse slip view —
+                // both have a `#packing-slip` and an `#action-btns`.
+                const slip = document.getElementById('packing-slip');
+                if (slip) slip.innerHTML = slipBodyHTML(order);
+                document.getElementById('xero-push-banner')?.remove();
+                refreshActionBar(order);
             } catch (e) {
                 showErrorBanner('Link failed: ' + e.message);
             }
