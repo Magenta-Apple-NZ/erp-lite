@@ -834,16 +834,28 @@ li.drag-over { background: #eff6ff; }
     .orders-table tr.order-row > td.order-date  { grid-area: date;   color: #94a3b8; font-size: 0.78rem; }
     .orders-table tr.order-row > td.order-total { grid-area: total;  font-weight: 600; font-size: 0.88rem; text-align: right; }
     .orders-table tr.order-row > td:nth-child(7) { grid-area: status; text-align: right; }
-    .orders-table tr.order-row > td.order-actions-col { grid-area: actions; margin-top: 0.35rem; }
+    /* The desktop rule on .order-actions-col sets `width: 1px` to shrink the
+       table cell to its content — on mobile (display: block in a grid) that
+       1px collapses the flex container and forces every icon to wrap onto
+       its own line. Reset width + white-space here. */
+    .orders-table tr.order-row > td.order-actions-col {
+        grid-area: actions;
+        margin-top: 0.35rem;
+        width: auto;
+        white-space: normal;
+        padding-right: 0 !important;
+    }
     /* Force a horizontal row — without `display: flex` and explicit row
        direction the inline-flex inheritance was rendering the SVG-only
        anchors/buttons as block siblings on iOS, stacking the icons. */
     .orders-table tr.order-row .row-actions {
         display: flex;
         flex-direction: row;
-        flex-wrap: wrap;
+        flex-wrap: nowrap;
         align-items: center;
+        justify-content: flex-start;
         gap: 0.4rem;
+        width: 100%;
     }
     .orders-table tr.order-row .row-action-btn,
     .orders-table tr.order-row .overflow-menu {
