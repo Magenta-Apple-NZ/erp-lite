@@ -1,12 +1,5 @@
 // ── State ──
-let allGroups = [];
-let pinnedItems = [];
 let currentConfig = {};
-let collapsedGroups = JSON.parse(localStorage.getItem('hub-collapsed') || '{}');
-let editMode = false;
-let dragGroupIdx = null;
-let dragItemInfo = null;
-let modalCallback = null;
 
 // ── Chart.js registry ──
 window._chartQ    = {};
@@ -27,1207 +20,449 @@ function initCharts(container) {
     });
 }
 
-// ── SVG icons for item types ──
-const TYPE_ICONS = {
-    file: '<svg class="type-icon-svg" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>',
-    folder: '<svg class="type-icon-svg" viewBox="0 0 24 24"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>',
-    link: null
-};
-
 // ── Config load ──
 function loadConfig() {
-    const override = localStorage.getItem('hub-config-override');
-    if (override) {
-        try { applyConfig(JSON.parse(override)); return; } catch(e) { localStorage.removeItem('hub-config-override'); }
-    }
     fetch('config.json?_=' + Date.now())
         .then(r => r.json())
         .then(applyConfig)
         .catch(err => {
             console.error('Error loading config:', err);
-            document.getElementById('dashboard').innerHTML =
-                '<p style="padding:2rem;color:#ef4444;">Error loading config.json — check the console.</p>';
+            const el = document.getElementById('db-widgets');
+            if (el) el.innerHTML = '<p style="padding:2rem;color:#ef4444;">Error loading config.json — check the console.</p>';
         });
 }
 
 function applyConfig(config) {
     currentConfig = config;
-    allGroups = JSON.parse(JSON.stringify(config.groups || []));
-    pinnedItems = JSON.parse(JSON.stringify(config.pinned || []));
-    renderPinned(pinnedItems);
-    renderGroups(allGroups);
     renderDashboardWidgets(config);
     updateTimestamp();
 }
 
-function saveConfigOverride() {
-    const config = Object.assign({}, currentConfig, { groups: allGroups, pinned: pinnedItems });
-    localStorage.setItem('hub-config-override', JSON.stringify(config));
-}
-
 function updateTimestamp() {
     const el = document.getElementById('last-updated');
+    if (!el) return;
     const now = new Date();
     el.textContent = 'Loaded ' + now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
 
-// ── Edit mode ──
-function toggleEditMode() {
-    editMode = !editMode;
-    const btn = document.getElementById('edit-btn');
-    btn.querySelector('.sidebar-btn-label').textContent = editMode ? 'Done' : 'Edit Layout';
-    btn.classList.toggle('edit-active', editMode);
-    document.getElementById('export-btn').style.display = editMode ? '' : 'none';
-    document.getElementById('reset-btn').style.display = editMode ? '' : 'none';
-    renderGroups(allGroups);
-    renderPinned(pinnedItems);
-}
+// ── Dashboard ────────────────────────────────────────────────────────────
+// New fixed layout: a button row up top, two priority charts (Stock
+// Trajectory + Cumulative Sales), and a unified calendar module that
+// merges the old "next 14 days" list with a clickable month grid.
 
-function exportConfig() {
-    const config = Object.assign({}, currentConfig, { groups: allGroups, pinned: pinnedItems });
-    const blob = new Blob([JSON.stringify(config, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'config.json';
-    a.click();
-    URL.revokeObjectURL(url);
-    showToast('config.json downloaded');
-}
-
-function resetConfig() {
-    if (!confirm('Reset to the deployed config? Local edits will be lost.')) return;
-    localStorage.removeItem('hub-config-override');
-    editMode = false;
-    document.getElementById('edit-btn').querySelector('.sidebar-btn-label').textContent = 'Edit Layout';
-    document.getElementById('edit-btn').classList.remove('edit-active');
-    document.getElementById('export-btn').style.display = 'none';
-    document.getElementById('reset-btn').style.display = 'none';
-    fetch('config.json?_=' + Date.now()).then(r => r.json()).then(applyConfig);
-}
-
-// ── Item modal ──
-function openItemModal(item, onSave) {
-    modalCallback = onSave;
-    document.getElementById('modal-label').value = item.label || '';
-    document.getElementById('modal-type').value = item.type || 'link';
-    document.getElementById('modal-url').value = item.url || '';
-    document.getElementById('modal-path').value = item.path || '';
-    document.getElementById('modal-tag').value = item.tag || '';
-    document.getElementById('modal-season').value = item.season || '';
-    updateModalTypeFields();
-    document.getElementById('item-modal').style.display = 'flex';
-    document.getElementById('modal-label').focus();
-}
-
-function updateModalTypeFields() {
-    const type = document.getElementById('modal-type').value;
-    document.getElementById('modal-url-field').style.display = type === 'link' ? '' : 'none';
-    document.getElementById('modal-path-field').style.display = (type === 'file' || type === 'folder') ? '' : 'none';
-}
-
-function saveModal() {
-    const type = document.getElementById('modal-type').value;
-    const label = document.getElementById('modal-label').value.trim();
-    if (!label) { showToast('Label is required'); return; }
-    const item = { label, type };
-    if (type === 'link') {
-        item.url = document.getElementById('modal-url').value.trim();
-    } else {
-        item.path = document.getElementById('modal-path').value.trim();
-    }
-    const tag = document.getElementById('modal-tag').value.trim();
-    const season = document.getElementById('modal-season').value.trim();
-    if (tag) item.tag = tag;
-    if (season) item.season = season;
-    if (modalCallback) modalCallback(item);
-    closeModal();
-}
-
-function closeModal() {
-    document.getElementById('item-modal').style.display = 'none';
-    modalCallback = null;
-}
-
-// ── Pinned items ──
-function renderPinned(items) {
-    const section = document.getElementById('pinned-section');
-    const container = document.getElementById('pinned-items');
-    if (!items || (items.length === 0 && !editMode)) {
-        section.style.display = 'none';
-        return;
-    }
-    section.style.display = '';
-    container.innerHTML = '';
-
-    items.forEach((item, iIdx) => {
-        if (editMode) {
-            const wrapper = document.createElement('div');
-            wrapper.className = 'pinned-edit-wrapper';
-            const label = document.createElement('span');
-            label.className = 'pinned-item';
-            if (item.type === 'link' && item.url) {
-                const domain = getDomain(item.url);
-                if (domain) {
-                    const img = document.createElement('img');
-                    img.className = 'favicon';
-                    img.src = 'https://www.google.com/s2/favicons?sz=32&domain=' + domain;
-                    img.alt = ''; img.onerror = function() { this.style.display = 'none'; };
-                    label.appendChild(img);
-                }
-            }
-            label.appendChild(document.createTextNode(item.label));
-            wrapper.appendChild(label);
-
-            const editBtn = document.createElement('button');
-            editBtn.className = 'edit-action-btn'; editBtn.textContent = '✎'; editBtn.title = 'Edit';
-            editBtn.addEventListener('click', () => openItemModal(item, updated => {
-                pinnedItems[iIdx] = updated; saveConfigOverride(); renderPinned(pinnedItems);
-            }));
-            wrapper.appendChild(editBtn);
-
-            const delBtn = document.createElement('button');
-            delBtn.className = 'edit-action-btn delete-btn'; delBtn.textContent = '×'; delBtn.title = 'Remove';
-            delBtn.addEventListener('click', () => { pinnedItems.splice(iIdx, 1); saveConfigOverride(); renderPinned(pinnedItems); });
-            wrapper.appendChild(delBtn);
-            container.appendChild(wrapper);
-        } else {
-            const el = document.createElement('a');
-            el.className = 'pinned-item'; el.href = '#';
-            if (item.type === 'link' && item.url) {
-                const domain = getDomain(item.url);
-                if (domain) {
-                    const img = document.createElement('img');
-                    img.className = 'favicon';
-                    img.src = 'https://www.google.com/s2/favicons?sz=32&domain=' + domain;
-                    img.alt = ''; img.onerror = function() { this.style.display = 'none'; };
-                    el.appendChild(img);
-                }
-            }
-            el.appendChild(document.createTextNode(item.label));
-            el.addEventListener('click', e => { e.preventDefault(); openItem(item); });
-            container.appendChild(el);
-        }
-    });
-
-    if (editMode) {
-        const addBtn = document.createElement('button');
-        addBtn.className = 'pinned-item add-pinned-btn';
-        addBtn.textContent = '+ Pin item';
-        addBtn.addEventListener('click', () => openItemModal({ label: '', type: 'link', url: '' }, item => {
-            pinnedItems.push(item); saveConfigOverride(); renderPinned(pinnedItems);
-        }));
-        container.appendChild(addBtn);
-    }
-}
-
-// ── Groups ──
-function renderGroups(groups) {
-    const dashboard = document.getElementById('dashboard');
-    dashboard.innerHTML = '';
-    groups.forEach((group, gIdx) => dashboard.appendChild(buildGroupCard(group, gIdx)));
-    if (editMode) {
-        const addGroupBtn = document.createElement('button');
-        addGroupBtn.className = 'add-group-btn';
-        addGroupBtn.textContent = '+ Add Group';
-        addGroupBtn.addEventListener('click', () => {
-            allGroups.push({ name: 'New Group', colour: '#64748b', items: [] });
-            saveConfigOverride();
-            renderGroups(allGroups);
-        });
-        dashboard.appendChild(addGroupBtn);
-    }
-}
-
-function buildGroupCard(group, gIdx) {
-    const card = document.createElement('div');
-    card.className = 'group' +
-        (collapsedGroups[group.name] ? ' collapsed' : '') +
-        (editMode ? ' edit-mode' : '');
-    if (group.colour) card.style.setProperty('--group-colour', group.colour);
-
-    const header = document.createElement('div');
-    header.className = 'group-header';
-
-    if (editMode) {
-        const dragHandle = document.createElement('span');
-        dragHandle.className = 'drag-handle';
-        dragHandle.textContent = '⠿';
-        dragHandle.draggable = true;
-        setupGroupDragHandle(dragHandle, card, gIdx);
-        header.appendChild(dragHandle);
-    }
-
-    const heading = document.createElement('h2');
-    if (group.colour) {
-        const dot = document.createElement('span');
-        dot.className = 'accent-dot';
-        dot.style.backgroundColor = group.colour;
-        heading.appendChild(dot);
-    }
-
-    if (editMode) {
-        const nameInput = document.createElement('input');
-        nameInput.className = 'group-name-input';
-        nameInput.value = group.name;
-        nameInput.addEventListener('change', e => {
-            const oldName = group.name;
-            const newName = e.target.value.trim() || oldName;
-            allGroups[gIdx].name = newName;
-            if (collapsedGroups[oldName] !== undefined) {
-                collapsedGroups[newName] = collapsedGroups[oldName];
-                delete collapsedGroups[oldName];
-            }
-            saveConfigOverride();
-        });
-        heading.appendChild(nameInput);
-    } else {
-        heading.appendChild(document.createTextNode(group.name));
-        header.addEventListener('click', () => {
-            card.classList.toggle('collapsed');
-            collapsedGroups[group.name] = card.classList.contains('collapsed');
-            localStorage.setItem('hub-collapsed', JSON.stringify(collapsedGroups));
-        });
-    }
-    header.appendChild(heading);
-
-    if (!editMode) {
-        const chevron = document.createElement('span');
-        chevron.className = 'collapse-icon';
-        chevron.textContent = '▼';
-        header.appendChild(chevron);
-    } else {
-        const colourInput = document.createElement('input');
-        colourInput.type = 'color';
-        colourInput.value = group.colour || '#64748b';
-        colourInput.className = 'group-colour-picker';
-        colourInput.title = 'Group colour';
-        colourInput.addEventListener('input', e => {
-            allGroups[gIdx].colour = e.target.value;
-            const dot = heading.querySelector('.accent-dot');
-            if (dot) dot.style.backgroundColor = e.target.value;
-        });
-        colourInput.addEventListener('change', () => saveConfigOverride());
-        header.appendChild(colourInput);
-
-        const delBtn = document.createElement('button');
-        delBtn.className = 'edit-action-btn delete-btn';
-        delBtn.textContent = '×'; delBtn.title = 'Delete group';
-        delBtn.addEventListener('click', () => {
-            if (confirm(`Delete group "${group.name}" and all its items?`)) {
-                allGroups.splice(gIdx, 1); saveConfigOverride(); renderGroups(allGroups);
-            }
-        });
-        header.appendChild(delBtn);
-    }
-
-    card.appendChild(header);
-
-    const body = document.createElement('div');
-    body.className = 'group-body';
-    const list = document.createElement('ul');
-    if (editMode) setupItemDropZone(list, gIdx);
-    group.items.forEach((item, iIdx) => list.appendChild(buildItemLi(item, gIdx, iIdx)));
-    body.appendChild(list);
-
-    if (editMode) {
-        const addItemBtn = document.createElement('button');
-        addItemBtn.className = 'add-item-btn';
-        addItemBtn.textContent = '+ Add item';
-        addItemBtn.addEventListener('click', () => openItemModal({ label: '', type: 'link', url: '' }, item => {
-            allGroups[gIdx].items.push(item); saveConfigOverride(); renderGroups(allGroups);
-        }));
-        body.appendChild(addItemBtn);
-    }
-
-    card.appendChild(body);
-    return card;
-}
-
-function buildItemLi(item, gIdx, iIdx) {
-    const li = document.createElement('li');
-    if (item.season && !isSeasonActive(item.season)) li.classList.add('off-season');
-
-    if (editMode) {
-        const dragHandle = document.createElement('span');
-        dragHandle.className = 'drag-handle item-drag-handle';
-        dragHandle.textContent = '⠿';
-        dragHandle.draggable = true;
-        setupItemDragHandle(dragHandle, li, gIdx, iIdx);
-        li.appendChild(dragHandle);
-    }
-
-    const link = document.createElement('a');
-    link.href = '#';
-
-    if (item.type === 'link' && item.url) {
-        const domain = getDomain(item.url);
-        if (domain) {
-            const img = document.createElement('img');
-            img.className = 'type-icon favicon';
-            img.src = 'https://www.google.com/s2/favicons?sz=32&domain=' + domain;
-            img.alt = ''; img.onerror = function() { this.style.display = 'none'; };
-            link.appendChild(img);
-        }
-    } else if (TYPE_ICONS[item.type]) {
-        const iconSpan = document.createElement('span');
-        iconSpan.innerHTML = TYPE_ICONS[item.type];
-        link.appendChild(iconSpan.firstChild);
-    }
-
-    link.appendChild(document.createTextNode(item.label));
-    if (!editMode) link.addEventListener('click', e => { e.preventDefault(); openItem(item); });
-    li.appendChild(link);
-
-    if (item.tag) {
-        const tag = document.createElement('span');
-        tag.className = 'tag'; tag.textContent = item.tag;
-        li.appendChild(tag);
-    }
-    if (item.season) {
-        const active = isSeasonActive(item.season);
-        const tag = document.createElement('span');
-        tag.className = 'tag ' + (active ? 'season-active' : 'season-inactive');
-        tag.textContent = active ? 'In season' : item.season;
-        li.appendChild(tag);
-    }
-    if (!editMode && (item.type === 'file' || item.type === 'folder')) {
-        const copyBtn = document.createElement('button');
-        copyBtn.className = 'copy-path-btn';
-        copyBtn.textContent = 'Copy path';
-        copyBtn.addEventListener('click', e => {
-            e.stopPropagation();
-            navigator.clipboard.writeText(item.path).then(() => showToast('Path copied'));
-        });
-        li.appendChild(copyBtn);
-    }
-
-    if (editMode) {
-        const editBtn = document.createElement('button');
-        editBtn.className = 'edit-action-btn'; editBtn.textContent = '✎'; editBtn.title = 'Edit';
-        editBtn.addEventListener('click', () => openItemModal(item, updated => {
-            allGroups[gIdx].items[iIdx] = updated; saveConfigOverride(); renderGroups(allGroups);
-        }));
-        li.appendChild(editBtn);
-
-        const delBtn = document.createElement('button');
-        delBtn.className = 'edit-action-btn delete-btn'; delBtn.textContent = '×'; delBtn.title = 'Delete';
-        delBtn.addEventListener('click', () => {
-            allGroups[gIdx].items.splice(iIdx, 1); saveConfigOverride(); renderGroups(allGroups);
-        });
-        li.appendChild(delBtn);
-    }
-
-    return li;
-}
-
-// ── Drag and drop — groups ──
-function setupGroupDragHandle(handle, card, gIdx) {
-    handle.addEventListener('dragstart', e => {
-        dragGroupIdx = gIdx;
-        e.dataTransfer.effectAllowed = 'move';
-        setTimeout(() => card.classList.add('dragging'), 0);
-    });
-    handle.addEventListener('dragend', () => {
-        dragGroupIdx = null;
-        document.querySelectorAll('.group.dragging, .group.drag-over').forEach(el => el.classList.remove('dragging', 'drag-over'));
-    });
-    card.addEventListener('dragover', e => {
-        if (dragGroupIdx === null || dragGroupIdx === gIdx) return;
-        e.preventDefault();
-        card.classList.add('drag-over');
-    });
-    card.addEventListener('dragleave', e => {
-        if (!card.contains(e.relatedTarget)) card.classList.remove('drag-over');
-    });
-    card.addEventListener('drop', e => {
-        if (dragGroupIdx === null || dragGroupIdx === gIdx) return;
-        e.preventDefault();
-        card.classList.remove('drag-over');
-        const [moved] = allGroups.splice(dragGroupIdx, 1);
-        allGroups.splice(gIdx > dragGroupIdx ? gIdx - 1 : gIdx, 0, moved);
-        saveConfigOverride();
-        renderGroups(allGroups);
-    });
-}
-
-// ── Drag and drop — items ──
-function setupItemDragHandle(handle, li, gIdx, iIdx) {
-    handle.addEventListener('dragstart', e => {
-        dragItemInfo = { gIdx, iIdx };
-        e.dataTransfer.effectAllowed = 'move';
-        e.stopPropagation();
-        setTimeout(() => li.classList.add('dragging'), 0);
-    });
-    handle.addEventListener('dragend', () => {
-        dragItemInfo = null;
-        document.querySelectorAll('li.dragging, li.drag-over').forEach(el => el.classList.remove('dragging', 'drag-over'));
-    });
-    li.addEventListener('dragover', e => {
-        if (!dragItemInfo) return;
-        e.preventDefault(); e.stopPropagation();
-        li.classList.add('drag-over');
-    });
-    li.addEventListener('dragleave', e => {
-        if (!li.contains(e.relatedTarget)) li.classList.remove('drag-over');
-    });
-    li.addEventListener('drop', e => {
-        if (!dragItemInfo) return;
-        const { gIdx: srcG, iIdx: srcI } = dragItemInfo;
-        if (srcG === gIdx && srcI === iIdx) return;
-        e.preventDefault(); e.stopPropagation();
-        li.classList.remove('drag-over');
-        const [moved] = allGroups[srcG].items.splice(srcI, 1);
-        allGroups[gIdx].items.splice(srcG === gIdx && iIdx > srcI ? iIdx - 1 : iIdx, 0, moved);
-        saveConfigOverride();
-        renderGroups(allGroups);
-    });
-}
-
-function setupItemDropZone(list, gIdx) {
-    list.addEventListener('dragover', e => { if (dragItemInfo) e.preventDefault(); });
-    list.addEventListener('drop', e => {
-        if (!dragItemInfo) return;
-        const { gIdx: srcG, iIdx: srcI } = dragItemInfo;
-        if (srcG === gIdx) return;
-        e.preventDefault();
-        const [moved] = allGroups[srcG].items.splice(srcI, 1);
-        allGroups[gIdx].items.push(moved);
-        saveConfigOverride();
-        renderGroups(allGroups);
-    });
-}
-
-// ── Open item ──
-function openItem(item) {
-    if (item.type === 'link') {
-        if (item.url && item.url.startsWith('#')) {
-            location.hash = item.url.slice(1);
-        } else {
-            window.open(item.url, '_blank');
-        }
-    } else if (item.type === 'file' || item.type === 'folder') {
-        window.open('file://' + item.path);
-    }
-}
-
-// ── Dashboard module helpers ────────────────────────────────────────────
-
-function _ehDb(s) {
-    return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-}
-
-const DB_STATUS_LABELS = {
-    new: 'New', reviewed: 'Reviewed', sent_to_xero: 'Xero', dispatched: 'Dispatched', paid: 'Paid',
-};
-const DB_STATUS_COLOURS = {
-    new: '#3b82f6', reviewed: '#f59e0b', sent_to_xero: '#8b5cf6', dispatched: '#64748b', paid: '#10b981',
+const DB_ICONS = {
+    orders:    '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5h16M4 12h16M4 19h10"/></svg>',
+    shipments: '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="6" width="14" height="11" rx="1"/><path d="M15 9h4l3 3v5h-7"/><circle cx="5.5" cy="18.5" r="2"/><circle cx="18.5" cy="18.5" r="2"/></svg>',
+    sales:     '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 17 9 11 13 15 21 7"/><polyline points="15 7 21 7 21 13"/></svg>',
+    xero:      '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M8 12l2.5 2.5L16 9"/></svg>',
+    plus:      '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>',
 };
 
-// Latest 6 orders by createdAt descending.
-function renderLatestOrdersBody(orders) {
-    if (!Array.isArray(orders) || !orders.length) {
-        return '<p class="db-mod-empty">No orders yet.</p>';
-    }
-    const sorted = orders.slice().sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
-    const rows = sorted.slice(0, 6).map(o => {
-        const status = o.status || 'new';
-        const colour = DB_STATUS_COLOURS[status] || '#94a3b8';
-        const label  = DB_STATUS_LABELS[status]  || status;
-        const cust   = o.customer?.name || 'Unknown customer';
-        const ref    = o.xeroInvoiceNumber || o.id;
-        const date   = (o.createdAt || '').slice(0, 10);
-        return `<a class="db-row" href="#orders/${_ehDb(o.id)}">
-            <span class="db-row-main">${_ehDb(cust)}</span>
-            <span class="db-row-meta">${_ehDb(ref)}</span>
-            <span class="db-row-date">${_ehDb(date)}</span>
-            <span class="db-row-tag" style="color:${colour};background:${colour}18;border-color:${colour}30">${label}</span>
-        </a>`;
-    }).join('');
-    return `<div class="db-rows">${rows}</div>`;
-}
-
-// Next 4 shipments by ym (ascending), reading config.shipments synchronously.
-// "Incoming" = ym ≥ current month.
-function renderIncomingShipmentsBody(config, forex) {
-    const all = (config?.shipments || []).slice();
-    if (!all.length) return '<p class="db-mod-empty">No shipments scheduled.</p>';
-
-    const now    = new Date();
-    const curYm  = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
-    // s.ym is the arrival month (Arrived in Tauranga). The Imports forecast
-    // uses the same field for "incoming" stock — so what's displayed here
-    // and what feeds the stock projection always agree.
-    const upcoming = all
-        .filter(s => (s.ym || '') >= curYm)
-        .sort((a, b) => (a.ym || '').localeCompare(b.ym || ''))
-        .slice(0, 4);
-
-    if (!upcoming.length) return '<p class="db-mod-empty">No upcoming shipments.</p>';
-
-    const STATUS_C = { planning:'#94a3b8', ordered:'#3b82f6', 'in-transit':'#f59e0b', customs:'#8b5cf6', delivered:'#10b981' };
-    const STATUS_L = { planning:'Planning', ordered:'Ordered', 'in-transit':'In transit', customs:'Customs', delivered:'Delivered' };
-
-    // Light → dark green across 7 milestones. Done stages render at full
-    // saturation; pending ones dim to ~25% opacity.
-    const STAGE_GREENS = ['#d1fae5', '#a7f3d0', '#6ee7b7', '#34d399', '#10b981', '#059669', '#047857'];
-
-    function fmtK(n) {
-        const v = Math.round(n);
-        if (Math.abs(v) >= 10000) return '$' + Math.round(v / 1000) + 'k';
-        if (Math.abs(v) >= 1000)  return '$' + (v / 1000).toFixed(1).replace(/\.0$/, '') + 'k';
-        return '$' + v.toLocaleString('en-NZ');
-    }
-
-    function lineNzd(l) {
-        const amt = Number(l.amount) || 0;
-        if (!amt) return 0;
-        if (!l.ccy || l.ccy === 'NZD') return amt;
-        const rate = forex && forex[l.ccy];
-        return rate ? amt / rate : 0;
-    }
-
-    function costSummary(s) {
-        const lines = Array.isArray(s.costLines) ? s.costLines : [];
-        if (!lines.length) return { hasCosts: false };
-        const total = lines.reduce((t, l) => t + lineNzd(l), 0);
-        if (total <= 0) return { hasCosts: false };
-        const paid  = lines.filter(l => l.paid).reduce((t, l) => t + lineNzd(l), 0);
-        const pct   = Math.round(paid / total * 100);
-        return { hasCosts: true, pct, outstanding: total - paid };
-    }
-
-    const rows = upcoming.map(s => {
-        const seq   = s.seq != null ? s.seq : '?';
-        const ymTxt = s.ym ? new Date(s.ym + '-01').toLocaleDateString('en-NZ', { month: 'short', year: 'numeric' }) : '';
-        const st    = s.status || 'planning';
-        const c     = STATUS_C[st] || '#94a3b8';
-
-        const cs = costSummary(s);
-        const costLine = cs.hasCosts
-            ? `${cs.pct}% paid · ${fmtK(cs.outstanding)} outstanding`
-            : (forex ? 'No costs entered' : 'Costs pending FX');
-
-        const milestones = Array.isArray(s.milestones) ? s.milestones : [];
-        const segs = STAGE_GREENS.map((bg, i) => {
-            const m = milestones[i];
-            const done = !!(m && m.done);
-            const label = (m && m.label) || `Stage ${i + 1}`;
-            const dateTxt = m && m.date ? ' · ' + m.date : '';
-            return `<span class="db-ms-seg${done ? ' db-ms-seg--done' : ''}"
-                style="background:${bg}"
-                title="${_ehDb(label + dateTxt)}"></span>`;
-        }).join('');
-
-        return `<div class="db-ship-card">
-            <div class="db-ship-row1">
-                <span class="db-ship-num">#${_ehDb(seq)}</span>
-                <span class="db-row-tag" style="color:${c};background:${c}18;border-color:${c}30">${STATUS_L[st] || st}</span>
-            </div>
-            <div class="db-ship-arrival"><span class="db-ship-arrival-label">Arriving:</span> Landed in Tauranga · <strong>${_ehDb(ymTxt)}</strong></div>
-            <div class="db-ship-cost">${_ehDb(costLine)}</div>
-            <div class="db-ship-ms" role="img" aria-label="Milestone progress">${segs}</div>
-        </div>`;
-    }).join('');
-    return `<div class="db-rows">${rows}</div>`;
-}
-
-// Format a Google Calendar event into { date: 'YYYY-MM-DD', time: 'HH:MM' or '', title }.
-function _parseGcalEvent(ev) {
-    const startObj = ev.start || {};
-    if (startObj.date) {
-        return { date: startObj.date, time: '', title: ev.summary || '(no title)', allDay: true };
-    }
-    if (startObj.dateTime) {
-        const d = new Date(startObj.dateTime);
-        if (isNaN(d)) return null;
-        const yyyy = d.getFullYear();
-        const mm   = String(d.getMonth() + 1).padStart(2, '0');
-        const dd   = String(d.getDate()).padStart(2, '0');
-        const hh   = String(d.getHours()).padStart(2, '0');
-        const mi   = String(d.getMinutes()).padStart(2, '0');
-        return { date: `${yyyy}-${mm}-${dd}`, time: `${hh}:${mi}`, title: ev.summary || '(no title)', allDay: false };
-    }
-    return null;
-}
-
-function _dayLabel(d, today) {
-    const diff = Math.round((d - today) / 86400000);
-    if (diff === 0) return 'Today';
-    if (diff === 1) return 'Tomorrow';
-    return d.toLocaleDateString('en-NZ', { weekday: 'short', day: 'numeric', month: 'short' });
-}
-
-// 14-day list, grouped by date. Empty days are skipped except Today.
-function renderCalendar14dBody(events, shipments) {
-    const today = new Date(); today.setHours(0,0,0,0);
-    const horizonMs = 14 * 86400000;
-
-    const map = {}; // 'YYYY-MM-DD' → [{type, time, title}]
-    for (const ev of (events || [])) {
-        const parsed = _parseGcalEvent(ev);
-        if (!parsed) continue;
-        const d = new Date(parsed.date + 'T00:00:00');
-        if (d < today || (d - today) >= horizonMs) continue;
-        (map[parsed.date] = map[parsed.date] || []).push({ type: 'gcal', ...parsed });
-    }
-    for (const s of (shipments || [])) {
-        const tag = s.seq ? `#${s.seq}` : '';
-        const milestones = (s.milestones || []).filter(m => m && m.date);
-        if (milestones.length) {
-            for (const m of milestones) {
-                const date = m.date.slice(0, 10);
-                const d = new Date(date + 'T00:00:00');
-                if (d < today || (d - today) >= horizonMs) continue;
-                const stage = m.label === 'Order placed' ? 'Start LC' : m.label;
-                const title = `${tag ? tag + ' · ' : ''}${stage}${m.done ? ' ✓' : ''}`;
-                (map[date] = map[date] || []).push({ type: 'shipment', time: '', title, allDay: true });
-            }
-            continue;
-        }
-        if (!s.ym) continue;
-        const date = s.ym + '-01';
-        const d = new Date(date + 'T00:00:00');
-        if (d < today || (d - today) >= horizonMs) continue;
-        const title = tag ? `Shipment ${tag} ETA` : `Shipment ETA · ${s.campaign || s.ym}`;
-        (map[date] = map[date] || []).push({ type: 'shipment', time: '', title, allDay: true });
-    }
-
-    const dates = Object.keys(map).sort();
-    if (!dates.length) return '<p class="db-mod-empty">No events in the next 14 days.</p>';
-
-    let totalShown = 0;
-    const MAX = 8;
-    let truncated = 0;
-
-    const blocks = dates.map(date => {
-        const d = new Date(date + 'T00:00:00');
-        const items = map[date].sort((a, b) => (a.time || '').localeCompare(b.time || ''));
-        const slice = totalShown < MAX ? items.slice(0, MAX - totalShown) : [];
-        truncated += items.length - slice.length;
-        totalShown += slice.length;
-        if (!slice.length) return '';
-        return `<div class="db-cal-day">
-            <div class="db-cal-day-hd">${_ehDb(_dayLabel(d, today))}</div>
-            ${slice.map(it => `<div class="db-cal-event db-cal-event--${it.type}">
-                ${it.time ? `<span class="db-cal-time">${it.time}</span>` : '<span class="db-cal-time db-cal-time--all">·</span>'}
-                <span class="db-cal-title">${_ehDb(it.title)}</span>
-            </div>`).join('')}
-        </div>`;
-    }).filter(Boolean).join('');
-
-    const footer = truncated > 0
-        ? `<div class="db-cal-more">… and ${truncated} more</div>`
-        : '';
-    return blocks + footer;
-}
-
-// Build a per-date map of events keyed by 'YYYY-MM-DD' for the 28-day expand.
-// Cached on window so the click handler can read it without re-fetching.
-function _buildDayMap(events, shipments) {
-    const map = {};
-    for (const ev of (events || [])) {
-        const parsed = _parseGcalEvent(ev);
-        if (!parsed) continue;
-        (map[parsed.date] = map[parsed.date] || []).push({ type: 'gcal', ...parsed });
-    }
-    for (const s of (shipments || [])) {
-        const tag = s.seq ? `#${s.seq}` : '';
-        const milestones = (s.milestones || []).filter(m => m && m.date);
-        if (milestones.length) {
-            for (const m of milestones) {
-                const date = m.date.slice(0, 10);
-                const stage = m.label === 'Order placed' ? 'Start LC' : m.label;
-                const title = `${tag ? tag + ' · ' : ''}${stage}${m.done ? ' ✓' : ''}`;
-                (map[date] = map[date] || []).push({ type: 'shipment', time: '', title, allDay: true });
-            }
-            continue;
-        }
-        if (!s.ym) continue;
-        const date = s.ym + '-01';
-        const title = tag ? `Shipment ${tag} ETA` : `Shipment ETA · ${s.campaign || s.ym}`;
-        (map[date] = map[date] || []).push({ type: 'shipment', time: '', title, allDay: true });
-    }
-    return map;
-}
-
-// 28-day strip: one cell per day, dot if events. Click expands details inline.
-function renderCalendar28dBody(events, shipments) {
-    const today = new Date(); today.setHours(0,0,0,0);
-    const dayMap = _buildDayMap(events, shipments);
-    window._dbDayMap = dayMap; // shared with the click handler below
-
-    const cells = [];
-    for (let i = 0; i < 28; i++) {
-        const d = new Date(today); d.setDate(d.getDate() + i);
-        const yyyy = d.getFullYear();
-        const mm   = String(d.getMonth() + 1).padStart(2, '0');
-        const dd   = String(d.getDate()).padStart(2, '0');
-        const key  = `${yyyy}-${mm}-${dd}`;
-        const items = dayMap[key] || [];
-        const n    = items.length;
-        const dow  = d.getDay();
-        const isWeekend = dow === 0 || dow === 6;
-        const cls  = `db-strip-cell${i === 0 ? ' db-strip-cell--today' : ''}${isWeekend ? ' db-strip-cell--weekend' : ''}${n > 0 ? ' db-strip-cell--has' : ''}`;
-        const dotsHtml = n > 0
-            ? '<span class="db-strip-dots">' + '●'.repeat(Math.min(n, 3)) + '</span>'
-            : '';
-        cells.push(`<button type="button" class="${cls}" data-date="${key}" title="${key}${n ? ' · ' + n + ' event' + (n > 1 ? 's' : '') : ''}">
-            <span class="db-strip-dow">${'SMTWTFS'[dow]}</span>
-            <span class="db-strip-dom">${d.getDate()}</span>
-            ${dotsHtml}
-        </button>`);
-    }
-    return `<div class="db-strip">${cells.join('')}</div>`;
-}
-
-// Render the expanded detail panel for a given day.
-function _renderStripDetailFor(date) {
-    const items = (window._dbDayMap || {})[date] || [];
-    const d = new Date(date + 'T00:00:00');
-    const heading = d.toLocaleDateString('en-NZ', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
-    const body = items.length
-        ? items.sort((a, b) => (a.time || '').localeCompare(b.time || '')).map(it => `
-            <div class="db-cal-event db-cal-event--${it.type}">
-                ${it.time ? `<span class="db-cal-time">${it.time}</span>` : '<span class="db-cal-time db-cal-time--all">·</span>'}
-                <span class="db-cal-title">${_ehDb(it.title)}</span>
-            </div>`).join('')
-        : '<p class="db-mod-empty">Nothing scheduled.</p>';
-    return `<div class="db-strip-detail-hd">
-            <span>${_ehDb(heading)}</span>
-            <button type="button" class="db-strip-detail-close" title="Close">×</button>
-        </div>
-        <div class="db-strip-detail-body">${body}</div>`;
-}
-
-// One-time delegated click handler for the 28-day strip cells + close button.
-if (!window._dbStripWired) {
-    window._dbStripWired = true;
-    document.addEventListener('click', e => {
-        const closeBtn = e.target.closest('.db-strip-detail-close');
-        if (closeBtn) {
-            const panel = document.getElementById('db-strip-detail');
-            if (panel) { panel.style.display = 'none'; panel.innerHTML = ''; }
-            document.querySelectorAll('.db-strip-cell--open').forEach(c => c.classList.remove('db-strip-cell--open'));
-            return;
-        }
-        const cell = e.target.closest('.db-strip-cell');
-        if (!cell) return;
-        const date = cell.dataset.date;
-        if (!date) return;
-        const panel = document.getElementById('db-strip-detail');
-        if (!panel) return;
-        document.querySelectorAll('.db-strip-cell--open').forEach(c => c.classList.remove('db-strip-cell--open'));
-        cell.classList.add('db-strip-cell--open');
-        panel.innerHTML = _renderStripDetailFor(date);
-        panel.style.display = '';
-    });
-}
-
-// Fetch /api/calendar/events for the next 28 days, populate both calendar modules.
-function loadDashboardCalendar(config) {
-    const now = new Date(); now.setHours(0,0,0,0);
-    const max = new Date(now); max.setDate(max.getDate() + 28);
-    const url = `/api/calendar/events?timeMin=${now.toISOString()}&timeMax=${max.toISOString()}`;
-    const shipments = config?.shipments || [];
-
-    fetch(url).then(r => {
-        if (!r.ok) return r.status === 401 ? 'unconnected' : 'error';
-        return r.json();
-    }).then(events => {
-        const fourteenEl = document.querySelector('#db-mod-cal-14d .db-mod-body');
-        const stripEl    = document.querySelector('#db-mod-cal-28d .db-mod-body');
-
-        if (events === 'unconnected') {
-            const msg = '<p class="db-mod-empty">Connect Google Calendar in <a href="#calendar">Calendar</a> to see events here.</p>';
-            if (fourteenEl) fourteenEl.innerHTML = msg;
-            if (stripEl)    stripEl.innerHTML = renderCalendar28dBody([], shipments); // strip still shows shipment ticks
-            return;
-        }
-        if (events === 'error' || !Array.isArray(events)) events = [];
-
-        if (fourteenEl) fourteenEl.innerHTML = renderCalendar14dBody(events, shipments);
-        if (stripEl)    stripEl.innerHTML    = renderCalendar28dBody(events, shipments);
-    }).catch(() => {
-        const fourteenEl = document.querySelector('#db-mod-cal-14d .db-mod-body');
-        const stripEl    = document.querySelector('#db-mod-cal-28d .db-mod-body');
-        if (fourteenEl) fourteenEl.innerHTML = '<p class="db-mod-empty">Could not load calendar.</p>';
-        if (stripEl)    stripEl.innerHTML    = renderCalendar28dBody([], shipments);
-    });
-}
-
-// Module-grid dashboard. Skeleton renders immediately; modules populate
-// asynchronously as their data lands. Order on the page (top → bottom):
-// FX strip · Needs Review (if any) · 2-column grid (Latest Orders, Calendar
-// 14-day) · 3-column grid (Incoming Shipments, Sales mini, Orders mini) ·
-// Calendar 28-day strip · Quick Actions (demoted to a slim footer row).
 function renderDashboardWidgets(config) {
     const el = document.getElementById('db-widgets');
     if (!el) return;
 
-    const QUICK_ACTIONS = [
-        { label: 'Create New Order', hash: 'orders/new',
-          icon: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>' },
-        { label: 'All Orders', hash: 'orders',
-          icon: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>' },
-        { label: 'Stock Forecast', hash: 'imports',
-          icon: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>' },
-        { label: 'Sales History', hash: 'sales',
-          icon: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>' },
-    ];
+    const topRow = `
+        <div class="db-top-bar">
+            <div class="db-top-buttons">
+                <a class="db-top-btn" href="#orders">${DB_ICONS.orders}<span>Orders</span></a>
+                <a class="db-top-btn" href="#imports">${DB_ICONS.shipments}<span>Shipments</span></a>
+                <a class="db-top-btn" href="#sales">${DB_ICONS.sales}<span>Sales History</span></a>
+                <a class="db-top-btn" href="https://go.xero.com" target="_blank" rel="noopener">${DB_ICONS.xero}<span>Xero ↗</span></a>
+            </div>
+            <a class="db-top-btn db-top-btn--primary" href="#orders/new">${DB_ICONS.plus}<span>Add Order</span></a>
+        </div>`;
 
-    // Quick Actions sit at the very top of the dashboard — primary
-    // navigation shortcut row, not a footer.
-    const actionsHtml = `<div class="db-quick-actions">${QUICK_ACTIONS.map(a =>
-        `<a class="db-quick-card" href="#${a.hash}">${a.icon}<span>${a.label}</span></a>`
-    ).join('')}</div>`;
+    el.innerHTML = `
+        ${topRow}
+        <section class="db-mod db-mod--chart" id="db-stock-trajectory">
+            <div class="db-mod-hd"><h3 class="db-mod-title">Stock Trajectory</h3><a class="db-mod-link" href="#imports">Open Imports →</a></div>
+            <div class="db-mod-body"><span class="db-mod-loading">Loading…</span></div>
+        </section>
+        <section class="db-mod db-mod--chart" id="db-cumulative-sales">
+            <div class="db-mod-hd"><h3 class="db-mod-title">Cumulative Sales <span class="db-mod-sub">last 3 FYs</span></h3><a class="db-mod-link" href="#sales">Open Sales →</a></div>
+            <div class="db-mod-body"><span class="db-mod-loading">Loading…</span></div>
+        </section>
+        <section class="db-mod" id="db-calendar-module">
+            <div class="db-mod-hd"><h3 class="db-mod-title" id="db-cal-title">Calendar</h3><a class="db-mod-link" href="#calendar">Open Calendar →</a></div>
+            <div class="db-mod-body"><span class="db-mod-loading">Loading…</span></div>
+        </section>`;
 
-    // Forex from today's cache (or fetch live). Rates are also fed to the
-    // Incoming Shipments card so it can show paid % and outstanding NZD.
-    let fxHtml = '';
-    let fxRates = null;
-    const currencies = config?.currencies;
-    if (currencies?.base && Array.isArray(currencies?.targets)) {
-        const buildFx = data => {
-            if (!data?.rates) return '';
-            const pairs = currencies.targets
-                .filter(c => data.rates[c] !== undefined)
-                .map(c => `<span class="db-fx-pair"><span class="db-fx-code">${c}</span><span class="db-fx-rate">${data.rates[c].toFixed(4)}</span></span>`)
-                .join('');
-            return `<div class="db-forex-bar"><span class="db-fx-label">${currencies.base}</span>${pairs}<span class="db-fx-date">${data.date}</span></div>`;
-        };
-        const today = new Date().toISOString().split('T')[0];
-        const cached = localStorage.getItem('hub-fx-' + today);
-        if (cached) {
-            try { fxRates = JSON.parse(cached).rates || null; } catch (e) {}
-            fxHtml = buildFx(JSON.parse(cached));
-        } else {
-            const url = 'https://api.frankfurter.dev/v1/latest?base=' + currencies.base + '&symbols=' + currencies.targets.join(',');
-            fetch(url).then(r => r.json()).then(data => {
-                localStorage.setItem('hub-fx-' + today, JSON.stringify(data));
-                const fxEl = document.getElementById('db-forex-bar');
-                if (fxEl) fxEl.outerHTML = buildFx(data);
-                // Refresh shipment card now that we can convert costs to NZD.
-                const shipBody = document.querySelector('#db-mod-incoming-ships .db-mod-body');
-                if (shipBody) shipBody.innerHTML = renderIncomingShipmentsBody(config, data.rates || null);
-            }).catch(() => {});
-            fxHtml = '<div class="db-forex-bar" id="db-forex-bar"><span class="db-fx-label" style="opacity:0.4">Loading rates…</span></div>';
-        }
-    }
-
-    // New module-grid skeleton. Module bodies are filled in by the async
-    // fetches below — orders feed Latest Orders / alerts / mini charts;
-    // calendar events feed the two calendar modules; config.shipments
-    // feeds Incoming Shipments synchronously.
-    el.innerHTML =
-        actionsHtml +
-        fxHtml +
-        '<div id="db-alerts-container"></div>' +
-        '<div class="db-grid db-grid-2">' +
-            '<section class="db-mod" id="db-mod-latest-orders">' +
-                '<div class="db-mod-hd"><h3 class="db-mod-title">Latest Orders</h3><a class="db-mod-link" href="#orders">All →</a></div>' +
-                '<div class="db-mod-body"><span class="db-mod-loading">Loading…</span></div>' +
-            '</section>' +
-            '<section class="db-mod" id="db-mod-cal-14d">' +
-                '<div class="db-mod-hd"><h3 class="db-mod-title">Next 14 days</h3><a class="db-mod-link" href="#calendar">All →</a></div>' +
-                '<div class="db-mod-body"><span class="db-mod-loading">Loading…</span></div>' +
-            '</section>' +
-        '</div>' +
-        '<div class="db-grid db-grid-3">' +
-            '<section class="db-mod" id="db-mod-incoming-ships">' +
-                '<div class="db-mod-hd"><h3 class="db-mod-title">Incoming Shipments</h3><a class="db-mod-link" href="#imports">All →</a></div>' +
-                '<div class="db-mod-body">' + renderIncomingShipmentsBody(config, fxRates) + '</div>' +
-            '</section>' +
-            '<section class="db-mod db-mod--chart" id="db-sales-chart"><span class="db-mod-loading">Loading sales…</span></section>' +
-            '<section class="db-mod db-mod--chart" id="db-orders-chart"><span class="db-mod-loading">Loading orders…</span></section>' +
-        '</div>' +
-        '<section class="db-mod db-mod--strip" id="db-mod-cal-28d">' +
-            '<div class="db-mod-hd"><h3 class="db-mod-title">Next 28 days</h3><span class="db-mod-hint">Click a day for events</span></div>' +
-            '<div class="db-mod-body"><span class="db-mod-loading">Loading…</span></div>' +
-            '<div class="db-strip-detail" id="db-strip-detail" style="display:none"></div>' +
-        '</section>';
-
-    // Calendar fetches in parallel with orders (independent endpoints).
+    loadStockTrajectory();
+    loadCumulativeSales();
     loadDashboardCalendar(config);
-
-    // Async: load orders + weaved monthly series and draw mini charts.
-    // /api/sales/monthly is the single source of truth for kg (sheet pre-
-    // cutoff, Hub orders from cutoff on). Orders are still fetched directly
-    // for order-count, latest-orders, and alerts.
-    Promise.all([
-        fetch('/api/orders').then(r => r.ok ? r.json() : []).catch(() => []),
-        fetch('/api/sales/monthly').then(r => r.ok ? r.json() : { monthly: {} }).catch(() => ({ monthly: {} })),
-    ]).then(([orders, salesResp]) => {
-        const monthlyKg = salesResp?.monthly || {};
-        const MO = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-        const now = new Date();
-        // Build last 6 months
-        const months = [];
-        for (let i = 5; i >= 0; i--) {
-            const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-            months.push(d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0'));
-        }
-        const kgByMonth = {}, cntByMonth = {};
-        months.forEach(m => { kgByMonth[m] = Number(monthlyKg[m]) || 0; cntByMonth[m] = 0; });
-        (orders || []).forEach(o => {
-            const ym = (o.createdAt || '').slice(0, 7);
-            if (!cntByMonth.hasOwnProperty(ym)) return;
-            cntByMonth[ym]++;
-        });
-
-        const drawMiniBar = (vals, labels, colour, title, unit) => {
-            const W = 260, H = 80, padL = 28, padB = 18, padT = 8, padR = 8;
-            const cW = W - padL - padR, cH = H - padT - padB;
-            const maxV = Math.max(...vals, 1);
-            const barW = Math.max(Math.floor(cW / vals.length) - 4, 6);
-            const bars = vals.map((v, i) => {
-                const bh = Math.max(Math.round((v / maxV) * cH), v > 0 ? 2 : 0);
-                const x = padL + (i / vals.length) * cW + (cW / vals.length - barW) / 2;
-                const y = padT + cH - bh;
-                return `<rect x="${x.toFixed(1)}" y="${y}" width="${barW}" height="${bh}" fill="${colour}" rx="2" opacity="0.85"/>`;
-            }).join('');
-            const xLabels = labels.map((l, i) => {
-                const x = padL + (i / vals.length) * cW + cW / vals.length / 2;
-                return `<text x="${x.toFixed(1)}" y="${H - 2}" text-anchor="middle" font-size="7.5" fill="#94a3b8">${l}</text>`;
-            }).join('');
-            const yMax = `<text x="${padL - 2}" y="${padT + 6}" text-anchor="end" font-size="7" fill="#94a3b8">${maxV >= 1000 ? (maxV/1000).toFixed(0)+'k' : maxV}</text>`;
-            return `<div class="db-chart-inner">
-                <div class="db-chart-title">${title}</div>
-                <svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto" xmlns="http://www.w3.org/2000/svg">
-                    <line x1="${padL}" y1="${padT}" x2="${padL}" y2="${padT+cH}" stroke="#e2e8f0" stroke-width="1"/>
-                    <line x1="${padL}" y1="${padT+cH}" x2="${W-padR}" y2="${padT+cH}" stroke="#e2e8f0" stroke-width="1"/>
-                    ${bars}${xLabels}${yMax}
-                </svg>
-            </div>`;
-        };
-
-        const moLabels = months.map(m => MO[parseInt(m.slice(5)) - 1]);
-        const kgVals = months.map(m => kgByMonth[m]);
-        const cntVals = months.map(m => cntByMonth[m]);
-        const totalKg = kgVals.reduce((a, b) => a + b, 0);
-        const thisMonthKg = kgVals[kgVals.length - 1];
-
-        const salesEl = document.getElementById('db-sales-chart');
-        if (salesEl) salesEl.innerHTML = drawMiniBar(kgVals, moLabels, '#2563eb', `Sales (kg) · ${thisMonthKg > 0 ? thisMonthKg.toLocaleString('en-NZ') + ' kg this month' : 'last 6 months'}`, 'kg');
-
-        const ordersEl = document.getElementById('db-orders-chart');
-        if (ordersEl) ordersEl.innerHTML = drawMiniBar(cntVals, moLabels, '#7c3aed', `Orders · ${cntVals[cntVals.length-1]} this month`, 'orders');
-
-        // Latest Orders module — last 6 orders by createdAt, regardless of status.
-        const latestEl = document.querySelector('#db-mod-latest-orders .db-mod-body');
-        if (latestEl) latestEl.innerHTML = renderLatestOrdersBody(orders || []);
-
-        // Alerts: orders needing attention
-        const eh = s => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-        const needsAction = (orders || []).filter(o => o.status === 'new');
-        const badge = document.getElementById('nav-orders-badge');
-        if (badge) { badge.textContent = needsAction.length; badge.style.display = needsAction.length ? '' : 'none'; }
-        const alertsEl = document.getElementById('db-alerts-container');
-        if (alertsEl && needsAction.length > 0) {
-            const statusLabel = s => s === 'new' ? 'New' : 'Awaiting Review';
-            alertsEl.innerHTML = `<div class="db-alerts">
-                <div class="db-alerts-header">
-                    <span class="db-alerts-title">Needs Attention</span>
-                    <span class="db-alerts-count">${needsAction.length} order${needsAction.length !== 1 ? 's' : ''}</span>
-                </div>
-                <div class="db-alerts-list">
-                    ${needsAction.slice(0, 5).map(o => `<a class="db-alert-item" href="#orders/${o.id}">
-                        <span class="db-alert-label">${eh(o.customer?.name || 'Unknown customer')}</span>
-                        <span class="db-alert-status db-alert-status--${o.status}">${statusLabel(o.status)}</span>
-                        <span class="db-alert-meta">${(o.createdAt || '').slice(0, 10)}</span>
-                    </a>`).join('')}
-                    ${needsAction.length > 5 ? `<span class="db-alert-more">+${needsAction.length - 5} more — <a href="#orders">view all</a></span>` : ''}
-                </div>
-            </div>`;
-        }
-    }).catch(() => {
-        ['db-sales-chart','db-orders-chart'].forEach(id => {
-            const el2 = document.getElementById(id);
-            if (el2) el2.innerHTML = '';
-        });
-    });
 }
 
-// ── Season logic ──
-function isSeasonActive(season) {
-    const parts = season.toLowerCase().split('-');
-    if (parts.length !== 2) return true;
-    const months = { jan:0, feb:1, mar:2, apr:3, may:4, jun:5, jul:6, aug:7, sep:8, oct:9, nov:10, dec:11 };
-    const start = months[parts[0]], end = months[parts[1]];
-    if (start === undefined || end === undefined) return true;
-    const now = new Date().getMonth();
-    if (start <= end) return now >= start && now <= end;
-    return now >= start || now <= end;
-}
+// ── Stock Trajectory chart ───────────────────────────────────────────────
+// Projects kg-on-hand forward from /api/import/forecast — startingKg minus
+// monthlyAvg demand each month plus shipments arriving in that month.
+async function loadStockTrajectory() {
+    const body = document.querySelector('#db-stock-trajectory .db-mod-body');
+    if (!body) return;
+    let cfg;
+    try { cfg = await fetch('/api/import/forecast').then(r => r.ok ? r.json() : null); }
+    catch { cfg = null; }
+    if (!cfg) { body.innerHTML = '<p class="db-mod-empty">No forecast data.</p>'; return; }
 
-// ── Currency rates (header) ──
-function renderHeaderCurrencies(config) {
-    const container = document.getElementById('header-currencies');
-    container.innerHTML = '<span class="currency-loading">Loading rates...</span>';
+    const monthlyAvg = Array.isArray(cfg.monthlyAvg) && cfg.monthlyAvg.length === 12
+        ? cfg.monthlyAvg : new Array(12).fill(0);
+    const shipments = Array.isArray(cfg.shipments) ? cfg.shipments : [];
 
-    const today = new Date().toISOString().split('T')[0];
-    const todayCacheKey = 'hub-fx-' + today;
-    const cached = localStorage.getItem(todayCacheKey);
-
-    const renderAndFetchHistory = data => {
-        renderCurrencyGrid(data, config.targets, container);
-        fetchAndRenderSparklines(config.base, config.targets);
-    };
-
-    if (cached) {
-        renderAndFetchHistory(JSON.parse(cached));
-    } else {
-        const url = 'https://api.frankfurter.dev/v1/latest?base=' + config.base + '&symbols=' + config.targets.join(',');
-        fetch(url)
-            .then(r => r.json())
-            .then(data => {
-                for (const key of Object.keys(localStorage)) {
-                    if (key.startsWith('hub-fx-2') && key !== todayCacheKey) localStorage.removeItem(key);
-                }
-                localStorage.setItem(todayCacheKey, JSON.stringify(data));
-                renderAndFetchHistory(data);
-            })
-            .catch(() => { container.innerHTML = '<span class="currency-loading">Could not load rates</span>'; });
-    }
-}
-
-function renderCurrencyGrid(data, targets, container) {
-    container.innerHTML = '';
-    const dateEl = document.createElement('div');
-    dateEl.className = 'currency-date';
-    dateEl.textContent = 'As at ' + data.date;
-    container.appendChild(dateEl);
-
-    const grid = document.createElement('div');
-    grid.className = 'currency-pairs';
-    targets.forEach(code => {
-        const rate = data.rates[code];
-        if (rate === undefined) return;
-        const pair = document.createElement('div');
-        pair.className = 'currency-pair';
-        pair.id = 'currency-pair-' + code;
-        pair.innerHTML =
-            '<span class="currency-code">' + code + '</span>' +
-            '<span class="currency-rate">' + rate.toFixed(4) + '</span>';
-        grid.appendChild(pair);
-    });
-    container.appendChild(grid);
-}
-
-function fetchAndRenderSparklines(base, targets) {
+    const HORIZON = 18; // months
     const now = new Date();
-    const monthKey = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
-    const cacheKey = 'hub-fx-hist-' + monthKey;
-    const cached = localStorage.getItem(cacheKey);
+    const startYear  = now.getFullYear();
+    const startMonth = now.getMonth();
+    const labels = [];
+    const stock  = [];
+    const shipMarkers = {}; // ym → kg arriving
 
-    const applySparklines = histData => {
-        targets.forEach(code => {
-            const pairEl = document.getElementById('currency-pair-' + code);
-            if (!pairEl) return;
-            const { values, months } = extractMonthlyRates(histData, code);
-            if (values.length < 2) return;
-            pairEl.insertAdjacentHTML('beforeend', drawSparkline(values, months));
-            initCharts(pairEl);
-        });
-    };
+    for (const s of shipments) {
+        const ym = String(s.ym || '');
+        if (!ym) continue;
+        shipMarkers[ym] = (shipMarkers[ym] || 0) + (Number(s.kg) || 0);
+    }
 
-    if (cached) { applySparklines(JSON.parse(cached)); return; }
+    let kg = Number(cfg.startingKg) || 0;
+    for (let i = 0; i < HORIZON; i++) {
+        const d = new Date(startYear, startMonth + i, 1);
+        const ym = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
+        kg += (shipMarkers[ym] || 0);
+        kg -= (monthlyAvg[d.getMonth()] || 0);
+        labels.push(d.toLocaleString('en-NZ', { month: 'short', year: '2-digit' }));
+        stock.push(Math.round(kg));
+    }
 
-    const start = new Date(now);
-    start.setMonth(start.getMonth() - 13);
-    const url = 'https://api.frankfurter.dev/v1/' +
-        start.toISOString().split('T')[0] + '..' + now.toISOString().split('T')[0] +
-        '?base=' + base + '&symbols=' + targets.join(',');
+    // Build shipment annotation points: x = month index, y = stock that month.
+    const shipPoints = [];
+    for (let i = 0; i < HORIZON; i++) {
+        const d = new Date(startYear, startMonth + i, 1);
+        const ym = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
+        if (shipMarkers[ym]) shipPoints.push({ x: labels[i], y: stock[i], kg: shipMarkers[ym] });
+    }
 
-    fetch(url)
-        .then(r => r.json())
-        .then(histData => {
-            localStorage.setItem(cacheKey, JSON.stringify(histData));
-            applySparklines(histData);
-        })
-        .catch(() => {}); // sparklines are non-critical
-}
-
-function extractMonthlyRates(histData, code) {
-    const byMonth = {};
-    Object.keys(histData.rates).sort().forEach(d => {
-        const month = d.slice(0, 7);
-        if (histData.rates[d][code] !== undefined) byMonth[month] = histData.rates[d][code];
-    });
-    return { values: Object.values(byMonth), months: Object.keys(byMonth) };
-}
-
-function drawSparkline(values, months) {
-    const MO = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-    const id = 'spark-' + Math.random().toString(36).slice(2, 9);
-    const trending = values[values.length - 1] >= values[0] ? 'up' : 'down';
-    const color = trending === 'up' ? '#10b981' : '#ef4444';
-    const labels = (months || []).map(m => {
-        const mo = MO[parseInt(m.slice(5)) - 1] || '';
-        return mo + ' ' + m.slice(0, 4);
-    });
+    const id = 'db-stock-chart';
     window._chartQ[id] = {
         type: 'line',
         data: {
             labels,
-            datasets: [{
-                data: values,
-                borderColor: color,
-                borderWidth: 1.5,
-                pointRadius: 2,
-                pointHoverRadius: 4,
-                pointBackgroundColor: color,
-                pointBorderColor: 'transparent',
-                fill: false,
-                tension: 0.3,
-            }],
+            datasets: [
+                {
+                    label: 'Projected kg on hand',
+                    data: stock,
+                    borderColor: '#2563eb',
+                    backgroundColor: 'rgba(37, 99, 235, 0.08)',
+                    borderWidth: 2.5,
+                    pointRadius: 0,
+                    pointHoverRadius: 5,
+                    tension: 0.25,
+                    fill: true,
+                },
+                {
+                    label: 'Shipment arrival',
+                    data: labels.map(l => {
+                        const m = shipPoints.find(p => p.x === l);
+                        return m ? m.y : null;
+                    }),
+                    borderColor: 'transparent',
+                    backgroundColor: '#10b981',
+                    pointRadius: 7,
+                    pointHoverRadius: 9,
+                    pointStyle: 'triangle',
+                    showLine: false,
+                },
+            ],
         },
         options: {
             animation: false,
             responsive: true,
             maintainAspectRatio: false,
-            // Padding keeps the spline + 4px hover dots inside the canvas
-            // so they don't clip at the wrapper edge.
-            layout: { padding: { top: 5, bottom: 5, left: 3, right: 3 } },
-            interaction: { mode: 'nearest', intersect: false, axis: 'x' },
+            interaction: { mode: 'index', intersect: false },
             plugins: {
-                legend: { display: false },
-                // Canvas-drawn tooltips would be clipped to the ~30px sparkline
-                // height, so we render an HTML tooltip into the wrapper instead.
+                legend: { display: true, position: 'bottom', labels: { font: { size: 11 }, boxWidth: 14, padding: 10 } },
                 tooltip: {
-                    enabled: false,
-                    external: ctx => {
-                        const { chart, tooltip } = ctx;
-                        const wrap = chart.canvas.parentNode;
-                        let tt = wrap.querySelector('.fx-spark-tt');
-                        if (!tt) {
-                            tt = document.createElement('div');
-                            tt.className = 'fx-spark-tt';
-                            wrap.appendChild(tt);
-                        }
-                        if (tooltip.opacity === 0) { tt.style.opacity = 0; return; }
-                        const dp = tooltip.dataPoints?.[0];
-                        if (!dp) return;
-                        tt.innerHTML =
-                            '<span class="fx-spark-tt-label">' + dp.label + '</span>' +
-                            '<span class="fx-spark-tt-val">' + dp.parsed.y.toFixed(4) + '</span>';
-                        tt.style.opacity = 1;
-                        tt.style.left = tooltip.caretX + 'px';
-                        tt.style.top  = tooltip.caretY + 'px';
+                    callbacks: {
+                        label: ctx => {
+                            if (ctx.datasetIndex === 1 && ctx.parsed.y != null) {
+                                const m = shipPoints.find(p => p.x === ctx.label);
+                                return ` Shipment: +${(m?.kg || 0).toLocaleString('en-NZ')} kg`;
+                            }
+                            return ` ${ctx.dataset.label}: ${Math.round(ctx.parsed.y).toLocaleString('en-NZ')} kg`;
+                        },
                     },
                 },
             },
-            scales: { x: { display: false }, y: { display: false } },
+            scales: {
+                x: { grid: { display: false }, ticks: { font: { size: 10 }, color: '#64748b' } },
+                y: {
+                    grid: { color: '#f1f5f9' },
+                    ticks: { font: { size: 10 }, color: '#94a3b8', callback: v => Math.abs(v) >= 1000 ? (v / 1000).toFixed(0) + 'k' : v },
+                },
+            },
         },
     };
-    return `<div class="fx-spark-wrap"><canvas data-chart-id="${id}"></canvas></div>`;
+    body.innerHTML = `<div style="position:relative;height:280px;width:100%"><canvas data-chart-id="${id}"></canvas></div>`;
+    initCharts(body);
+}
+
+// ── Cumulative Sales chart ───────────────────────────────────────────────
+// Reads /api/sales-history?rows=true → buckets each row's kg into its
+// fiscal-year month (NZ FY ends 31 Mar) → cumulative running total per FY.
+// Shows the current FY plus the two prior FYs.
+async function loadCumulativeSales() {
+    const body = document.querySelector('#db-cumulative-sales .db-mod-body');
+    if (!body) return;
+    let resp;
+    try { resp = await fetch('/api/sales-history?rows=true').then(r => r.ok ? r.json() : null); }
+    catch { resp = null; }
+    const rows = (resp && resp.rows) || [];
+    if (!rows.length) { body.innerHTML = '<p class="db-mod-empty">No sales history yet.</p>'; return; }
+
+    // Bucket kg by (fyEndYear, fyMonthIdx 0..11 where 0=Apr).
+    const fy = {};
+    for (const r of rows) {
+        const date = r.date || r.iso || '';
+        if (!date) continue;
+        const d = new Date(date);
+        if (isNaN(d)) continue;
+        const m = d.getMonth(); // 0..11 = Jan..Dec
+        const fyEnd = m >= 3 ? d.getFullYear() + 1 : d.getFullYear();
+        const idx   = m >= 3 ? m - 3 : m + 9;
+        const kg = (Number(r.bundlesKg) || 0) + (Number(r.looseKg) || 0) + (Number(r.ecoTiesKg) || 0);
+        if (!fy[fyEnd]) fy[fyEnd] = new Array(12).fill(null);
+        fy[fyEnd][idx] = (fy[fyEnd][idx] || 0) + kg;
+    }
+
+    // Pick the latest 3 FYs that have any data, oldest → newest.
+    const fyYears = Object.keys(fy).map(Number).sort((a, b) => a - b);
+    const recent  = fyYears.slice(-3);
+    if (!recent.length) { body.innerHTML = '<p class="db-mod-empty">No sales history yet.</p>'; return; }
+
+    const FY_MO = ['Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec','Jan','Feb','Mar'];
+    const COLOURS = ['#cbd5e1', '#60a5fa', '#1d4ed8']; // oldest → newest
+
+    // Cumulative running total, carry through null months (matches sales.js).
+    const cumData = {};
+    for (const yr of recent) {
+        let run = 0;
+        let started = false;
+        cumData[yr] = (fy[yr] || []).map(v => {
+            if (v != null) { run += v; started = true; return run; }
+            return started ? run : null;
+        });
+    }
+
+    const id = 'db-cumulative-chart';
+    window._chartQ[id] = {
+        type: 'line',
+        data: {
+            labels: FY_MO,
+            datasets: recent.map((yr, i) => ({
+                label: 'FY' + String(yr).slice(-2),
+                data: cumData[yr],
+                borderColor: COLOURS[i] || '#94a3b8',
+                backgroundColor: 'transparent',
+                borderWidth: i === recent.length - 1 ? 3 : 2,
+                pointRadius: 3,
+                pointHoverRadius: 6,
+                pointBackgroundColor: COLOURS[i] || '#94a3b8',
+                pointBorderColor: 'white',
+                pointBorderWidth: 1.5,
+                fill: false,
+                tension: 0.3,
+                spanGaps: false,
+            })),
+        },
+        options: {
+            animation: false,
+            responsive: true,
+            maintainAspectRatio: false,
+            interaction: { mode: 'index', intersect: false },
+            plugins: {
+                legend: { display: true, position: 'bottom', labels: { font: { size: 11 }, boxWidth: 16, padding: 8 } },
+                tooltip: { callbacks: { label: ctx => ` ${ctx.dataset.label}: ${Math.round(ctx.parsed.y).toLocaleString('en-NZ')} kg` } },
+            },
+            scales: {
+                x: { grid: { color: '#f1f5f9' }, ticks: { font: { size: 10 }, color: '#64748b' } },
+                y: { grid: { color: '#f1f5f9' }, ticks: { font: { size: 10 }, color: '#94a3b8', callback: v => Math.abs(v) >= 1000 ? (v / 1000).toFixed(0) + 'k' : v } },
+            },
+        },
+    };
+    body.innerHTML = `<div style="position:relative;height:280px;width:100%"><canvas data-chart-id="${id}"></canvas></div>`;
+    initCharts(body);
+}
+
+// ── Calendar module ──────────────────────────────────────────────────────
+// A month grid with clickable days. Clicking a day reveals its events in
+// a side panel. Events come from /api/calendar/events (Google Calendar),
+// shipments from /api/import/forecast, and statutory holidays/tax dates
+// from config.json. Replaces the old "Next 14 days" list + "Next 28 days"
+// strip with a single, more useful widget.
+
+const _cal = { year: null, month: null, eventsByDate: {} };
+
+function _calAddEvent(date, ev) {
+    if (!_cal.eventsByDate[date]) _cal.eventsByDate[date] = [];
+    _cal.eventsByDate[date].push(ev);
+}
+
+async function loadDashboardCalendar(config) {
+    const body = document.querySelector('#db-calendar-module .db-mod-body');
+    if (!body) return;
+    const today = new Date();
+    if (_cal.year === null) {
+        _cal.year  = today.getFullYear();
+        _cal.month = today.getMonth();
+    }
+    _cal.eventsByDate = {};
+
+    // Pull events for the current month ± 1 day padding (grid extends).
+    const monthStart = new Date(_cal.year, _cal.month, 1);
+    const monthEnd   = new Date(_cal.year, _cal.month + 1, 0);
+    const tMin = new Date(monthStart.getFullYear(), monthStart.getMonth(), monthStart.getDate() - 7).toISOString();
+    const tMax = new Date(monthEnd.getFullYear(),   monthEnd.getMonth(),   monthEnd.getDate()   + 7).toISOString();
+
+    const [forecast, gcalRes] = await Promise.all([
+        fetch('/api/import/forecast').then(r => r.ok ? r.json() : null).catch(() => null),
+        fetch(`/api/calendar/events?timeMin=${encodeURIComponent(tMin)}&timeMax=${encodeURIComponent(tMax)}`)
+            .then(r => r.ok ? r.json() : { items: [] })
+            .catch(() => ({ items: [] })),
+    ]);
+
+    // Statutory holidays / tax dates from config.json.
+    (config?.calendar?.holidays || []).forEach(([date, label]) =>
+        _calAddEvent(date, { type: 'holiday', label }));
+    (config?.calendar?.taxDates || []).forEach(([date, labels]) => {
+        for (const label of labels) _calAddEvent(date, { type: 'tax', label });
+    });
+
+    // Shipments from forecast + their milestones.
+    (forecast?.shipments || []).forEach(s => {
+        for (const m of (s.milestones || [])) {
+            if (m.date) _calAddEvent(m.date.slice(0, 10), {
+                type: 'shipment',
+                label: `${s.note || s.id}: ${m.label}`,
+            });
+        }
+        const ym = s.ym;
+        if (ym && /^\d{4}-\d{2}$/.test(ym)) {
+            // No specific date → put on the 1st of that month as "ETA".
+            _calAddEvent(ym + '-01', { type: 'shipment', label: `${s.note || s.id} ETA (${(s.kg || 0).toLocaleString('en-NZ')} kg)` });
+        }
+    });
+
+    // Google Calendar events.
+    for (const ev of (gcalRes?.items || [])) {
+        const dt = ev.start?.date || ev.start?.dateTime;
+        if (!dt) continue;
+        _calAddEvent(dt.slice(0, 10), { type: 'gcal', label: ev.summary || 'Event' });
+    }
+
+    _renderCalendarModule();
+}
+
+function _renderCalendarModule() {
+    const body = document.querySelector('#db-calendar-module .db-mod-body');
+    const title = document.getElementById('db-cal-title');
+    if (!body) return;
+
+    const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+    const monthLabel = `${MONTHS[_cal.month]} ${_cal.year}`;
+    if (title) title.textContent = 'Calendar — ' + monthLabel;
+
+    const today = new Date();
+    const todayStr = today.toISOString().slice(0, 10);
+
+    // Build a Sun-start grid covering the whole month.
+    const first = new Date(_cal.year, _cal.month, 1);
+    const startDow = first.getDay(); // 0 = Sun
+    const daysInMonth = new Date(_cal.year, _cal.month + 1, 0).getDate();
+    const cells = [];
+
+    for (let i = 0; i < startDow; i++) cells.push(null);
+    for (let d = 1; d <= daysInMonth; d++) {
+        const date = `${_cal.year}-${String(_cal.month + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+        cells.push({ d, date });
+    }
+    while (cells.length % 7 !== 0) cells.push(null);
+
+    const DOW = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+    const dowHtml = DOW.map(d => `<div class="db-cal-dow">${d}</div>`).join('');
+
+    const cellHtml = cells.map(c => {
+        if (!c) return `<div class="db-cal-cell db-cal-cell--blank"></div>`;
+        const events = _cal.eventsByDate[c.date] || [];
+        const isToday = c.date === todayStr;
+        const isWeekend = new Date(c.date).getDay() % 6 === 0;
+        // Up to 3 type-coloured dots, then "+N" if more.
+        const types = events.slice(0, 3).map(e => `<span class="db-cal-dot db-cal-dot--${e.type}"></span>`).join('');
+        const extra = events.length > 3 ? `<span class="db-cal-more">+${events.length - 3}</span>` : '';
+        const cls = [
+            'db-cal-cell',
+            isToday ? 'db-cal-cell--today' : '',
+            isWeekend ? 'db-cal-cell--weekend' : '',
+            events.length ? 'db-cal-cell--has' : '',
+        ].filter(Boolean).join(' ');
+        return `<div class="${cls}" data-date="${c.date}">
+            <span class="db-cal-d">${c.d}</span>
+            <div class="db-cal-dots">${types}${extra}</div>
+        </div>`;
+    }).join('');
+
+    // Sidebar: events for the currently-selected day (defaults to today).
+    const selDate = _cal.selectedDate || todayStr;
+    const selEvents = _cal.eventsByDate[selDate] || [];
+    const selLabel = new Date(selDate + 'T00:00').toLocaleDateString('en-NZ', { weekday: 'long', day: 'numeric', month: 'long' });
+    const sidebarHtml = selEvents.length
+        ? selEvents.map(e => `<li class="db-cal-ev db-cal-ev--${e.type}"><span class="db-cal-ev-type">${e.type}</span><span class="db-cal-ev-label">${_ehDb(e.label)}</span></li>`).join('')
+        : '<li class="db-cal-ev db-cal-ev--empty">Nothing scheduled.</li>';
+
+    body.innerHTML = `
+        <div class="db-cal-grid-wrap">
+            <div class="db-cal-toolbar">
+                <button type="button" class="db-cal-nav" id="db-cal-prev" title="Previous month">‹</button>
+                <span class="db-cal-toolbar-label">${monthLabel}</span>
+                <button type="button" class="db-cal-nav" id="db-cal-next" title="Next month">›</button>
+                <button type="button" class="db-cal-today" id="db-cal-today">Today</button>
+            </div>
+            <div class="db-cal-grid">
+                <div class="db-cal-dows">${dowHtml}</div>
+                <div class="db-cal-cells">${cellHtml}</div>
+            </div>
+        </div>
+        <aside class="db-cal-side">
+            <div class="db-cal-side-hd">${selLabel}</div>
+            <ul class="db-cal-list">${sidebarHtml}</ul>
+        </aside>`;
+
+    document.getElementById('db-cal-prev')?.addEventListener('click', () => {
+        _cal.month--; if (_cal.month < 0) { _cal.month = 11; _cal.year--; }
+        _cal.selectedDate = null;
+        loadDashboardCalendar(currentConfig);
+    });
+    document.getElementById('db-cal-next')?.addEventListener('click', () => {
+        _cal.month++; if (_cal.month > 11) { _cal.month = 0; _cal.year++; }
+        _cal.selectedDate = null;
+        loadDashboardCalendar(currentConfig);
+    });
+    document.getElementById('db-cal-today')?.addEventListener('click', () => {
+        const t = new Date();
+        _cal.year = t.getFullYear(); _cal.month = t.getMonth();
+        _cal.selectedDate = todayStr;
+        loadDashboardCalendar(currentConfig);
+    });
+    body.querySelectorAll('.db-cal-cell[data-date]').forEach(c => {
+        c.addEventListener('click', () => {
+            _cal.selectedDate = c.dataset.date;
+            _renderCalendarModule();
+        });
+    });
+}
+
+function _ehDb(s) {
+    return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
 // ── Helpers ──
-function getDomain(url) {
-    try { return new URL(url).hostname; } catch { return null; }
-}
-
 function showToast(msg) {
     const toast = document.getElementById('toast');
     toast.textContent = msg;
@@ -1235,46 +470,8 @@ function showToast(msg) {
     setTimeout(() => toast.classList.remove('show'), 2000);
 }
 
-// ── Search ──
-document.getElementById('search')?.addEventListener('input', e => {
-    const query = e.target.value.toLowerCase();
-    if (query === '') {
-        renderGroups(allGroups);
-        renderPinned(pinnedItems);
-    } else {
-        document.getElementById('pinned-section').style.display = 'none';
-        const filtered = allGroups.map(group => ({
-            ...group,
-            items: group.items.filter(item =>
-                item.label.toLowerCase().includes(query) ||
-                group.name.toLowerCase().includes(query)
-            )
-        })).filter(group => group.items.length > 0);
-        renderGroups(filtered);
-    }
-});
-
 // ── Reload button — hard reload to pick up new JS/CSS deployments ──
 document.getElementById('reload-btn').addEventListener('click', () => { location.reload(); });
-
-// ── Edit / Export / Reset buttons ──
-document.getElementById('edit-btn').addEventListener('click', toggleEditMode);
-document.getElementById('export-btn').addEventListener('click', exportConfig);
-document.getElementById('reset-btn').addEventListener('click', resetConfig);
-
-// ── Modal events ──
-document.getElementById('modal-type').addEventListener('change', updateModalTypeFields);
-document.getElementById('modal-save').addEventListener('click', saveModal);
-document.getElementById('modal-cancel').addEventListener('click', closeModal);
-document.getElementById('item-modal').addEventListener('click', e => {
-    if (e.target === document.getElementById('item-modal')) closeModal();
-});
-document.addEventListener('keydown', e => {
-    if (document.getElementById('item-modal').style.display === 'flex') {
-        if (e.key === 'Escape') closeModal();
-        if (e.key === 'Enter' && e.target.tagName !== 'SELECT') { e.preventDefault(); saveModal(); }
-    }
-});
 
 // ── Hash router ──
 const VIEWS = ['view-dashboard', 'view-orders', 'view-orders-new', 'view-orders-detail', 'view-orders-edit', 'view-warehouse', 'view-admin', 'view-imports', 'view-dispatch-log', 'view-sales', 'view-calendar'];

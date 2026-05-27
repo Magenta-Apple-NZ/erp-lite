@@ -106,29 +106,6 @@
         <div class="sidebar-admin nav-item--admin-only">
             <span class="nav-section-label">Admin</span>
 
-            <button id="edit-btn" class="sidebar-btn">
-                <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M11 2l3 3-8 8H3v-3l8-8z"/>
-                </svg>
-                <span class="sidebar-btn-label">Edit Layout</span>
-            </button>
-
-            <button id="export-btn" class="sidebar-btn" style="display:none">
-                <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M8 2v8m-3-3l3 3 3-3"/>
-                    <path d="M2 12v1a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1v-1"/>
-                </svg>
-                <span class="sidebar-btn-label">Export Config</span>
-            </button>
-
-            <button id="reset-btn" class="sidebar-btn sidebar-btn--danger" style="display:none">
-                <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M2 8a6 6 0 1 1 1.5 4"/>
-                    <polyline points="2,11 2,14 5,14"/>
-                </svg>
-                <span class="sidebar-btn-label">Reset</span>
-            </button>
-
             <button id="reload-btn" class="sidebar-btn">
                 <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
                     <path d="M13.5 8a5.5 5.5 0 1 1-1.1-3.3"/>
@@ -151,11 +128,6 @@
         <!-- ── View: Dashboard ── -->
         <div id="view-dashboard" class="app-view">
             <div id="db-widgets"></div>
-            <section id="pinned-section" class="pinned-section" style="display:none">
-                <h2 class="pinned-heading">Pinned</h2>
-                <div id="pinned-items" class="pinned-items"></div>
-            </section>
-            <main id="dashboard"></main>
         </div>
 
         <!-- ── View: Orders list ── -->
@@ -210,45 +182,6 @@
 
     </div>
 
-</div>
-
-<!-- ── Item edit modal ── -->
-<div id="item-modal" class="modal-overlay" style="display:none">
-    <div class="modal-box">
-        <h3 class="modal-title">Edit Item</h3>
-        <div class="modal-field">
-            <label>Label</label>
-            <input type="text" id="modal-label" placeholder="Display name">
-        </div>
-        <div class="modal-field">
-            <label>Type</label>
-            <select id="modal-type">
-                <option value="link">Link (URL)</option>
-                <option value="file">File</option>
-                <option value="folder">Folder</option>
-            </select>
-        </div>
-        <div class="modal-field" id="modal-url-field">
-            <label>URL</label>
-            <input type="url" id="modal-url" placeholder="https://…">
-        </div>
-        <div class="modal-field" id="modal-path-field" style="display:none">
-            <label>Path</label>
-            <input type="text" id="modal-path" placeholder="/Users/…">
-        </div>
-        <div class="modal-field">
-            <label>Tag <span class="modal-hint">optional</span></label>
-            <input type="text" id="modal-tag" placeholder="e.g. transition">
-        </div>
-        <div class="modal-field">
-            <label>Season <span class="modal-hint">optional — e.g. oct-mar</span></label>
-            <input type="text" id="modal-season" placeholder="e.g. oct-mar">
-        </div>
-        <div class="modal-actions">
-            <button id="modal-save" class="btn-primary">Save</button>
-            <button id="modal-cancel" class="btn-secondary">Cancel</button>
-        </div>
-    </div>
 </div>
 
 <div id="toast" class="toast"></div>

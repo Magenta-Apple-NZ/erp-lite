@@ -4560,3 +4560,242 @@ a.db-row:hover { background: #f8fafc; border-color: #e2e8f0; }
 }
 .payslip-total-label { text-align: right; }
 .payslip-total { font-size: 1.05rem; }
+
+/* ═══════════════════════════════════════════════
+   New Dashboard (May 2026): top button row, two priority
+   charts, and a unified calendar module. Replaces the
+   old groups/pinned/quick-actions/mini-charts layout.
+   ═══════════════════════════════════════════════ */
+
+.db-top-bar {
+    display: flex;
+    align-items: stretch;
+    gap: 0.85rem;
+    margin-bottom: 1rem;
+}
+.db-top-buttons {
+    display: flex;
+    flex: 1;
+    gap: 0.85rem;
+    flex-wrap: wrap;
+}
+.db-top-btn {
+    flex: 1 1 0;
+    min-width: 140px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    padding: 1rem 0.85rem;
+    background: white;
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    color: #1e293b;
+    text-decoration: none;
+    font-size: 0.95rem;
+    font-weight: 600;
+    transition: border-color 0.12s, box-shadow 0.12s, transform 0.08s, color 0.12s;
+    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+}
+.db-top-btn:hover {
+    border-color: #1d4ed8;
+    color: #1d4ed8;
+    box-shadow: 0 4px 14px rgba(29, 78, 216, 0.12);
+}
+.db-top-btn:active { transform: translateY(1px); }
+.db-top-btn svg { color: #64748b; }
+.db-top-btn:hover svg { color: #1d4ed8; }
+.db-top-btn--primary {
+    flex: 0 0 auto;
+    min-width: 170px;
+    background: #2563eb;
+    border-color: #2563eb;
+    color: white;
+    box-shadow: 0 4px 12px rgba(37, 99, 235, 0.25);
+}
+.db-top-btn--primary svg { color: white; }
+.db-top-btn--primary:hover {
+    background: #1d4ed8;
+    border-color: #1d4ed8;
+    color: white;
+    box-shadow: 0 6px 18px rgba(29, 78, 216, 0.32);
+}
+.db-top-btn--primary:hover svg { color: white; }
+
+.db-mod-sub {
+    font-size: 0.72rem;
+    font-weight: 400;
+    color: #94a3b8;
+    margin-left: 0.5rem;
+}
+
+/* ── Calendar module ── */
+#db-calendar-module .db-mod-body {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 280px;
+    gap: 1rem;
+    align-items: start;
+}
+.db-cal-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-bottom: 0.6rem;
+}
+.db-cal-toolbar-label {
+    font-size: 0.95rem;
+    font-weight: 700;
+    color: #1e293b;
+    flex: 1;
+    text-align: center;
+}
+.db-cal-nav, .db-cal-today {
+    background: white;
+    border: 1px solid #e2e8f0;
+    border-radius: 6px;
+    padding: 0.3rem 0.6rem;
+    font-size: 0.85rem;
+    color: #475569;
+    cursor: pointer;
+    line-height: 1;
+}
+.db-cal-nav { width: 32px; height: 32px; font-size: 1.1rem; }
+.db-cal-today { font-size: 0.78rem; font-weight: 600; }
+.db-cal-nav:hover, .db-cal-today:hover { border-color: #cbd5e1; background: #f8fafc; }
+
+.db-cal-grid { user-select: none; }
+.db-cal-dows {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 4px;
+    margin-bottom: 4px;
+}
+.db-cal-dow {
+    text-align: center;
+    font-size: 0.65rem;
+    font-weight: 700;
+    color: #94a3b8;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    padding: 0.2rem 0;
+}
+.db-cal-cells {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 4px;
+}
+.db-cal-cell {
+    aspect-ratio: 1 / 1;
+    background: #f8fafc;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    padding: 0.3rem 0.4rem;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    font-variant-numeric: tabular-nums;
+    cursor: pointer;
+    transition: background 0.1s, border-color 0.1s;
+    min-height: 48px;
+}
+.db-cal-cell:hover { background: #e2e8f0; }
+.db-cal-cell--blank {
+    background: transparent;
+    cursor: default;
+    pointer-events: none;
+}
+.db-cal-cell--weekend { background: #f1f5f9; }
+.db-cal-cell--has { background: #eff6ff; }
+.db-cal-cell--has.db-cal-cell--weekend { background: #e0e7ff; }
+.db-cal-cell--today {
+    background: #dbeafe;
+    border-color: #3b82f6;
+}
+.db-cal-cell--selected {
+    box-shadow: 0 0 0 2px #2563eb;
+    background: #dbeafe;
+}
+.db-cal-d {
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: #1e293b;
+}
+.db-cal-dots {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 2px;
+    align-items: center;
+}
+.db-cal-dot {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: #94a3b8;
+}
+.db-cal-dot--holiday  { background: #ef4444; }
+.db-cal-dot--tax      { background: #f59e0b; }
+.db-cal-dot--shipment { background: #10b981; }
+.db-cal-dot--gcal     { background: #3b82f6; }
+.db-cal-more {
+    font-size: 0.6rem;
+    color: #64748b;
+    margin-left: 2px;
+}
+
+.db-cal-side {
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    padding: 0.8rem 0.9rem;
+    max-height: 480px;
+    overflow-y: auto;
+}
+.db-cal-side-hd {
+    font-size: 0.85rem;
+    font-weight: 700;
+    color: #1e293b;
+    margin-bottom: 0.6rem;
+    padding-bottom: 0.5rem;
+    border-bottom: 1px solid #e2e8f0;
+}
+.db-cal-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 0.4rem; }
+.db-cal-ev {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+    padding: 0.5rem 0.6rem;
+    border-left: 3px solid #cbd5e1;
+    background: white;
+    border-radius: 0 5px 5px 0;
+    font-size: 0.82rem;
+}
+.db-cal-ev--holiday  { border-left-color: #ef4444; }
+.db-cal-ev--tax      { border-left-color: #f59e0b; background: #fffbeb; }
+.db-cal-ev--shipment { border-left-color: #10b981; background: #ecfdf5; }
+.db-cal-ev--gcal     { border-left-color: #3b82f6; }
+.db-cal-ev--empty {
+    color: #94a3b8;
+    font-style: italic;
+    border-left: none;
+    background: transparent;
+    padding-left: 0;
+}
+.db-cal-ev-type {
+    font-size: 0.62rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: #64748b;
+}
+.db-cal-ev-label { color: #1e293b; }
+
+/* Mobile: stack the calendar grid and sidebar. */
+@media (max-width: 900px) {
+    .db-top-btn { min-width: 110px; padding: 0.85rem 0.6rem; font-size: 0.85rem; }
+    .db-top-btn--primary { width: 100%; }
+    .db-top-bar { flex-direction: column; }
+    #db-calendar-module .db-mod-body {
+        grid-template-columns: 1fr;
+    }
+    .db-cal-side { max-height: none; }
+}
