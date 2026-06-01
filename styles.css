@@ -2525,6 +2525,37 @@ a.xero-inv-linked:hover { background: #d1fae5; border-color: #6ee7b7; }
     grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
     gap: 0.5rem 0.85rem;
 }
+/* Annual-total summary footer beneath the per-month inputs. */
+.fcst-avg-summary {
+    margin-top: 1rem;
+    padding-top: 0.85rem;
+    border-top: 1px solid #e2e8f0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+}
+.fcst-avg-summary-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 0.75rem;
+    font-size: 0.85rem;
+}
+.fcst-avg-summary-row--great {
+    font-weight: 700;
+    color: #0f172a;
+    border-top: 1px dashed #e2e8f0;
+    padding-top: 0.4rem;
+    margin-top: 0.15rem;
+}
+.fcst-avg-summary-lbl { color: #475569; }
+.fcst-avg-summary-val { font-variant-numeric: tabular-nums; color: #0f172a; }
+.fcst-avg-summary-mult {
+    font-size: 0.7rem;
+    font-weight: 500;
+    color: #94a3b8;
+    margin-left: 0.25rem;
+}
 .fcst-avg-cell { display: flex; align-items: center; gap: 0.4rem; min-width: 0; }
 .fcst-avg-label { font-size: 0.78rem; font-weight: 600; color: #64748b; width: 28px; flex-shrink: 0; }
 /* Override .imp-url-input flex:1; min-width:260px which would otherwise blow these cells out */

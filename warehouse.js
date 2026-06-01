@@ -2725,6 +2725,20 @@ const Warehouse = (() => {
                             <span class="fcst-avg-unit">kg</span>
                         </div>`).join('')}
                     </div>
+                    <div class="fcst-avg-summary">
+                        <div class="fcst-avg-summary-row">
+                            <span class="fcst-avg-summary-lbl">Annual total · Average</span>
+                            <span class="fcst-avg-summary-val" id="fcst-avg-total-avg">${fmtFull((config.monthlyAvg || []).reduce((t, v) => t + (Number(v) || 0), 0))} kg</span>
+                        </div>
+                        <div class="fcst-avg-summary-row">
+                            <span class="fcst-avg-summary-lbl">Annual total · Good <span class="fcst-avg-summary-mult">+10%</span></span>
+                            <span class="fcst-avg-summary-val" id="fcst-avg-total-good">${fmtFull((config.monthlyAvg || []).reduce((t, v) => t + (Number(v) || 0), 0) * 1.1)} kg</span>
+                        </div>
+                        <div class="fcst-avg-summary-row fcst-avg-summary-row--great">
+                            <span class="fcst-avg-summary-lbl">Annual total · Great <span class="fcst-avg-summary-mult">+20%</span></span>
+                            <span class="fcst-avg-summary-val" id="fcst-avg-total-great">${fmtFull((config.monthlyAvg || []).reduce((t, v) => t + (Number(v) || 0), 0) * 1.2)} kg</span>
+                        </div>
+                    </div>
                     <div style="margin-top:1rem;display:flex;gap:0.5rem;flex-wrap:wrap">
                         <button class="btn-primary btn-sm" id="imp-avg-save-btn">Save Averages</button>
                         <button class="btn-secondary btn-sm" id="imp-avg-recompute-btn"
@@ -2827,12 +2841,31 @@ const Warehouse = (() => {
                         const inp = body.querySelector('.fcst-avg-input[data-mo="' + i + '"]');
                         if (inp) inp.value = avg;
                     });
+                    updateAvgSummary();
                     showToast('Averaged from history — click Save Averages to commit');
                 } catch (err) {
                     showToast('Recompute failed: ' + err.message);
                 } finally {
                     btn.disabled = false; btn.textContent = 'Recompute from history';
                 }
+            });
+
+            // Live-update the annual-total summary row as the user types so
+            // the impact of a change is immediately visible.
+            function updateAvgSummary() {
+                const total = MONTH_NAMES.reduce((t, _, i) => {
+                    const inp = body.querySelector('.fcst-avg-input[data-mo="' + i + '"]');
+                    return t + (parseFloat(inp?.value) || 0);
+                }, 0);
+                const elAvg = document.getElementById('fcst-avg-total-avg');
+                const elGood = document.getElementById('fcst-avg-total-good');
+                const elGreat = document.getElementById('fcst-avg-total-great');
+                if (elAvg)   elAvg.textContent   = fmtFull(total)       + ' kg';
+                if (elGood)  elGood.textContent  = fmtFull(total * 1.1) + ' kg';
+                if (elGreat) elGreat.textContent = fmtFull(total * 1.2) + ' kg';
+            }
+            body.querySelectorAll('.fcst-avg-input').forEach(inp => {
+                inp.addEventListener('input', updateAvgSummary);
             });
 
             document.getElementById('imp-avg-save-btn')?.addEventListener('click', async () => {
@@ -3355,7 +3388,7 @@ const Warehouse = (() => {
             }
         } catch (e) { /* render with whatever we got */ }
 
-        let scenario = 'avg';
+        let scenario = 'great';
         const rebuild = () => {
             const rows = computeForecast(config, 18, actuals);
             const scenarioBtns = ['avg', 'good', 'great'].map(s =>
