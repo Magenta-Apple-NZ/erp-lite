@@ -487,6 +487,20 @@ const Warehouse = (() => {
         return `${MONTH_NAMES[parseInt(m) - 1]} ${y}`;
     }
 
+    // Source-of-truth for when a shipment lands: the date on the last
+    // milestone (typically "Arrived in Tauranga") trumps the shipment-level
+    // s.ym field. defaultMilestonesV3 seeds dates from startDate so this
+    // value is always populated for v3 ships; legacy ships without
+    // milestone dates fall back to s.ym.
+    function shipArrivalYm(s) {
+        const milestones = s?.milestones || [];
+        for (let i = milestones.length - 1; i >= 0; i--) {
+            const date = milestones[i]?.date;
+            if (date) return date.slice(0, 7);
+        }
+        return s?.ym || '';
+    }
+
     function shipIncomingKg(s) {
         // V3 shipments split raw weights into white/colour with a waste %.
         // Fall back to legacy `s.kg` when those aren't populated — otherwise
@@ -544,7 +558,10 @@ const Warehouse = (() => {
 
         for (let i = 0; i < months; i++) {
             const ym = `${yr}-${String(mo + 1).padStart(2, '0')}`;
-            const incomingShips = shipments.filter(s => s.ym === ym);
+            // Use the milestone-driven arrival month, not s.ym. A shipment
+            // currently sitting in customs with "Arrived in Tauranga" dated
+            // this month should add to this month's incoming column.
+            const incomingShips = shipments.filter(s => shipArrivalYm(s) === ym);
             const incoming = incomingShips.reduce((sum, s) => sum + shipIncomingKg(s), 0);
 
             const actualSales = actuals[ym] ?? null;
@@ -601,7 +618,7 @@ const Warehouse = (() => {
 
         const shipSpans = []; // for overlap calc
         (shipments || []).forEach((s, idx) => {
-            const arriveCol = ymToIndex[s.ym];
+            const arriveCol = ymToIndex[shipArrivalYm(s)];
             if (arriveCol == null) return;
             const startYm = s.startDate ? s.startDate.slice(0, 7) : null;
             const startCol = startYm != null ? ymToIndex[startYm] : null;
@@ -703,22 +720,28 @@ const Warehouse = (() => {
             }
         });
 
-        const datasets = SERIES.map(({ key, color, dash, label, negFill }) => ({
-            label,
-            data: rows.map(r => r[key]),
-            borderColor: color,
-            backgroundColor: 'transparent',
-            borderWidth: 2.25,
-            borderDash: dash,
-            pointRadius: 3,
-            pointHoverRadius: 5.5,
-            pointBackgroundColor: color,
-            pointBorderColor: 'white',
-            pointBorderWidth: 1.5,
-            fill: negFill ? { target: { value: 0 }, above: 'transparent', below: 'rgba(239,68,68,0.15)' } : false,
-            tension: 0.2,
-            order: negFill ? 0 : 1,
-        }));
+        // Emphasise the active scenario — the other two render as thin,
+        // faded reference lines so the toggle has a visible effect on the
+        // chart, not just the table below.
+        const datasets = SERIES.map(({ key, color, dash, label, s, negFill }) => {
+            const isActive = s === scenario;
+            return {
+                label,
+                data: rows.map(r => r[key]),
+                borderColor: isActive ? color : color + '4D', // 30% alpha for muted lines
+                backgroundColor: 'transparent',
+                borderWidth: isActive ? 3 : 1.25,
+                borderDash: isActive ? dash : [4, 4],
+                pointRadius: isActive ? 3.5 : 1.5,
+                pointHoverRadius: 6,
+                pointBackgroundColor: isActive ? color : color + '66',
+                pointBorderColor: 'white',
+                pointBorderWidth: 1.5,
+                fill: isActive && negFill ? { target: { value: 0 }, above: 'transparent', below: 'rgba(239,68,68,0.15)' } : false,
+                tension: 0.2,
+                order: isActive ? 0 : 2,
+            };
+        });
 
         window._chartQ[id] = {
             type: 'line',
@@ -2406,7 +2429,12 @@ const Warehouse = (() => {
             const annualEstSales = rows.slice(0, 12).reduce((t, r) => t + (r[salesKey] || 0), 0);
             const annualLabel = ({ avg: 'Average', good: 'Good +10%', great: 'Great +20%' })[scenario] || 'Average';
 
-            const allShips      = (config.shipments || []).slice().sort((a, b) => a.ym.localeCompare(b.ym));
+            // Sort by startDate (when the LC opens) so the cards run in
+            // production order. Fall back to ym for legacy ships without a
+            // startDate field.
+            const shipSortKey = s => s.startDate || (s.ym ? s.ym + '-01' : '9999-99-99');
+            const allShips      = (config.shipments || []).slice()
+                .sort((a, b) => shipSortKey(a).localeCompare(shipSortKey(b)));
 
             // Every shipment surfaces with a "#N" — fall back to a virtual
             // index for legacy shipments that pre-date the seq field. We
@@ -2415,8 +2443,11 @@ const Warehouse = (() => {
             const displaySeqOf = s => s.seq || s._displaySeq || 0;
 
             const todayYm       = new Date().toISOString().slice(0, 7);
-            const upcomingShips = allShips.filter(s => s.ym >= todayYm);
-            const pastShips     = allShips.filter(s => s.ym < todayYm);
+            // Past/upcoming is also milestone-driven so a shipment arriving
+            // this month stays in "upcoming" until its final stage is dated
+            // in a prior month.
+            const upcomingShips = allShips.filter(s => (shipArrivalYm(s) || s.ym) >= todayYm);
+            const pastShips     = allShips.filter(s => (shipArrivalYm(s) || s.ym) <  todayYm);
 
             const SHIP_STATUS_COLORS = { planning:'#94a3b8', ordered:'#3b82f6', 'in-transit':'#f59e0b', customs:'#8b5cf6', delivered:'#10b981' };
             const SHIP_STATUS_LABELS = { planning:'Planning', ordered:'Ordered', 'in-transit':'In Transit', customs:'Customs', delivered:'Delivered' };
@@ -2454,15 +2485,8 @@ const Warehouse = (() => {
                     totalNzd = t.total; paidNzd = t.paid;
                 }
 
-                const outstandingNzd = totalNzd - paidNzd;
-                const pctPaid = totalNzd > 0 ? Math.round(paidNzd / totalNzd * 100) : 0;
-                const costLine = totalNzd > 0
-                    ? `${pctPaid}% paid · ${fmtKshort(outstandingNzd)} outstanding`
-                    : 'No costs entered';
-
-                const status = deriveShipStatus(s);
-                const sc     = STATUS_C[status] || '#94a3b8';
-                const sl     = STATUS_L[status] || status;
+                const outstandingNzd = Math.max(0, totalNzd - paidNzd);
+                const pctPaid        = totalNzd > 0 ? Math.round(paidNzd / totalNzd * 100) : 0;
 
                 const milestones = s.milestones || [];
                 const segs = STAGE_GREENS.map((bg, i) => {
@@ -2475,15 +2499,35 @@ const Warehouse = (() => {
                         title="${escHtml(label + dateTxt)}"></span>`;
                 }).join('');
 
+                // "Arrives May, 26" — driven by the last-milestone date when
+                // available, otherwise the shipment-level ym.
+                const arriveYm = shipArrivalYm(s) || s.ym;
+                let arriveLabel = '';
+                if (arriveYm) {
+                    const [yr, mo] = arriveYm.split('-');
+                    arriveLabel = `Arrives ${MONTH_NAMES[parseInt(mo, 10) - 1]}, ${yr.slice(-2)}`;
+                }
+
+                const payBar = totalNzd > 0 ? `
+                    <div class="imp-pay-progress" title="${pctPaid}% paid">
+                        <div class="imp-pay-bar">
+                            <div class="imp-pay-bar-paid" style="width:${pctPaid}%"></div>
+                        </div>
+                        <div class="imp-pay-labels">
+                            <span class="imp-pay-paid">${fmtKshort(paidNzd)} paid</span>
+                            <span class="imp-pay-os">${fmtKshort(outstandingNzd)} outstanding</span>
+                        </div>
+                    </div>`
+                    : '<div class="imp-pay-empty">No costs entered</div>';
+
                 const seqForTitle = displaySeqOf(s);
                 return `
                 <div class="imp-upcoming-card imp-event-card--nav" data-ship-id="${escHtml(s.id)}">
                     <div class="imp-upcoming-row1">
                         <span class="imp-upcoming-num">#${seqForTitle}</span>
-                        <span class="db-row-tag" style="color:${sc};background:${sc}18;border-color:${sc}30">${sl}</span>
                     </div>
-                    <div class="imp-upcoming-arrival"><span class="imp-upcoming-arrival-label">Arriving:</span> Landed in Tauranga · <strong>${escHtml(ymLabel(s.ym))}</strong></div>
-                    <div class="imp-upcoming-cost">${escHtml(costLine)}</div>
+                    <div class="imp-upcoming-arrival">${escHtml(arriveLabel)}</div>
+                    ${payBar}
                     <div class="db-ship-ms" role="img" aria-label="Milestone progress">${segs}</div>
                 </div>`;
             };

@@ -4081,10 +4081,46 @@ body.body--worker .orders-view-inner { padding-top: 1rem; }
     font-size: 1rem; font-weight: 700; color: #0f172a;
     font-variant-numeric: tabular-nums;
 }
-.imp-upcoming-arrival { font-size: 0.85rem; color: #334155; }
+.imp-upcoming-arrival { font-size: 0.9rem; color: #0f172a; font-weight: 600; }
 .imp-upcoming-arrival-label { color: #94a3b8; font-weight: 500; }
 .imp-upcoming-arrival strong { font-weight: 600; color: #0f172a; }
 .imp-upcoming-cost { font-size: 0.82rem; color: #475569; font-variant-numeric: tabular-nums; }
+
+/* Paid / outstanding progress bar on shipment cards — replaces the
+   "X% paid · $Yk outstanding" text. Green segment is what's been paid;
+   neutral grey is what's still owed. Both totals shown as data labels
+   under the bar. */
+.imp-pay-progress {
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+    margin-top: 0.25rem;
+}
+.imp-pay-bar {
+    height: 8px;
+    background: #e2e8f0;
+    border-radius: 4px;
+    overflow: hidden;
+}
+.imp-pay-bar-paid {
+    height: 100%;
+    background: #10b981;
+    border-radius: 4px;
+    transition: width 0.2s;
+}
+.imp-pay-labels {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.78rem;
+    font-variant-numeric: tabular-nums;
+}
+.imp-pay-paid { color: #047857; font-weight: 600; }
+.imp-pay-os   { color: #64748b; }
+.imp-pay-empty {
+    font-size: 0.78rem;
+    color: #94a3b8;
+    font-style: italic;
+}
 .imp-upcoming-card-hd {
     display: flex;
     justify-content: space-between;
