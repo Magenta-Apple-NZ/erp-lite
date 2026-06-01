@@ -486,5 +486,72 @@ const SalesView = (() => {
         await renderBody(document.getElementById('sales-body'));
     }
 
-    return { render, prefetch };
+    // ── Public: render the same Cumulative Sales chart shown on the
+    // Sales History page (with the Calendar / Financial Year toggle)
+    // into a given dashboard container. Reuses buildCumulativeChart so
+    // there's no second copy of the chart code.
+    async function renderDashboardCumulative(container) {
+        if (!container) return;
+        container.innerHTML = '<span class="db-mod-loading">Loading…</span>';
+
+        let rows = [];
+        try {
+            const resp = _prefetchP
+                ? await _prefetchP
+                : await api('/api/sales-history?rows=true');
+            _prefetchP = null;
+            rows = (resp && resp.rows) || [];
+        } catch (e) {
+            container.innerHTML = `<p class="db-mod-empty">Could not load sales: ${escHtml(e.message)}</p>`;
+            return;
+        }
+        if (!rows.length) { container.innerHTML = '<p class="db-mod-empty">No sales history yet.</p>'; return; }
+
+        // Latest 3 calendar years that have any data — same logic the full
+        // page applies as a default. The Cal/FY toggle then flips between
+        // calendar and fiscal-year framing of that data.
+        const allYears = [...new Set(rows.map(r => String(r.year)))].sort();
+        const recent  = new Set(allYears.slice(-3));
+
+        // Aggregate rows → { year: [12 monthly kg or null] } for the recent years.
+        function computeData() {
+            const data = {};
+            for (const yr of recent) data[yr] = new Array(12).fill(null);
+            for (const r of rows) {
+                const yr = String(r.year);
+                if (!data[yr]) continue;
+                const mo = r.month - 1;
+                if (mo < 0 || mo > 11) continue;
+                const kg = (Number(r.bundlesKg) || 0) + (Number(r.looseKg) || 0) + (Number(r.ecoTiesKg) || 0);
+                if (!kg) continue;
+                data[yr][mo] = (data[yr][mo] || 0) + kg;
+            }
+            return data;
+        }
+
+        let cumMode = localStorage.getItem('sales-cum-mode') === 'fy' ? 'fy' : 'cal';
+        const data  = computeData();
+
+        const rebuild = () => {
+            container.innerHTML = `
+                <div class="db-sales-toolbar">
+                    <div class="sales-mode-toggle" role="tablist" aria-label="Year mode">
+                        <button class="sales-mode-btn${cumMode === 'cal' ? ' active' : ''}" data-mode="cal" role="tab" aria-selected="${cumMode === 'cal'}">Calendar</button>
+                        <button class="sales-mode-btn${cumMode === 'fy' ? ' active' : ''}" data-mode="fy" role="tab" aria-selected="${cumMode === 'fy'}">Financial</button>
+                    </div>
+                </div>
+                <div class="db-cumulative-chart-wrap">${buildCumulativeChart(data, cumMode)}</div>`;
+            if (typeof initCharts === 'function') initCharts(container);
+            container.querySelectorAll('.sales-mode-btn').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    cumMode = btn.dataset.mode;
+                    localStorage.setItem('sales-cum-mode', cumMode);
+                    rebuild();
+                });
+            });
+        };
+        rebuild();
+    }
+
+    return { render, prefetch, renderDashboardCumulative };
 })();

@@ -488,16 +488,51 @@ const Warehouse = (() => {
     }
 
     function shipIncomingKg(s) {
+        // V3 shipments split raw weights into white/colour with a waste %.
+        // Fall back to legacy `s.kg` when those aren't populated — otherwise
+        // a half-filled v3 shipment silently contributes 0 to incoming
+        // and the forecast looks like nothing's arriving.
         if (s.schema === 3) {
             const net   = (Number(s.whiteRawKg) || 0) + (Number(s.colourRawKg) || 0);
             const waste = Math.max(0, Math.min(100, Number(s.wastePct ?? 10)));
-            return net * (100 - waste) / 100;
+            const yieldKg = net * (100 - waste) / 100;
+            if (yieldKg > 0) return yieldKg;
         }
         return Number(s.kg) || 0;
     }
 
+    // Seasonal demand baseline (kg/month, Jan→Dec). Used when the user's
+    // stored config has no monthlyAvg array — without this every month
+    // subtracts 0 and the projected stock line flatlines at startingKg.
+    const FORECAST_MONTHLY_AVG_DEFAULT = [2000, 750, 1000, 2000, 3000, 5500, 7000, 5000, 1000, 200, 50, 400];
+
+    // Derive a shipment's status from its milestone completions so the
+    // badge stays in sync with reality. The previous behaviour relied on
+    // a manual dropdown that was easy to forget. Mapping is positional so
+    // it works for both the v3 7-stage flow and legacy 5-stage shipments:
+    //   none done            → planning
+    //   only the anchor done → planning
+    //   first real step done → ordered
+    //   anywhere in the middle → in-transit
+    //   second-to-last done  → customs
+    //   final stage done     → delivered
+    function deriveShipStatus(s) {
+        const milestones = s?.milestones || [];
+        if (!milestones.length) return s?.status || 'planning';
+        const lastDone = milestones.reduce((acc, m, i) => m.done ? i : acc, -1);
+        if (lastDone < 0) return 'planning';
+        const total = milestones.length;
+        if (lastDone === 0) return 'planning';
+        if (lastDone === 1) return 'ordered';
+        if (lastDone >= total - 1) return 'delivered';
+        if (lastDone === total - 2) return 'customs';
+        return 'in-transit';
+    }
+
     function computeForecast(config, months = 18, actuals = {}) {
-        const monthlyAvg = config.monthlyAvg || new Array(12).fill(0);
+        const rawAvg     = Array.isArray(config.monthlyAvg) ? config.monthlyAvg : null;
+        const hasAvg     = rawAvg && rawAvg.length === 12 && rawAvg.some(v => Number(v) > 0);
+        const monthlyAvg = hasAvg ? rawAvg : FORECAST_MONTHLY_AVG_DEFAULT;
         const shipments  = config.shipments  || [];
         const starting   = config.startingKg ?? 0;
 
@@ -1993,7 +2028,7 @@ const Warehouse = (() => {
                 customs:     { l: 'Customs',     c: '#8b5cf6' },
                 delivered:   { l: 'Delivered',   c: '#10b981' },
             };
-            const curStatus  = s.status || 'planning';
+            const curStatus  = deriveShipStatus(s);
             const statusMeta = STATUS_META[curStatus] || { l: curStatus, c: '#94a3b8' };
 
             const milestones = s.milestones || [];
@@ -2006,13 +2041,9 @@ const Warehouse = (() => {
             <div class="ship-detail-view ship-detail-view--new">
                 <div class="ship-detail-topbar">
                     <button class="ship-detail-back">← Shipments</button>
-                    <div class="ship-status-wrap">
+                    <div class="ship-status-wrap" title="Derived from completed stages — tick milestones to advance.">
                         <span class="ship-status-dot" style="background:${statusMeta.c}"></span>
-                        <select class="ship-status-sel" data-ship-id="${escHtml(s.id)}" data-field="status">
-                            ${Object.entries(STATUS_META).map(([v,{l}]) =>
-                                `<option value="${v}"${curStatus===v?' selected':''}>${l}</option>`
-                            ).join('')}
-                        </select>
+                        <span class="ship-status-badge">${statusMeta.l}</span>
                     </div>
                 </div>
 
@@ -2160,7 +2191,7 @@ const Warehouse = (() => {
                 customs:     { l: 'Customs',     c: '#8b5cf6' },
                 delivered:   { l: 'Delivered',   c: '#10b981' },
             };
-            const curStatus  = s.status || 'planning';
+            const curStatus  = deriveShipStatus(s);
             const statusMeta = STATUS_META[curStatus] || { l: curStatus, c: '#94a3b8' };
 
             const QUICK_COSTS = [
@@ -2180,13 +2211,9 @@ const Warehouse = (() => {
             <div class="ship-detail-view">
                 <div class="ship-detail-topbar">
                     <button class="ship-detail-back">← Shipments</button>
-                    <div class="ship-status-wrap">
+                    <div class="ship-status-wrap" title="Derived from completed stages — tick milestones to advance.">
                         <span class="ship-status-dot" style="background:${statusMeta.c}"></span>
-                        <select class="ship-status-sel" data-ship-id="${escHtml(s.id)}" data-field="status">
-                            ${Object.entries(STATUS_META).map(([v,{l}]) =>
-                                `<option value="${v}"${curStatus===v?' selected':''}>${l}</option>`
-                            ).join('')}
-                        </select>
+                        <span class="ship-status-badge">${statusMeta.l}</span>
                     </div>
                 </div>
 
@@ -2433,7 +2460,7 @@ const Warehouse = (() => {
                     ? `${pctPaid}% paid · ${fmtKshort(outstandingNzd)} outstanding`
                     : 'No costs entered';
 
-                const status = s.status || 'planning';
+                const status = deriveShipStatus(s);
                 const sc     = STATUS_C[status] || '#94a3b8';
                 const sl     = STATUS_L[status] || status;
 
@@ -2489,7 +2516,7 @@ const Warehouse = (() => {
                     paidNzd  = lines.filter(l => l.paid).reduce((t, l) => t + lineNzdC(l), 0);
                 }
                 const osNzd  = totalNzd - paidNzd;
-                const status = s.status || (past ? 'delivered' : 'planning');
+                const status = deriveShipStatus(s);
                 const sc     = SHIP_STATUS_COLORS[status] || '#94a3b8';
 
                 // Every card leads with "Shipment #N". Legacy shipments use
@@ -3054,6 +3081,10 @@ const Warehouse = (() => {
                     return { ...s, milestones };
                 });
                 await costSave();
+                // Re-render so the derived status badge + timeline reflect the
+                // newly-completed stage. Skip if we've navigated away.
+                const updated = config.shipments.find(s => s.id === shipId);
+                if (updated && currentDetailShipId === shipId) renderShipDetail(updated);
                 return;
             }
 
@@ -3247,5 +3278,46 @@ const Warehouse = (() => {
         }, { signal: acSignal });
     }
 
-    return { render, renderImports, prefetchImports };
+    // ── Public: render the same Stock Trajectory chart shown on the
+    // Imports view (with the avg/good/great scenario toggle) into a
+    // given dashboard container. Same data source, same logic, no
+    // duplicated chart code.
+    async function renderDashboardForecast(container) {
+        if (!container) return;
+        container.innerHTML = '<span class="db-mod-loading">Loading…</span>';
+
+        let config = {};
+        let actuals = {};
+        try {
+            const [configData, ordersData] = await Promise.all([
+                fetch('/api/import/forecast').then(r => r.ok ? r.json() : {}).catch(() => ({})),
+                fetch('/api/orders').then(r => r.ok ? r.json() : []).catch(() => []),
+            ]);
+            config = configData || {};
+            for (const o of (ordersData || [])) {
+                const ym = (o.createdAt || '').slice(0, 7);
+                if (!ym || ym < HUB_LIVE_YM) continue;
+                const kg = (o.lines || []).reduce((s, l) => s + lineKg(l), 0);
+                if (kg > 0) actuals[ym] = (actuals[ym] || 0) + kg;
+            }
+        } catch (e) { /* render with whatever we got */ }
+
+        let scenario = 'avg';
+        const rebuild = () => {
+            const rows = computeForecast(config, 18, actuals);
+            const scenarioBtns = ['avg', 'good', 'great'].map(s =>
+                `<button class="imp-scenario-btn ${scenario === s ? 'active' : ''}" data-s="${s}">${{ avg: 'Average', good: 'Good +10%', great: 'Great +20%' }[s]}</button>`
+            ).join('');
+            container.innerHTML = `
+                <div class="db-fcst-toolbar"><div class="imp-scenario-wrap">${scenarioBtns}</div></div>
+                <div class="db-fcst-chart-wrap">${buildForecastChart(rows, scenario, config.shipments)}</div>`;
+            initCharts(container);
+            container.querySelectorAll('.imp-scenario-btn').forEach(btn => {
+                btn.addEventListener('click', () => { scenario = btn.dataset.s; rebuild(); });
+            });
+        };
+        rebuild();
+    }
+
+    return { render, renderImports, prefetchImports, renderDashboardForecast };
 })();
