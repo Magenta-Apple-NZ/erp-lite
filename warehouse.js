@@ -564,10 +564,19 @@ const Warehouse = (() => {
             const incomingShips = shipments.filter(s => shipArrivalYm(s) === ym);
             const incoming = incomingShips.reduce((sum, s) => sum + shipIncomingKg(s), 0);
 
+            // Mid-month rule: keep the projection conservative. When actuals
+            // exist for a month, use max(actuals, forecast) for the math —
+            // so an in-progress month with 200 kg sold doesn't masquerade as
+            // a low-volume month and inflate the closing stock estimate. Once
+            // actuals exceed the forecast, the actual figure takes over (which
+            // is what we want — the real depletion is the real depletion).
             const actualSales = actuals[ym] ?? null;
-            const avgSales   = actualSales !== null ? actualSales : (Number(monthlyAvg[mo]) || 0);
-            const goodSales  = actualSales !== null ? actualSales : avgSales * 1.1;
-            const greatSales = actualSales !== null ? actualSales : avgSales * 1.2;
+            const fcstAvg     = Number(monthlyAvg[mo]) || 0;
+            const fcstGood    = fcstAvg * 1.1;
+            const fcstGreat   = fcstAvg * 1.2;
+            const avgSales   = actualSales !== null ? Math.max(actualSales, fcstAvg)   : fcstAvg;
+            const goodSales  = actualSales !== null ? Math.max(actualSales, fcstGood)  : fcstGood;
+            const greatSales = actualSales !== null ? Math.max(actualSales, fcstGreat) : fcstGreat;
 
             const openAvg = runAvg, openGood = runGood, openGreat = runGreat;
             runAvg   = openAvg   - avgSales   + incoming;
