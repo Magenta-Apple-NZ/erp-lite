@@ -14,15 +14,41 @@ export async function onRequestPost({ env, request }) {
         if (order.xeroInvoiceId) {
             return errResponse('Invoice already created: ' + order.xeroInvoiceNumber, 409);
         }
-        const contactId = order.customer?.xeroContactId || '';
-        const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(contactId);
-        if (!isUuid) {
+        const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+        let contactId  = order.customer?.xeroContactId || '';
+        let resolvedBy = null;
+
+        // If the stored contactId isn't a real UUID (seeded placeholder like
+        // "REPLACE_WITH_FARMLANDS_XERO_CONTACT_UUID", or empty), try to
+        // resolve it by customer name from the cached Xero contacts list
+        // before erroring out. Saves the user from manually re-picking the
+        // customer on every legacy order.
+        if (!UUID_RE.test(contactId) && order.customer?.name) {
+            const cached = await env.XERO_KV.get('customers_cache', { type: 'json' });
+            const list   = Array.isArray(cached) ? cached : [];
+            const wanted = order.customer.name.trim().toLowerCase();
+            const match  = list.find(c => (c.name || '').trim().toLowerCase() === wanted)
+                || list.find(c => (c.name || '').trim().toLowerCase().includes(wanted))
+                || list.find(c => wanted.includes((c.name || '').trim().toLowerCase()));
+            if (match && UUID_RE.test(match.xeroContactId)) {
+                contactId  = match.xeroContactId;
+                resolvedBy = 'name-lookup';
+            }
+        }
+
+        if (!UUID_RE.test(contactId)) {
             return errResponse(
                 `Xero contact ID for "${order.customer?.name}" is missing or invalid` +
-                (contactId ? ` (got "${contactId}")` : '') +
+                (order.customer?.xeroContactId ? ` (got "${order.customer.xeroContactId}")` : '') +
                 `. Edit the order and re-select the customer from the Xero search dropdown so a real contact ID is resolved.`,
                 422
             );
+        }
+
+        // Persist the resolved id back onto the order so subsequent reads
+        // (and re-pushes) see the corrected value.
+        if (resolvedBy === 'name-lookup') {
+            order.customer = { ...order.customer, xeroContactId: contactId };
         }
 
         const token = await getValidToken(env);
