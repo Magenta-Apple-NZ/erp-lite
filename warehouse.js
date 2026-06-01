@@ -492,13 +492,17 @@ const Warehouse = (() => {
     // s.ym field. defaultMilestonesV3 seeds dates from startDate so this
     // value is always populated for v3 ships; legacy ships without
     // milestone dates fall back to s.ym.
-    function shipArrivalYm(s) {
+    function shipArrivalDate(s) {
         const milestones = s?.milestones || [];
         for (let i = milestones.length - 1; i >= 0; i--) {
             const date = milestones[i]?.date;
-            if (date) return date.slice(0, 7);
+            if (date) return date.slice(0, 10);
         }
-        return s?.ym || '';
+        return s?.ym ? s.ym + '-01' : '';
+    }
+    function shipArrivalYm(s) {
+        const d = shipArrivalDate(s);
+        return d ? d.slice(0, 7) : '';
     }
 
     function shipIncomingKg(s) {
@@ -550,28 +554,54 @@ const Warehouse = (() => {
         const shipments  = config.shipments  || [];
         const starting   = config.startingKg ?? 0;
 
-        const now = new Date();
-        let yr = now.getFullYear(), mo = now.getMonth();
+        // Stocktake anchor: the forecast starts at the stocktake's month and
+        // its first row's demand is pro-rated for the remaining days. Any
+        // shipment arriving BEFORE the stocktake date is assumed to be
+        // already on the shelf (so it doesn't get added again). Falls back
+        // to "start of current month" so legacy configs without a date
+        // behave the same as before this change.
+        const today = new Date();
+        let stocktake;
+        if (config.stocktakeDate && /^\d{4}-\d{2}-\d{2}$/.test(config.stocktakeDate)) {
+            stocktake = config.stocktakeDate;
+        } else {
+            stocktake = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-01`;
+        }
+        const [stkYrStr, stkMoStr, stkDayStr] = stocktake.split('-');
+        const stkYr  = parseInt(stkYrStr, 10);
+        const stkMo  = parseInt(stkMoStr, 10) - 1; // 0..11
+        const stkDay = parseInt(stkDayStr, 10);
+        const daysInStkMonth = new Date(stkYr, stkMo + 1, 0).getDate();
+        const proration = Math.max(0, Math.min(1,
+            (daysInStkMonth - stkDay + 1) / daysInStkMonth));
 
+        let yr = stkYr, mo = stkMo;
         const rows = [];
         let runAvg = starting, runGood = starting, runGreat = starting;
 
         for (let i = 0; i < months; i++) {
             const ym = `${yr}-${String(mo + 1).padStart(2, '0')}`;
-            // Use the milestone-driven arrival month, not s.ym. A shipment
+            const isStkMonth = (i === 0);
+
+            // Use the milestone-driven arrival date, not s.ym. A shipment
             // currently sitting in customs with "Arrived in Tauranga" dated
-            // this month should add to this month's incoming column.
-            const incomingShips = shipments.filter(s => shipArrivalYm(s) === ym);
+            // this month should add to this month's incoming column —
+            // unless its arrival is BEFORE the stocktake (in which case
+            // it's already on the shelf and counted in starting).
+            const incomingShips = shipments.filter(s => {
+                const d = shipArrivalDate(s);
+                if (!d || d.slice(0, 7) !== ym) return false;
+                if (isStkMonth && d < stocktake) return false;
+                return true;
+            });
             const incoming = incomingShips.reduce((sum, s) => sum + shipIncomingKg(s), 0);
 
             // Mid-month rule: keep the projection conservative. When actuals
             // exist for a month, use max(actuals, forecast) for the math —
             // so an in-progress month with 200 kg sold doesn't masquerade as
-            // a low-volume month and inflate the closing stock estimate. Once
-            // actuals exceed the forecast, the actual figure takes over (which
-            // is what we want — the real depletion is the real depletion).
+            // a low-volume month and inflate the closing stock estimate.
             const actualSales = actuals[ym] ?? null;
-            const fcstAvg     = Number(monthlyAvg[mo]) || 0;
+            const fcstAvg     = (Number(monthlyAvg[mo]) || 0) * (isStkMonth ? proration : 1);
             const fcstGood    = fcstAvg * 1.1;
             const fcstGreat   = fcstAvg * 1.2;
             const avgSales   = actualSales !== null ? Math.max(actualSales, fcstAvg)   : fcstAvg;
@@ -585,10 +615,11 @@ const Warehouse = (() => {
 
             rows.push({
                 ym, yr, mo,
-                label: `${MONTH_NAMES[mo]} '${String(yr).slice(-2)}`,
+                label: `${MONTH_NAMES[mo]} '${String(yr).slice(-2)}` + (isStkMonth && stkDay > 1 ? ` (from ${stkDay})` : ''),
                 incoming, incomingShips, actualSales, avgSales, goodSales, greatSales,
                 openAvg, openGood, openGreat,
                 closeAvg: runAvg, closeGood: runGood, closeGreat: runGreat,
+                isStkMonth, proration: isStkMonth ? proration : 1,
             });
 
             mo++;
@@ -2665,7 +2696,8 @@ const Warehouse = (() => {
                     <div class="cat-section-head">
                         <div>
                             <h2 class="cat-title">Stock Trajectory &middot; Prime Ties <span class="fcst-version">v${config.version || 1}</span></h2>
-                            <p class="cat-sub">Starting stock: <strong>${fmtFull(config.startingKg ?? 0)}</strong>
+                            <p class="cat-sub">Stocktake: <strong>${fmtFull(config.startingKg ?? 0)} kg</strong>
+                                ${config.stocktakeDate ? `as of <strong>${config.stocktakeDate}</strong>` : '<span style="color:#94a3b8">(no date set — assuming start of this month)</span>'}
                                 <button class="btn-link" id="imp-edit-stock-btn">Edit</button></p>
                         </div>
                         <div class="cat-actions">
@@ -2674,12 +2706,18 @@ const Warehouse = (() => {
                     </div>
                     <div id="imp-stock-edit" style="display:none;margin-bottom:1rem">
                         <div class="imp-connect-row">
-                            <label style="font-size:0.8125rem;color:#64748b;white-space:nowrap">Current stock (kg):</label>
+                            <label style="font-size:0.8125rem;color:#64748b;white-space:nowrap">Stock on hand (kg):</label>
                             <input type="number" id="imp-stock-kg" class="imp-url-input" style="max-width:140px"
                                 value="${config.startingKg ?? ''}" placeholder="e.g. 5000" min="0" step="any">
+                            <label style="font-size:0.8125rem;color:#64748b;white-space:nowrap">as of</label>
+                            <input type="date" id="imp-stock-date" class="imp-url-input" style="max-width:170px"
+                                value="${escHtml(config.stocktakeDate || new Date().toISOString().slice(0, 10))}">
                             <button class="btn-primary btn-sm" id="imp-stock-save-btn">Save</button>
                             <button class="btn-secondary btn-sm" id="imp-stock-cancel-btn">Cancel</button>
                         </div>
+                        <p class="cat-sub" style="margin:0.5rem 0 0;font-size:0.78rem">
+                            Stocktake = physical count on a given day. Forecasted sales after the stocktake are pro-rated for the partial first month; shipments arriving before the stocktake date are assumed already on the shelf.
+                        </p>
                     </div>
                     <div id="imp-chart-wrap">${buildForecastChart(rows, scenario, allShips)}</div>
                 </div>
@@ -2715,29 +2753,41 @@ const Warehouse = (() => {
                         <h2 class="cat-title" style="margin:0">Monthly Sales Averages</h2>
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
                     </summary>
-                    <p class="cat-sub" style="margin-bottom:1rem">Average kg sold each month &mdash; the baseline for all three scenarios.</p>
-                    <div class="fcst-avg-grid">
-                        ${MONTH_NAMES.map((m, i) => `
-                        <div class="fcst-avg-cell">
-                            <label class="fcst-avg-label">${m}</label>
-                            <input type="number" class="fcst-avg-input imp-url-input" data-mo="${i}"
-                                value="${(config.monthlyAvg || [])[i] || ''}" placeholder="0" min="0" step="any">
-                            <span class="fcst-avg-unit">kg</span>
-                        </div>`).join('')}
-                    </div>
-                    <div class="fcst-avg-summary">
-                        <div class="fcst-avg-summary-row">
-                            <span class="fcst-avg-summary-lbl">Annual total · Average</span>
-                            <span class="fcst-avg-summary-val" id="fcst-avg-total-avg">${fmtFull((config.monthlyAvg || []).reduce((t, v) => t + (Number(v) || 0), 0))} kg</span>
-                        </div>
-                        <div class="fcst-avg-summary-row">
-                            <span class="fcst-avg-summary-lbl">Annual total · Good <span class="fcst-avg-summary-mult">+10%</span></span>
-                            <span class="fcst-avg-summary-val" id="fcst-avg-total-good">${fmtFull((config.monthlyAvg || []).reduce((t, v) => t + (Number(v) || 0), 0) * 1.1)} kg</span>
-                        </div>
-                        <div class="fcst-avg-summary-row fcst-avg-summary-row--great">
-                            <span class="fcst-avg-summary-lbl">Annual total · Great <span class="fcst-avg-summary-mult">+20%</span></span>
-                            <span class="fcst-avg-summary-val" id="fcst-avg-total-great">${fmtFull((config.monthlyAvg || []).reduce((t, v) => t + (Number(v) || 0), 0) * 1.2)} kg</span>
-                        </div>
+                    <p class="cat-sub" style="margin-bottom:1rem">Edit the Average column &mdash; Good and Great derive automatically (+10% / +20%).</p>
+                    <div class="fcst-matrix-wrap">
+                        <table class="fcst-matrix">
+                            <thead>
+                                <tr>
+                                    <th class="fcst-matrix-mo">Month</th>
+                                    <th class="fcst-matrix-num fcst-matrix-num--edit">Average (kg)</th>
+                                    <th class="fcst-matrix-num">Good <span class="fcst-matrix-mult">+10%</span></th>
+                                    <th class="fcst-matrix-num fcst-matrix-num--accent">Great <span class="fcst-matrix-mult">+20%</span></th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${MONTH_NAMES.map((m, i) => {
+                                    const avgKg = Number((config.monthlyAvg || [])[i]) || 0;
+                                    return `
+                                    <tr>
+                                        <td class="fcst-matrix-mo">${m}</td>
+                                        <td class="fcst-matrix-num fcst-matrix-num--edit">
+                                            <input type="number" class="fcst-avg-input" data-mo="${i}"
+                                                value="${avgKg || ''}" placeholder="0" min="0" step="any">
+                                        </td>
+                                        <td class="fcst-matrix-num" data-derived="good" data-mo="${i}">${fmtFull(avgKg * 1.1)}</td>
+                                        <td class="fcst-matrix-num fcst-matrix-num--accent" data-derived="great" data-mo="${i}">${fmtFull(avgKg * 1.2)}</td>
+                                    </tr>`;
+                                }).join('')}
+                            </tbody>
+                            <tfoot>
+                                <tr class="fcst-matrix-totals">
+                                    <td class="fcst-matrix-mo">Annual</td>
+                                    <td class="fcst-matrix-num fcst-matrix-num--edit" id="fcst-avg-total-avg">${fmtFull((config.monthlyAvg || []).reduce((t, v) => t + (Number(v) || 0), 0))}</td>
+                                    <td class="fcst-matrix-num" id="fcst-avg-total-good">${fmtFull((config.monthlyAvg || []).reduce((t, v) => t + (Number(v) || 0), 0) * 1.1)}</td>
+                                    <td class="fcst-matrix-num fcst-matrix-num--accent" id="fcst-avg-total-great">${fmtFull((config.monthlyAvg || []).reduce((t, v) => t + (Number(v) || 0), 0) * 1.2)}</td>
+                                </tr>
+                            </tfoot>
+                        </table>
                     </div>
                     <div style="margin-top:1rem;display:flex;gap:0.5rem;flex-wrap:wrap">
                         <button class="btn-primary btn-sm" id="imp-avg-save-btn">Save Averages</button>
@@ -2771,17 +2821,23 @@ const Warehouse = (() => {
                 document.getElementById('imp-stock-edit').style.display = 'none';
             });
             document.getElementById('imp-stock-save-btn')?.addEventListener('click', async () => {
-                const kg = parseFloat(document.getElementById('imp-stock-kg').value) || 0;
+                const kg   = parseFloat(document.getElementById('imp-stock-kg').value) || 0;
+                const date = document.getElementById('imp-stock-date').value;
+                if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+                    showToast('Pick a stocktake date');
+                    return;
+                }
                 const btn = document.getElementById('imp-stock-save-btn');
                 btn.disabled = true; btn.textContent = 'Saving…';
                 try {
                     await api('/api/import/forecast', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ startingKg: kg }),
+                        body: JSON.stringify({ startingKg: kg, stocktakeDate: date }),
                     });
-                    config.startingKg = kg;
-                    showToast('Stock updated');
+                    config.startingKg    = kg;
+                    config.stocktakeDate = date;
+                    showToast('Stocktake saved');
                     rebuild();
                 } catch (err) {
                     showToast('Save failed: ' + err.message);
@@ -2850,19 +2906,25 @@ const Warehouse = (() => {
                 }
             });
 
-            // Live-update the annual-total summary row as the user types so
-            // the impact of a change is immediately visible.
+            // Live-update derived Good/Great cells + annual totals as the
+            // user types in any Average cell.
             function updateAvgSummary() {
-                const total = MONTH_NAMES.reduce((t, _, i) => {
+                let total = 0;
+                MONTH_NAMES.forEach((_, i) => {
                     const inp = body.querySelector('.fcst-avg-input[data-mo="' + i + '"]');
-                    return t + (parseFloat(inp?.value) || 0);
-                }, 0);
-                const elAvg = document.getElementById('fcst-avg-total-avg');
-                const elGood = document.getElementById('fcst-avg-total-good');
+                    const v   = parseFloat(inp?.value) || 0;
+                    total += v;
+                    const goodCell  = body.querySelector('td[data-derived="good"][data-mo="' + i + '"]');
+                    const greatCell = body.querySelector('td[data-derived="great"][data-mo="' + i + '"]');
+                    if (goodCell)  goodCell.textContent  = fmtFull(v * 1.1);
+                    if (greatCell) greatCell.textContent = fmtFull(v * 1.2);
+                });
+                const elAvg   = document.getElementById('fcst-avg-total-avg');
+                const elGood  = document.getElementById('fcst-avg-total-good');
                 const elGreat = document.getElementById('fcst-avg-total-great');
-                if (elAvg)   elAvg.textContent   = fmtFull(total)       + ' kg';
-                if (elGood)  elGood.textContent  = fmtFull(total * 1.1) + ' kg';
-                if (elGreat) elGreat.textContent = fmtFull(total * 1.2) + ' kg';
+                if (elAvg)   elAvg.textContent   = fmtFull(total);
+                if (elGood)  elGood.textContent  = fmtFull(total * 1.1);
+                if (elGreat) elGreat.textContent = fmtFull(total * 1.2);
             }
             body.querySelectorAll('.fcst-avg-input').forEach(inp => {
                 inp.addEventListener('input', updateAvgSummary);
