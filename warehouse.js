@@ -2695,7 +2695,9 @@ const Warehouse = (() => {
                 <div class="cat-section imp-chart-card">
                     <div class="cat-section-head">
                         <div>
-                            <h2 class="cat-title">Stock Trajectory &middot; Prime Ties <span class="fcst-version">v${config.version || 1}</span></h2>
+                            <h2 class="cat-title">Stock Trajectory &middot; Prime Ties <span class="fcst-version">v${config.version || 1}</span>
+                                <span class="chart-info" title="Projects kg-on-hand 18 months forward from your stocktake. Each month: opening − Est. Sales (max of actual vs forecast) + incoming shipments. Three scenarios (Average / Good +10% / Great +20%) — toggle them at right; the active line is bold, the others fade for reference. Triangle markers along the X-axis are shipment arrivals. Where the line goes below zero, a red fill flags an out-of-stock month.">&#9432;</span>
+                            </h2>
                             <p class="cat-sub">Stocktake: <strong>${fmtFull(config.startingKg ?? 0)} kg</strong>
                                 ${config.stocktakeDate ? `as of <strong>${config.stocktakeDate}</strong>` : '<span style="color:#94a3b8">(no date set — assuming start of this month)</span>'}
                                 <button class="btn-link" id="imp-edit-stock-btn">Edit</button></p>

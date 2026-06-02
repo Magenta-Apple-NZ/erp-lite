@@ -4269,6 +4269,20 @@ body.body--worker .orders-view-inner { padding-top: 1rem; }
 .imp-upcoming-arrival strong { font-weight: 600; color: #0f172a; }
 .imp-upcoming-cost { font-size: 0.82rem; color: #475569; font-variant-numeric: tabular-nums; }
 
+/* Small ℹ glyph next to chart titles. Uses the browser's native title
+   tooltip — no JS, no popover library, just a cursor:help affordance. */
+.chart-info {
+    display: inline-block;
+    margin-left: 0.4rem;
+    color: #cbd5e1;
+    cursor: help;
+    font-size: 0.95em;
+    line-height: 1;
+    vertical-align: middle;
+    user-select: none;
+}
+.chart-info:hover { color: #64748b; }
+
 /* Paid / outstanding progress bar on shipment cards. The bar stretches
    to the full card width; the labels sit beneath with a touch of
    horizontal padding so the dollar figures don't crowd the card edges. */

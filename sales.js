@@ -348,14 +348,18 @@ const SalesView = (() => {
         ${filterBar}
         <div class="sales-charts-row">
             <div class="cat-section sales-chart-block">
-                <h2 class="cat-title" style="margin-bottom:0.4rem">Sales by Month</h2>
+                <h2 class="cat-title" style="margin-bottom:0.4rem">Sales by Month
+                    <span class="chart-info" title="Bars are kg sold per calendar month. One bar per selected year — pick years in the filter row above. Filter by customer / branch / product narrows what's counted across the whole chart. Pre-Hub-live months come from the seeded sales history; later months from dispatched orders.">&#9432;</span>
+                </h2>
                 <p class="cat-sub" style="margin-bottom:0.75rem">kg sold per month by year.</p>
                 <div id="sales-chart-area">${buildSalesByMonthChart(initData)}</div>
             </div>
             <div class="cat-section sales-chart-block">
                 <div class="sales-chart-head">
                     <div>
-                        <h2 class="cat-title" style="margin-bottom:0.4rem">Cumulative Sales</h2>
+                        <h2 class="cat-title" style="margin-bottom:0.4rem">Cumulative Sales
+                            <span class="chart-info" title="Each line is the running total of kg sold within one year, from the start of the period to date. Toggle Calendar (Jan→Dec) vs Financial (Apr→Mar, NZ FY). When a month has no data the line carries the running total forward as a flat segment rather than dropping out — so you can still read where the line is mid-year.">&#9432;</span>
+                        </h2>
                         <p class="cat-sub" style="margin-bottom:0">Running total kg by year.</p>
                     </div>
                     <div class="sales-mode-toggle" role="tablist" aria-label="Year mode">

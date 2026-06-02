@@ -76,15 +76,15 @@ function renderDashboardWidgets(config) {
     el.innerHTML = `
         ${topRow}
         <section class="db-mod db-mod--chart" id="db-stock-trajectory">
-            <div class="db-mod-hd"><h3 class="db-mod-title">Stock Trajectory</h3><a class="db-mod-link" href="#imports">Open Imports →</a></div>
+            <div class="db-mod-hd"><h3 class="db-mod-title">Stock Trajectory <span class="chart-info" title="Projected kg-on-hand 18 months forward from the stocktake date. Bold line = active scenario (Average / Good / Great); faded lines are the other two for reference. Triangle markers are shipment arrivals. A red fill means stock goes below zero.">&#9432;</span></h3><a class="db-mod-link" href="#imports">Open Imports →</a></div>
             <div class="db-mod-body"><span class="db-mod-loading">Loading…</span></div>
         </section>
         <section class="db-mod db-mod--chart" id="db-cumulative-sales">
-            <div class="db-mod-hd"><h3 class="db-mod-title">Cumulative Sales <span class="db-mod-sub">last 3 FYs</span></h3><a class="db-mod-link" href="#sales">Open Sales →</a></div>
+            <div class="db-mod-hd"><h3 class="db-mod-title">Cumulative Sales <span class="db-mod-sub">last 3 FYs</span> <span class="chart-info" title="Running total of kg sold within each year. Toggle Calendar (Jan→Dec) vs Financial (NZ FY, Apr→Mar). Compare year-on-year pace at a glance — the current line should sit on or above the prior years' curves at the same point if you're tracking ahead.">&#9432;</span></h3><a class="db-mod-link" href="#sales">Open Sales →</a></div>
             <div class="db-mod-body"><span class="db-mod-loading">Loading…</span></div>
         </section>
         <section class="db-mod" id="db-calendar-module">
-            <div class="db-mod-hd"><h3 class="db-mod-title" id="db-cal-title">Calendar</h3><a class="db-mod-link" href="#calendar">Open Calendar →</a></div>
+            <div class="db-mod-hd"><h3 class="db-mod-title" id="db-cal-title">Calendar <span class="chart-info" title="Dot colours: red = public holiday · amber = tax due date · green = shipment arrival or milestone · blue = Google Calendar event. Click a day to see the full list in the side panel. Holidays and tax dates come from config.json; shipments from the import forecast; events from your connected Google Calendar.">&#9432;</span></h3><a class="db-mod-link" href="#calendar">Open Calendar →</a></div>
             <div class="db-mod-body"><span class="db-mod-loading">Loading…</span></div>
         </section>`;
 
