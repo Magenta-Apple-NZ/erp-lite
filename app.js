@@ -75,16 +75,18 @@ function renderDashboardWidgets(config) {
 
     el.innerHTML = `
         ${topRow}
-        <section class="db-mod db-mod--chart" id="db-stock-trajectory">
-            <div class="db-mod-hd"><h3 class="db-mod-title">Stock Trajectory <span class="chart-info" title="Projected kg-on-hand 18 months forward from the stocktake date. Bold line = active scenario (Average / Good / Great); faded lines are the other two for reference. Triangle markers are shipment arrivals. A red fill means stock goes below zero.">&#9432;</span></h3><a class="db-mod-link" href="#imports">Open Imports →</a></div>
-            <div class="db-mod-body"><span class="db-mod-loading">Loading…</span></div>
-        </section>
-        <section class="db-mod db-mod--chart" id="db-cumulative-sales">
-            <div class="db-mod-hd"><h3 class="db-mod-title">Cumulative Sales <span class="db-mod-sub">last 3 FYs</span> <span class="chart-info" title="Running total of kg sold within each year. Toggle Calendar (Jan→Dec) vs Financial (NZ FY, Apr→Mar). Compare year-on-year pace at a glance — the current line should sit on or above the prior years' curves at the same point if you're tracking ahead.">&#9432;</span></h3><a class="db-mod-link" href="#sales">Open Sales →</a></div>
-            <div class="db-mod-body"><span class="db-mod-loading">Loading…</span></div>
-        </section>
-        <section class="db-mod" id="db-calendar-module">
-            <div class="db-mod-hd"><h3 class="db-mod-title" id="db-cal-title">Calendar <span class="chart-info" title="Dot colours: red = public holiday · amber = tax due date · green = shipment arrival or milestone · blue = Google Calendar event. Click a day to see the full list in the side panel. Holidays and tax dates come from config.json; shipments from the import forecast; events from your connected Google Calendar.">&#9432;</span></h3><a class="db-mod-link" href="#calendar">Open Calendar →</a></div>
+        <div class="db-charts-row">
+            <section class="db-mod db-mod--chart" id="db-stock-trajectory">
+                <div class="db-mod-hd"><h3 class="db-mod-title">Stock Trajectory <span class="chart-info" title="Projected kg-on-hand 18 months forward from the stocktake date. Bold line = active scenario (Average / Good / Great); faded lines are the other two for reference. Triangle markers are shipment arrivals. A red fill means stock goes below zero.">&#9432;</span></h3><a class="db-mod-link" href="#imports">Open Imports →</a></div>
+                <div class="db-mod-body"><span class="db-mod-loading">Loading…</span></div>
+            </section>
+            <section class="db-mod db-mod--chart" id="db-cumulative-sales">
+                <div class="db-mod-hd"><h3 class="db-mod-title">Cumulative Sales <span class="db-mod-sub">last 3 FYs</span> <span class="chart-info" title="Running total of kg sold within each year. Toggle Calendar (Jan→Dec) vs Financial (NZ FY, Apr→Mar). Compare year-on-year pace at a glance — the current line should sit on or above the prior years' curves at the same point if you're tracking ahead.">&#9432;</span></h3><a class="db-mod-link" href="#sales">Open Sales →</a></div>
+                <div class="db-mod-body"><span class="db-mod-loading">Loading…</span></div>
+            </section>
+        </div>
+        <section class="db-mod db-mod--cal" id="db-calendar-module">
+            <div class="db-mod-hd"><h3 class="db-mod-title" id="db-cal-title">Next 30 days <span class="chart-info" title="Horizontal timeline of the next 30 days. Dot colours: red = public holiday · amber = tax due date · green = shipment arrival or milestone · blue = Google Calendar event. Click a day for its events. The mini-month underneath gives broader context.">&#9432;</span></h3><a class="db-mod-link" href="#calendar">Open Calendar →</a></div>
             <div class="db-mod-body"><span class="db-mod-loading">Loading…</span></div>
         </section>`;
 
@@ -103,7 +105,7 @@ function renderDashboardWidgets(config) {
 // from config.json. Replaces the old "Next 14 days" list + "Next 28 days"
 // strip with a single, more useful widget.
 
-const _cal = { year: null, month: null, eventsByDate: {} };
+const _cal = { selectedDate: null, eventsByDate: {} };
 
 function _calAddEvent(date, ev) {
     if (!_cal.eventsByDate[date]) _cal.eventsByDate[date] = [];
@@ -113,18 +115,12 @@ function _calAddEvent(date, ev) {
 async function loadDashboardCalendar(config) {
     const body = document.querySelector('#db-calendar-module .db-mod-body');
     if (!body) return;
-    const today = new Date();
-    if (_cal.year === null) {
-        _cal.year  = today.getFullYear();
-        _cal.month = today.getMonth();
-    }
     _cal.eventsByDate = {};
 
-    // Pull events for the current month ± 1 day padding (grid extends).
-    const monthStart = new Date(_cal.year, _cal.month, 1);
-    const monthEnd   = new Date(_cal.year, _cal.month + 1, 0);
-    const tMin = new Date(monthStart.getFullYear(), monthStart.getMonth(), monthStart.getDate() - 7).toISOString();
-    const tMax = new Date(monthEnd.getFullYear(),   monthEnd.getMonth(),   monthEnd.getDate()   + 7).toISOString();
+    // Pull events covering the 30-day strip with a small buffer at each end.
+    const today = new Date();
+    const tMin = new Date(today.getFullYear(), today.getMonth(), today.getDate() - 2).toISOString();
+    const tMax = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 32).toISOString();
 
     const [forecast, gcalRes] = await Promise.all([
         fetch('/api/import/forecast').then(r => r.ok ? r.json() : null).catch(() => null),
@@ -167,95 +163,54 @@ async function loadDashboardCalendar(config) {
 
 function _renderCalendarModule() {
     const body = document.querySelector('#db-calendar-module .db-mod-body');
-    const title = document.getElementById('db-cal-title');
     if (!body) return;
-
-    const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
-    const monthLabel = `${MONTHS[_cal.month]} ${_cal.year}`;
-    if (title) title.textContent = 'Calendar — ' + monthLabel;
 
     const today = new Date();
     const todayStr = today.toISOString().slice(0, 10);
-
-    // Build a Sun-start grid covering the whole month.
-    const first = new Date(_cal.year, _cal.month, 1);
-    const startDow = first.getDay(); // 0 = Sun
-    const daysInMonth = new Date(_cal.year, _cal.month + 1, 0).getDate();
-    const cells = [];
-
-    for (let i = 0; i < startDow; i++) cells.push(null);
-    for (let d = 1; d <= daysInMonth; d++) {
-        const date = `${_cal.year}-${String(_cal.month + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
-        cells.push({ d, date });
-    }
-    while (cells.length % 7 !== 0) cells.push(null);
-
-    const DOW = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
-    const dowHtml = DOW.map(d => `<div class="db-cal-dow">${d}</div>`).join('');
-
-    const cellHtml = cells.map(c => {
-        if (!c) return `<div class="db-cal-cell db-cal-cell--blank"></div>`;
-        const events = _cal.eventsByDate[c.date] || [];
-        const isToday = c.date === todayStr;
-        const isWeekend = new Date(c.date).getDay() % 6 === 0;
-        // Up to 3 type-coloured dots, then "+N" if more.
-        const types = events.slice(0, 3).map(e => `<span class="db-cal-dot db-cal-dot--${e.type}"></span>`).join('');
-        const extra = events.length > 3 ? `<span class="db-cal-more">+${events.length - 3}</span>` : '';
-        const cls = [
-            'db-cal-cell',
-            isToday ? 'db-cal-cell--today' : '',
-            isWeekend ? 'db-cal-cell--weekend' : '',
-            events.length ? 'db-cal-cell--has' : '',
-        ].filter(Boolean).join(' ');
-        return `<div class="${cls}" data-date="${c.date}">
-            <span class="db-cal-d">${c.d}</span>
-            <div class="db-cal-dots">${types}${extra}</div>
-        </div>`;
-    }).join('');
-
-    // Sidebar: events for the currently-selected day (defaults to today).
     const selDate = _cal.selectedDate || todayStr;
+
+    // Primary: 30-day horizontal strip starting today. Each cell shows the
+    // weekday + date and stacks event dots.
+    const stripCells = [];
+    for (let i = 0; i < 30; i++) {
+        const d = new Date(today.getFullYear(), today.getMonth(), today.getDate() + i);
+        const date = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+        const events = _cal.eventsByDate[date] || [];
+        const dow = d.getDay();
+        const isWeekend = dow === 0 || dow === 6;
+        const isToday = date === todayStr;
+        const isSel = date === selDate;
+        const dots = events.slice(0, 4).map(e => `<span class="db-strip-dot db-strip-dot--${e.type}"></span>`).join('');
+        const extra = events.length > 4 ? `<span class="db-strip-more">+${events.length - 4}</span>` : '';
+        const cls = [
+            'db-strip-cell',
+            isToday ? 'db-strip-cell--today' : '',
+            isSel ? 'db-strip-cell--selected' : '',
+            isWeekend ? 'db-strip-cell--weekend' : '',
+            events.length ? 'db-strip-cell--has' : '',
+        ].filter(Boolean).join(' ');
+        stripCells.push(`<button type="button" class="${cls}" data-date="${date}">
+            <span class="db-strip-dow">${'SMTWTFS'[dow]}</span>
+            <span class="db-strip-dom">${d.getDate()}</span>
+            <span class="db-strip-dots">${dots}${extra}</span>
+        </button>`);
+    }
+
+    // Events list for the selected day.
     const selEvents = _cal.eventsByDate[selDate] || [];
     const selLabel = new Date(selDate + 'T00:00').toLocaleDateString('en-NZ', { weekday: 'long', day: 'numeric', month: 'long' });
-    const sidebarHtml = selEvents.length
+    const eventsHtml = selEvents.length
         ? selEvents.map(e => `<li class="db-cal-ev db-cal-ev--${e.type}"><span class="db-cal-ev-type">${e.type}</span><span class="db-cal-ev-label">${_ehDb(e.label)}</span></li>`).join('')
         : '<li class="db-cal-ev db-cal-ev--empty">Nothing scheduled.</li>';
 
     body.innerHTML = `
-        <div class="db-cal-grid-wrap">
-            <div class="db-cal-toolbar">
-                <button type="button" class="db-cal-nav" id="db-cal-prev" title="Previous month">‹</button>
-                <span class="db-cal-toolbar-label">${monthLabel}</span>
-                <button type="button" class="db-cal-nav" id="db-cal-next" title="Next month">›</button>
-                <button type="button" class="db-cal-today" id="db-cal-today">Today</button>
-            </div>
-            <div class="db-cal-grid">
-                <div class="db-cal-dows">${dowHtml}</div>
-                <div class="db-cal-cells">${cellHtml}</div>
-            </div>
-        </div>
-        <aside class="db-cal-side">
-            <div class="db-cal-side-hd">${selLabel}</div>
-            <ul class="db-cal-list">${sidebarHtml}</ul>
-        </aside>`;
+        <div class="db-strip-scroller">${stripCells.join('')}</div>
+        <div class="db-cal-events">
+            <div class="db-cal-events-hd">${selLabel}</div>
+            <ul class="db-cal-list">${eventsHtml}</ul>
+        </div>`;
 
-    document.getElementById('db-cal-prev')?.addEventListener('click', () => {
-        _cal.month--; if (_cal.month < 0) { _cal.month = 11; _cal.year--; }
-        _cal.selectedDate = null;
-        loadDashboardCalendar(currentConfig);
-    });
-    document.getElementById('db-cal-next')?.addEventListener('click', () => {
-        _cal.month++; if (_cal.month > 11) { _cal.month = 0; _cal.year++; }
-        _cal.selectedDate = null;
-        loadDashboardCalendar(currentConfig);
-    });
-    document.getElementById('db-cal-today')?.addEventListener('click', () => {
-        const t = new Date();
-        _cal.year = t.getFullYear(); _cal.month = t.getMonth();
-        _cal.selectedDate = todayStr;
-        loadDashboardCalendar(currentConfig);
-    });
-    body.querySelectorAll('.db-cal-cell[data-date]').forEach(c => {
+    body.querySelectorAll('.db-strip-cell[data-date]').forEach(c => {
         c.addEventListener('click', () => {
             _cal.selectedDate = c.dataset.date;
             _renderCalendarModule();
