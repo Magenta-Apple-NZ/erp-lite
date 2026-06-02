@@ -4884,7 +4884,16 @@ a.db-row:hover { background: #f8fafc; border-color: #e2e8f0; }
     margin-left: 1px;
 }
 
-/* Events list under the strip — shows the selected day's events. */
+/* Events panels under the strip — selected-day events (left) and a
+   chronological "next 10 events" list (right). Stack on narrow screens. */
+.db-cal-panels {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 0.75rem;
+}
+@media (max-width: 720px) {
+    .db-cal-panels { grid-template-columns: 1fr; }
+}
 .db-cal-events {
     background: #f8fafc;
     border: 1px solid #e2e8f0;
@@ -4898,6 +4907,19 @@ a.db-row:hover { background: #f8fafc; border-color: #e2e8f0; }
     margin-bottom: 0.55rem;
     padding-bottom: 0.45rem;
     border-bottom: 1px solid #e2e8f0;
+}
+/* Date pill on the "Next 10 events" list — the per-day panel doesn't
+   need it because the header already names the day. */
+.db-cal-ev-date {
+    display: inline-block;
+    font-size: 0.7rem;
+    font-weight: 700;
+    color: #475569;
+    background: #e2e8f0;
+    padding: 0.1rem 0.45rem;
+    border-radius: 999px;
+    margin-bottom: 0.2rem;
+    width: fit-content;
 }
 .db-cal-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 0.4rem; }
 .db-cal-ev {

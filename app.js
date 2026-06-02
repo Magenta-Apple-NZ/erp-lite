@@ -203,11 +203,36 @@ function _renderCalendarModule() {
         ? selEvents.map(e => `<li class="db-cal-ev db-cal-ev--${e.type}"><span class="db-cal-ev-type">${e.type}</span><span class="db-cal-ev-label">${_ehDb(e.label)}</span></li>`).join('')
         : '<li class="db-cal-ev db-cal-ev--empty">Nothing scheduled.</li>';
 
+    // Next 10 events from today onwards, ordered chronologically.
+    const upcoming = Object.keys(_cal.eventsByDate)
+        .filter(d => d >= todayStr)
+        .sort()
+        .flatMap(d => _cal.eventsByDate[d].map(ev => ({ date: d, ...ev })))
+        .slice(0, 10);
+    const upcomingHtml = upcoming.length
+        ? upcoming.map(e => {
+            const d = new Date(e.date + 'T00:00');
+            const dayLbl = e.date === todayStr
+                ? 'Today'
+                : d.toLocaleDateString('en-NZ', { day: 'numeric', month: 'short' });
+            return `<li class="db-cal-ev db-cal-ev--${e.type}">
+                <span class="db-cal-ev-date">${dayLbl}</span>
+                <span class="db-cal-ev-label">${_ehDb(e.label)}</span>
+            </li>`;
+        }).join('')
+        : '<li class="db-cal-ev db-cal-ev--empty">No events in range.</li>';
+
     body.innerHTML = `
         <div class="db-strip-scroller">${stripCells.join('')}</div>
-        <div class="db-cal-events">
-            <div class="db-cal-events-hd">${selLabel}</div>
-            <ul class="db-cal-list">${eventsHtml}</ul>
+        <div class="db-cal-panels">
+            <div class="db-cal-events">
+                <div class="db-cal-events-hd">${selLabel}</div>
+                <ul class="db-cal-list">${eventsHtml}</ul>
+            </div>
+            <div class="db-cal-events">
+                <div class="db-cal-events-hd">Next 10 events</div>
+                <ul class="db-cal-list">${upcomingHtml}</ul>
+            </div>
         </div>`;
 
     body.querySelectorAll('.db-strip-cell[data-date]').forEach(c => {
