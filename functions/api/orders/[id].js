@@ -68,6 +68,12 @@ export async function onRequestPatch({ env, params, request }) {
         if (updates.xeroInvoiceNumber !== undefined) order.xeroInvoiceNumber = updates.xeroInvoiceNumber;
         if (updates.xeroSourced !== undefined) order.xeroSourced = updates.xeroSourced === true;
         if (updates.paidAt !== undefined) order.paidAt = updates.paidAt;
+        // Payslip label (set by the Dispatch Log "Assign to Payslip" action).
+        // Free-form string — typically "May 2026" or similar. Used to group
+        // dispatched orders into payslip tallies in the log.
+        if (updates.payslipLabel !== undefined) {
+            order.payslipLabel = String(updates.payslipLabel || '').trim() || null;
+        }
 
         // Append event to activity log
         if (updates.event) {

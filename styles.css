@@ -800,7 +800,7 @@ li.drag-over { background: #eff6ff; }
     .pinned-section { padding: 0.75rem; }
 
     /* ── Mobile nav: keep only Orders + Calendar visible ── */
-    .sidebar-nav .nav-item:not(#nav-orders):not(#nav-calendar) { display: none; }
+    .sidebar-nav .nav-item:not(#nav-orders):not(#nav-calendar):not(#nav-admin) { display: none; }
     .sidebar-nav .nav-soon-badge { display: none; }
 
     /* ── Orders list: table → cards ── */
@@ -1307,6 +1307,40 @@ li.drag-over { background: #eff6ff; }
 }
 .customer-option:hover { background: #f1f5f9; }
 
+/* On phones the line-items table scrolls horizontally inside
+   .line-items-wrap, which has overflow-x: auto. That clips the SKU /
+   description autocomplete dropdown down to a thin slice. Pin the
+   dropdown to the viewport bottom on mobile so it escapes the clip
+   and the user has a real-sized list with finger-tappable rows. */
+@media (max-width: 640px) {
+    .line-item-row .customer-dropdown {
+        position: fixed;
+        left: 0.75rem;
+        right: 0.75rem;
+        top: auto;
+        bottom: 0.75rem;
+        max-height: 60vh;
+        font-size: 1rem;
+        box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.18);
+        border-radius: 10px;
+    }
+    .line-item-row .customer-option {
+        padding: 0.9rem 1rem;
+        font-size: 0.95rem;
+        border-bottom: 1px solid #f1f5f9;
+    }
+    .line-item-row .customer-option:last-child { border-bottom: none; }
+    .line-item-row .customer-option strong {
+        display: inline-block;
+        margin-right: 0.5rem;
+        color: #1e293b;
+    }
+    .line-item-row .customer-option .store-city {
+        color: #64748b;
+        font-size: 0.85rem;
+    }
+}
+
 /* Line items */
 .line-items-table {
     width: 100%;
@@ -1743,6 +1777,49 @@ a.xero-inv-linked:hover { background: #d1fae5; border-color: #6ee7b7; }
     color: #cbd5e1; font-size: 1rem; padding: 0.2rem 0.4rem; border-radius: 3px;
 }
 .matrix-del:hover { color: #ef4444; background: #fef2f2; }
+
+/* Mobile: the read-only pricing matrix is 6 columns wide and is unusable
+   on a phone. Stack each product into a label-value card so it's readable
+   without horizontal scrolling. Editable variants still scroll. */
+@media (max-width: 640px) {
+    .matrix-wrap:has(> .matrix-table--readonly) { overflow-x: visible; }
+    .matrix-table--readonly,
+    .matrix-table--readonly tbody { display: block; width: 100%; }
+    .matrix-table--readonly thead { display: none; }
+    .matrix-table--readonly tr {
+        display: block;
+        padding: 0.75rem 0.9rem;
+        background: white;
+        border: 1px solid #e2e8f0;
+        border-radius: 8px;
+        margin-bottom: 0.55rem;
+    }
+    .matrix-table--readonly td {
+        display: flex;
+        justify-content: space-between;
+        align-items: baseline;
+        padding: 0.3rem 0;
+        border: none !important;
+        gap: 0.75rem;
+        font-size: 0.9rem;
+    }
+    .matrix-table--readonly td::before {
+        content: attr(data-label);
+        color: #94a3b8;
+        font-size: 0.7rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+    }
+    .matrix-table--readonly td:nth-child(1) { font-weight: 700; color: #0f172a; font-size: 0.95rem; padding-bottom: 0.5rem; border-bottom: 1px solid #f1f5f9 !important; margin-bottom: 0.25rem; }
+    .matrix-table--readonly td:nth-child(1)::before { content: 'SKU'; }
+    .matrix-table--readonly td:nth-child(2)::before { content: 'Product'; }
+    .matrix-table--readonly td:nth-child(3)::before { content: 'Unit price'; }
+    .matrix-table--readonly td:nth-child(4)::before { content: '150+ kg'; }
+    .matrix-table--readonly td:nth-child(5)::before { content: '500+ kg'; }
+    .matrix-table--readonly td:nth-child(6)::before { content: '2,000+ kg'; }
+    .matrix-table--readonly td.cat-num { font-variant-numeric: tabular-nums; }
+}
 
 /* ── Order number field ── */
 .order-num-wrap {
@@ -3416,6 +3493,58 @@ body.role-warehouse #print-address-btn {
 .dl-table tfoot td { font-weight: 600; background: #f8fafc; }
 .dl-order-link { color: #1e40af; text-decoration: none; }
 .dl-order-link:hover { text-decoration: underline; }
+
+/* Payslip group header — subtotal-style row introducing each run of
+   dispatches assigned to the same payslip period (or the open
+   "Unassigned" group). Sits in the tbody between the group and the
+   one before it. */
+.dl-table .dl-group-header td {
+    background: #f8fafc;
+    border-top: 2px solid #cbd5e1;
+    border-bottom: 1px solid #e2e8f0;
+    padding: 0.55rem 0.75rem;
+    font-size: 0.85rem;
+    color: #475569;
+    font-weight: 600;
+}
+.dl-payslip-label {
+    display: inline-block;
+    padding: 0.15rem 0.55rem;
+    background: #dbeafe;
+    color: #1e40af;
+    border-radius: 999px;
+    font-size: 0.78rem;
+    font-weight: 700;
+    letter-spacing: 0.01em;
+}
+.dl-payslip-label--open {
+    background: #fef3c7;
+    color: #92400e;
+}
+.dl-group-subtotal {
+    color: #0f172a;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+}
+.dl-action-cell { width: 1px; white-space: nowrap; }
+.dl-assign-btn {
+    border: 1px solid #cbd5e1;
+    background: white;
+    color: #475569;
+    font-size: 0.75rem;
+    font-weight: 600;
+    padding: 0.3rem 0.55rem;
+    border-radius: 5px;
+    cursor: pointer;
+    line-height: 1;
+    white-space: nowrap;
+}
+.dl-assign-btn:hover {
+    border-color: #2563eb;
+    color: #1d4ed8;
+    background: #eff6ff;
+}
+.dl-assign-btn:disabled { opacity: 0.6; cursor: default; }
 
 .dl-tabs { display: flex; gap: 0.5rem; margin-bottom: 1rem; }
 .dl-tab-count {

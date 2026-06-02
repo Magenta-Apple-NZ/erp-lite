@@ -49,12 +49,27 @@ const DispatchLog = (() => {
         return Number.isInteger(b) ? String(b) : b.toFixed(1);
     }
 
+    async function patch(id, body) {
+        const r = await fetch('/api/orders/' + id, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body),
+        });
+        if (!r.ok) throw new Error(r.statusText);
+        return r.json();
+    }
+
+    function defaultPayslipLabel() {
+        const d = new Date();
+        return d.toLocaleDateString('en-NZ', { month: 'long', year: 'numeric' });
+    }
+
     async function render(container) {
         container.innerHTML = `
         <div class="view-header">
             <div>
                 <h1 class="view-title">Dispatch Log</h1>
-                <p class="view-subtitle">Dispatched orders by person.</p>
+                <p class="view-subtitle">Dispatched orders by person. Group runs into payslip periods to subtotal a pay tally.</p>
             </div>
         </div>
         <div id="dl-body"><div class="orders-loading">Loading…</div></div>`;
@@ -95,22 +110,56 @@ const DispatchLog = (() => {
                 branch: o.shipTo?.branch || o.customer?.name || '—',
                 id: o.id,
                 boxes: orderBoxes(o),
+                payslipLabel: o.payslipLabel || null,
             });
         }
         for (const t of tabs) byPerson[t].sort((a, b) => b.ts.localeCompare(a.ts));
 
+        // Group adjacent rows that share the same payslipLabel (incl. null).
+        // Rows are already in reverse-chrono order, so each group is a
+        // contiguous chronological slice of the log.
+        function groupByPayslip(rows) {
+            const groups = [];
+            let current = null;
+            for (const r of rows) {
+                const lbl = r.payslipLabel || null;
+                if (!current || current.label !== lbl) {
+                    current = { label: lbl, rows: [], boxes: 0 };
+                    groups.push(current);
+                }
+                current.rows.push(r);
+                current.boxes += r.boxes;
+            }
+            return groups;
+        }
+
         const renderPane = (person) => {
             const rows = byPerson[person];
             if (!rows.length) return `<p class="wh-empty">No dispatches by ${escHtml(person)} yet.</p>`;
+            const groups = groupByPayslip(rows);
             const totalBoxes = rows.reduce((s, r) => s + r.boxes, 0);
-            const tbody = rows.map(r => `
-                <tr>
-                    <td>${escHtml(fmtDate(r.day))}</td>
-                    <td>${escHtml(fmtDay(r.day))}</td>
-                    <td>${escHtml(r.branch)}</td>
-                    <td><a href="#orders/${escHtml(r.id)}" class="dl-order-link">${escHtml(r.id)}</a></td>
-                    <td class="dl-num">${fmtBoxes(r.boxes)}</td>
-                </tr>`).join('');
+
+            const tbody = groups.map(g => {
+                const headLbl = g.label
+                    ? `<span class="dl-payslip-label">${escHtml(g.label)}</span>`
+                    : `<span class="dl-payslip-label dl-payslip-label--open">Unassigned</span>`;
+                const subhdr = `
+                    <tr class="dl-group-header">
+                        <td colspan="${isWarehouse ? 4 : 5}">${headLbl} · ${g.rows.length} order${g.rows.length === 1 ? '' : 's'}</td>
+                        <td class="dl-num dl-group-subtotal">${fmtBoxes(g.boxes)} boxes</td>
+                    </tr>`;
+                const rowsHtml = g.rows.map(r => `
+                    <tr>
+                        <td>${escHtml(fmtDate(r.day))}</td>
+                        <td>${escHtml(fmtDay(r.day))}</td>
+                        <td>${escHtml(r.branch)}</td>
+                        <td><a href="#orders/${escHtml(r.id)}" class="dl-order-link">${escHtml(r.id)}</a></td>
+                        ${isWarehouse ? '' : `<td class="dl-action-cell"><button class="dl-assign-btn" data-order-id="${escHtml(r.id)}" data-current-label="${escHtml(r.payslipLabel || '')}" title="Assign this run to a payslip period">${r.payslipLabel ? 'Re-assign' : 'Assign to Payslip'}</button></td>`}
+                        <td class="dl-num">${fmtBoxes(r.boxes)}</td>
+                    </tr>`).join('');
+                return subhdr + rowsHtml;
+            }).join('');
+
             return `
             <table class="cat-table dl-table">
                 <thead>
@@ -119,13 +168,14 @@ const DispatchLog = (() => {
                         <th>Day</th>
                         <th>Branch</th>
                         <th>Order #</th>
+                        ${isWarehouse ? '' : '<th>Payslip</th>'}
                         <th class="dl-num">Boxes</th>
                     </tr>
                 </thead>
                 <tbody>${tbody}</tbody>
                 <tfoot>
                     <tr>
-                        <td colspan="4">Total · ${rows.length} order${rows.length === 1 ? '' : 's'}</td>
+                        <td colspan="${isWarehouse ? 4 : 5}">Total · ${rows.length} order${rows.length === 1 ? '' : 's'}</td>
                         <td class="dl-num dl-total">${fmtBoxes(totalBoxes)}</td>
                     </tr>
                 </tfoot>
@@ -155,6 +205,52 @@ const DispatchLog = (() => {
                 });
             });
         }
+
+        // Delegated handler for "Assign to Payslip" buttons (admin only).
+        // Clicking the button assigns the prompted label to that order AND
+        // every older un-assigned order up to (but not past) the next
+        // already-assigned dispatch — i.e. the row marks the end of a run.
+        body.addEventListener('click', async (e) => {
+            const btn = e.target.closest('.dl-assign-btn');
+            if (!btn) return;
+            const orderId = btn.dataset.orderId;
+            const current = btn.dataset.currentLabel;
+            const promptDefault = current || defaultPayslipLabel();
+            const label = window.prompt(
+                'Payslip label for this run\n(applies to this dispatch and all unassigned dispatches older than it)',
+                promptDefault);
+            if (label === null) return;            // cancelled
+            const trimmed = label.trim();
+
+            // Find the active person's rows in chronological order so we
+            // can scan from the picked row backwards through unassigned ones.
+            const person = body.querySelector('.dl-pane.active')?.dataset.personPane
+                || tabs[0];
+            const personRows = byPerson[person].slice().sort((a, b) => a.ts.localeCompare(b.ts));
+            const idx = personRows.findIndex(r => r.id === orderId);
+            if (idx < 0) return;
+
+            // The end-of-run anchor is the clicked row itself. Walk backward
+            // through older rows, collecting any that are unassigned. Stop
+            // at the first already-assigned row (that's the previous run's
+            // boundary). The picked row also gets the new label.
+            const toAssign = [personRows[idx].id];
+            for (let i = idx - 1; i >= 0; i--) {
+                if (personRows[i].payslipLabel) break;
+                toAssign.push(personRows[i].id);
+            }
+
+            btn.disabled = true; btn.textContent = 'Saving…';
+            try {
+                await Promise.all(toAssign.map(id =>
+                    patch(id, { payslipLabel: trimmed || null })));
+                // Re-render the whole view so the groups/subtotals refresh.
+                await render(container);
+            } catch (err) {
+                alert('Assign failed: ' + err.message);
+                btn.disabled = false; btn.textContent = current ? 'Re-assign' : 'Assign to Payslip';
+            }
+        });
     }
 
     return { render };

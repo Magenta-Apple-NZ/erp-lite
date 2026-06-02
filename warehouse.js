@@ -2734,13 +2734,13 @@ const Warehouse = (() => {
                         <table class="imp-table">
                             <thead>
                                 <tr>
-                                    <th class="imp-th-month">Month</th>
-                                    <th class="imp-th-num">Actual</th>
-                                    <th class="imp-th-num">Est. Sales</th>
-                                    <th class="imp-th-num">Opening</th>
-                                    <th class="imp-th-num imp-th-incoming">Incoming</th>
-                                    <th class="imp-th-num">Closing</th>
-                                    <th style="width:32px"></th>
+                                    <th class="imp-th-month" title="Forecast month. The first row is the stocktake month and is pro-rated for the days remaining after the stocktake date.">Month</th>
+                                    <th class="imp-th-num" title="Actual kg sold this month, derived from dispatched orders in /api/orders (only counts months on or after the Hub-live cutoff).">Actual</th>
+                                    <th class="imp-th-num" title="Est. Sales = max(Actual, monthly forecast). Conservative: an in-progress month with only a few hundred kg sold still uses the full forecast for the closing-stock projection, so the rest of the month's expected sales aren't lost.">Est. Sales</th>
+                                    <th class="imp-th-num" title="Opening stock = previous month's Closing. The first row's Opening is the stocktake kg.">Opening</th>
+                                    <th class="imp-th-num imp-th-incoming" title="Sum of shipments arriving in this month (using each shipment's final-milestone date). Shipments dated before the stocktake are assumed already on the shelf and excluded from the stocktake month.">Incoming</th>
+                                    <th class="imp-th-num" title="Closing = Opening − Est. Sales + Incoming.&#10;&#10;Status dot:&#10;● green = healthy (more than 2 months of supply at the current Est. Sales rate)&#10;● orange = low (less than 2 months of supply)&#10;● red = critical (stock goes negative)">Closing</th>
+                                    <th style="width:32px" title="Health indicator — see the Closing column tooltip for the colour rules."></th>
                                 </tr>
                             </thead>
                             <tbody>${tableRows}</tbody>
