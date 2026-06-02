@@ -121,7 +121,7 @@ async function loadXeroAlerts() {
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></svg>
             <span class="db-xero-alerts-main">
                 <strong>${data.unpaidCount} unpaid invoice${data.unpaidCount === 1 ? '' : 's'}</strong>
-                · ${fmt(data.unpaidTotal)} owed
+                · ${fmt(data.unpaidTotal)} owed <span class="db-xero-alerts-gst">incl. GST</span>
             </span>
             ${overdueBit}
             <span class="db-xero-alerts-link">Open Xero AR ↗</span>
