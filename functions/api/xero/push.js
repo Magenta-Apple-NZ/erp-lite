@@ -1,5 +1,9 @@
 // POST /api/xero/push  { orderId }
-// Creates a DRAFT invoice in Xero from the order, stores the invoice ID back.
+// Creates an AUTHORISED invoice in Xero from the order, stores the invoice
+// ID back. "Authorised" is Xero's approved-and-ready-for-payment state — it
+// shows in AR, counts toward the unpaid-invoices dashboard banner, and lines
+// up with the Hub's operational flow (Entered → Sent to Xero → Printed →
+// Complete). Use the Xero UI to void if a push happened in error.
 
 import { getValidToken, xeroHeaders, jsonResponse, errResponse, XeroAuthError } from '../_xero.js';
 import { syncSalesHistory } from '../sales-history/_writer.js';
@@ -62,7 +66,7 @@ export async function onRequestPost({ env, request }) {
         // payment terms (e.g. 20th-of-following-month) to each invoice.
         const invoice = {
             Type: 'ACCREC',
-            Status: 'DRAFT',
+            Status: 'AUTHORISED',
             Date: today,
             InvoiceNumber: invoiceNumber,
             Reference: order.poNumber || '',

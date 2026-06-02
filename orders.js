@@ -155,7 +155,7 @@ const Orders = (() => {
         <div class="xero-banner">
             <div class="xero-banner-text">
                 <strong>Xero not connected.</strong>
-                Connect Xero to pull customer names, push draft invoices, and close the loop on dispatch.
+                Connect Xero to pull customer names, push approved invoices, and close the loop on dispatch.
             </div>
             <a href="/api/xero/auth" class="btn-primary xero-connect-btn">Connect Xero</a>
         </div>`;
