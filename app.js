@@ -74,6 +74,7 @@ function renderDashboardWidgets(config) {
         </div>`;
 
     el.innerHTML = `
+        <div id="db-xero-alerts" class="db-xero-alerts" style="display:none"></div>
         ${topRow}
         <div class="db-charts-row">
             <section class="db-mod db-mod--chart" id="db-stock-trajectory">
@@ -96,6 +97,36 @@ function renderDashboardWidgets(config) {
     Warehouse.renderDashboardForecast(document.querySelector('#db-stock-trajectory .db-mod-body'));
     SalesView.renderDashboardCumulative(document.querySelector('#db-cumulative-sales .db-mod-body'));
     loadDashboardCalendar(config);
+    loadXeroAlerts();
+}
+
+// ── Xero alerts banner ──────────────────────────────────────────────────
+// Hits /api/xero/alerts (cached 5 min server-side) on dashboard load.
+// Renders a slim banner above the top buttons when there's anything to
+// flag — otherwise stays hidden. Click-through opens Xero AR in a new tab.
+async function loadXeroAlerts() {
+    const el = document.getElementById('db-xero-alerts');
+    if (!el) return;
+    let data;
+    try { data = await fetch('/api/xero/alerts').then(r => r.ok ? r.json() : null); }
+    catch { data = null; }
+    if (!data || !data.unpaidCount) { el.style.display = 'none'; return; }
+
+    const fmt = n => '$' + Number(n).toLocaleString('en-NZ', { maximumFractionDigits: 0 });
+    const overdueBit = data.overdueCount > 0
+        ? `<span class="db-xero-alerts-overdue">${data.overdueCount} overdue · ${fmt(data.overdueTotal)}</span>`
+        : '';
+    el.innerHTML = `
+        <a class="db-xero-alerts-inner" href="https://go.xero.com/AccountsReceivable/Search.aspx" target="_blank" rel="noopener">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></svg>
+            <span class="db-xero-alerts-main">
+                <strong>${data.unpaidCount} unpaid invoice${data.unpaidCount === 1 ? '' : 's'}</strong>
+                · ${fmt(data.unpaidTotal)} owed
+            </span>
+            ${overdueBit}
+            <span class="db-xero-alerts-link">Open Xero AR ↗</span>
+        </a>`;
+    el.style.display = '';
 }
 
 // ── Calendar module ──────────────────────────────────────────────────────
