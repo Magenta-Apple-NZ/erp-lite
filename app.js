@@ -96,7 +96,7 @@ function renderDashboardWidgets(config) {
     // forecast; Cal/FY for cumulative sales).
     Warehouse.renderDashboardForecast(document.querySelector('#db-stock-trajectory .db-mod-body'));
     SalesView.renderDashboardCumulative(document.querySelector('#db-cumulative-sales .db-mod-body'));
-    loadDashboardCalendar(config);
+    loadDashboardCalendar();
     loadXeroAlerts();
 }
 
@@ -136,75 +136,24 @@ async function loadXeroAlerts() {
 // from config.json. Replaces the old "Next 14 days" list + "Next 28 days"
 // strip with a single, more useful widget.
 
-const _cal = { selectedDate: null, eventsByDate: {} };
+// Dashboard calendar state. Events are loaded by CalendarView.loadEvents
+// so the dedicated /calendar tab and this widget show identical data.
+const _cal = {
+    selectedDate: null,
+    eventsByDate: {},
+    availableTypes: ['holiday', 'tax', 'shipment'],
+    toggles: null,  // initialised on first load to all availableTypes
+};
 
-function _calAddEvent(date, ev) {
-    if (!_cal.eventsByDate[date]) _cal.eventsByDate[date] = [];
-    _cal.eventsByDate[date].push(ev);
-}
-
-async function loadDashboardCalendar(config) {
+async function loadDashboardCalendar() {
     const body = document.querySelector('#db-calendar-module .db-mod-body');
     if (!body) return;
-    _cal.eventsByDate = {};
+    if (typeof CalendarView === 'undefined' || !CalendarView.loadEvents) return;
 
-    // Pull events covering the 30-day strip with a small buffer at each end.
-    const today = new Date();
-    const tMin = new Date(today.getFullYear(), today.getMonth(), today.getDate() - 2).toISOString();
-    const tMax = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 32).toISOString();
-
-    const [forecast, gcalRes] = await Promise.all([
-        fetch('/api/import/forecast').then(r => r.ok ? r.json() : null).catch(() => null),
-        fetch(`/api/calendar/events?timeMin=${encodeURIComponent(tMin)}&timeMax=${encodeURIComponent(tMax)}`)
-            .then(r => r.ok ? r.json() : { items: [] })
-            .catch(() => ({ items: [] })),
-    ]);
-
-    // Statutory holidays / tax dates from config.json.
-    (config?.calendar?.holidays || []).forEach(([date, label]) =>
-        _calAddEvent(date, { type: 'holiday', label }));
-    (config?.calendar?.taxDates || []).forEach(([date, labels]) => {
-        for (const label of labels) _calAddEvent(date, { type: 'tax', label });
-    });
-
-    // Shipments from forecast + their milestones. Build a friendly label
-    // (#seq · note/campaign) instead of the raw id, and attach the shipId
-    // so the event row can deep-link to the shipment card in the Imports view.
-    (forecast?.shipments || []).forEach((s, i) => {
-        const seq    = s.seq || (i + 1);
-        const tag    = `#${seq}`;
-        const sub    = s.note || s.campaign || '';
-        const prefix = sub ? `${tag} ${sub}` : tag;
-        for (const m of (s.milestones || [])) {
-            if (m.date) _calAddEvent(m.date.slice(0, 10), {
-                type: 'shipment',
-                label: `${prefix} — ${m.label}`,
-                shipId: s.id,
-            });
-        }
-        const ym = s.ym;
-        if (ym && /^\d{4}-\d{2}$/.test(ym)) {
-            // No specific date → put on the 1st of that month as "ETA".
-            const kg = Number(s.kg) || 0;
-            _calAddEvent(ym + '-01', {
-                type: 'shipment',
-                label: `${prefix} ETA${kg ? ' (' + kg.toLocaleString('en-NZ') + ' kg)' : ''}`,
-                shipId: s.id,
-            });
-        }
-    });
-
-    // Google Calendar events. Preserve htmlLink so the row can open the
-    // event directly in Google Calendar.
-    for (const ev of (gcalRes?.items || [])) {
-        const dt = ev.start?.date || ev.start?.dateTime;
-        if (!dt) continue;
-        _calAddEvent(dt.slice(0, 10), {
-            type: 'gcal',
-            label: ev.summary || 'Event',
-            url: ev.htmlLink || null,
-        });
-    }
+    const { eventsByDate, availableTypes } = await CalendarView.loadEvents({ rangeDays: 60 });
+    _cal.eventsByDate   = eventsByDate;
+    _cal.availableTypes = availableTypes;
+    if (!_cal.toggles) _cal.toggles = new Set(availableTypes);
 
     _renderCalendarModule();
 }
@@ -216,6 +165,21 @@ function _renderCalendarModule() {
     const today = new Date();
     const todayStr = today.toISOString().slice(0, 10);
     const selDate = _cal.selectedDate || todayStr;
+    const visible = ev => _cal.toggles.has(ev.type);
+
+    // Category-toggle bar — matches the dedicated /calendar view so a user
+    // can hide e.g. shipments and just see holidays + GCal here too.
+    const TYPE_LABELS = {
+        holiday:  'Holidays',
+        tax:      'Tax',
+        shipment: 'Shipments',
+        gcal:     'Google Cal',
+    };
+    const togglesHtml = _cal.availableTypes.map(t =>
+        `<button type="button" class="db-cal-toggle${_cal.toggles.has(t) ? ' db-cal-toggle--on' : ''}" data-toggle="${t}">
+            <span class="db-cal-toggle-dot db-cal-toggle-dot--${t}"></span>${TYPE_LABELS[t] || t}
+        </button>`
+    ).join('');
 
     // Primary: 30-day horizontal strip starting today. Each cell shows the
     // weekday + date and stacks event dots.
@@ -223,7 +187,7 @@ function _renderCalendarModule() {
     for (let i = 0; i < 30; i++) {
         const d = new Date(today.getFullYear(), today.getMonth(), today.getDate() + i);
         const date = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-        const events = _cal.eventsByDate[date] || [];
+        const events = (_cal.eventsByDate[date] || []).filter(visible);
         const dow = d.getDay();
         const isWeekend = dow === 0 || dow === 6;
         const isToday = date === todayStr;
@@ -260,18 +224,18 @@ function _renderCalendarModule() {
         return `<li class="${cls}">${inner}</li>`;
     }
 
-    // Events list for the selected day.
-    const selEvents = _cal.eventsByDate[selDate] || [];
+    // Events list for the selected day (filtered by active toggles).
+    const selEvents = (_cal.eventsByDate[selDate] || []).filter(visible);
     const selLabel = new Date(selDate + 'T00:00').toLocaleDateString('en-NZ', { weekday: 'long', day: 'numeric', month: 'long' });
     const eventsHtml = selEvents.length
         ? selEvents.map(e => evRow(e, null)).join('')
         : '<li class="db-cal-ev db-cal-ev--empty">Nothing scheduled.</li>';
 
-    // Next 10 events from today onwards, ordered chronologically.
+    // Next 10 events from today onwards (filtered), ordered chronologically.
     const upcoming = Object.keys(_cal.eventsByDate)
         .filter(d => d >= todayStr)
         .sort()
-        .flatMap(d => _cal.eventsByDate[d].map(ev => ({ date: d, ...ev })))
+        .flatMap(d => _cal.eventsByDate[d].filter(visible).map(ev => ({ date: d, ...ev })))
         .slice(0, 10);
     const upcomingHtml = upcoming.length
         ? upcoming.map(e => {
@@ -284,6 +248,7 @@ function _renderCalendarModule() {
         : '<li class="db-cal-ev db-cal-ev--empty">No events in range.</li>';
 
     body.innerHTML = `
+        <div class="db-cal-toggles">${togglesHtml}</div>
         <div class="db-strip-scroller">${stripCells.join('')}</div>
         <div class="db-cal-panels">
             <div class="db-cal-events">
@@ -299,6 +264,14 @@ function _renderCalendarModule() {
     body.querySelectorAll('.db-strip-cell[data-date]').forEach(c => {
         c.addEventListener('click', () => {
             _cal.selectedDate = c.dataset.date;
+            _renderCalendarModule();
+        });
+    });
+    body.querySelectorAll('.db-cal-toggle').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const t = btn.dataset.toggle;
+            if (_cal.toggles.has(t)) _cal.toggles.delete(t);
+            else _cal.toggles.add(t);
             _renderCalendarModule();
         });
     });

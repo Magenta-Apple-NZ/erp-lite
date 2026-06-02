@@ -65,6 +65,92 @@ const CalendarView = (() => {
         map[date].push(ev);
     }
 
+    // Friendly shipment label: "#43 — LC ready" or "#43 ETA (18,888 kg)".
+    // Falls back to the shipment id when there's no seq.
+    function shipPrefix(s) {
+        const seq = s.seq;
+        const tag = seq ? `#${seq}` : (s.id ? s.id.slice(0, 6) : 'Ship');
+        const sub = s.note || s.campaign || '';
+        return sub ? `${tag} ${sub}` : tag;
+    }
+
+    // Load everything the calendar shows into a single events-by-date map.
+    // Exposed so the dashboard widget renders the same dataset as the
+    // dedicated /calendar view — no second copy of shipment / holiday /
+    // tax / Google Calendar fetching.
+    //
+    // Returns { eventsByDate, gcalConnected, availableTypes }.
+    async function loadEvents({ rangeDays = 365 } = {}) {
+        const now = new Date();
+        const eventsByDate = {};
+
+        // Holidays + tax dates from the constants above.
+        for (const [date, label] of Object.entries(NZ_HOLIDAYS))
+            addEvent(eventsByDate, date, { type: 'holiday', label });
+        for (const [date, labels] of Object.entries(NZ_TAX))
+            for (const label of labels) addEvent(eventsByDate, date, { type: 'tax', label });
+
+        // Shipments (from /api/import/forecast) and Google Calendar
+        // (when connected). Fetched in parallel — both are optional.
+        let config = {}, gcalConnected = false, gcalEvents = [];
+        try {
+            const [configData, statusData] = await Promise.all([
+                fetch('/api/import/forecast').then(r => r.ok ? r.json() : {}).catch(() => ({})),
+                fetch('/api/calendar/status').then(r => r.ok ? r.json() : {}).catch(() => ({})),
+            ]);
+            config = configData || {};
+            gcalConnected = !!(statusData?.connected);
+
+            if (gcalConnected) {
+                const tMin = encodeURIComponent(new Date(now.getFullYear(), now.getMonth(), now.getDate() - 30).toISOString());
+                const tMax = encodeURIComponent(new Date(now.getFullYear(), now.getMonth(), now.getDate() + rangeDays).toISOString());
+                const resp = await fetch(`/api/calendar/events?timeMin=${tMin}&timeMax=${tMax}`).then(r => r.ok ? r.json() : null).catch(() => null);
+                gcalEvents = Array.isArray(resp?.items) ? resp.items : Array.isArray(resp) ? resp : [];
+            }
+        } catch (e) { /* render with what we have */ }
+
+        // V3 shipments carry milestones[] — each becomes its own event,
+        // tagged with shipId so the row can deep-link to the Imports view.
+        // Legacy shipments fall back to a single ETA event.
+        for (const s of (config.shipments || [])) {
+            const prefix = shipPrefix(s);
+            const milestones = (s.milestones || []).filter(m => m && m.date);
+            if (milestones.length) {
+                for (const m of milestones) {
+                    const stageLabel = m.label === 'Order placed' ? 'Start LC' : m.label;
+                    addEvent(eventsByDate, m.date.slice(0, 10), {
+                        type: 'shipment',
+                        label: `${prefix} — ${stageLabel}${m.done ? ' ✓' : ''}`,
+                        shipId: s.id,
+                    });
+                }
+                continue;
+            }
+            const date = (s.arrivalDate || (s.ym ? s.ym + '-01' : '')).slice(0, 10);
+            if (!date) continue;
+            const kg = Number(s.kg) || 0;
+            const tail = s.campaign || (kg ? fmtKg(kg) + ' kg' : 'ETA');
+            addEvent(eventsByDate, date, {
+                type: 'shipment',
+                label: `${prefix} — ${tail}`,
+                shipId: s.id,
+            });
+        }
+
+        for (const ev of gcalEvents) {
+            const date = (ev.start?.date || ev.start?.dateTime || '').slice(0, 10);
+            if (!date) continue;
+            addEvent(eventsByDate, date, {
+                type: 'gcal',
+                label: ev.summary || 'Event',
+                url: ev.htmlLink || null,
+            });
+        }
+
+        const availableTypes = ['holiday', 'tax', 'shipment', ...(gcalConnected ? ['gcal'] : [])];
+        return { eventsByDate, gcalConnected, availableTypes };
+    }
+
     async function render(container) {
         container.innerHTML = `
         <div class="view-header">
@@ -81,66 +167,14 @@ const CalendarView = (() => {
         const body = document.getElementById('cal-body');
         const now  = new Date();
 
-        let config = {}, gcalConnected = false, gcalEvents = [];
-        try {
-            const [configData, statusData] = await Promise.all([
-                fetch('/api/import/forecast').then(r => r.ok ? r.json() : {}).catch(() => ({})),
-                fetch('/api/calendar/status').then(r => r.ok ? r.json() : {}).catch(() => ({})),
-            ]);
-            config = configData || {};
-            gcalConnected = !!(statusData?.connected);
-
-            if (gcalConnected) {
-                const yr = now.getFullYear();
-                const tMin = encodeURIComponent(new Date(yr, 0, 1).toISOString());
-                const tMax = encodeURIComponent(new Date(yr, 11, 31, 23, 59, 59).toISOString());
-                gcalEvents = await fetch(`/api/calendar/events?timeMin=${tMin}&timeMax=${tMax}`)
-                    .then(r => r.ok ? r.json() : []).catch(() => []);
-            }
-        } catch (e) { /* render with what we have */ }
-
-        // Build full event map across all dates
-        const eventsByDate = {};
-
-        for (const [date, label] of Object.entries(NZ_HOLIDAYS))
-            addEvent(eventsByDate, date, { type: 'holiday', label });
-
-        for (const [date, labels] of Object.entries(NZ_TAX))
-            for (const label of labels) addEvent(eventsByDate, date, { type: 'tax', label });
-
-        // V3 shipments carry a milestones[] array with a date per stage —
-        // surface each one as a calendar event so the cascade is visible
-        // alongside holidays / tax dates / Google Calendar. Legacy
-        // shipments (no milestones) fall back to a single arrival event.
-        for (const s of (config.shipments || [])) {
-            const tag = s.seq ? `#${s.seq}` : '';
-            const milestones = (s.milestones || []).filter(m => m && m.date);
-            if (milestones.length) {
-                for (const m of milestones) {
-                    const stageLabel = m.label === 'Order placed' ? 'Start LC' : m.label;
-                    const label = `${tag ? tag + ' · ' : ''}${stageLabel}${m.done ? ' ✓' : ''}`;
-                    addEvent(eventsByDate, m.date.slice(0, 10), { type: 'shipment', label });
-                }
-                continue;
-            }
-            const date = (s.arrivalDate || (s.ym + '-01')).slice(0, 10);
-            const label = s.campaign || (s.kg ? fmtKg(s.kg) + ' kg' : 'Shipment');
-            addEvent(eventsByDate, date, { type: 'shipment', label: tag ? `${tag} · ${label}` : label });
-        }
-
-        for (const ev of gcalEvents) {
-            const date = (ev.start?.date || ev.start?.dateTime || '').slice(0, 10);
-            if (date) addEvent(eventsByDate, date, { type: 'gcal', label: ev.summary || 'Event' });
-        }
+        const { eventsByDate, gcalConnected, availableTypes } = await loadEvents({ rangeDays: 365 });
 
         // Session state — persists while the view is open
         const state = {
             focusMo: now.getMonth(),
             focusYr: now.getFullYear(),
-            toggles: new Set(['holiday', 'tax', 'shipment', ...(gcalConnected ? ['gcal'] : [])]),
+            toggles: new Set(availableTypes),
         };
-
-        const availableTypes = ['holiday', 'tax', 'shipment', ...(gcalConnected ? ['gcal'] : [])];
 
         function visibleEvents(date) {
             return (eventsByDate[date] || []).filter(ev => state.toggles.has(ev.type));
@@ -211,13 +245,18 @@ const CalendarView = (() => {
                 const date = `${focusYr}-${String(focusMo + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
                 for (const ev of visibleEvents(date)) monthEvs.push({ d, ...ev });
             }
+            const evRow = ev => {
+                const inner = `<span class="cal-ev-day">${ev.d}</span><span class="cal-ev-label">${escHtml(ev.label)}</span>`;
+                if (ev.shipId) {
+                    return `<a class="cal-ev cal-ev--${ev.type} cal-ev--link" href="#imports/ship/${encodeURIComponent(ev.shipId)}">${inner}</a>`;
+                }
+                if (ev.url) {
+                    return `<a class="cal-ev cal-ev--${ev.type} cal-ev--link" href="${escHtml(ev.url)}" target="_blank" rel="noopener">${inner}<span class="cal-ev-ext">↗</span></a>`;
+                }
+                return `<div class="cal-ev cal-ev--${ev.type}">${inner}</div>`;
+            };
             const evListHtml = monthEvs.length
-                ? monthEvs.map(ev =>
-                    `<div class="cal-ev cal-ev--${ev.type}">
-                        <span class="cal-ev-day">${ev.d}</span>
-                        <span class="cal-ev-label">${escHtml(ev.label)}</span>
-                    </div>`
-                ).join('')
+                ? monthEvs.map(evRow).join('')
                 : '<span class="cal-no-events">No events this month</span>';
 
             pane.innerHTML = `
@@ -316,5 +355,5 @@ const CalendarView = (() => {
         rebuild();
     }
 
-    return { render };
+    return { render, loadEvents };
 })();

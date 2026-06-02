@@ -3231,6 +3231,18 @@ a.xero-inv-linked:hover { background: #d1fae5; border-color: #6ee7b7; }
 .cal-ev--tax      { background: #fff7ed; color: #c2410c; }
 .cal-ev--shipment { background: #f0fdf4; color: #15803d; }
 .cal-ev--gcal     { background: #f5f3ff; color: #6d28d9; }
+.cal-ev--link {
+    text-decoration: none;
+    cursor: pointer;
+    transition: filter 0.12s, transform 0.08s;
+}
+.cal-ev--link:hover { filter: brightness(0.95); }
+.cal-ev--link:active { transform: translateY(1px); }
+.cal-ev-ext {
+    margin-left: auto;
+    font-size: 0.75rem;
+    opacity: 0.7;
+}
 .cal-no-events    { font-size: 0.72rem; color: #cbd5e1; font-style: italic; padding: 0.5rem 0; }
 
 /* Sidebar month list */
@@ -4881,6 +4893,37 @@ a.db-row:hover { background: #f8fafc; border-color: #e2e8f0; }
     flex-direction: column;
     gap: 0.85rem;
 }
+/* Category-toggle row above the 30-day strip (matches /calendar). */
+.db-cal-toggles {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+}
+.db-cal-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.3rem 0.6rem;
+    border: 1px solid #e2e8f0;
+    background: white;
+    color: #94a3b8;
+    border-radius: 999px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: color 0.12s, border-color 0.12s, background 0.12s;
+}
+.db-cal-toggle--on { color: #1e293b; border-color: #cbd5e1; background: #f8fafc; }
+.db-cal-toggle:hover { border-color: #94a3b8; }
+.db-cal-toggle-dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: #cbd5e1;
+}
+.db-cal-toggle--on .db-cal-toggle-dot--holiday  { background: #ef4444; }
+.db-cal-toggle--on .db-cal-toggle-dot--tax      { background: #f59e0b; }
+.db-cal-toggle--on .db-cal-toggle-dot--shipment { background: #10b981; }
+.db-cal-toggle--on .db-cal-toggle-dot--gcal     { background: #3b82f6; }
 .db-strip-scroller {
     display: grid;
     grid-template-columns: repeat(30, minmax(38px, 1fr));
