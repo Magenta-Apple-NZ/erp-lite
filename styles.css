@@ -4921,6 +4921,19 @@ a.db-row:hover { background: #f8fafc; border-color: #e2e8f0; }
     margin-bottom: 0.2rem;
     width: fit-content;
 }
+/* Linked event rows: subtle affordance so the user knows it'll click
+   through to the shipment detail (or the GCal event). */
+.db-cal-ev--link { padding: 0; }
+.db-cal-ev--link > a {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+    padding: 0.5rem 0.6rem;
+    color: inherit;
+    text-decoration: none;
+    border-radius: 0 5px 5px 0;
+}
+.db-cal-ev--link > a:hover { background: rgba(15, 23, 42, 0.04); }
 .db-cal-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 0.4rem; }
 .db-cal-ev {
     display: flex;

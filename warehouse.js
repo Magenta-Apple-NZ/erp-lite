@@ -3045,6 +3045,15 @@ const Warehouse = (() => {
 
         rebuild();
 
+        // Deep-link: another view (e.g. the dashboard calendar) stashed a
+        // shipment id on the module before navigating. Open that shipment's
+        // detail card now that the list has rendered. Consume once.
+        if (Warehouse._pendingShipId) {
+            const target = (config.shipments || []).find(s => s.id === Warehouse._pendingShipId);
+            Warehouse._pendingShipId = null;
+            if (target) renderShipDetail(target);
+        }
+
         // ── Cost-line event delegation (delegated to avoid re-wiring on each rebuild) ──
 
         async function costSave() {

@@ -136,26 +136,43 @@ async function loadDashboardCalendar(config) {
         for (const label of labels) _calAddEvent(date, { type: 'tax', label });
     });
 
-    // Shipments from forecast + their milestones.
-    (forecast?.shipments || []).forEach(s => {
+    // Shipments from forecast + their milestones. Build a friendly label
+    // (#seq · note/campaign) instead of the raw id, and attach the shipId
+    // so the event row can deep-link to the shipment card in the Imports view.
+    (forecast?.shipments || []).forEach((s, i) => {
+        const seq    = s.seq || (i + 1);
+        const tag    = `#${seq}`;
+        const sub    = s.note || s.campaign || '';
+        const prefix = sub ? `${tag} ${sub}` : tag;
         for (const m of (s.milestones || [])) {
             if (m.date) _calAddEvent(m.date.slice(0, 10), {
                 type: 'shipment',
-                label: `${s.note || s.id}: ${m.label}`,
+                label: `${prefix} — ${m.label}`,
+                shipId: s.id,
             });
         }
         const ym = s.ym;
         if (ym && /^\d{4}-\d{2}$/.test(ym)) {
             // No specific date → put on the 1st of that month as "ETA".
-            _calAddEvent(ym + '-01', { type: 'shipment', label: `${s.note || s.id} ETA (${(s.kg || 0).toLocaleString('en-NZ')} kg)` });
+            const kg = Number(s.kg) || 0;
+            _calAddEvent(ym + '-01', {
+                type: 'shipment',
+                label: `${prefix} ETA${kg ? ' (' + kg.toLocaleString('en-NZ') + ' kg)' : ''}`,
+                shipId: s.id,
+            });
         }
     });
 
-    // Google Calendar events.
+    // Google Calendar events. Preserve htmlLink so the row can open the
+    // event directly in Google Calendar.
     for (const ev of (gcalRes?.items || [])) {
         const dt = ev.start?.date || ev.start?.dateTime;
         if (!dt) continue;
-        _calAddEvent(dt.slice(0, 10), { type: 'gcal', label: ev.summary || 'Event' });
+        _calAddEvent(dt.slice(0, 10), {
+            type: 'gcal',
+            label: ev.summary || 'Event',
+            url: ev.htmlLink || null,
+        });
     }
 
     _renderCalendarModule();
@@ -196,11 +213,27 @@ function _renderCalendarModule() {
         </button>`);
     }
 
+    // Render one event as a clickable row when there's somewhere to go
+    // (a shipment id → Imports detail, or a Google Calendar htmlLink).
+    function evRow(e, dateLbl) {
+        const inner = (dateLbl ? `<span class="db-cal-ev-date">${dateLbl}</span>` : '') +
+            `<span class="db-cal-ev-label">${_ehDb(e.label)}</span>` +
+            (!dateLbl ? `<span class="db-cal-ev-type">${e.type}</span>` : '');
+        const cls = `db-cal-ev db-cal-ev--${e.type}`;
+        if (e.shipId) {
+            return `<li class="${cls} db-cal-ev--link"><a href="#imports/ship/${encodeURIComponent(e.shipId)}">${inner}</a></li>`;
+        }
+        if (e.url) {
+            return `<li class="${cls} db-cal-ev--link"><a href="${_ehDb(e.url)}" target="_blank" rel="noopener">${inner} ↗</a></li>`;
+        }
+        return `<li class="${cls}">${inner}</li>`;
+    }
+
     // Events list for the selected day.
     const selEvents = _cal.eventsByDate[selDate] || [];
     const selLabel = new Date(selDate + 'T00:00').toLocaleDateString('en-NZ', { weekday: 'long', day: 'numeric', month: 'long' });
     const eventsHtml = selEvents.length
-        ? selEvents.map(e => `<li class="db-cal-ev db-cal-ev--${e.type}"><span class="db-cal-ev-type">${e.type}</span><span class="db-cal-ev-label">${_ehDb(e.label)}</span></li>`).join('')
+        ? selEvents.map(e => evRow(e, null)).join('')
         : '<li class="db-cal-ev db-cal-ev--empty">Nothing scheduled.</li>';
 
     // Next 10 events from today onwards, ordered chronologically.
@@ -215,10 +248,7 @@ function _renderCalendarModule() {
             const dayLbl = e.date === todayStr
                 ? 'Today'
                 : d.toLocaleDateString('en-NZ', { day: 'numeric', month: 'short' });
-            return `<li class="db-cal-ev db-cal-ev--${e.type}">
-                <span class="db-cal-ev-date">${dayLbl}</span>
-                <span class="db-cal-ev-label">${_ehDb(e.label)}</span>
-            </li>`;
+            return evRow(e, dayLbl);
         }).join('')
         : '<li class="db-cal-ev db-cal-ev--empty">No events in range.</li>';
 
@@ -399,9 +429,15 @@ async function handleRoute() {
         return;
     }
 
-    if (hash === 'imports') {
+    const shipMatch = hash.match(/^imports\/ship\/(.+)$/);
+    if (hash === 'imports' || shipMatch) {
         setActiveView('view-imports');
         setActiveNav('nav-imports');
+        // Deep-link target: a calendar event (or any other entry point) can
+        // ask Imports to open straight onto a specific shipment's detail.
+        if (shipMatch && typeof Warehouse !== 'undefined') {
+            Warehouse._pendingShipId = decodeURIComponent(shipMatch[1]);
+        }
         await ImportsView.render(document.getElementById('imports-container'));
         return;
     }
