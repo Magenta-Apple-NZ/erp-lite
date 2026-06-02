@@ -31,19 +31,23 @@ const Orders = (() => {
     }, true);
 
     // ── Status helpers ──
+    // The lifecycle is: new → (reviewed) → sent_to_xero → dispatched → paid.
+    // We expose them with friendlier labels that match the operational flow:
+    //   Entered → Sent to Xero → (auto-print slip at depot) → Complete → Paid.
+    // "reviewed" is a legacy intermediate kept so old orders still display.
     const STATUS_LABELS = {
-        new:          'New',
+        new:          'Entered',
         reviewed:     'Reviewed',
         sent_to_xero: 'Sent to Xero',
-        dispatched:   'Dispatched',
+        dispatched:   'Complete',
         paid:         'Paid',
     };
     const STATUS_COLOURS = {
         new:          '#3b82f6',
         reviewed:     '#f59e0b',
         sent_to_xero: '#8b5cf6',
-        dispatched:   '#64748b',
-        paid:         '#10b981',
+        dispatched:   '#10b981',
+        paid:         '#047857',
     };
 
     // Xero brand mark — a Xero-blue circle with a white "x". Designed to read at
@@ -1156,6 +1160,18 @@ const Orders = (() => {
         return Array.isArray(cfg?.printers) ? cfg.printers : [];
     }
 
+    // Pick the depot printer for auto-printing slips after "Send to Xero".
+    // Prefers an explicit `"depot": true` flag, then a printer whose label
+    // matches /warehouse|depot/i, then the first printer that handles slips.
+    function getDepotPrinter() {
+        const slipPrinters = getPrinters().filter(p =>
+            Array.isArray(p.documents) && p.documents.includes('slip'));
+        return slipPrinters.find(p => p.depot === true)
+            || slipPrinters.find(p => /warehouse|depot/i.test(p.label || ''))
+            || slipPrinters[0]
+            || null;
+    }
+
     // Render one overflow-menu button per printer that supports the given document type.
     // `prefix` is prepended to the label ("Send address to Warehouse" etc.).
     // `indent` adds left padding so items sit visually beneath a section heading.
@@ -1197,13 +1213,16 @@ const Orders = (() => {
                        <option value="Jake" selected>Jake</option>
                        <option value="Andrew">Andrew</option>
                    </select>`;
-            primaryAction = `${picker}<button id="dispatch-btn" class="btn-primary">Mark as Dispatched</button>`;
+            const printedTag = order.printedAt
+                ? `<span class="status-printed-tag" title="Slip auto-printed at ${escHtml(order.printedTo || 'depot')} on ${escHtml(new Date(order.printedAt).toLocaleString('en-NZ'))}">🖨 Printed at ${escHtml(order.printedTo || 'depot')}</span>`
+                : '';
+            primaryAction = `${printedTag}${picker}<button id="dispatch-btn" class="btn-primary">Mark Complete</button>`;
             if (order.xeroInvoiceId) {
                 const url = `https://go.xero.com/AccountsReceivable/Edit.aspx?InvoiceID=${encodeURIComponent(order.xeroInvoiceId)}`;
                 xeroMenuItem = `<a href="${url}" target="_blank" rel="noopener" class="overflow-item xero-only">✓ ${escHtml(order.xeroInvoiceNumber)} — View in Xero ↗</a>`;
             }
         } else {
-            primaryAction = `<span class="status-dispatched-tag">✓ Dispatched</span>`;
+            primaryAction = `<span class="status-dispatched-tag">✓ Complete</span>`;
             if (order.xeroInvoiceId) {
                 const url = `https://go.xero.com/AccountsReceivable/Edit.aspx?InvoiceID=${encodeURIComponent(order.xeroInvoiceId)}`;
                 xeroMenuItem = `<a href="${url}" target="_blank" rel="noopener" class="overflow-item xero-only">✓ ${escHtml(order.xeroInvoiceNumber)} — View in Xero ↗</a>`;
@@ -1604,10 +1623,12 @@ const Orders = (() => {
         host.innerHTML = `<div class="packing-slip">${slipBodyHTML(order)}</div>`;
         document.body.appendChild(host);
 
+        let printResult = null;
         try {
             const slipEl = host.querySelector('.packing-slip');
             const pdfBase64 = await elementToPdfBase64(slipEl, { orientation: 'portrait' });
             const result = await sendToPrintNode({ order, document: 'slip', pdfBase64, printerId });
+            printResult = result;
 
             const jobRef = `PrintNode job #${result.jobId}`;
 
@@ -1643,6 +1664,7 @@ const Orders = (() => {
             host.remove();
             if (btn) { btn.disabled = false; btn.textContent = orig; }
         }
+        return printResult; // caller can check .success to know if it actually printed
     }
 
     // Generate the packing slip as a downloadable PDF — same render path as
@@ -1857,9 +1879,11 @@ const Orders = (() => {
             logEvent(orderId, 'Printed packing slip', order.xeroInvoiceNumber || order.id);
         });
 
-        // Send to Xero — advances reviewed → sent_to_xero. Wired to both the
-        // action-bar button and the prominent banner so the user can push
-        // from either spot.
+        // Send to Xero — advances reviewed → sent_to_xero AND auto-prints the
+        // slip at the depot printer so the warehouse has it by the time
+        // Andrew's finished pushing the invoice. The whole flow is:
+        //   Entered → Sent to Xero → Printed at Depot → Complete.
+        // Wired to both the action-bar button and the prominent banner.
         async function pushToXero(btn) {
             if (btn) { btn.disabled = true; btn.textContent = 'Sending to Xero…'; }
             clearErrorBanner();
@@ -1884,6 +1908,31 @@ const Orders = (() => {
                 refreshActionBar(order);
                 logEvent(orderId, 'Sent to Xero', result.invoiceNumber);
                 showToast('Invoice created in Xero: ' + result.invoiceNumber);
+
+                // Auto-print to the depot. We do this AFTER the user-facing
+                // success toast so the Xero outcome isn't blocked on PrintNode,
+                // and we don't fail the whole push if printing trips up — the
+                // user can always retry from the overflow menu.
+                const depot = getDepotPrinter();
+                if (depot) {
+                    sendSlipToPrinter(order, null, { printerId: depot.id, label: depot.label })
+                        .then(printResult => {
+                            // Only stamp printedAt when PrintNode confirmed the
+                            // job hit the printer. Failed/unconfirmed prints
+                            // get their own error banner from sendSlipToPrinter
+                            // and the user can retry via the overflow menu.
+                            if (!printResult?.success) return;
+                            order.printedAt = new Date().toISOString();
+                            order.printedTo = depot.label;
+                            api('/api/orders/' + orderId, {
+                                method: 'PATCH',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ printedAt: order.printedAt, printedTo: order.printedTo }),
+                            }).catch(() => {});
+                            refreshActionBar(order);
+                        })
+                        .catch(() => { /* sendSlipToPrinter already surfaces its own banner/log */ });
+                }
             } catch (e) {
                 console.error('Xero push failed:', e);
                 const msg = e.message || 'Unknown error — check browser console';
@@ -1911,12 +1960,12 @@ const Orders = (() => {
                 order.status = 'dispatched';
                 order.dispatchedBy = dispatchedBy;
                 refreshActionBar(order);
-                logEvent(orderId, `Marked as dispatched by ${dispatchedBy}`);
-                showToast(`Order marked as dispatched by ${dispatchedBy}`);
+                logEvent(orderId, `Marked complete by ${dispatchedBy}`);
+                showToast(`Order marked complete by ${dispatchedBy}`);
             } catch (e) {
                 showErrorBanner('Error: ' + e.message);
                 btn.disabled = false;
-                btn.textContent = 'Mark as Dispatched';
+                btn.textContent = 'Mark Complete';
             }
         });
     }
