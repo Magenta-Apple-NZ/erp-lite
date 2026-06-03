@@ -57,17 +57,26 @@ export async function onRequestPost({ env, request }) {
 
         const token = await getValidToken(env);
 
-        const today = new Date().toISOString().split('T')[0];
+        const now = new Date();
+        const today = now.toISOString().split('T')[0];
 
         // Derive Xero invoice number: PKS-1021 → INV-1021 (also handles legacy ORD- prefix)
         const invoiceNumber = order.id.replace(/^(?:PKS|ORD)-/, 'INV-');
 
-        // DueDate intentionally omitted — Xero applies the contact's configured
-        // payment terms (e.g. 20th-of-following-month) to each invoice.
+        // AUTHORISED invoices require an explicit DueDate (Xero used to fill
+        // this from the contact's payment terms at authorisation time, but
+        // only when going via DRAFT first). Standard NZ B2B terms here are
+        // "20th of the month following invoice date" — matches Farmlands /
+        // PGGW and the historical default. If we later want per-contact
+        // terms, fetch them once and cache alongside customers_cache.
+        const dueDate = new Date(now.getFullYear(), now.getMonth() + 1, 20)
+            .toISOString().split('T')[0];
+
         const invoice = {
             Type: 'ACCREC',
             Status: 'AUTHORISED',
             Date: today,
+            DueDate: dueDate,
             InvoiceNumber: invoiceNumber,
             Reference: order.poNumber || '',
             Contact: { ContactID: order.customer.xeroContactId },
