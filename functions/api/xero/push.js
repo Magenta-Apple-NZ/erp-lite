@@ -8,6 +8,32 @@
 import { getValidToken, xeroHeaders, jsonResponse, errResponse, XeroAuthError } from '../_xero.js';
 import { syncSalesHistory } from '../sales-history/_writer.js';
 
+// Customer-specific payment-term rules. Each entry is matched against the
+// customer name case-insensitively as a substring. Day of 0 = due on the
+// invoice date itself (cash sale). All other days = that day of the
+// MONTH FOLLOWING the invoice date.
+const PAYMENT_TERMS = [
+    { match: /farmlands/i,      day: 26 },
+    { match: /pgg\s*wrightson/i, day: 28 },
+    { match: /horticentre/i,    day: 20 },
+    { match: /cash/i,           day: 0  },
+];
+const DEFAULT_TERM_DAY = 20; // "Other" customers — 20th of following month
+
+function dueDateFor(customerName, invoiceDateStr) {
+    const name = String(customerName || '');
+    const rule = PAYMENT_TERMS.find(r => r.match.test(name));
+    const day = rule ? rule.day : DEFAULT_TERM_DAY;
+    if (day === 0) return invoiceDateStr;
+    // Pure string math so timezone never shifts the day. Pull year/month
+    // out of YYYY-MM-DD, bump to next month, glue in the fixed day.
+    const [yStr, mStr] = invoiceDateStr.split('-');
+    let y = parseInt(yStr, 10);
+    let m = parseInt(mStr, 10) + 1;
+    if (m > 12) { m = 1; y++; }
+    return `${y}-${String(m).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+}
+
 export async function onRequestPost({ env, request }) {
     try {
         const { orderId } = await request.json();
@@ -63,14 +89,14 @@ export async function onRequestPost({ env, request }) {
         // Derive Xero invoice number: PKS-1021 → INV-1021 (also handles legacy ORD- prefix)
         const invoiceNumber = order.id.replace(/^(?:PKS|ORD)-/, 'INV-');
 
-        // AUTHORISED invoices require an explicit DueDate (Xero used to fill
-        // this from the contact's payment terms at authorisation time, but
-        // only when going via DRAFT first). Standard NZ B2B terms here are
-        // "20th of the month following invoice date" — matches Farmlands /
-        // PGGW and the historical default. If we later want per-contact
-        // terms, fetch them once and cache alongside customers_cache.
-        const dueDate = new Date(now.getFullYear(), now.getMonth() + 1, 20)
-            .toISOString().split('T')[0];
+        // AUTHORISED invoices require an explicit DueDate. Per-customer
+        // terms are picked by name via PAYMENT_TERMS above:
+        //   Farmlands       → 26th of following month
+        //   PGG Wrightson   → 28th of following month
+        //   HortiCentre     → 20th of following month
+        //   Cash (any name containing "Cash") → due on invoice date
+        //   Anything else   → 20th of following month
+        const dueDate = dueDateFor(order.customer?.name, today);
 
         const invoice = {
             Type: 'ACCREC',
