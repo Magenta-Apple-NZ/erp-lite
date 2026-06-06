@@ -3719,6 +3719,38 @@ body.body--worker .orders-view-inner { padding-top: 1rem; }
     font-variant-numeric: tabular-nums;
     color: #475569;
 }
+.ship-add-cost-form {
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 6px;
+    padding: 0.6rem 0.75rem;
+    margin-bottom: 0.75rem;
+}
+.ship-add-cost-fields {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    align-items: center;
+}
+.ship-add-cost-fields select,
+.ship-add-cost-fields input {
+    font-size: 0.82rem;
+    padding: 0.25rem 0.4rem;
+    border: 1px solid #cbd5e1;
+    border-radius: 4px;
+    background: #fff;
+    color: #0f172a;
+}
+.ship-add-cost-label { flex: 1; min-width: 140px; }
+.ship-extra-del {
+    color: #94a3b8;
+    font-size: 1rem;
+    line-height: 1;
+    padding: 0 0.2rem;
+    margin-left: 0.25rem;
+    vertical-align: middle;
+}
+.ship-extra-del:hover { color: #ef4444; }
 
 /* Rigid line table */
 .ship-fix-table {

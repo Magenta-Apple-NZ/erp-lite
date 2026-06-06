@@ -1233,8 +1233,8 @@ const Warehouse = (() => {
             { key: 'inspection',     section: 'raw',        label: 'Preshipment Inspection',   kind: 'flat',  defaultAmount: 0,    defaultCcy: 'EUR' },
             // Bangladesh
             { key: 'handlingA',      section: 'bangladesh', label: 'Handling & Sorting (1)',   kind: 'perKg', kgField: 'netKg',    defaultRate: 1.18,    defaultCcy: 'USD' },
-            { key: 'handlingB',      section: 'bangladesh', label: 'LC Deposit',               kind: 'flat',  defaultAmount: 0,    defaultCcy: 'USD' },
-            { key: 'lcRefund',       section: 'bangladesh', label: 'LC Refund',                kind: 'flat',  defaultAmount: 0,    defaultCcy: 'NZD', allowNegative: true },
+            { key: 'handlingB',      section: 'bangladesh', label: 'LC Deposit',               kind: 'perKg', kgField: 'netKg',    defaultRate: 0,       defaultCcy: 'USD' },
+            { key: 'lcRefund',       section: 'bangladesh', label: 'LC Refund',                kind: 'perKg', kgField: 'netKg',    defaultRate: 0,       defaultCcy: 'NZD', allowNegative: true },
             { key: 'bundling',       section: 'bangladesh', label: 'Bundling',                 kind: 'perKg', kgField: 'yieldKg',  defaultRate: 79,      defaultCcy: 'BDT' },
             { key: 'rent',           section: 'bangladesh', label: 'Rent (Annual)',            kind: 'allocation', defaultAlloc: 0.67, defaultAnnual: 243075,  defaultCcy: 'BDT' },
             { key: 'salaries',       section: 'bangladesh', label: 'Salaries (Annual)',        kind: 'allocation', defaultAlloc: 0.67, defaultAnnual: 1060430, defaultCcy: 'BDT' },
@@ -1361,6 +1361,17 @@ const Warehouse = (() => {
                 const nzd  = fixedLineNzdV3(def, line, derived, forex);
                 sectionTotals[def.section] += nzd;
                 if (line?.paid) sectionPaid[def.section] += nzd;
+            }
+            for (const l of (s.extraLines || [])) {
+                const sec = l.section;
+                if (!(sec in sectionTotals)) continue;
+                const kg  = l.kind === 'perKg' ? (Number(derived[l.kgField || 'netKg']) || 0) : 0;
+                const raw = l.kind === 'flat' ? (Number(l.amount) || 0) : (Number(l.rate) || 0) * kg;
+                if (!raw) continue;
+                const ccy = l.ccy || 'NZD';
+                const nzd = ccy === 'NZD' ? raw : (forex[ccy] ? raw / forex[ccy] : raw);
+                sectionTotals[sec] += nzd;
+                if (l.paid) sectionPaid[sec] += nzd;
             }
             const total = sectionTotals.raw + sectionTotals.bangladesh + sectionTotals.freight + sectionTotals.misc;
             const paid  = sectionPaid.raw  + sectionPaid.bangladesh  + sectionPaid.freight  + sectionPaid.misc;
@@ -1565,10 +1576,53 @@ const Warehouse = (() => {
         function buildFixedSectionHtmlV3(s, sectionKey, totals, forex) {
             const sec      = SHIP_SECTIONS_V3.find(x => x.key === sectionKey);
             const defs     = FIXED_LINE_SCHEMA_V3.filter(d => d.section === sectionKey);
+            const extras   = (s.extraLines || []).filter(l => l.section === sectionKey);
             const subtotal = totals.sectionTotals[sectionKey] || 0;
             const derived  = totals.derived;
             const subDisp  = subtotal === 0 ? '—' :
                 (subtotal < 0 ? '-' : '') + '$' + Math.round(Math.abs(subtotal)).toLocaleString('en-NZ');
+
+            const extraRowsHtml = extras.map(l => {
+                const kg = l.kind === 'perKg' ? (Number(derived[l.kgField || 'netKg']) || 0) : 0;
+                const localTotal = l.kind === 'flat' ? (Number(l.amount) || 0) : (Number(l.rate) || 0) * kg;
+                const ccy = l.ccy || 'NZD';
+                const nzd = (() => {
+                    if (!localTotal) return 0;
+                    if (ccy === 'NZD') return localTotal;
+                    return forex[ccy] ? localTotal / forex[ccy] : localTotal;
+                })();
+
+                let unitsCellInner = '<span class="ship-fix-nil">—</span>';
+                let costCellInner  = '';
+                if (l.kind === 'flat') {
+                    costCellInner = `<input class="ship-fix-num" data-f="amount" type="number" value="${l.amount != null ? l.amount : ''}" placeholder="0" step="0.01" min="0">`;
+                } else {
+                    unitsCellInner = `<span class="ship-fix-units">${kg.toLocaleString('en-NZ', { maximumFractionDigits: 0 })}</span><span class="ship-fix-units-unit">kg</span>`;
+                    costCellInner  = `<input class="ship-fix-num" data-f="rate" type="number" value="${l.rate != null ? l.rate : ''}" placeholder="0" step="0.0001" min="0"><span class="ship-fix-unit">/kg</span>`;
+                }
+
+                const subDisplay = localTotal
+                    ? `<span>${localTotal.toLocaleString('en-NZ', { maximumFractionDigits: 2 })}</span>`
+                    : '<span class="ship-fix-nil">—</span>';
+                const nzdDisplay = nzd === 0 ? '<span class="ship-fix-nil">—</span>'
+                    : `<span>$${Math.round(nzd).toLocaleString('en-NZ')}</span>`;
+                const ccySelect = `<select class="ship-fix-ccy" data-f="ccy">
+                    ${CCYS_FIXED.map(c => `<option${c === ccy ? ' selected' : ''}>${c}</option>`).join('')}
+                </select>`;
+
+                return `<tr class="ship-fix-row ship-extra-row${l.paid ? ' ship-fix-row--paid' : ''}" data-ship-id="${escHtml(s.id)}" data-extra-id="${escHtml(l.id)}">
+                    <td class="ship-fix-td-label">
+                        <input class="ship-fix-label-inp" data-f="label" value="${escHtml(l.label || '')}" placeholder="Description…">
+                        <button class="ship-extra-del btn-link" data-ship-id="${escHtml(s.id)}" data-extra-id="${escHtml(l.id)}" title="Remove">×</button>
+                    </td>
+                    <td class="ship-fix-td-units">${unitsCellInner}</td>
+                    <td class="ship-fix-td-cost">${costCellInner}</td>
+                    <td class="ship-fix-td-ccy">${ccySelect}</td>
+                    <td class="ship-fix-td-sub">${subDisplay}</td>
+                    <td class="ship-fix-td-nzd">${nzdDisplay}</td>
+                    <td class="ship-fix-td-chk"><input type="checkbox" class="ship-fix-paid" ${l.paid ? 'checked' : ''} title="Paid"></td>
+                </tr>`;
+            }).join('');
 
             return `<div class="ship-fix-section" data-section="${escHtml(sectionKey)}">
                 <div class="ship-fix-section-hd">
@@ -1586,7 +1640,10 @@ const Warehouse = (() => {
                         <th class="ship-fix-th-nzd">≈&thinsp;NZD</th>
                         <th class="ship-fix-th-chk" title="Paid">✓</th>
                     </tr></thead>
-                    <tbody>${defs.map(d => buildFixedRowHtmlV3(s, d, derived, forex)).join('')}</tbody>
+                    <tbody>
+                        ${defs.map(d => buildFixedRowHtmlV3(s, d, derived, forex)).join('')}
+                        ${extraRowsHtml}
+                    </tbody>
                 </table>
             </div>`;
         }
@@ -1990,7 +2047,6 @@ const Warehouse = (() => {
                                 <h3 class="ship-det-title">Shipment Stage</h3>
                                 <div class="ship-det-hd-actions">
                                     <button class="btn-link ship-tl-cfg-toggle" type="button" title="Edit default gaps between stages">Defaults</button>
-                                    <button class="btn-link ship-add-milestone" data-ship-id="${escHtml(s.id)}">+ Add</button>
                                 </div>
                             </div>
                             ${buildStageTimelineV3(s, milestones)}
@@ -1998,7 +2054,28 @@ const Warehouse = (() => {
                         </div>
 
                         <div class="ship-det-section">
-                            <div class="ship-det-hd"><h3 class="ship-det-title">Cost Breakdown</h3></div>
+                            <div class="ship-det-hd">
+                                <h3 class="ship-det-title">Cost Breakdown</h3>
+                                <button class="btn-link ship-add-cost-toggle" data-ship-id="${escHtml(s.id)}">+ Add cost</button>
+                            </div>
+                            <div class="ship-add-cost-form" data-ship-id="${escHtml(s.id)}" hidden>
+                                <div class="ship-add-cost-fields">
+                                    <select class="ship-add-cost-section">
+                                        ${SHIP_SECTIONS_V3.map(sec => `<option value="${sec.key}">${sec.label}</option>`).join('')}
+                                    </select>
+                                    <input class="ship-add-cost-label imp-url-input" type="text" placeholder="Label…">
+                                    <select class="ship-add-cost-kind">
+                                        <option value="flat">Flat</option>
+                                        <option value="perKg">Per kg (net)</option>
+                                        <option value="perKgYield">Per kg (yield)</option>
+                                    </select>
+                                    <select class="ship-add-cost-ccy">
+                                        ${CCYS_FIXED.map(c => `<option>${c}</option>`).join('')}
+                                    </select>
+                                    <button class="btn-secondary btn-sm ship-add-cost-confirm" data-ship-id="${escHtml(s.id)}">Add</button>
+                                    <button class="btn-link ship-add-cost-cancel">Cancel</button>
+                                </div>
+                            </div>
                             ${buildFixedSectionHtmlV3(s, 'raw',        totals, forex)}
                             ${buildFixedSectionHtmlV3(s, 'bangladesh', totals, forex)}
                             ${buildFixedSectionHtmlV3(s, 'freight',    totals, forex)}
@@ -3090,15 +3167,25 @@ const Warehouse = (() => {
             if (fixField) {
                 const row = fixField.closest('.ship-fix-row');
                 if (!row) return;
-                const { shipId, lineKey } = row.dataset;
-                const f   = fixField.dataset.f;  // 'amount' | 'rate' | 'ccy' | 'paidVia'
+                const f   = fixField.dataset.f;
                 const val = fixField.type === 'number' ? (parseFloat(fixField.value) || 0) : fixField.value;
-                config.shipments = (config.shipments || []).map(s => {
-                    if (s.id !== shipId) return s;
-                    const fixedLines = { ...(s.fixedLines || {}) };
-                    fixedLines[lineKey] = { ...(fixedLines[lineKey] || {}), [f]: val };
-                    return { ...s, fixedLines };
-                });
+                if (row.dataset.extraId) {
+                    const { shipId, extraId } = row.dataset;
+                    config.shipments = (config.shipments || []).map(s => {
+                        if (s.id !== shipId) return s;
+                        return { ...s, extraLines: (s.extraLines || []).map(l =>
+                            l.id !== extraId ? l : { ...l, [f]: val }
+                        )};
+                    });
+                } else {
+                    const { shipId, lineKey } = row.dataset;
+                    config.shipments = (config.shipments || []).map(s => {
+                        if (s.id !== shipId) return s;
+                        const fixedLines = { ...(s.fixedLines || {}) };
+                        fixedLines[lineKey] = { ...(fixedLines[lineKey] || {}), [f]: val };
+                        return { ...s, fixedLines };
+                    });
+                }
                 await costSave();
                 return;
             }
@@ -3108,13 +3195,23 @@ const Warehouse = (() => {
             if (fixPaid) {
                 const row = fixPaid.closest('.ship-fix-row');
                 if (!row) return;
-                const { shipId, lineKey } = row.dataset;
-                config.shipments = (config.shipments || []).map(s => {
-                    if (s.id !== shipId) return s;
-                    const fixedLines = { ...(s.fixedLines || {}) };
-                    fixedLines[lineKey] = { ...(fixedLines[lineKey] || {}), paid: fixPaid.checked };
-                    return { ...s, fixedLines };
-                });
+                if (row.dataset.extraId) {
+                    const { shipId, extraId } = row.dataset;
+                    config.shipments = (config.shipments || []).map(s => {
+                        if (s.id !== shipId) return s;
+                        return { ...s, extraLines: (s.extraLines || []).map(l =>
+                            l.id !== extraId ? l : { ...l, paid: fixPaid.checked }
+                        )};
+                    });
+                } else {
+                    const { shipId, lineKey } = row.dataset;
+                    config.shipments = (config.shipments || []).map(s => {
+                        if (s.id !== shipId) return s;
+                        const fixedLines = { ...(s.fixedLines || {}) };
+                        fixedLines[lineKey] = { ...(fixedLines[lineKey] || {}), paid: fixPaid.checked };
+                        return { ...s, fixedLines };
+                    });
+                }
                 await costSave();
                 return;
             }
@@ -3379,6 +3476,53 @@ const Warehouse = (() => {
                 delete config.stageDefaults;
                 await quietSave();
                 renderShipDetail(config.shipments.find(sh => sh.id === currentDetailShipId));
+                return;
+            }
+
+            // Add cost — toggle / confirm / cancel
+            if (e.target.closest('.ship-add-cost-toggle')) {
+                const form = body.querySelector('.ship-add-cost-form');
+                if (form) form.hidden = !form.hidden;
+                return;
+            }
+            if (e.target.closest('.ship-add-cost-cancel')) {
+                const form = body.querySelector('.ship-add-cost-form');
+                if (form) form.hidden = true;
+                return;
+            }
+            const confirmCost = e.target.closest('.ship-add-cost-confirm');
+            if (confirmCost) {
+                const form = body.querySelector('.ship-add-cost-form');
+                const label = form.querySelector('.ship-add-cost-label').value.trim();
+                if (!label) { showToast('Please enter a label'); return; }
+                const section = form.querySelector('.ship-add-cost-section').value;
+                const kindRaw = form.querySelector('.ship-add-cost-kind').value;
+                const kind    = kindRaw === 'flat' ? 'flat' : 'perKg';
+                const kgField = kindRaw === 'perKgYield' ? 'yieldKg' : 'netKg';
+                const ccy     = form.querySelector('.ship-add-cost-ccy').value;
+                const { shipId } = confirmCost.dataset;
+                const newLine = {
+                    id: Date.now().toString(36) + Math.random().toString(36).slice(2, 5),
+                    section, label, kind, kgField, ccy, paid: false, paidVia: '',
+                    ...(kind === 'flat' ? { amount: null } : { rate: null }),
+                };
+                config.shipments = (config.shipments || []).map(s =>
+                    s.id !== shipId ? s : { ...s, extraLines: [...(s.extraLines || []), newLine] }
+                );
+                form.querySelector('.ship-add-cost-label').value = '';
+                form.hidden = true;
+                await costSave();
+                return;
+            }
+
+            // Delete extra cost line
+            const extraDel = e.target.closest('.ship-extra-del');
+            if (extraDel) {
+                const { shipId, extraId } = extraDel.dataset;
+                config.shipments = (config.shipments || []).map(s =>
+                    s.id !== shipId ? s : { ...s, extraLines: (s.extraLines || []).filter(l => l.id !== extraId) }
+                );
+                await costSave();
                 return;
             }
 
