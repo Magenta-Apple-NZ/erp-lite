@@ -1930,46 +1930,62 @@ const Warehouse = (() => {
         // a thin grey rule joins them with a slate progress overlay up to
         // the last completed step. The row beneath shows a step number,
         // label, and an editable date input.
+        // Map stage label keywords → emoji icon. Checked in order; first match wins.
+        const MILESTONE_ICON_MAP = [
+            [/italy|left.*bang/i,           '🚢'],
+            [/tauranga|new zealand/i,        '🚛'],
+            [/land.*bang|arriv.*bang/i,      '🇧🇩'],
+            [/lc.*present|presented/i,       '📋'],
+            [/lc.*ready/i,                   '✅'],
+            [/start.*lc|lc.*start/i,         '📄'],
+            [/customs/i,                     '📦'],
+            [/port/i,                        '⚓'],
+        ];
+        function milestoneIcon(label) {
+            for (const [re, icon] of MILESTONE_ICON_MAP) {
+                if (re.test(label)) return icon;
+            }
+            return '📍';
+        }
+
         function buildStageTimelineV3(s, milestones) {
             if (!milestones.length) {
                 return '<p class="wh-empty" style="margin:0">No stages yet — click + Add to create one.</p>';
             }
 
-            const W = 800, H = 44, padX = 24, lineY = 22;
+            const W = 800, padX = 24;
             const tsValues = milestones.map(m => m.date ? new Date(m.date + 'T00:00:00').getTime() : null).filter(t => t != null);
             const useDates = tsValues.length >= 2;
             const minTs = useDates ? Math.min(...tsValues) : 0;
             const maxTs = useDates ? Math.max(...tsValues) : 0;
-            const range = maxTs - minTs || 1;
+            const range  = maxTs - minTs || 1;
             const xFor = (m, i) => useDates && m.date
                 ? padX + ((W - 2*padX) * (new Date(m.date + 'T00:00:00').getTime() - minTs) / range)
                 : padX + ((W - 2*padX) * i / Math.max(1, milestones.length - 1));
+            const pctFor = (m, i) => (xFor(m, i) / W * 100).toFixed(2);
 
             const lastDoneIdx = milestones.reduce((acc, m, i) => m.done ? i : acc, -1);
-            const lastDoneX = lastDoneIdx >= 0 ? xFor(milestones[lastDoneIdx], lastDoneIdx) : padX;
+            const lastDoneX   = lastDoneIdx >= 0 ? xFor(milestones[lastDoneIdx], lastDoneIdx) : padX;
 
-            const dots = milestones.map((m, i) => {
-                const x = xFor(m, i).toFixed(1);
-                const fill = m.done ? '#0f172a' : '#ffffff';
-                const stroke = m.done ? '#0f172a' : '#cbd5e1';
-                return `<g class="ship-tl-dot${m.done ? ' ship-tl-dot--done' : ''}">
-                    <title>${escHtml(m.label)}${m.date ? ' · ' + escHtml(m.date) : ''}</title>
-                    <circle cx="${x}" cy="${lineY}" r="5" fill="${fill}" stroke="${stroke}" stroke-width="1.5"/>
-                </g>`;
-            }).join('');
-
-            const svg = `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" class="ship-tl-svg">
-                <line x1="${padX}" y1="${lineY}" x2="${W-padX}" y2="${lineY}" stroke="#e2e8f0" stroke-width="1"/>
-                ${lastDoneIdx >= 0 ? `<line x1="${padX}" y1="${lineY}" x2="${lastDoneX.toFixed(1)}" y2="${lineY}" stroke="#0f172a" stroke-width="1.5"/>` : ''}
-                ${dots}
+            // SVG carries only the track lines; icons are HTML so they don't stretch.
+            const svg = `<svg viewBox="0 0 ${W} 4" preserveAspectRatio="none" class="ship-tl-svg">
+                <line x1="${padX}" y1="2" x2="${W-padX}" y2="2" stroke="#e2e8f0" stroke-width="2"/>
+                ${lastDoneIdx >= 0 ? `<line x1="${padX}" y1="2" x2="${lastDoneX.toFixed(1)}" y2="2" stroke="#7c3aed" stroke-width="2"/>` : ''}
             </svg>`;
+
+            const icons = milestones.map((m, i) =>
+                `<span class="ship-tl-icon${m.done ? ' ship-tl-icon--done' : ''}"
+                       style="left:${pctFor(m, i)}%"
+                       title="${escHtml(m.label)}${m.date ? ' · ' + escHtml(m.date) : ''}"
+                 >${milestoneIcon(m.label)}</span>`
+            ).join('');
 
             const rows = milestones.map((m, i) => `
                 <div class="ship-tl-row${m.done ? ' ship-tl-row--done' : ''}">
                     <button type="button" class="ship-tl-toggle${m.done ? ' ship-tl-toggle--done' : ''}"
                             data-ship-id="${escHtml(s.id)}" data-idx="${i}"
                             title="Click to ${m.done ? 'mark not done' : 'mark done'}">
-                        <span class="ship-tl-num">${String(i + 1).padStart(2, '0')}</span>
+                        <span class="ship-tl-icon-badge">${milestoneIcon(m.label)}</span>
                         <span class="ship-tl-label">${escHtml(m.label)}</span>
                     </button>
                     <input type="date" class="ship-tl-date"
@@ -1980,7 +1996,10 @@ const Warehouse = (() => {
             `).join('');
 
             return `<div class="ship-tl-section">
-                ${svg}
+                <div class="ship-tl-track">
+                    ${svg}
+                    <div class="ship-tl-icons-row">${icons}</div>
+                </div>
                 <div class="ship-tl-rows">${rows}</div>
             </div>`;
         }
