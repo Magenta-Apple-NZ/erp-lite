@@ -4204,7 +4204,35 @@ body.body--worker .orders-view-inner { padding-top: 1rem; }
 .ship-tl-cfg-saved { font-size: 0.72rem; color: #10b981; }
 
 /* Section header secondary actions cluster */
-.ship-det-hd-actions { display: flex; align-items: center; gap: 0.65rem; }
+.ship-det-hd-actions { display: flex; align-items: center; gap: 0.65rem; flex-wrap: wrap; }
+.ship-start-date-lbl {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: #1e293b;
+    white-space: nowrap;
+}
+.ship-start-date-lbl input[type="date"] {
+    font-size: 0.82rem;
+    padding: 0.2rem 0.4rem;
+    border: 1px solid #cbd5e1;
+    border-radius: 4px;
+    background: #fff;
+    color: #0f172a;
+    font-weight: 500;
+}
+.ship-start-date-lbl input[type="date"]:not([value=""]):not([value]) {
+    border-color: #7c3aed;
+    background: #faf5ff;
+}
+.ship-start-eta {
+    font-size: 0.8rem;
+    color: #7c3aed;
+    font-weight: 500;
+    white-space: nowrap;
+}
 
 /* ── V3 detail — Shipment Stage track ────────────────────────────── */
 .ship-stage-track {

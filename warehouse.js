@@ -2091,6 +2091,14 @@ const Warehouse = (() => {
                             <div class="ship-det-hd">
                                 <h3 class="ship-det-title">Shipment Stage</h3>
                                 <div class="ship-det-hd-actions">
+                                    <label class="ship-start-date-lbl">
+                                        <span>Started</span>
+                                        <input type="date" class="imp-detail-input imp-url-input"
+                                            data-ship-id="${escHtml(s.id)}" data-field="startDate"
+                                            value="${escHtml(s.startDate||'')}"
+                                            title="Sets the anchor date — all unconfirmed stage dates cascade forward automatically">
+                                    </label>
+                                    ${s.ym ? `<span class="ship-start-eta">→ ETA ${ymLabel(s.ym)}</span>` : ''}
                                     <button class="btn-link ship-tl-cfg-toggle" type="button" title="Edit default gaps between stages">Defaults</button>
                                 </div>
                             </div>
@@ -2125,19 +2133,6 @@ const Warehouse = (() => {
                             ${buildFixedSectionHtmlV3(s, 'bangladesh', totals, forex)}
                             ${buildFixedSectionHtmlV3(s, 'freight',    totals, forex)}
                             ${buildFixedSectionHtmlV3(s, 'misc',       totals, forex)}
-                        </div>
-
-                        <div class="ship-det-section">
-                            <div class="ship-det-hd"><h3 class="ship-det-title">Shipment Details</h3></div>
-                            <div class="imp-pricing-grid">
-                                <div class="imp-pricing-field">
-                                    <label class="imp-field-label">Start date</label>
-                                    <input type="date" class="imp-detail-input imp-url-input"
-                                        data-ship-id="${escHtml(s.id)}" data-field="startDate"
-                                        value="${escHtml(s.startDate||'')}">
-                                </div>
-                            </div>
-                            ${s.ym ? `<p class="imp-startdate-eta">ETA Tauranga: <strong>${ymLabel(s.ym)}</strong> (auto-calculated from start date)</p>` : ''}
                         </div>
 
                         <div class="ship-det-section">
@@ -3419,7 +3414,9 @@ const Warehouse = (() => {
                         const merged = (s.milestones || []).map((m, i) => {
                             const f = fresh[i];
                             if (!f) return m;
-                            return { ...m, date: m.date || f.date };
+                            // Preserve date only if milestone is marked done (confirmed actual).
+                            // Undone milestones get the recalculated projected date.
+                            return { ...m, date: m.done ? m.date : f.date };
                         });
                         const padded = merged.length < fresh.length
                             ? [...merged, ...fresh.slice(merged.length)]
