@@ -3751,6 +3751,29 @@ body.body--worker .orders-view-inner { padding-top: 1rem; }
     vertical-align: middle;
 }
 .ship-extra-del:hover { color: #ef4444; }
+.ship-fix-td-actual { min-width: 90px; }
+.ship-fix-td-actual input { width: 80px; }
+.ship-fix-th-actual { min-width: 90px; color: #64748b; }
+.ship-fix-td-var,
+.ship-fix-th-var { min-width: 72px; text-align: right; }
+.ship-var { font-variant-numeric: tabular-nums; font-size: 0.82rem; }
+.ship-var--over  { color: #dc2626; }
+.ship-var--under { color: #16a34a; }
+.ship-sec-actual-row {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    padding: 0.45rem 0.1rem 0.1rem;
+    font-size: 0.82rem;
+}
+.ship-sec-actual-lbl { color: #64748b; white-space: nowrap; }
+.ship-sec-actual-row input {
+    width: 110px;
+    font-size: 0.82rem;
+    padding: 0.2rem 0.35rem;
+    border: 1px solid #cbd5e1;
+    border-radius: 4px;
+}
 
 /* Rigid line table */
 .ship-fix-table {

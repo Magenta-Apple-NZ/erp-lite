@@ -1518,7 +1518,7 @@ const Warehouse = (() => {
         // each cell holds a single concept (units, rate, ccy, subtotal, NZD)
         // — keeps numbers right-aligned and prevents the old
         // amount+ccy+mult cluster from drifting out of column.
-        function buildFixedRowHtmlV3(s, def, derived, forex) {
+        function buildFixedRowHtmlV3(s, def, derived, forex, showActuals) {
             const line = (s.fixedLines || {})[def.key] || {};
             const nzd  = fixedLineNzdV3(def, line, derived, forex);
             const ccy  = line.ccy || def.defaultCcy;
@@ -1562,6 +1562,17 @@ const Warehouse = (() => {
                 return `<span${nzd < 0 ? ' class="ship-fix-neg"' : ''}>${sign}$${Math.round(Math.abs(nzd)).toLocaleString('en-NZ')}</span>`;
             })();
 
+            let actualCells = '';
+            if (showActuals) {
+                const actual = line.actual != null ? line.actual : '';
+                const variance = line.actual != null && nzd ? line.actual - nzd : null;
+                const varDisplay = variance == null ? '<span class="ship-fix-nil">—</span>'
+                    : `<span class="ship-var${variance > 0.5 ? ' ship-var--over' : variance < -0.5 ? ' ship-var--under' : ''}">${variance >= 0 ? '+' : ''}$${Math.round(variance).toLocaleString('en-NZ')}</span>`;
+                actualCells = `
+                <td class="ship-fix-td-actual"><input class="ship-fix-num" data-f="actual" type="number" value="${actual}" placeholder="—" step="1" min="0"></td>
+                <td class="ship-fix-td-var">${varDisplay}</td>`;
+            }
+
             return `<tr class="ship-fix-row${line.paid ? ' ship-fix-row--paid' : ''}" data-ship-id="${escHtml(s.id)}" data-line-key="${escHtml(def.key)}">
                 <td class="ship-fix-td-label"><input class="ship-fix-label-inp" data-f="labelOverride" value="${escHtml(labelText)}" placeholder="${escHtml(def.label)}"></td>
                 <td class="ship-fix-td-units">${unitsCellInner}</td>
@@ -1569,17 +1580,19 @@ const Warehouse = (() => {
                 <td class="ship-fix-td-ccy">${ccyPill}</td>
                 <td class="ship-fix-td-sub">${subDisplay}</td>
                 <td class="ship-fix-td-nzd">${nzdDisplay}</td>
+                ${actualCells}
                 <td class="ship-fix-td-chk"><input type="checkbox" class="ship-fix-paid" ${line.paid ? 'checked' : ''} title="Paid"></td>
             </tr>`;
         }
 
         function buildFixedSectionHtmlV3(s, sectionKey, totals, forex) {
-            const sec      = SHIP_SECTIONS_V3.find(x => x.key === sectionKey);
-            const defs     = FIXED_LINE_SCHEMA_V3.filter(d => d.section === sectionKey);
-            const extras   = (s.extraLines || []).filter(l => l.section === sectionKey);
-            const subtotal = totals.sectionTotals[sectionKey] || 0;
-            const derived  = totals.derived;
-            const subDisp  = subtotal === 0 ? '—' :
+            const sec         = SHIP_SECTIONS_V3.find(x => x.key === sectionKey);
+            const defs        = FIXED_LINE_SCHEMA_V3.filter(d => d.section === sectionKey);
+            const extras      = (s.extraLines || []).filter(l => l.section === sectionKey);
+            const subtotal    = totals.sectionTotals[sectionKey] || 0;
+            const derived     = totals.derived;
+            const showActuals = sectionKey === 'bangladesh' || sectionKey === 'freight';
+            const subDisp     = subtotal === 0 ? '—' :
                 (subtotal < 0 ? '-' : '') + '$' + Math.round(Math.abs(subtotal)).toLocaleString('en-NZ');
 
             const extraRowsHtml = extras.map(l => {
@@ -1610,6 +1623,17 @@ const Warehouse = (() => {
                     ${CCYS_FIXED.map(c => `<option${c === ccy ? ' selected' : ''}>${c}</option>`).join('')}
                 </select>`;
 
+                let extraActualCells = '';
+                if (showActuals) {
+                    const actual = l.actual != null ? l.actual : '';
+                    const variance = l.actual != null && nzd ? l.actual - nzd : null;
+                    const varDisplay = variance == null ? '<span class="ship-fix-nil">—</span>'
+                        : `<span class="ship-var${variance > 0.5 ? ' ship-var--over' : variance < -0.5 ? ' ship-var--under' : ''}">${variance >= 0 ? '+' : ''}$${Math.round(variance).toLocaleString('en-NZ')}</span>`;
+                    extraActualCells = `
+                    <td class="ship-fix-td-actual"><input class="ship-fix-num" data-f="actual" type="number" value="${actual}" placeholder="—" step="1" min="0"></td>
+                    <td class="ship-fix-td-var">${varDisplay}</td>`;
+                }
+
                 return `<tr class="ship-fix-row ship-extra-row${l.paid ? ' ship-fix-row--paid' : ''}" data-ship-id="${escHtml(s.id)}" data-extra-id="${escHtml(l.id)}">
                     <td class="ship-fix-td-label">
                         <input class="ship-fix-label-inp" data-f="label" value="${escHtml(l.label || '')}" placeholder="Description…">
@@ -1620,9 +1644,28 @@ const Warehouse = (() => {
                     <td class="ship-fix-td-ccy">${ccySelect}</td>
                     <td class="ship-fix-td-sub">${subDisplay}</td>
                     <td class="ship-fix-td-nzd">${nzdDisplay}</td>
+                    ${extraActualCells}
                     <td class="ship-fix-td-chk"><input type="checkbox" class="ship-fix-paid" ${l.paid ? 'checked' : ''} title="Paid"></td>
                 </tr>`;
             }).join('');
+
+            const actualHeaders = showActuals
+                ? '<th class="ship-fix-th-actual">Actual NZD</th><th class="ship-fix-th-var">Var</th>'
+                : '';
+
+            // Raw Product: section-level actual paid field below the table
+            let sectionFooter = '';
+            if (sectionKey === 'raw') {
+                const rawActual  = (s.sectionActuals || {}).raw;
+                const variance   = rawActual != null ? rawActual - subtotal : null;
+                const varDisplay = variance == null ? '' :
+                    `<span class="ship-var${variance > 0.5 ? ' ship-var--over' : variance < -0.5 ? ' ship-var--under' : ''}">${variance >= 0 ? '+' : ''}$${Math.round(variance).toLocaleString('en-NZ')}</span>`;
+                sectionFooter = `<div class="ship-sec-actual-row">
+                    <span class="ship-sec-actual-lbl">Actual paid (NZD)</span>
+                    <input class="ship-section-actual-inp imp-url-input" data-ship-id="${escHtml(s.id)}" data-section="raw" type="number" value="${rawActual ?? ''}" placeholder="—" step="1" min="0">
+                    ${varDisplay}
+                </div>`;
+            }
 
             return `<div class="ship-fix-section" data-section="${escHtml(sectionKey)}">
                 <div class="ship-fix-section-hd">
@@ -1638,13 +1681,15 @@ const Warehouse = (() => {
                         <th class="ship-fix-th-ccy">Ccy</th>
                         <th class="ship-fix-th-sub">Sub-total</th>
                         <th class="ship-fix-th-nzd">≈&thinsp;NZD</th>
+                        ${actualHeaders}
                         <th class="ship-fix-th-chk" title="Paid">✓</th>
                     </tr></thead>
                     <tbody>
-                        ${defs.map(d => buildFixedRowHtmlV3(s, d, derived, forex)).join('')}
+                        ${defs.map(d => buildFixedRowHtmlV3(s, d, derived, forex, showActuals)).join('')}
                         ${extraRowsHtml}
                     </tbody>
                 </table>
+                ${sectionFooter}
             </div>`;
         }
 
@@ -3161,6 +3206,18 @@ const Warehouse = (() => {
 
         body.addEventListener('change', async e => {
             if (acSignal.aborted) return;
+
+            // Section-level actual paid (Raw Product)
+            if (e.target.matches('.ship-section-actual-inp')) {
+                const { shipId, section } = e.target.dataset;
+                const val = parseFloat(e.target.value) || null;
+                config.shipments = (config.shipments || []).map(s => {
+                    if (s.id !== shipId) return s;
+                    return { ...s, sectionActuals: { ...(s.sectionActuals || {}), [section]: val } };
+                });
+                await costSave();
+                return;
+            }
 
             // ── Fixed-schema (rigid) cost line — amount/rate/ccy/paidVia/labelOverride ──
             const fixField = e.target.closest('.ship-fix-num, .ship-fix-ccy, .ship-fix-paidvia, .ship-fix-label-inp');
