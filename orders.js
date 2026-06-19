@@ -1010,10 +1010,10 @@ const Orders = (() => {
                 if (!q) { skuDropdown.style.display = 'none'; return; }
                 const matches = catalogItems.filter(i =>
                     (i.id && i.id.toLowerCase().includes(q)) || (i.name || '').toLowerCase().includes(q)
-                ).slice(0, 6);
+                ).slice(0, 10);
                 if (!matches.length) { skuDropdown.style.display = 'none'; return; }
                 skuDropdown.innerHTML = matches.map(i =>
-                    `<div class="customer-option" data-idx="${catalogItems.indexOf(i)}"><strong>${escHtml(i.id)}</strong><span class="store-city"> · ${escHtml(i.name)}</span></div>`
+                    `<div class="customer-option item-opt" data-idx="${catalogItems.indexOf(i)}"><span class="item-opt-id">${escHtml(i.id)}</span><span class="item-opt-name">${escHtml(i.name)}</span></div>`
                 ).join('');
                 skuDropdown.style.display = '';
             });
@@ -1038,10 +1038,10 @@ const Orders = (() => {
                 if (!q) { itemDropdown.style.display = 'none'; return; }
                 const matches = catalogItems.filter(i =>
                     (i.name || '').toLowerCase().includes(q) || (i.id && i.id.toLowerCase().includes(q))
-                ).slice(0, 6);
+                ).slice(0, 10);
                 if (!matches.length) { itemDropdown.style.display = 'none'; return; }
                 itemDropdown.innerHTML = matches.map(i =>
-                    `<div class="customer-option" data-idx="${catalogItems.indexOf(i)}">${escHtml(i.name)}<span class="store-city">${escHtml(i.id)}</span></div>`
+                    `<div class="customer-option item-opt" data-idx="${catalogItems.indexOf(i)}"><span class="item-opt-id">${escHtml(i.id)}</span><span class="item-opt-name">${escHtml(i.name)}</span></div>`
                 ).join('');
                 itemDropdown.style.display = '';
             });
