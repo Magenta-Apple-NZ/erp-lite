@@ -1210,7 +1210,7 @@ li.drag-over { background: #eff6ff; }
 .orders-empty a:hover { text-decoration: underline; }
 
 /* ── Order form ── */
-.order-form { max-width: 780px; }
+.order-form { max-width: 100%; }
 
 /* Edit Order side-by-side preview. Reflects the *saved* order, not live
    edits — the page navigates away on Save, so a re-render isn't needed. */
@@ -1325,6 +1325,15 @@ li.drag-over { background: #eff6ff; }
     cursor: pointer;
 }
 .customer-option:hover { background: #f1f5f9; }
+.line-item-row .customer-option strong {
+    display: inline-block;
+    margin-right: 0.5rem;
+    color: #1e293b;
+}
+.line-item-row .customer-option .store-city {
+    color: #64748b;
+    font-size: 0.82rem;
+}
 
 /* On phones the line-items table scrolls horizontally inside
    .line-items-wrap, which has overflow-x: auto. That clips the SKU /

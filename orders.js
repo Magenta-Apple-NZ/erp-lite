@@ -536,7 +536,7 @@ const Orders = (() => {
             if (xeroConnected) customers = await loadCustomers();
         } catch (e) { /* manual entry fallback */ }
         try { catalogStores = await loadCatalogStores(true); } catch (e) { /* optional */ }
-        try { catalogItems = await api('/api/catalog/items'); } catch (e) { /* optional */ }
+        try { catalogItems = await api('/api/catalog/items?bust=1'); } catch (e) { /* optional */ }
 
         // Compute next sequential PKS ID for pre-population
         let nextOrderNum = '';
@@ -575,7 +575,7 @@ const Orders = (() => {
         }
         try { if (xeroConnected) customers = await loadCustomers(); } catch (e) {}
         try { catalogStores = await loadCatalogStores(); } catch (e) {}
-        try { catalogItems = await api('/api/catalog/items'); } catch (e) {}
+        try { catalogItems = await api('/api/catalog/items?bust=1'); } catch (e) {}
 
         // Opening the edit view counts as reviewing — auto-advance new → reviewed
         // (matches the old detail-view behaviour now that detail is gone for admin).
@@ -1013,7 +1013,7 @@ const Orders = (() => {
                 ).slice(0, 6);
                 if (!matches.length) { skuDropdown.style.display = 'none'; return; }
                 skuDropdown.innerHTML = matches.map(i =>
-                    `<div class="customer-option" data-idx="${catalogItems.indexOf(i)}"><strong>${escHtml(i.id)}</strong><span class="store-city">${escHtml(i.name)}</span></div>`
+                    `<div class="customer-option" data-idx="${catalogItems.indexOf(i)}"><strong>${escHtml(i.id)}</strong><span class="store-city"> · ${escHtml(i.name)}</span></div>`
                 ).join('');
                 skuDropdown.style.display = '';
             });
