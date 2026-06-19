@@ -13,10 +13,10 @@ import { syncSalesHistory } from '../sales-history/_writer.js';
 // invoice date itself (cash sale). All other days = that day of the
 // MONTH FOLLOWING the invoice date.
 const PAYMENT_TERMS = [
-    { match: /farmlands/i,      day: 26 },
+    { match: /farmlands/i,       day: 26 },
     { match: /pgg\s*wrightson/i, day: 28 },
-    { match: /horticentre/i,    day: 20 },
-    { match: /cash/i,           day: 0  },
+    { match: /horticentre/i,     day: 20 },
+    { match: /cash/i,            day: 0  },
 ];
 const DEFAULT_TERM_DAY = 20; // "Other" customers — 20th of following month
 
@@ -66,6 +66,27 @@ export async function onRequestPost({ env, request }) {
             }
         }
 
+        const token = await getValidToken(env);
+
+        // Export orders with a new/unknown customer: create the Xero contact on the fly.
+        // This eliminates the "Cash Sale + manual remap" workaround for overseas customers.
+        if (!UUID_RE.test(contactId) && order.customer?.isExport && order.customer?.name) {
+            const createResp = await fetch('https://api.xero.com/api.xro/2.0/Contacts', {
+                method: 'POST',
+                headers: xeroHeaders(token),
+                body: JSON.stringify({ Contacts: [{ Name: order.customer.name }] }),
+            });
+            if (createResp.ok) {
+                const cd = await createResp.json();
+                const newContact = cd.Contacts?.[0];
+                if (newContact?.ContactID && UUID_RE.test(newContact.ContactID)) {
+                    contactId = newContact.ContactID;
+                    order.customer = { ...order.customer, xeroContactId: contactId };
+                    resolvedBy = 'export-create';
+                }
+            }
+        }
+
         if (!UUID_RE.test(contactId)) {
             return errResponse(
                 `Xero contact ID for "${order.customer?.name}" is missing or invalid` +
@@ -75,13 +96,11 @@ export async function onRequestPost({ env, request }) {
             );
         }
 
-        // Persist the resolved id back onto the order so subsequent reads
+        // Persist the resolved contact id back onto the order so subsequent reads
         // (and re-pushes) see the corrected value.
-        if (resolvedBy === 'name-lookup') {
+        if (resolvedBy === 'name-lookup' || resolvedBy === 'export-create') {
             order.customer = { ...order.customer, xeroContactId: contactId };
         }
-
-        const token = await getValidToken(env);
 
         const now = new Date();
         const today = now.toISOString().split('T')[0];
@@ -89,14 +108,14 @@ export async function onRequestPost({ env, request }) {
         // Derive Xero invoice number: PKS-1021 → INV-1021 (also handles legacy ORD- prefix)
         const invoiceNumber = order.id.replace(/^(?:PKS|ORD)-/, 'INV-');
 
-        // AUTHORISED invoices require an explicit DueDate. Per-customer
-        // terms are picked by name via PAYMENT_TERMS above:
+        // AUTHORISED invoices require an explicit DueDate. Per-customer terms:
         //   Farmlands       → 26th of following month
         //   PGG Wrightson   → 28th of following month
         //   HortiCentre     → 20th of following month
-        //   Cash (any name containing "Cash") → due on invoice date
+        //   Cash / Export   → due on invoice date
         //   Anything else   → 20th of following month
-        const dueDate = dueDateFor(order.customer?.name, today);
+        const isExport = !!order.customer?.isExport;
+        const dueDate = isExport ? today : dueDateFor(order.customer?.name, today);
 
         const invoice = {
             Type: 'ACCREC',
@@ -112,6 +131,7 @@ export async function onRequestPost({ env, request }) {
                     Quantity: l.quantity,
                     UnitAmount: l.unitPrice,
                 };
+                if (isExport) item.TaxType = 'ZERORATEDOUTPUT';
                 if (l.sku) {
                     item.ItemCode = l.sku;
                 } else if (l.accountCode) {

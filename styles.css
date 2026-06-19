@@ -1013,6 +1013,25 @@ li.drag-over { background: #eff6ff; }
 .xero-push-banner-text span { font-size: 0.78rem; color: #b45309; }
 .xero-push-banner .btn-primary { flex-shrink: 0; }
 
+.print-confirm-banner {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    background: #f0fdf4;
+    border: 1px solid #bbf7d0;
+    border-radius: 8px;
+    padding: 0.85rem 1.1rem;
+    margin: 0 auto 1rem;
+    max-width: 794px;
+    width: 100%;
+    box-sizing: border-box;
+}
+.print-confirm-text { display: flex; flex-direction: column; gap: 0.1rem; }
+.print-confirm-text strong { color: #14532d; font-size: 0.92rem; }
+.print-confirm-text span { font-size: 0.78rem; color: #166534; }
+.print-confirm-actions { display: flex; gap: 0.5rem; flex-shrink: 0; }
+
 /* ── Orders table ── */
 .orders-table-wrap { overflow-x: auto; }
 .orders-table {

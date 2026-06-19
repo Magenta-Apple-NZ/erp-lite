@@ -10,11 +10,13 @@ const Orders = (() => {
     let currentUser = null;
 
     // label = display name, xeroName = exact Xero contact name, xeroCode = Xero account number for lookup
+    // isExport = true means: zero-rated tax, freetext customer name, create Xero contact on push
     const CUSTOMER_PRESETS = [
-        { key: 'farmlands',   label: 'Farmlands',     xeroName: 'Farmlands',      xeroCode: 'C1010' },
-        { key: 'pgg',         label: 'PGG Wrightson', xeroName: 'PGG Wrightson',  xeroCode: 'C1020' },
+        { key: 'farmlands',   label: 'Farmlands',     xeroName: 'Farmlands',       xeroCode: 'C1010' },
+        { key: 'pgg',         label: 'PGG Wrightson', xeroName: 'PGG Wrightson',   xeroCode: 'C1020' },
         { key: 'horicentre',  label: 'HortiCentre',   xeroName: 'HortiCentre Ltd', xeroCode: 'C1030' },
-        { key: 'cash',        label: 'Cash Sale',     xeroName: 'Cash Sale',       xeroCode: '' },
+        { key: 'cash',        label: 'Cash Sale',     xeroName: 'Cash Sale',        xeroCode: '' },
+        { key: 'export',      label: 'Export',        xeroName: '',                 xeroCode: '', isExport: true },
     ];
 
     // Close overflow menus when clicking outside; close on item click (capture so it fires before any stopPropagation)
@@ -412,13 +414,15 @@ const Orders = (() => {
     }
 
     // ── Customer section HTML (shared by new + edit forms) ──
-    function customerSectionHtml(customers, selectedName = '', selectedId = '') {
-        const presetMatch = CUSTOMER_PRESETS.find(p =>
-            selectedName && (
-                selectedName.toLowerCase() === p.xeroName.toLowerCase() ||
-                selectedName.toLowerCase().includes(p.label.toLowerCase())
-            )
-        );
+    function customerSectionHtml(customers, selectedName = '', selectedId = '', selectedIsExport = false) {
+        const presetMatch = selectedIsExport
+            ? CUSTOMER_PRESETS.find(p => p.key === 'export')
+            : CUSTOMER_PRESETS.find(p =>
+                selectedName && p.xeroName && (
+                    selectedName.toLowerCase() === p.xeroName.toLowerCase() ||
+                    selectedName.toLowerCase().includes(p.label.toLowerCase())
+                )
+            );
         const selectedKey = presetMatch ? presetMatch.key : (selectedName ? 'other' : '');
 
         const radios = CUSTOMER_PRESETS.map(p => `
@@ -431,13 +435,17 @@ const Orders = (() => {
                 <span>Other</span>
             </label>`;
 
-        const otherDisplay = selectedKey === 'other' ? '' : 'none';
+        const otherOrExport = selectedKey === 'other' || selectedKey === 'export';
+        const otherDisplay = otherOrExport ? '' : 'none';
+        const searchValue = otherOrExport ? selectedName : '';
+        const searchPlaceholder = selectedKey === 'export' ? 'Customer / company name' : 'Search customers…';
+
         const otherSearch = customers.length
             ? `<div class="customer-search-wrap">
-                <input type="text" id="customer-search" placeholder="Search customers…" autocomplete="off" value="${escHtml(selectedKey === 'other' ? selectedName : '')}">
+                <input type="text" id="customer-search" placeholder="${searchPlaceholder}" autocomplete="off" value="${escHtml(searchValue)}">
                 <div id="customer-dropdown" class="customer-dropdown" style="display:none"></div>
                </div>`
-            : `<input type="text" id="customer-search" placeholder="Customer name" value="${escHtml(selectedKey === 'other' ? selectedName : '')}">`;
+            : `<input type="text" id="customer-search" placeholder="${searchPlaceholder}" value="${escHtml(searchValue)}">`;
 
         return `
         <div class="customer-presets">${radios}</div>
@@ -445,7 +453,8 @@ const Orders = (() => {
             ${otherSearch}
         </div>
         <input type="hidden" id="customer-id" value="${escHtml(selectedKey === 'other' ? selectedId : '')}">
-        <input type="hidden" id="customer-name-val" value="${escHtml(selectedName)}">`;
+        <input type="hidden" id="customer-name-val" value="${escHtml(selectedName)}">
+        <input type="hidden" id="customer-is-export" value="${selectedIsExport ? '1' : ''}">`;
     }
 
     function wireCustomerSection(customers) {
@@ -458,10 +467,24 @@ const Orders = (() => {
                 document.querySelectorAll('.customer-preset-opt').forEach(l => l.classList.remove('selected'));
                 radio.closest('.customer-preset-opt').classList.add('selected');
 
+                const exportInput = document.getElementById('customer-is-export');
+                if (radio.value === 'export') {
+                    otherWrap.style.display = '';
+                    idInput.value = '';
+                    nameInput.value = '';
+                    if (exportInput) exportInput.value = '1';
+                    const searchInput = document.getElementById('customer-search');
+                    if (searchInput) { searchInput.placeholder = 'Customer / company name'; searchInput.value = ''; searchInput.focus(); }
+                    return;
+                }
+                if (exportInput) exportInput.value = '';
+
                 if (radio.value === 'other') {
                     otherWrap.style.display = '';
                     idInput.value = '';
                     nameInput.value = '';
+                    const searchInput = document.getElementById('customer-search');
+                    if (searchInput) searchInput.placeholder = 'Search customers…';
                     document.getElementById('customer-search')?.focus();
                     return;
                 }
@@ -483,7 +506,7 @@ const Orders = (() => {
 
         // If a preset is already checked (edit mode pre-population), set the hidden fields
         const checked = document.querySelector('input[name="customer-preset"]:checked');
-        if (checked && checked.value !== 'other') {
+        if (checked && checked.value !== 'other' && checked.value !== 'export') {
             const preset = CUSTOMER_PRESETS.find(p => p.key === checked.value);
             if (preset) {
                 const match = customers.find(c => c.name.toLowerCase() === preset.xeroName.toLowerCase())
@@ -663,7 +686,7 @@ const Orders = (() => {
                     </div>
                     <div class="form-field" style="flex:1;min-width:0">
                         <label>Customer</label>
-                        ${customerSectionHtml(customers, defaults.customer?.name || '', defaults.customer?.xeroContactId || '')}
+                        ${customerSectionHtml(customers, defaults.customer?.name || '', defaults.customer?.xeroContactId || '', defaults.customer?.isExport || false)}
                     </div>
                 </div>
                 <div class="form-row">
@@ -1066,10 +1089,12 @@ const Orders = (() => {
     }
 
     function getCustomerFromForm() {
+        const isExport = document.getElementById('customer-is-export')?.value === '1';
         return {
             xeroContactId: document.getElementById('customer-id')?.value || '',
             name: document.getElementById('customer-name-val')?.value.trim() ||
                   document.getElementById('customer-search')?.value.trim() || '',
+            ...(isExport && { isExport: true }),
         };
     }
 
@@ -1909,29 +1934,45 @@ const Orders = (() => {
                 logEvent(orderId, 'Sent to Xero', result.invoiceNumber);
                 showToast('Invoice created in Xero: ' + result.invoiceNumber);
 
-                // Auto-print to the depot. We do this AFTER the user-facing
-                // success toast so the Xero outcome isn't blocked on PrintNode,
-                // and we don't fail the whole push if printing trips up — the
-                // user can always retry from the overflow menu.
+                // Prompt the user to print rather than auto-printing — some
+                // export and pickup orders don't need a slip at the depot.
                 const depot = getDepotPrinter();
                 if (depot) {
-                    sendSlipToPrinter(order, null, { printerId: depot.id, label: depot.label })
-                        .then(printResult => {
-                            // Only stamp printedAt when PrintNode confirmed the
-                            // job hit the printer. Failed/unconfirmed prints
-                            // get their own error banner from sendSlipToPrinter
-                            // and the user can retry via the overflow menu.
-                            if (!printResult?.success) return;
-                            order.printedAt = new Date().toISOString();
-                            order.printedTo = depot.label;
-                            api('/api/orders/' + orderId, {
-                                method: 'PATCH',
-                                headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify({ printedAt: order.printedAt, printedTo: order.printedTo }),
-                            }).catch(() => {});
-                            refreshActionBar(order);
-                        })
-                        .catch(() => { /* sendSlipToPrinter already surfaces its own banner/log */ });
+                    const existing = document.getElementById('print-confirm-banner');
+                    if (existing) existing.remove();
+                    const actionBar = document.querySelector('.order-actions');
+                    if (actionBar) {
+                        actionBar.insertAdjacentHTML('afterend', `
+                        <div class="print-confirm-banner no-print" id="print-confirm-banner">
+                            <div class="print-confirm-text">
+                                <strong>Send packing slip to printer?</strong>
+                                <span>Prints to <em>${escHtml(depot.label)}</em> via PrintNode</span>
+                            </div>
+                            <div class="print-confirm-actions">
+                                <button id="print-confirm-yes" class="btn-primary btn-sm">Print it</button>
+                                <button id="print-confirm-skip" class="btn-secondary btn-sm">Not now</button>
+                            </div>
+                        </div>`);
+                        document.getElementById('print-confirm-yes').addEventListener('click', () => {
+                            document.getElementById('print-confirm-banner')?.remove();
+                            sendSlipToPrinter(order, null, { printerId: depot.id, label: depot.label })
+                                .then(printResult => {
+                                    if (!printResult?.success) return;
+                                    order.printedAt = new Date().toISOString();
+                                    order.printedTo = depot.label;
+                                    api('/api/orders/' + orderId, {
+                                        method: 'PATCH',
+                                        headers: { 'Content-Type': 'application/json' },
+                                        body: JSON.stringify({ printedAt: order.printedAt, printedTo: order.printedTo }),
+                                    }).catch(() => {});
+                                    refreshActionBar(order);
+                                })
+                                .catch(() => {});
+                        });
+                        document.getElementById('print-confirm-skip').addEventListener('click', () => {
+                            document.getElementById('print-confirm-banner')?.remove();
+                        });
+                    }
                 }
             } catch (e) {
                 console.error('Xero push failed:', e);
