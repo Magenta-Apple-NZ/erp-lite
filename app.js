@@ -74,7 +74,7 @@ function renderDashboardWidgets(config) {
         </div>`;
 
     el.innerHTML = `
-        <div id="db-xero-alerts" class="db-xero-alerts" style="display:none"></div>
+        <div id="db-alerts" class="db-alerts" hidden></div>
         ${topRow}
         <div class="db-charts-row">
             <section class="db-mod db-mod--chart" id="db-stock-trajectory">
@@ -97,36 +97,86 @@ function renderDashboardWidgets(config) {
     Warehouse.renderDashboardForecast(document.querySelector('#db-stock-trajectory .db-mod-body'));
     SalesView.renderDashboardCumulative(document.querySelector('#db-cumulative-sales .db-mod-body'));
     loadDashboardCalendar();
-    loadXeroAlerts();
+    loadDashboardAlerts();
 }
 
-// ── Xero alerts banner ──────────────────────────────────────────────────
-// Hits /api/xero/alerts (cached 5 min server-side) on dashboard load.
-// Renders a slim banner above the top buttons when there's anything to
-// flag — otherwise stays hidden. Click-through opens Xero AR in a new tab.
-async function loadXeroAlerts() {
-    const el = document.getElementById('db-xero-alerts');
+// ── Dashboard alerts banner ──────────────────────────────────────────────
+// Fetches three data sources in parallel and renders a row per active alert:
+//   1. Orders without a Xero invoice (pending push)
+//   2. Upcoming shipment arrivals (within 60 days)
+//   3. Unpaid Xero AR invoices
+async function loadDashboardAlerts() {
+    const el = document.getElementById('db-alerts');
     if (!el) return;
-    let data;
-    try { data = await fetch('/api/xero/alerts').then(r => r.ok ? r.json() : null); }
-    catch { data = null; }
-    if (!data || !data.unpaidCount) { el.style.display = 'none'; return; }
-
+    const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
     const fmt = n => '$' + Number(n).toLocaleString('en-NZ', { maximumFractionDigits: 0 });
-    const overdueBit = data.overdueCount > 0
-        ? `<span class="db-xero-alerts-overdue">${data.overdueCount} overdue · ${fmt(data.overdueTotal)}</span>`
-        : '';
-    el.innerHTML = `
-        <a class="db-xero-alerts-inner" href="https://go.xero.com/AccountsReceivable/Search.aspx" target="_blank" rel="noopener">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></svg>
-            <span class="db-xero-alerts-main">
-                <strong>${data.unpaidCount} unpaid invoice${data.unpaidCount === 1 ? '' : 's'}</strong>
-                · ${fmt(data.unpaidTotal)} owed <span class="db-xero-alerts-gst">incl. GST</span>
-            </span>
-            ${overdueBit}
-            <span class="db-xero-alerts-link">Open Xero AR ↗</span>
-        </a>`;
-    el.style.display = '';
+    const infoIcon = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></svg>`;
+
+    const [xeroRes, ordersRes, forecastRes] = await Promise.allSettled([
+        fetch('/api/xero/alerts').then(r => r.ok ? r.json() : null).catch(() => null),
+        fetch('/api/orders').then(r => r.ok ? r.json() : []).catch(() => []),
+        fetch('/api/import/forecast').then(r => r.ok ? r.json() : {}).catch(() => ({})),
+    ]);
+    const xero     = xeroRes.status     === 'fulfilled' ? xeroRes.value     : null;
+    const orders   = ordersRes.status   === 'fulfilled' ? ordersRes.value   : [];
+    const forecast = forecastRes.status === 'fulfilled' ? forecastRes.value : {};
+
+    const rows = [];
+
+    // ── 1. Orders pending Xero push ──
+    const pendingPush = (orders || []).filter(o => !o.xeroInvoiceId && o.status !== 'cancelled');
+    if (pendingPush.length) {
+        rows.push(`<a class="db-alert-row db-alert-row--push" href="#orders">
+            ${infoIcon}
+            <span class="db-alert-main"><strong>${pendingPush.length} order${pendingPush.length === 1 ? '' : 's'}</strong> not yet sent to Xero</span>
+            <span class="db-alert-link">Open Orders →</span>
+        </a>`);
+    }
+
+    // ── 2. Upcoming shipment arrivals (last milestone, within 60 days) ──
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    const cutoff = new Date(today); cutoff.setDate(cutoff.getDate() + 60);
+    const arriving = [];
+    for (const s of (forecast.shipments || [])) {
+        const ms = (s.milestones || []);
+        const last = ms[ms.length - 1];
+        if (last && last.date && !last.done) {
+            const d = new Date(last.date + 'T00:00:00');
+            if (d >= today && d <= cutoff) {
+                const days = Math.round((d - today) / 86400000);
+                arriving.push({ seq: s.seq, label: last.label, days });
+            }
+        }
+    }
+    arriving.sort((a, b) => a.days - b.days);
+    if (arriving.length) {
+        const first = arriving[0];
+        const when = first.days === 0 ? 'today' : first.days === 1 ? 'tomorrow' : `in ${first.days} days`;
+        const extra = arriving.length > 1 ? ` <span class="db-alert-extra">+${arriving.length - 1} more</span>` : '';
+        rows.push(`<a class="db-alert-row db-alert-row--ship" href="#imports">
+            <span class="db-alert-ship-icon">🚢</span>
+            <span class="db-alert-main"><strong>Shipment #${esc(first.seq)}</strong> ${esc(first.label)} ${when}${extra}</span>
+            <span class="db-alert-link">Open Imports →</span>
+        </a>`);
+    }
+
+    // ── 3. Xero AR unpaid invoices ──
+    if (xero && xero.unpaidCount) {
+        const overdue = xero.overdueCount > 0
+            ? `<span class="db-alert-badge db-alert-badge--red">${xero.overdueCount} overdue · ${fmt(xero.overdueTotal)}</span>`
+            : '';
+        rows.push(`<a class="db-alert-row db-alert-row--xero${xero.overdueCount > 0 ? ' db-alert-row--overdue' : ''}"
+                href="https://go.xero.com/AccountsReceivable/Search.aspx" target="_blank" rel="noopener">
+            ${infoIcon}
+            <span class="db-alert-main"><strong>${xero.unpaidCount} unpaid invoice${xero.unpaidCount === 1 ? '' : 's'}</strong> · ${fmt(xero.unpaidTotal)} owed <span class="db-alert-gst">incl. GST</span></span>
+            ${overdue}
+            <span class="db-alert-link">Open Xero AR ↗</span>
+        </a>`);
+    }
+
+    if (!rows.length) { el.hidden = true; return; }
+    el.innerHTML = rows.join('');
+    el.hidden = false;
 }
 
 // ── Calendar module ──────────────────────────────────────────────────────
