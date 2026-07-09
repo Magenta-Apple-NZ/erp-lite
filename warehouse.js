@@ -1343,7 +1343,12 @@ const Warehouse = (() => {
             if (!line) return 0;
             let amount = 0;
             if (def.kind === 'flat')            amount = Number(line.amount) || 0;
-            else if (def.kind === 'perKg')      amount = (Number(line.rate) || 0) * (Number(derived[def.kgField]) || 0);
+            else if (def.kind === 'perKg') {
+                // Fallback: entries saved before flat→perKg migration stored `amount`;
+                // treat it as the per-kg rate so old records aren't silently zeroed.
+                const rate = line.rate != null ? Number(line.rate) : Number(line.amount) || 0;
+                amount = rate * (Number(derived[def.kgField]) || 0);
+            }
             else if (def.kind === 'allocation') amount = (Number(line.allocFactor) || 0) * (Number(line.annualAmount) || 0);
             if (!amount) return 0;
             const ccy = line.ccy || def.defaultCcy;
@@ -1565,7 +1570,7 @@ const Warehouse = (() => {
             let actualCells = '';
             if (showActuals) {
                 const actual = line.actual != null ? line.actual : '';
-                const variance = line.actual != null && nzd ? line.actual - nzd : null;
+                const variance = line.actual != null && nzd != null ? line.actual - nzd : null;
                 const varDisplay = variance == null ? '<span class="ship-fix-nil">—</span>'
                     : `<span class="ship-var${variance > 0.5 ? ' ship-var--over' : variance < -0.5 ? ' ship-var--under' : ''}">${variance >= 0 ? '+' : ''}$${Math.round(variance).toLocaleString('en-NZ')}</span>`;
                 actualCells = `
@@ -1626,7 +1631,7 @@ const Warehouse = (() => {
                 let extraActualCells = '';
                 if (showActuals) {
                     const actual = l.actual != null ? l.actual : '';
-                    const variance = l.actual != null && nzd ? l.actual - nzd : null;
+                    const variance = l.actual != null && nzd != null ? l.actual - nzd : null;
                     const varDisplay = variance == null ? '<span class="ship-fix-nil">—</span>'
                         : `<span class="ship-var${variance > 0.5 ? ' ship-var--over' : variance < -0.5 ? ' ship-var--under' : ''}">${variance >= 0 ? '+' : ''}$${Math.round(variance).toLocaleString('en-NZ')}</span>`;
                     extraActualCells = `

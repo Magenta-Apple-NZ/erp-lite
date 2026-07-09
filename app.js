@@ -133,22 +133,37 @@ async function loadDashboardAlerts() {
         </a>`);
     }
 
-    // ── 2. Upcoming shipment arrivals (last milestone, within 60 days) ──
+    // ── 2. Shipment arrivals — overdue (past, undone) and upcoming (≤60 days) ──
     const today = new Date(); today.setHours(0, 0, 0, 0);
     const cutoff = new Date(today); cutoff.setDate(cutoff.getDate() + 60);
-    const arriving = [];
+    const overdue = [], arriving = [];
     for (const s of (forecast.shipments || [])) {
         const ms = (s.milestones || []);
         const last = ms[ms.length - 1];
         if (last && last.date && !last.done) {
             const d = new Date(last.date + 'T00:00:00');
-            if (d >= today && d <= cutoff) {
-                const days = Math.round((d - today) / 86400000);
+            const days = Math.round((d - today) / 86400000);
+            if (days < 0) {
+                overdue.push({ seq: s.seq, label: last.label, days });
+            } else if (d <= cutoff) {
                 arriving.push({ seq: s.seq, label: last.label, days });
             }
         }
     }
+    overdue.sort((a, b) => a.days - b.days);   // most overdue first
     arriving.sort((a, b) => a.days - b.days);
+
+    if (overdue.length) {
+        const first = overdue[0];
+        const daysAgo = Math.abs(first.days);
+        const when = daysAgo === 0 ? 'today' : daysAgo === 1 ? 'yesterday' : `${daysAgo} days ago`;
+        const extra = overdue.length > 1 ? ` <span class="db-alert-extra">+${overdue.length - 1} more</span>` : '';
+        rows.push(`<a class="db-alert-row db-alert-row--ship db-alert-row--overdue" href="#imports">
+            <span class="db-alert-ship-icon">🚢</span>
+            <span class="db-alert-main"><strong>Shipment #${esc(first.seq)}</strong> was due ${when} — confirm arrival${extra}</span>
+            <span class="db-alert-link">Open Imports →</span>
+        </a>`);
+    }
     if (arriving.length) {
         const first = arriving[0];
         const when = first.days === 0 ? 'today' : first.days === 1 ? 'tomorrow' : `in ${first.days} days`;

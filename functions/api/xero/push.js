@@ -84,6 +84,12 @@ export async function onRequestPost({ env, request }) {
                     order.customer = { ...order.customer, xeroContactId: contactId };
                     resolvedBy = 'export-create';
                 }
+            } else {
+                const body = await createResp.text().catch(() => '');
+                return errResponse(
+                    `Xero rejected creating contact "${order.customer.name}": HTTP ${createResp.status}. ${body}`.trim(),
+                    502
+                );
             }
         }
 

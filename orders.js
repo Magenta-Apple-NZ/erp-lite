@@ -452,7 +452,7 @@ const Orders = (() => {
         <div id="customer-other-wrap" style="display:${otherDisplay};margin-top:10px">
             ${otherSearch}
         </div>
-        <input type="hidden" id="customer-id" value="${escHtml(selectedKey === 'other' ? selectedId : '')}">
+        <input type="hidden" id="customer-id" value="${escHtml((selectedKey === 'other' || selectedKey === 'export') ? selectedId : '')}">
         <input type="hidden" id="customer-name-val" value="${escHtml(selectedName)}">
         <input type="hidden" id="customer-is-export" value="${selectedIsExport ? '1' : ''}">`;
     }
@@ -819,6 +819,11 @@ const Orders = (() => {
         dropdown.addEventListener('mousedown', e => {
             const opt = e.target.closest('.customer-option');
             if (!opt) return;
+            // Don't inject a Xero UUID into an export-mode free-text field
+            if (document.getElementById('customer-is-export')?.value === '1') {
+                dropdown.style.display = 'none';
+                return;
+            }
             searchEl.value = opt.dataset.name;
             idInput.value = opt.dataset.id;
             nameInput.value = opt.dataset.name;
