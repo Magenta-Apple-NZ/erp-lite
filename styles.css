@@ -3605,6 +3605,49 @@ body.role-warehouse #print-address-btn {
 }
 .dl-assign-btn:disabled { opacity: 0.6; cursor: default; }
 
+/* Bulk payslip assignment bar */
+.dl-bulk-bar {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: 0.65rem 1rem;
+    background: #eff6ff;
+    border: 1px solid #bfdbfe;
+    border-radius: 8px;
+    margin-bottom: 0.85rem;
+    flex-wrap: wrap;
+}
+.dl-bulk-bar[hidden] { display: none; }
+.dl-bulk-count {
+    font-size: 0.87rem;
+    font-weight: 600;
+    color: #1e40af;
+    flex-shrink: 0;
+}
+.dl-bulk-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+    margin-left: auto;
+}
+.dl-bulk-label-input {
+    height: 32px;
+    padding: 0 0.65rem;
+    border: 1px solid #bfdbfe;
+    border-radius: 6px;
+    font-size: 0.87rem;
+    background: white;
+    width: 180px;
+}
+.dl-bulk-label-input:focus { outline: none; border-color: #3b82f6; box-shadow: 0 0 0 2px rgba(59,130,246,0.2); }
+
+/* Checkbox column */
+.dl-check-cell { width: 36px; padding-left: 0.75rem !important; }
+.dl-check-cell input[type="checkbox"] { cursor: pointer; width: 15px; height: 15px; accent-color: #2563eb; }
+.dl-row--checked { background: #eff6ff !important; }
+.dl-row--checked td { background: inherit; }
+
 .dl-tabs { display: flex; gap: 0.5rem; margin-bottom: 1rem; }
 .dl-tab-count {
     display: inline-block; margin-left: 0.35rem; padding: 0 0.4rem;
