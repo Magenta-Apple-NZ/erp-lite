@@ -117,14 +117,16 @@ export async function onRequestPatch({ env, request }) {
             const prev = byKey.get(key);
             if (prev) {
                 byKey.set(key, { ...prev,
-                    hours: Number(e.hours) || 0,
-                    notes: String(e.notes || ''),
+                    hours:    Number(e.hours)    || 0,
+                    expenses: Number(e.expenses) || 0,
+                    notes:    String(e.notes || ''),
                 });
             } else {
                 const id = 'ts-' + String(seq++).padStart(4, '0');
                 byKey.set(key, { id, date, employee,
-                    hours: Number(e.hours) || 0,
-                    notes: String(e.notes || ''),
+                    hours:    Number(e.hours)    || 0,
+                    expenses: Number(e.expenses) || 0,
+                    notes:    String(e.notes || ''),
                 });
             }
         }

@@ -104,13 +104,14 @@ export async function onRequestGet({ env, request }) {
             boxes1kgPacked  += Number(p.boxes1kg)  || 0;
         }
 
-        // ── Hours worked ──
+        // ── Hours worked + expenses ──
         const timesheets = await loadJson(env, 'timesheets', []);
-        let hoursWorked = 0;
+        let hoursWorked = 0, expensesTotal = 0;
         for (const t of timesheets) {
             if (t.employee !== employee.name) continue;
             if (!inRange(t.date)) continue;
-            hoursWorked += Number(t.hours) || 0;
+            hoursWorked   += Number(t.hours)    || 0;
+            expensesTotal += Number(t.expenses) || 0;
         }
 
         const lines = [
@@ -139,8 +140,16 @@ export async function onRequestGet({ env, request }) {
                 rate:   Number(rates.perHour) || 0,
                 amount: 0,
             },
+            ...(expensesTotal ? [{
+                label:  'Expenses',
+                qty:    null,
+                rate:   null,
+                amount: Math.round(expensesTotal * 100) / 100,
+            }] : []),
         ];
-        for (const l of lines) l.amount = Math.round(l.qty * l.rate * 100) / 100;
+        for (const l of lines) {
+            if (l.qty != null && l.rate != null) l.amount = Math.round(l.qty * l.rate * 100) / 100;
+        }
         const total = lines.reduce((s, l) => s + l.amount, 0);
 
         // Optional daily breakdown — one row per date with data, columns matching the payslip PDF.

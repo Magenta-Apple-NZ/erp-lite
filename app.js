@@ -358,7 +358,7 @@ function showToast(msg) {
 document.getElementById('reload-btn').addEventListener('click', () => { location.reload(); });
 
 // ── Hash router ──
-const VIEWS = ['view-dashboard', 'view-orders', 'view-orders-new', 'view-orders-detail', 'view-orders-edit', 'view-warehouse', 'view-admin', 'view-imports', 'view-dispatch-log', 'view-sales', 'view-calendar'];
+const VIEWS = ['view-dashboard', 'view-orders', 'view-orders-new', 'view-orders-detail', 'view-orders-edit', 'view-warehouse', 'view-admin', 'view-imports', 'view-payslips', 'view-sales', 'view-calendar'];
 
 function setActiveView(viewId) {
     VIEWS.forEach(id => {
@@ -423,12 +423,12 @@ async function handleRoute() {
         return;
     }
 
-    // In worker mode (or warehouse role), only orders/* and dispatch-log are
+    // In worker mode (or warehouse role), only orders/* and payslips are
     // reachable; any other hash bounces to orders. UI restriction only;
     // Cloudflare Access remains the actual security boundary at email level.
     const inWorkerMode = localStorage.getItem('hub-worker-mode') === '1';
     const restrictedRole = currentRole === 'warehouse';
-    const allowedForRestricted = (h) => h.startsWith('orders') || h === 'dispatch-log';
+    const allowedForRestricted = (h) => h.startsWith('orders') || h === 'payslips';
     if ((inWorkerMode || restrictedRole) && hash && !allowedForRestricted(hash)) {
         location.hash = 'orders';
         return;
@@ -511,10 +511,10 @@ async function handleRoute() {
         return;
     }
 
-    if (hash === 'dispatch-log') {
-        setActiveView('view-dispatch-log');
-        setActiveNav('nav-dispatch-log');
-        await DispatchLog.render(document.getElementById('dispatch-log-container'));
+    if (hash === 'payslips' || hash === 'dispatch-log') {
+        setActiveView('view-payslips');
+        setActiveNav('nav-payslips');
+        await Payslips.render(document.getElementById('payslips-container'));
         return;
     }
 
