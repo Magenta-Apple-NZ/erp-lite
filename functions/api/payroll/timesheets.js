@@ -98,6 +98,45 @@ export async function onRequestGet({ env, request }) {
     }
 }
 
+// PATCH /api/payroll/timesheets  { entries: [{date, employee, hours, notes}] }
+// Upserts by natural key (date + employee). Rows not in the payload are left untouched.
+export async function onRequestPatch({ env, request }) {
+    try {
+        const { entries } = await request.json();
+        if (!Array.isArray(entries)) return errResponse('entries must be an array', 400);
+
+        const existing = await loadAll(env);
+        const byKey = new Map(existing.map(r => [`${r.date}::${r.employee}`, r]));
+        let seq = nextSeq(existing);
+
+        for (const e of entries) {
+            const date     = String(e.date     || '').trim();
+            const employee = String(e.employee || '').trim();
+            if (!date || !employee) continue;
+            const key = `${date}::${employee}`;
+            const prev = byKey.get(key);
+            if (prev) {
+                byKey.set(key, { ...prev,
+                    hours: Number(e.hours) || 0,
+                    notes: String(e.notes || ''),
+                });
+            } else {
+                const id = 'ts-' + String(seq++).padStart(4, '0');
+                byKey.set(key, { id, date, employee,
+                    hours: Number(e.hours) || 0,
+                    notes: String(e.notes || ''),
+                });
+            }
+        }
+
+        const merged = [...byKey.values()];
+        await env.ORDERS_KV.put('timesheets', JSON.stringify(merged));
+        return jsonResponse({ ok: true, count: entries.length });
+    } catch (e) {
+        return errResponse(e.message);
+    }
+}
+
 export async function onRequestPost({ env, request }) {
     try {
         const { searchParams } = new URL(request.url);

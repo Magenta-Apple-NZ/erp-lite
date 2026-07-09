@@ -143,11 +143,54 @@ export async function onRequestGet({ env, request }) {
         for (const l of lines) l.amount = Math.round(l.qty * l.rate * 100) / 100;
         const total = lines.reduce((s, l) => s + l.amount, 0);
 
+        // Optional daily breakdown — one row per date with data, columns matching the payslip PDF.
+        let daily;
+        if (searchParams.get('detail') === 'true') {
+            const dayMap = new Map();
+            const ensureDay = d => {
+                if (!dayMap.has(d)) dayMap.set(d, { boxes10kg: 0, boxes1kg: 0, dispatched: 0, hours: 0 });
+                return dayMap.get(d);
+            };
+            for (const p of packing) {
+                if (p.employee !== employee.name || !inRange(p.date)) continue;
+                const day = ensureDay(p.date);
+                day.boxes10kg += Number(p.boxes10kg) || 0;
+                day.boxes1kg  += Number(p.boxes1kg)  || 0;
+            }
+            for (const t of timesheets) {
+                if (t.employee !== employee.name || !inRange(t.date)) continue;
+                ensureDay(t.date).hours += Number(t.hours) || 0;
+            }
+            for (const o of orders) {
+                if (!o) continue;
+                if (o.status !== 'dispatched' && o.status !== 'paid') continue;
+                if (o.dispatchedBy !== employee.name) continue;
+                const day = (o.dispatchedAt || o.updatedAt || '').slice(0, 10);
+                if (!inRange(day)) continue;
+                ensureDay(day).dispatched += orderProductKg(o) / 10;
+            }
+            const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+            daily = [...dayMap.entries()]
+                .sort(([a], [b]) => a.localeCompare(b))
+                .map(([date, d]) => {
+                    const [y, m, dy] = date.split('-').map(Number);
+                    return {
+                        date,
+                        day: DAYS[new Date(y, m - 1, dy).getDay()],
+                        boxes10kg:  d.boxes10kg,
+                        boxes1kg:   d.boxes1kg,
+                        dispatched: Math.round(d.dispatched * 100) / 100,
+                        hours:      d.hours,
+                    };
+                });
+        }
+
         return jsonResponse({
             employee: { id: employee.id, name: employee.name },
             period:   { start, end },
             lines,
             total:    Math.round(total * 100) / 100,
+            ...(daily !== undefined && { daily }),
         });
     } catch (e) {
         return errResponse(e.message);

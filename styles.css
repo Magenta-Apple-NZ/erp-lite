@@ -4924,6 +4924,98 @@ a.db-row:hover { background: #f8fafc; border-color: #e2e8f0; }
 }
 .payslip-total-label { text-align: right; }
 .payslip-total { font-size: 1.05rem; }
+.payslip-section-title {
+    font-size: 0.75rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: #64748b;
+    margin: 0 0 0.5rem;
+}
+.payslip-daily-table td,
+.payslip-daily-table th { font-size: 0.83rem; padding: 0.4rem 0.6rem; }
+
+/* Import/Export CSV — collapsed by default */
+.payroll-csv-details {
+    margin-top: 0.85rem;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    padding: 0.5rem 0.85rem;
+}
+.payroll-csv-details summary {
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: #64748b;
+    cursor: pointer;
+    list-style: none;
+    padding: 0.25rem 0;
+}
+.payroll-csv-details summary::-webkit-details-marker { display: none; }
+.payroll-csv-details[open] .payroll-csv-grid { margin-top: 0.65rem; }
+
+/* Daily tally entry grid */
+.tally-wrap { overflow-x: auto; margin: 0.5rem 0 1rem; }
+.payroll-tally-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.88rem;
+    min-width: 520px;
+}
+.payroll-tally-table th,
+.payroll-tally-table td {
+    padding: 0.45rem 0.6rem;
+    border-bottom: 1px solid #f1f5f9;
+    text-align: left;
+}
+.payroll-tally-table th {
+    background: #f8fafc;
+    font-weight: 600;
+    color: #64748b;
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+.payroll-tally-table tfoot td {
+    border-top: 2px solid #1e293b;
+    border-bottom: none;
+    padding-top: 0.6rem;
+    color: #1e293b;
+}
+.tally-date { font-variant-numeric: tabular-nums; white-space: nowrap; color: #1e293b; font-weight: 500; }
+.tally-day  { color: #64748b; font-size: 0.83rem; }
+.tally-dispatched { color: #475569; }
+.tally-num  { text-align: right; font-variant-numeric: tabular-nums; }
+.tally-input {
+    width: 4.5rem;
+    padding: 0.28rem 0.4rem;
+    font-size: 0.85rem;
+    border: 1px solid #cbd5e1;
+    border-radius: 4px;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+    background: #fff;
+    -moz-appearance: textfield;
+}
+.tally-input::-webkit-outer-spin-button,
+.tally-input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+.tally-input:focus { outline: none; border-color: #6366f1; box-shadow: 0 0 0 2px rgba(99,102,241,0.15); }
+.tally-save-bar {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin-top: 0.65rem;
+}
+.tally-save-status { font-size: 0.8rem; color: #64748b; }
+
+@media (prefers-color-scheme: dark) {
+    .tally-input { background: #1e293b; border-color: #334155; color: #f1f5f9; }
+    .tally-input:focus { border-color: #818cf8; }
+    .payroll-tally-table th { background: #1e293b; color: #94a3b8; }
+    .payroll-tally-table td { border-bottom-color: #1e293b; }
+    .payroll-tally-table tfoot td { border-top-color: #94a3b8; }
+    .payroll-csv-details { border-color: #334155; }
+    .payslip-daily-table th { background: #1e293b; }
+}
 
 /* ═══════════════════════════════════════════════
    New Dashboard (May 2026): top button row, two priority

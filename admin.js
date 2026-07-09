@@ -754,8 +754,7 @@ const Admin = (() => {
     }
 
     // ── Payroll tab ──
-    // Rates, packing log (CSV round-trip), timesheets (CSV round-trip),
-    // payslip preview (one month at a time), PDF download.
+    // Rates, direct daily tally entry, payslip generator with daily breakdown.
     async function renderPayrollTab(body) {
         body.innerHTML = '<div class="orders-loading">Loading payroll…</div>';
 
@@ -765,60 +764,63 @@ const Admin = (() => {
         const employees = (config.employees || []).filter(e => !e.archived);
         if (!employees.length) { body.innerHTML = '<p class="cat-sub">No employees configured.</p>'; return; }
 
-        // Default to "this month" — start of current month → today
         const now = new Date();
         const yr = now.getFullYear(), mo = now.getMonth() + 1;
         const monthStart = `${yr}-${String(mo).padStart(2, '0')}-01`;
         const monthEnd   = `${yr}-${String(mo).padStart(2, '0')}-${String(new Date(yr, mo, 0).getDate()).padStart(2, '0')}`;
 
+        const empOpts = employees.map(e => `<option value="${escHtml(e.id)}">${escHtml(e.name)}</option>`).join('');
+
         body.innerHTML = `
         <div class="cat-section">
             <h2 class="cat-title">Payroll</h2>
-            <p class="cat-sub">Rates, daily packing + hours via CSV, and a monthly payslip generator. Dispatched boxes are sourced from the Dispatch Log (orders attributed to the employee in the selected month).</p>
+            <p class="cat-sub">Daily tally entry, payslip generation, and rate configuration.</p>
 
             <h3 class="bulk-table-title" style="margin-top:1.5rem">Rates</h3>
             <p class="cat-sub">NZD per unit. Saved values are applied to all future payslip calculations.</p>
             <div id="payroll-rates"></div>
 
-            <h3 class="bulk-table-title" style="margin-top:1.75rem">Daily inputs</h3>
-            <p class="cat-sub">Two CSVs — daily packing log and timesheets. Download to see the current state, fill / edit in a spreadsheet, upload back. Same round-trip pattern as Sales Data.</p>
-
-            <div class="payroll-csv-grid">
-                <div class="payroll-csv-card">
-                    <div class="payroll-csv-title">Packing log</div>
-                    <p class="cat-sub">Columns: Id, Date, Employee, Boxes 10kg, Boxes 1kg, Notes. Leave Id blank for new rows.</p>
-                    <div class="bulk-step">
-                        <a class="btn-secondary btn-sm" href="/api/payroll/packing-log?format=csv" download="packing-log.csv">Export ↓</a>
-                        <input type="file" id="pack-file" accept=".csv,text/csv">
-                        <button class="btn-secondary btn-sm" id="pack-dryrun-btn">Preview upload</button>
-                    </div>
-                    <div id="pack-results"></div>
-                </div>
-                <div class="payroll-csv-card">
-                    <div class="payroll-csv-title">Timesheets</div>
-                    <p class="cat-sub">Columns: Id, Date, Employee, Hours, Notes. Leave Id blank for new rows.</p>
-                    <div class="bulk-step">
-                        <a class="btn-secondary btn-sm" href="/api/payroll/timesheets?format=csv" download="timesheets.csv">Export ↓</a>
-                        <input type="file" id="ts-file" accept=".csv,text/csv">
-                        <button class="btn-secondary btn-sm" id="ts-dryrun-btn">Preview upload</button>
-                    </div>
-                    <div id="ts-results"></div>
-                </div>
+            <h3 class="bulk-table-title" style="margin-top:1.75rem">Daily tally</h3>
+            <p class="cat-sub">Enter packing and hours day by day. Dispatched count is auto-filled from orders.</p>
+            <div class="payroll-period-bar">
+                <label>Employee <select id="tally-employee">${empOpts}</select></label>
+                <label>From <input type="date" id="tally-start" value="${monthStart}"></label>
+                <label>To <input type="date" id="tally-end" value="${monthEnd}"></label>
+                <button class="btn-secondary btn-sm" id="tally-load-btn">Load</button>
             </div>
+            <div id="tally-grid"></div>
+
+            <details class="payroll-csv-details">
+                <summary>Import / Export CSV</summary>
+                <div class="payroll-csv-grid">
+                    <div class="payroll-csv-card">
+                        <div class="payroll-csv-title">Packing log</div>
+                        <p class="cat-sub">Columns: Id, Date, Employee, Boxes 10kg, Boxes 1kg, Notes.</p>
+                        <div class="bulk-step">
+                            <a class="btn-secondary btn-sm" href="/api/payroll/packing-log?format=csv" download="packing-log.csv">Export ↓</a>
+                            <input type="file" id="pack-file" accept=".csv,text/csv">
+                            <button class="btn-secondary btn-sm" id="pack-dryrun-btn">Preview upload</button>
+                        </div>
+                        <div id="pack-results"></div>
+                    </div>
+                    <div class="payroll-csv-card">
+                        <div class="payroll-csv-title">Timesheets</div>
+                        <p class="cat-sub">Columns: Id, Date, Employee, Hours, Notes.</p>
+                        <div class="bulk-step">
+                            <a class="btn-secondary btn-sm" href="/api/payroll/timesheets?format=csv" download="timesheets.csv">Export ↓</a>
+                            <input type="file" id="ts-file" accept=".csv,text/csv">
+                            <button class="btn-secondary btn-sm" id="ts-dryrun-btn">Preview upload</button>
+                        </div>
+                        <div id="ts-results"></div>
+                    </div>
+                </div>
+            </details>
 
             <h3 class="bulk-table-title" style="margin-top:1.75rem">Generate payslip</h3>
             <div class="payroll-period-bar">
-                <label>Employee
-                    <select id="payslip-employee">
-                        ${employees.map(e => `<option value="${escHtml(e.id)}">${escHtml(e.name)}</option>`).join('')}
-                    </select>
-                </label>
-                <label>From
-                    <input type="date" id="payslip-start" value="${monthStart}">
-                </label>
-                <label>To
-                    <input type="date" id="payslip-end" value="${monthEnd}">
-                </label>
+                <label>Employee <select id="payslip-employee">${empOpts}</select></label>
+                <label>From <input type="date" id="payslip-start" value="${monthStart}"></label>
+                <label>To <input type="date" id="payslip-end" value="${monthEnd}"></label>
                 <button class="btn-primary btn-sm" id="payslip-generate-btn">Generate</button>
             </div>
             <div id="payslip-result"></div>
@@ -827,11 +829,13 @@ const Admin = (() => {
         renderRates();
         wireUpload('pack', '/api/payroll/packing-log');
         wireUpload('ts',   '/api/payroll/timesheets');
+        document.getElementById('tally-load-btn').addEventListener('click', loadTally);
         document.getElementById('payslip-generate-btn').addEventListener('click', generatePayslip);
 
+        // ── Rates section ──
         function renderRates() {
             const ratesEl = document.getElementById('payroll-rates');
-            ratesEl.innerHTML = employees.map((e, i) => `
+            ratesEl.innerHTML = employees.map(e => `
                 <div class="payroll-rates-row" data-emp="${escHtml(e.id)}">
                     <span class="payroll-rates-name">${escHtml(e.name)}</span>
                     <label>$ / box dispatched
@@ -849,21 +853,15 @@ const Admin = (() => {
                     <button class="btn-secondary btn-sm payroll-rates-save" data-emp="${escHtml(e.id)}">Save</button>
                 </div>`).join('');
             ratesEl.querySelectorAll('.payroll-rates-save').forEach(btn => {
-                btn.addEventListener('click', async (e) => {
-                    const empId = e.currentTarget.dataset.emp;
+                btn.addEventListener('click', async (ev) => {
+                    const empId = ev.currentTarget.dataset.emp;
                     const row = ratesEl.querySelector(`.payroll-rates-row[data-emp="${empId}"]`);
                     const newRates = {};
-                    row.querySelectorAll('.payroll-rate-input').forEach(inp => {
-                        newRates[inp.dataset.field] = Number(inp.value) || 0;
-                    });
+                    row.querySelectorAll('.payroll-rate-input').forEach(inp => { newRates[inp.dataset.field] = Number(inp.value) || 0; });
                     const next = employees.map(emp => emp.id === empId ? { ...emp, rates: newRates } : emp);
                     btn.disabled = true; btn.textContent = 'Saving…';
                     try {
-                        await api('/api/payroll/config', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ employees: next }),
-                        });
+                        await api('/api/payroll/config', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ employees: next }) });
                         for (let i = 0; i < employees.length; i++) if (employees[i].id === empId) employees[i] = next.find(e => e.id === empId);
                         showToast('Rates saved');
                     } catch (err) { showToast('Save failed: ' + err.message); }
@@ -872,6 +870,7 @@ const Admin = (() => {
             });
         }
 
+        // ── CSV import/export (kept as backup workflow) ──
         function wireUpload(prefix, endpoint) {
             let lastFile = null;
             const resultsEl = document.getElementById(`${prefix}-results`);
@@ -883,44 +882,221 @@ const Admin = (() => {
                 try {
                     const csv = await file.text();
                     const resp = await fetch(endpoint, { method: 'POST', headers: { 'Content-Type': 'text/csv' }, body: csv });
-                    if (!resp.ok) {
-                        const err = await resp.json().catch(() => ({ error: resp.statusText }));
-                        throw new Error(err.error || resp.statusText);
-                    }
+                    if (!resp.ok) { const err = await resp.json().catch(() => ({ error: resp.statusText })); throw new Error(err.error || resp.statusText); }
                     const r = await resp.json();
                     const s = r.summary;
                     resultsEl.innerHTML = `
                     <div class="bulk-summary">
                         <strong>Dry run:</strong> ${s.csvRowsParsed} parsed · ${s.adds} new · ${s.updates} updated · ${s.unchanged} unchanged.
                     </div>
-                    ${(s.adds + s.updates) > 0 ? `
-                    <div class="bulk-apply-bar">
-                        <button class="btn-primary" id="${prefix}-apply-btn">Apply ${s.adds + s.updates} change${(s.adds + s.updates) === 1 ? '' : 's'}</button>
-                    </div>` : ''}`;
+                    ${(s.adds + s.updates) > 0 ? `<div class="bulk-apply-bar"><button class="btn-primary" id="${prefix}-apply-btn">Apply ${s.adds + s.updates} change${(s.adds + s.updates) === 1 ? '' : 's'}</button></div>` : ''}`;
                     document.getElementById(`${prefix}-apply-btn`)?.addEventListener('click', async (ev) => {
                         if (!confirm(`Apply ${s.adds + s.updates} change(s)? A backup is taken first.`)) return;
-                        const btn = ev.currentTarget;
-                        btn.disabled = true; btn.textContent = 'Applying…';
+                        const applyBtn = ev.currentTarget;
+                        applyBtn.disabled = true; applyBtn.textContent = 'Applying…';
                         try {
                             const csv2 = await lastFile.text();
                             const resp2 = await fetch(endpoint + '?apply=true', { method: 'POST', headers: { 'Content-Type': 'text/csv' }, body: csv2 });
-                            if (!resp2.ok) {
-                                const err = await resp2.json().catch(() => ({ error: resp2.statusText }));
-                                throw new Error(err.error || resp2.statusText);
-                            }
+                            if (!resp2.ok) { const err = await resp2.json().catch(() => ({ error: resp2.statusText })); throw new Error(err.error || resp2.statusText); }
                             const ar = await resp2.json();
                             resultsEl.innerHTML = `<div class="bulk-summary bulk-summary--applied"><strong>Applied.</strong> Table size: ${ar.summary.totalRowsAfter} · backup: <code>${escHtml(ar.summary.backupTs)}</code></div>`;
                             showToast('Applied');
                         } catch (err) {
                             showToast('Apply failed: ' + err.message);
-                            btn.disabled = false; btn.textContent = `Apply ${s.adds + s.updates} change${(s.adds + s.updates) === 1 ? '' : 's'}`;
+                            applyBtn.disabled = false; applyBtn.textContent = `Apply ${s.adds + s.updates} change${(s.adds + s.updates) === 1 ? '' : 's'}`;
                         }
                     });
-                } catch (err) {
-                    resultsEl.innerHTML = `<p class="bulk-error">${escHtml(err.message)}</p>`;
-                }
+                } catch (err) { resultsEl.innerHTML = `<p class="bulk-error">${escHtml(err.message)}</p>`; }
             });
         }
+
+        // ── Daily tally — direct entry ──
+
+        // lineKg: same rule as dispatch-log.js and payslip.js
+        function tallyLineKg(l) {
+            if (l?.kgPerUnit != null && !isNaN(Number(l.kgPerUnit))) return Number(l.kgPerUnit) * (Number(l.quantity) || 0);
+            const text = `${l?.description || ''} ${l?.name || ''} ${l?.sku || ''}`;
+            const m = text.match(/\b(10|1)\s*kg\b/i);
+            return (m ? Number(m[1]) : 0) * (Number(l?.quantity) || 0);
+        }
+
+        const MONTHS_SHORT = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+        function fmtTallyDate(iso) {
+            const [, m, d] = iso.split('-').map(Number);
+            return `${d}-${MONTHS_SHORT[m - 1]}`;
+        }
+        function fmtTallyNum(n) { return !n ? '' : Number.isInteger(n) ? String(n) : Number(n).toFixed(1); }
+
+        async function loadTally() {
+            const empId = document.getElementById('tally-employee').value;
+            const start = document.getElementById('tally-start').value;
+            const end   = document.getElementById('tally-end').value;
+            if (!empId || !start || !end) { showToast('Pick employee + dates'); return; }
+            const employee = employees.find(e => e.id === empId);
+            if (!employee) return;
+
+            const gridEl = document.getElementById('tally-grid');
+            gridEl.innerHTML = '<p class="bulk-loading">Loading…</p>';
+
+            try {
+                const [packLog, tsLog, orders] = await Promise.all([
+                    api('/api/payroll/packing-log'),
+                    api('/api/payroll/timesheets'),
+                    api('/api/orders'),
+                ]);
+
+                const packByDate = new Map();
+                for (const p of packLog) {
+                    if (p.employee !== employee.name || p.date < start || p.date > end) continue;
+                    packByDate.set(p.date, { boxes10kg: Number(p.boxes10kg) || 0, boxes1kg: Number(p.boxes1kg) || 0 });
+                }
+                const hoursByDate = new Map();
+                for (const t of tsLog) {
+                    if (t.employee !== employee.name || t.date < start || t.date > end) continue;
+                    hoursByDate.set(t.date, (hoursByDate.get(t.date) || 0) + (Number(t.hours) || 0));
+                }
+                const dispatchByDate = new Map();
+                for (const o of orders) {
+                    if (!o || (o.status !== 'dispatched' && o.status !== 'paid')) continue;
+                    if ((o.dispatchedBy || 'Jake') !== employee.name) continue;
+                    const day = (o.dispatchedAt || o.updatedAt || '').slice(0, 10);
+                    if (day < start || day > end) continue;
+                    const boxes = (o.lines || []).reduce((s, l) => s + tallyLineKg(l), 0) / 10;
+                    dispatchByDate.set(day, (dispatchByDate.get(day) || 0) + boxes);
+                }
+
+                const DAYS = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+                const rows = [];
+                const cur = new Date(start + 'T00:00:00');
+                const fin = new Date(end   + 'T00:00:00');
+                while (cur <= fin) {
+                    const iso = cur.toISOString().slice(0, 10);
+                    const pack = packByDate.get(iso) || { boxes10kg: 0, boxes1kg: 0 };
+                    rows.push({
+                        date:       iso,
+                        day:        DAYS[cur.getDay()],
+                        boxes10kg:  pack.boxes10kg,
+                        boxes1kg:   pack.boxes1kg,
+                        dispatched: Math.round((dispatchByDate.get(iso) || 0) * 100) / 100,
+                        hours:      hoursByDate.get(iso) || 0,
+                    });
+                    cur.setDate(cur.getDate() + 1);
+                }
+
+                renderTallyGrid(rows, employee);
+            } catch (err) {
+                gridEl.innerHTML = `<p class="bulk-error">${escHtml(err.message)}</p>`;
+            }
+        }
+
+        function renderTallyGrid(rows, employee) {
+            const tots = rows.reduce((a, r) => ({
+                boxes10kg:  a.boxes10kg  + r.boxes10kg,
+                boxes1kg:   a.boxes1kg   + r.boxes1kg,
+                dispatched: a.dispatched + r.dispatched,
+                hours:      a.hours      + r.hours,
+            }), { boxes10kg: 0, boxes1kg: 0, dispatched: 0, hours: 0 });
+
+            const gridEl = document.getElementById('tally-grid');
+            gridEl.innerHTML = `
+            <div class="tally-wrap">
+                <table class="payroll-tally-table">
+                    <thead>
+                        <tr>
+                            <th>Date</th><th>Day</th>
+                            <th class="tally-num"># 10kg</th>
+                            <th class="tally-num"># 10×1kg</th>
+                            <th class="tally-num"># Dispatched</th>
+                            <th class="tally-num">Hours</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${rows.map(r => `
+                        <tr data-date="${escHtml(r.date)}" data-dispatched="${r.dispatched}"
+                            data-had-pack="${r.boxes10kg || r.boxes1kg ? '1' : ''}"
+                            data-had-ts="${r.hours ? '1' : ''}">
+                            <td class="tally-date">${escHtml(fmtTallyDate(r.date))}</td>
+                            <td class="tally-day">${escHtml(r.day)}</td>
+                            <td class="tally-num"><input class="tally-input" type="number" min="0" step="1" name="boxes10kg" value="${r.boxes10kg || ''}"></td>
+                            <td class="tally-num"><input class="tally-input" type="number" min="0" step="1" name="boxes1kg" value="${r.boxes1kg || ''}"></td>
+                            <td class="tally-num tally-dispatched">${fmtTallyNum(r.dispatched)}</td>
+                            <td class="tally-num"><input class="tally-input" type="number" min="0" step="0.5" name="hours" value="${r.hours || ''}"></td>
+                        </tr>`).join('')}
+                    </tbody>
+                    <tfoot>
+                        <tr>
+                            <td colspan="2"><strong>Totals</strong></td>
+                            <td class="tally-num tally-tot" id="tally-tot-10kg"><strong>${fmtTallyNum(tots.boxes10kg)}</strong></td>
+                            <td class="tally-num tally-tot" id="tally-tot-1kg"><strong>${fmtTallyNum(tots.boxes1kg)}</strong></td>
+                            <td class="tally-num tally-tot"><strong>${fmtTallyNum(tots.dispatched)}</strong></td>
+                            <td class="tally-num tally-tot" id="tally-tot-hours"><strong>${fmtTallyNum(tots.hours)}</strong></td>
+                        </tr>
+                    </tfoot>
+                </table>
+                <div class="tally-save-bar">
+                    <button class="btn-primary btn-sm" id="tally-save-btn">Save entries</button>
+                    <span class="tally-save-status" id="tally-save-status"></span>
+                </div>
+            </div>`;
+
+            // Live totals update
+            gridEl.querySelector('.payroll-tally-table').addEventListener('input', () => {
+                let t10 = 0, t1 = 0, tH = 0;
+                gridEl.querySelectorAll('tbody tr[data-date]').forEach(row => {
+                    t10 += Number(row.querySelector('[name="boxes10kg"]')?.value) || 0;
+                    t1  += Number(row.querySelector('[name="boxes1kg"]')?.value)  || 0;
+                    tH  += Number(row.querySelector('[name="hours"]')?.value)     || 0;
+                });
+                document.getElementById('tally-tot-10kg').innerHTML  = `<strong>${fmtTallyNum(t10)}</strong>`;
+                document.getElementById('tally-tot-1kg').innerHTML   = `<strong>${fmtTallyNum(t1)}</strong>`;
+                document.getElementById('tally-tot-hours').innerHTML = `<strong>${fmtTallyNum(tH)}</strong>`;
+            });
+
+            document.getElementById('tally-save-btn').addEventListener('click', () => saveTally(employee));
+        }
+
+        async function saveTally(employee) {
+            const table = document.querySelector('.payroll-tally-table');
+            if (!table) return;
+
+            const packEntries = [], tsEntries = [];
+            table.querySelectorAll('tbody tr[data-date]').forEach(row => {
+                const date      = row.dataset.date;
+                const boxes10kg = Number(row.querySelector('[name="boxes10kg"]')?.value) || 0;
+                const boxes1kg  = Number(row.querySelector('[name="boxes1kg"]')?.value)  || 0;
+                const hours     = Number(row.querySelector('[name="hours"]')?.value)     || 0;
+                // Include row if it has non-zero values OR if it had existing KV data
+                // (so clearing a previous entry overwrites it to zero).
+                if (boxes10kg || boxes1kg || row.dataset.hadPack) packEntries.push({ date, employee: employee.name, boxes10kg, boxes1kg });
+                if (hours || row.dataset.hadTs)                   tsEntries.push({ date, employee: employee.name, hours });
+            });
+
+            const btn = document.getElementById('tally-save-btn');
+            const status = document.getElementById('tally-save-status');
+            btn.disabled = true; btn.textContent = 'Saving…'; status.textContent = '';
+
+            try {
+                const saves = [];
+                if (packEntries.length) saves.push(
+                    fetch('/api/payroll/packing-log', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ entries: packEntries }) })
+                        .then(r => { if (!r.ok) throw new Error('Packing log save failed'); })
+                );
+                if (tsEntries.length) saves.push(
+                    fetch('/api/payroll/timesheets', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ entries: tsEntries }) })
+                        .then(r => { if (!r.ok) throw new Error('Timesheets save failed'); })
+                );
+                await Promise.all(saves);
+                status.textContent = `Saved ${packEntries.length} packing + ${tsEntries.length} timesheet rows.`;
+                showToast('Tally saved');
+            } catch (err) {
+                status.textContent = 'Error: ' + err.message;
+                showToast('Save failed: ' + err.message);
+            } finally {
+                btn.disabled = false; btn.textContent = 'Save entries';
+            }
+        }
+
+        // ── Payslip generation ──
 
         async function generatePayslip() {
             const empId = document.getElementById('payslip-employee').value;
@@ -930,7 +1106,7 @@ const Admin = (() => {
             const resultEl = document.getElementById('payslip-result');
             resultEl.innerHTML = '<p class="bulk-loading">Computing…</p>';
             try {
-                const slip = await api(`/api/payroll/payslip?employee=${encodeURIComponent(empId)}&start=${start}&end=${end}`);
+                const slip = await api(`/api/payroll/payslip?detail=true&employee=${encodeURIComponent(empId)}&start=${start}&end=${end}`);
                 renderPayslip(slip);
             } catch (err) {
                 resultEl.innerHTML = `<p class="bulk-error">${escHtml(err.message)}</p>`;
@@ -940,16 +1116,65 @@ const Admin = (() => {
         function renderPayslip(slip) {
             const fmtMoney = n => '$' + Number(n).toLocaleString('en-NZ', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
             const fmtQty   = n => Number.isInteger(n) ? String(n) : Number(n).toFixed(2);
+            const fmtN     = n => !n ? '—' : Number.isInteger(n) ? String(n) : Number(n).toFixed(1);
+
+            const daily = slip.daily || [];
+            const dailyTots = daily.reduce((a, r) => ({
+                boxes10kg:  a.boxes10kg  + r.boxes10kg,
+                boxes1kg:   a.boxes1kg   + r.boxes1kg,
+                dispatched: a.dispatched + r.dispatched,
+                hours:      a.hours      + r.hours,
+            }), { boxes10kg: 0, boxes1kg: 0, dispatched: 0, hours: 0 });
+
+            const dailySection = daily.length ? `
+            <div class="payslip-section-title">Daily tally</div>
+            <table class="payslip-table payslip-daily-table">
+                <thead>
+                    <tr>
+                        <th>Date</th><th>Day</th>
+                        <th class="bulk-num"># 10kg</th>
+                        <th class="bulk-num"># 10×1kg</th>
+                        <th class="bulk-num"># Dispatched</th>
+                        <th class="bulk-num">Hours</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${daily.map(r => {
+                        const [, m, d] = r.date.split('-').map(Number);
+                        const lbl = `${d}-${MONTHS_SHORT[m - 1]}`;
+                        return `<tr>
+                            <td>${lbl}</td>
+                            <td>${escHtml(r.day)}</td>
+                            <td class="bulk-num">${fmtN(r.boxes10kg)}</td>
+                            <td class="bulk-num">${fmtN(r.boxes1kg)}</td>
+                            <td class="bulk-num">${fmtN(r.dispatched)}</td>
+                            <td class="bulk-num">${fmtN(r.hours)}</td>
+                        </tr>`;
+                    }).join('')}
+                </tbody>
+                <tfoot>
+                    <tr>
+                        <td colspan="2"><strong>Totals</strong></td>
+                        <td class="bulk-num"><strong>${fmtN(dailyTots.boxes10kg)}</strong></td>
+                        <td class="bulk-num"><strong>${fmtN(dailyTots.boxes1kg)}</strong></td>
+                        <td class="bulk-num"><strong>${fmtN(dailyTots.dispatched)}</strong></td>
+                        <td class="bulk-num"><strong>${fmtN(dailyTots.hours)}</strong></td>
+                    </tr>
+                </tfoot>
+            </table>
+            <div class="payslip-section-title" style="margin-top:1.25rem">Pay summary</div>` : '';
+
             const resultEl = document.getElementById('payslip-result');
             resultEl.innerHTML = `
             <div class="payslip" id="payslip-printable">
                 <div class="payslip-hd">
                     <div>
-                        <h3 class="payslip-title">Payslip</h3>
-                        <p class="payslip-meta">${escHtml(slip.employee.name)} · ${escHtml(slip.period.start)} → ${escHtml(slip.period.end)}</p>
+                        <h3 class="payslip-title">Payslip — ${escHtml(slip.employee.name)}</h3>
+                        <p class="payslip-meta">${escHtml(slip.period.start)} → ${escHtml(slip.period.end)}</p>
                     </div>
                     <button class="btn-secondary btn-sm no-print" id="payslip-pdf-btn">Download PDF ↓</button>
                 </div>
+                ${dailySection}
                 <table class="payslip-table">
                     <thead><tr><th>Component</th><th>Qty</th><th>Rate</th><th>Amount</th></tr></thead>
                     <tbody>
@@ -969,6 +1194,8 @@ const Admin = (() => {
             document.getElementById('payslip-pdf-btn').addEventListener('click', () => downloadPayslipPdf(slip));
         }
 
+        const MONTHS_SHORT = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
         async function downloadPayslipPdf(slip) {
             if (typeof html2pdf === 'undefined') { showToast('PDF library not loaded'); return; }
             const el = document.getElementById('payslip-printable');
@@ -976,11 +1203,7 @@ const Admin = (() => {
             await html2pdf().set({
                 margin: 15,
                 filename,
-                html2canvas: {
-                    scale: 2,
-                    backgroundColor: '#ffffff',
-                    ignoreElements: (n) => n.classList && n.classList.contains('no-print'),
-                },
+                html2canvas: { scale: 2, backgroundColor: '#ffffff', ignoreElements: (n) => n.classList && n.classList.contains('no-print') },
                 jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
                 pagebreak: { mode: 'avoid-all' },
             }).from(el).save();
