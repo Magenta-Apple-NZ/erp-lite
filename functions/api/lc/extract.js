@@ -101,13 +101,15 @@ export async function onRequestPost({ env, request }) {
         const text = result.content?.[0]?.text?.trim() || '';
 
         const jsonMatch = text.match(/\{[\s\S]*\}/);
-        if (!jsonMatch) return errResponse('Could not parse extraction result from model', 500);
+        if (!jsonMatch) {
+            return errResponse('Model did not return JSON. Response: ' + text.slice(0, 400), 500);
+        }
 
         let fields;
         try {
             fields = JSON.parse(jsonMatch[0]);
-        } catch {
-            return errResponse('Malformed JSON from extraction model', 500);
+        } catch (parseErr) {
+            return errResponse('Malformed JSON from model: ' + parseErr.message, 500);
         }
 
         return jsonResponse({ ok: true, fields });
