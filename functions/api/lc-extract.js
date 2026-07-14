@@ -1,4 +1,4 @@
-import { jsonResponse, errResponse } from '../_xero.js';
+import { jsonResponse, errResponse } from './_xero.js';
 
 function arrayBufferToBase64(buffer) {
     const bytes = new Uint8Array(buffer);
