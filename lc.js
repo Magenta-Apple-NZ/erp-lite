@@ -463,7 +463,10 @@ const LC = (() => {
             const fd = new FormData();
             fd.append('file', file);
             try {
-                const res = await fetch('/api/lc/extract', { method: 'POST', body: fd });
+                const res = await fetch('/api/lc-extract', { method: 'POST', body: fd });
+                if (!res.ok && !res.headers.get('content-type')?.includes('json')) {
+                    throw new Error(`Server error ${res.status} — check deployment`);
+                }
                 const json = await res.json();
                 if (!json.ok) throw new Error(json.error || 'Extraction failed');
                 fillFormFromFields(form, json.fields);
