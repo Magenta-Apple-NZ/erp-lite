@@ -226,13 +226,51 @@ const LC = (() => {
 
     // ── Create view ───────────────────────────────────────────────────────────
 
+    function fillFormFromFields(form, fields) {
+        const MAP = {
+            lcNumber: 'f-lcNumber', currency: 'f-currency', amount: 'f-amount',
+            issuedDate: 'f-issuedDate', latestShipDate: 'f-latestShipDate',
+            expiryDate: 'f-expiryDate', presentationDays: 'f-presentationDays',
+            governedBy: 'f-governedBy', applicantName: 'f-applicantName',
+            applicantAddress: 'f-applicantAddress', applicantBankName: 'f-applicantBankName',
+            applicantBankCity: 'f-applicantBankCity', applicantBankSwift: 'f-applicantBankSwift',
+            advisingBankName: 'f-advisingBankName', advisingBankCity: 'f-advisingBankCity',
+            goodsDescription: 'f-goodsDescription', hsCode: 'f-hsCode', origin: 'f-origin',
+            packageCount: 'f-packageCount', packageType: 'f-packageType',
+            quantity: 'f-quantity', quantityUnit: 'f-quantityUnit', unitPrice: 'f-unitPrice',
+            container: 'f-container', incoterms: 'f-incoterms',
+            portLoading: 'f-portLoading', portDischarge: 'f-portDischarge', portFinal: 'f-portFinal',
+            proformaRef: 'f-proformaRef', proformaDate: 'f-proformaDate',
+        };
+        for (const [key, id] of Object.entries(MAP)) {
+            const val = fields[key];
+            if (val === null || val === undefined) continue;
+            const el = form.querySelector('#' + id);
+            if (el) el.value = String(val);
+        }
+    }
+
     async function renderCreate(container) {
+        const UPLOAD_SVG = `<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>`;
+
         container.innerHTML = `
         <div class="orders-view-inner">
             <div class="lc-create-hd">
                 <a class="lc-back" href="#lc">← Letters of Credit</a>
                 <h1 class="lc-page-title">New Letter of Credit</h1>
             </div>
+
+            <div class="lc-upload-wrap">
+                <div class="lc-upload-zone" id="lc-upload-zone" role="button" tabindex="0"
+                     aria-label="Upload MT700 PDF to auto-fill form">
+                    <input type="file" id="lc-file-input" accept=".pdf,application/pdf" hidden>
+                    <div class="lc-upload-icon">${UPLOAD_SVG}</div>
+                    <div class="lc-upload-prompt">Upload MT700 to auto-fill form</div>
+                    <div class="lc-upload-hint">Drop PDF here, or click to browse — fields will populate automatically</div>
+                </div>
+                <div class="lc-extract-status" id="lc-extract-status" hidden></div>
+            </div>
+
             <form id="lc-create-form" class="lc-form" autocomplete="off">
 
                 <div class="lc-form-section">
@@ -401,7 +439,67 @@ const LC = (() => {
             </form>
         </div>`;
 
-        container.querySelector('#lc-create-form').addEventListener('submit', async e => {
+        const form    = container.querySelector('#lc-create-form');
+        const zone    = container.querySelector('#lc-upload-zone');
+        const fileIn  = container.querySelector('#lc-file-input');
+        const statusEl = container.querySelector('#lc-extract-status');
+
+        function showExtractStatus(type, msg) {
+            statusEl.hidden = false;
+            statusEl.className = 'lc-extract-status lc-extract-status--' + type;
+            const icon = type === 'loading' ? '' : type === 'ok' ? '✓ ' : '✗ ';
+            statusEl.textContent = (type === 'loading'
+                ? '⏳ ' : icon) + msg;
+        }
+
+        async function handleUpload(file) {
+            if (!file.name.endsWith('.pdf') && !file.type.includes('pdf')) {
+                showExtractStatus('error', 'Please upload a PDF file');
+                return;
+            }
+            showExtractStatus('loading', 'Reading document…');
+            zone.classList.add('lc-upload-zone--busy');
+
+            const fd = new FormData();
+            fd.append('file', file);
+            try {
+                const res = await fetch('/api/lc/extract', { method: 'POST', body: fd });
+                const json = await res.json();
+                if (!json.ok) throw new Error(json.error || 'Extraction failed');
+                fillFormFromFields(form, json.fields);
+                const num = json.fields.lcNumber || 'document';
+                showExtractStatus('ok', `Fields populated from LC #${num}`);
+                zone.classList.remove('lc-upload-zone--busy');
+                // Scroll to form so user can review
+                form.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            } catch (err) {
+                showExtractStatus('error', err.message || 'Failed to extract fields');
+                zone.classList.remove('lc-upload-zone--busy');
+            }
+        }
+
+        zone.addEventListener('click', () => fileIn.click());
+        zone.addEventListener('keydown', e => {
+            if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); fileIn.click(); }
+        });
+        zone.addEventListener('dragover', e => {
+            e.preventDefault();
+            zone.classList.add('lc-upload-zone--drag');
+        });
+        zone.addEventListener('dragleave', e => {
+            if (!zone.contains(e.relatedTarget)) zone.classList.remove('lc-upload-zone--drag');
+        });
+        zone.addEventListener('drop', e => {
+            e.preventDefault();
+            zone.classList.remove('lc-upload-zone--drag');
+            const file = e.dataTransfer.files[0];
+            if (file) handleUpload(file);
+        });
+        fileIn.addEventListener('change', () => {
+            if (fileIn.files[0]) handleUpload(fileIn.files[0]);
+        });
+
+        form.addEventListener('submit', async e => {
             e.preventDefault();
             const btn = container.querySelector('#lc-submit-btn');
             btn.disabled = true;
