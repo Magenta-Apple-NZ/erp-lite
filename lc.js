@@ -464,8 +464,10 @@ const LC = (() => {
             fd.append('file', file);
             try {
                 const res = await fetch('/api/lc-extract', { method: 'POST', body: fd });
-                if (!res.ok && !res.headers.get('content-type')?.includes('json')) {
-                    throw new Error(`Server error ${res.status} — check deployment`);
+                const ct = res.headers.get('content-type') || '';
+                if (!ct.includes('json')) {
+                    const preview = (await res.text()).slice(0, 120).replace(/\s+/g, ' ');
+                    throw new Error(`HTTP ${res.status} — ${preview}`);
                 }
                 const json = await res.json();
                 if (!json.ok) throw new Error(json.error || 'Extraction failed');
