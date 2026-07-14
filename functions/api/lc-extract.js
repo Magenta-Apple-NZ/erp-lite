@@ -43,7 +43,14 @@ Rules:
 - Return null for any field not clearly present. Do not guess.
 - Do not include any text outside the JSON object.`;
 
+export async function onRequestGet() {
+    return new Response(JSON.stringify({ ok: true, fn: 'lc-extract' }), {
+        headers: { 'Content-Type': 'application/json' }
+    });
+}
+
 export async function onRequestPost({ env, request }) {
+    console.log('[lc-extract] POST received');
     let step = 'init';
     try {
         const apiKey = env.ANTHROPIC_API_KEY;
@@ -52,12 +59,15 @@ export async function onRequestPost({ env, request }) {
         // Browser sends { data: "<base64>", mediaType: "application/pdf" }
         // Base64 encoding happens client-side to avoid Worker CPU limits
         step = 'parse-json';
+        console.log('[lc-extract] parsing request body');
         const body = await request.json();
         const base64 = body?.data;
         const mediaType = body?.mediaType || 'application/pdf';
+        console.log('[lc-extract] base64 length:', base64?.length ?? 'null');
         if (!base64) return errResponse('No file data in request body', 400);
 
         step = 'anthropic-request';
+        console.log('[lc-extract] calling Anthropic');
         const anthropicRes = await fetch('https://api.anthropic.com/v1/messages', {
             method: 'POST',
             headers: {
@@ -83,6 +93,7 @@ export async function onRequestPost({ env, request }) {
         });
 
         step = 'anthropic-response';
+        console.log('[lc-extract] Anthropic status:', anthropicRes.status);
         if (!anthropicRes.ok) {
             const err = await anthropicRes.json().catch(() => ({}));
             return errResponse(`Anthropic ${anthropicRes.status}: ${err.error?.message || anthropicRes.statusText}`, 502);
