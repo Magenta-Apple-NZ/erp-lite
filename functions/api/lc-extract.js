@@ -1,4 +1,12 @@
-import { jsonResponse, errResponse } from './_xero.js';
+function jsonResponse(data, status = 200) {
+    return new Response(JSON.stringify(data), {
+        status,
+        headers: { 'Content-Type': 'application/json' },
+    });
+}
+function errResponse(msg, status = 500) {
+    return jsonResponse({ error: msg }, status);
+}
 
 const EXTRACT_PROMPT = `You are extracting fields from a SWIFT MT700 "Issue of a Documentary Credit" document.
 
