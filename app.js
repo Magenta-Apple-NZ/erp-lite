@@ -144,9 +144,9 @@ async function loadDashboardAlerts() {
             const d = new Date(last.date + 'T00:00:00');
             const days = Math.round((d - today) / 86400000);
             if (days < 0) {
-                overdue.push({ seq: s.seq, label: last.label, days });
+                overdue.push({ seq: s.seq, id: s.id, label: last.label, days });
             } else if (d <= cutoff) {
-                arriving.push({ seq: s.seq, label: last.label, days });
+                arriving.push({ seq: s.seq, id: s.id, label: last.label, days });
             }
         }
     }
@@ -158,20 +158,20 @@ async function loadDashboardAlerts() {
         const daysAgo = Math.abs(first.days);
         const when = daysAgo === 0 ? 'today' : daysAgo === 1 ? 'yesterday' : `${daysAgo} days ago`;
         const extra = overdue.length > 1 ? ` <span class="db-alert-extra">+${overdue.length - 1} more</span>` : '';
-        rows.push(`<a class="db-alert-row db-alert-row--ship db-alert-row--overdue" href="#imports">
+        rows.push(`<a class="db-alert-row db-alert-row--ship db-alert-row--overdue" href="#imports/ship/${encodeURIComponent(first.id || '')}">
             <span class="db-alert-ship-icon">🚢</span>
             <span class="db-alert-main"><strong>Shipment #${esc(first.seq)}</strong> was due ${when} — confirm arrival${extra}</span>
-            <span class="db-alert-link">Open Imports →</span>
+            <span class="db-alert-link">Open shipment →</span>
         </a>`);
     }
     if (arriving.length) {
         const first = arriving[0];
         const when = first.days === 0 ? 'today' : first.days === 1 ? 'tomorrow' : `in ${first.days} days`;
         const extra = arriving.length > 1 ? ` <span class="db-alert-extra">+${arriving.length - 1} more</span>` : '';
-        rows.push(`<a class="db-alert-row db-alert-row--ship" href="#imports">
+        rows.push(`<a class="db-alert-row db-alert-row--ship" href="#imports/ship/${encodeURIComponent(first.id || '')}">
             <span class="db-alert-ship-icon">🚢</span>
             <span class="db-alert-main"><strong>Shipment #${esc(first.seq)}</strong> ${esc(first.label)} ${when}${extra}</span>
-            <span class="db-alert-link">Open Imports →</span>
+            <span class="db-alert-link">Open shipment →</span>
         </a>`);
     }
 
