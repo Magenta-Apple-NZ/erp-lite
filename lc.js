@@ -460,13 +460,24 @@ const LC = (() => {
             showExtractStatus('loading', 'Reading document…');
             zone.classList.add('lc-upload-zone--busy');
 
-            const fd = new FormData();
-            fd.append('file', file);
             try {
-                const res = await fetch('/api/lc-extract', { method: 'POST', body: fd });
+                // Encode PDF to base64 in the browser — Workers have strict CPU limits
+                const base64 = await new Promise((resolve, reject) => {
+                    const reader = new FileReader();
+                    reader.onload = () => resolve(reader.result.split(',')[1]);
+                    reader.onerror = () => reject(new Error('Failed to read file'));
+                    reader.readAsDataURL(file);
+                });
+
+                showExtractStatus('loading', 'Extracting fields with AI…');
+                const res = await fetch('/api/lc-extract', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ data: base64, mediaType: 'application/pdf' }),
+                });
                 const ct = res.headers.get('content-type') || '';
                 if (!ct.includes('json')) {
-                    const preview = (await res.text()).slice(0, 120).replace(/\s+/g, ' ');
+                    const preview = (await res.text()).slice(0, 200).replace(/\s+/g, ' ');
                     throw new Error(`HTTP ${res.status} — ${preview}`);
                 }
                 const json = await res.json();
@@ -475,7 +486,6 @@ const LC = (() => {
                 const num = json.fields.lcNumber || 'document';
                 showExtractStatus('ok', `Fields populated from LC #${num}`);
                 zone.classList.remove('lc-upload-zone--busy');
-                // Scroll to form so user can review
                 form.scrollIntoView({ behavior: 'smooth', block: 'start' });
             } catch (err) {
                 showExtractStatus('error', err.message || 'Failed to extract fields');

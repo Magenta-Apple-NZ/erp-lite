@@ -1,15 +1,5 @@
 import { jsonResponse, errResponse } from './_xero.js';
 
-// Chunked base64 — avoids argument-count limits on large spread calls
-function arrayBufferToBase64(buffer) {
-    const bytes = new Uint8Array(buffer);
-    let binary = '';
-    for (let i = 0; i < bytes.length; i++) {
-        binary += String.fromCharCode(bytes[i]);
-    }
-    return btoa(binary);
-}
-
 const EXTRACT_PROMPT = `You are extracting fields from a SWIFT MT700 "Issue of a Documentary Credit" document.
 
 Return ONLY a valid JSON object with these exact fields (use null for any field not found):
@@ -54,22 +44,18 @@ Rules:
 - Do not include any text outside the JSON object.`;
 
 export async function onRequestPost({ env, request }) {
-    // Step tracking for granular error messages
     let step = 'init';
     try {
         const apiKey = env.ANTHROPIC_API_KEY;
-        if (!apiKey) return errResponse('ANTHROPIC_API_KEY not configured', 500);
+        if (!apiKey) return errResponse('ANTHROPIC_API_KEY not configured — add it to Pages env vars', 500);
 
-        step = 'parse-form';
-        const formData = await request.formData();
-        const file = formData.get('file');
-        if (!file || !file.size) return errResponse('No file provided', 400);
-
-        step = 'read-buffer';
-        const buffer = await file.arrayBuffer();
-
-        step = 'base64';
-        const base64 = arrayBufferToBase64(buffer);
+        // Browser sends { data: "<base64>", mediaType: "application/pdf" }
+        // Base64 encoding happens client-side to avoid Worker CPU limits
+        step = 'parse-json';
+        const body = await request.json();
+        const base64 = body?.data;
+        const mediaType = body?.mediaType || 'application/pdf';
+        if (!base64) return errResponse('No file data in request body', 400);
 
         step = 'anthropic-request';
         const anthropicRes = await fetch('https://api.anthropic.com/v1/messages', {
@@ -88,7 +74,7 @@ export async function onRequestPost({ env, request }) {
                     content: [
                         {
                             type: 'document',
-                            source: { type: 'base64', media_type: 'application/pdf', data: base64 },
+                            source: { type: 'base64', media_type: mediaType, data: base64 },
                         },
                         { type: 'text', text: EXTRACT_PROMPT },
                     ],
@@ -106,12 +92,11 @@ export async function onRequestPost({ env, request }) {
         const result = await anthropicRes.json();
         const text = result.content?.[0]?.text?.trim() || '';
 
-        step = 'parse-json';
+        step = 'parse-json-result';
         const jsonMatch = text.match(/\{[\s\S]*\}/);
         if (!jsonMatch) {
-            return errResponse('Model response: ' + text.slice(0, 300), 500);
+            return errResponse('No JSON in model response: ' + text.slice(0, 300), 500);
         }
-
         const fields = JSON.parse(jsonMatch[0]);
         return jsonResponse({ ok: true, fields });
 
