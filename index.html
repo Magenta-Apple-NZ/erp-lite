@@ -60,6 +60,16 @@
                 Payslips
             </a>
 
+            <a class="nav-item nav-item--admin-only" href="#lc" id="nav-lc">
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M4 1h6l3 3v10a1 1 0 01-1 1H4a1 1 0 01-1-1V2a1 1 0 011-1z"/>
+                    <polyline points="9,1 9,4 12,4"/>
+                    <circle cx="10.5" cy="11" r="2"/>
+                    <line x1="5" y1="5.5" x2="10" y2="5.5"/>
+                </svg>
+                Letters of Credit
+            </a>
+
             <a class="nav-item nav-item--soon nav-item--admin-only" href="#" data-phase="Phase 5">
                 <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
                     <path d="M1 4.5h8v6.5H1z"/>
@@ -165,6 +175,11 @@
             <div class="orders-view-inner" id="imports-container"></div>
         </div>
 
+        <!-- ── View: LC Checker ── -->
+        <div id="view-lc" class="app-view" style="display:none">
+            <div id="lc-container"></div>
+        </div>
+
         <!-- ── View: Payslips ── -->
         <div id="view-payslips" class="app-view" style="display:none">
             <div class="orders-view-inner" id="payslips-container"></div>
@@ -188,6 +203,7 @@
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@3.0.1/dist/chartjs-plugin-annotation.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/html2pdf.js@0.10.2/dist/html2pdf.bundle.min.js"></script>
+<script src="lc.js"></script>
 <script src="orders.js"></script>
 <script src="admin.js"></script>
 <script src="warehouse.js"></script>

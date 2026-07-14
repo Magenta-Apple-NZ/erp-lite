@@ -358,7 +358,7 @@ function showToast(msg) {
 document.getElementById('reload-btn').addEventListener('click', () => { location.reload(); });
 
 // ── Hash router ──
-const VIEWS = ['view-dashboard', 'view-orders', 'view-orders-new', 'view-orders-detail', 'view-orders-edit', 'view-warehouse', 'view-admin', 'view-imports', 'view-payslips', 'view-sales', 'view-calendar'];
+const VIEWS = ['view-dashboard', 'view-orders', 'view-orders-new', 'view-orders-detail', 'view-orders-edit', 'view-warehouse', 'view-admin', 'view-imports', 'view-lc', 'view-payslips', 'view-sales', 'view-calendar'];
 
 function setActiveView(viewId) {
     VIEWS.forEach(id => {
@@ -511,6 +511,14 @@ async function handleRoute() {
         return;
     }
 
+    if (hash === 'lc' || hash.startsWith('lc/')) {
+        setActiveView('view-lc');
+        setActiveNav('nav-lc');
+        const subpath = hash.startsWith('lc/') ? hash.slice(3) : '';
+        await LC.render(document.getElementById('lc-container'), subpath);
+        return;
+    }
+
     if (hash === 'payslips' || hash === 'dispatch-log') {
         setActiveView('view-payslips');
         setActiveNav('nav-payslips');
@@ -576,6 +584,11 @@ if (warehouseNavItem) {
 document.getElementById('nav-admin')?.addEventListener('click', e => {
     e.preventDefault();
     location.hash = 'admin';
+});
+
+document.getElementById('nav-lc')?.addEventListener('click', e => {
+    e.preventDefault();
+    location.hash = 'lc';
 });
 
 // Make Imports nav item active (Phase 5)
