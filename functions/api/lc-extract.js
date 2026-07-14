@@ -1,10 +1,11 @@
 import { jsonResponse, errResponse } from './_xero.js';
 
+// Chunked base64 — avoids argument-count limits on large spread calls
 function arrayBufferToBase64(buffer) {
     const bytes = new Uint8Array(buffer);
     let binary = '';
-    for (let i = 0; i < bytes.length; i += 8192) {
-        binary += String.fromCharCode(...bytes.subarray(i, i + 8192));
+    for (let i = 0; i < bytes.length; i++) {
+        binary += String.fromCharCode(bytes[i]);
     }
     return btoa(binary);
 }
@@ -53,32 +54,35 @@ Rules:
 - Do not include any text outside the JSON object.`;
 
 export async function onRequestPost({ env, request }) {
+    // Step tracking for granular error messages
+    let step = 'init';
     try {
         const apiKey = env.ANTHROPIC_API_KEY;
-        if (!apiKey) return errResponse('ANTHROPIC_API_KEY not configured — add it to Worker secrets', 500);
+        if (!apiKey) return errResponse('ANTHROPIC_API_KEY not configured', 500);
 
+        step = 'parse-form';
         const formData = await request.formData();
         const file = formData.get('file');
         if (!file || !file.size) return errResponse('No file provided', 400);
 
-        const mimeType = file.type || 'application/pdf';
-        if (!mimeType.includes('pdf') && !file.name?.endsWith('.pdf')) {
-            return errResponse('File must be a PDF', 400);
-        }
-
+        step = 'read-buffer';
         const buffer = await file.arrayBuffer();
+
+        step = 'base64';
         const base64 = arrayBufferToBase64(buffer);
 
+        step = 'anthropic-request';
         const anthropicRes = await fetch('https://api.anthropic.com/v1/messages', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
                 'x-api-key': apiKey,
                 'anthropic-version': '2023-06-01',
+                'anthropic-beta': 'pdfs-2024-09-25',
             },
             body: JSON.stringify({
-                model: 'claude-sonnet-5',
-                max_tokens: 2048,
+                model: 'claude-haiku-4-5-20251001',
+                max_tokens: 1024,
                 messages: [{
                     role: 'user',
                     content: [
@@ -92,29 +96,26 @@ export async function onRequestPost({ env, request }) {
             }),
         });
 
+        step = 'anthropic-response';
         if (!anthropicRes.ok) {
             const err = await anthropicRes.json().catch(() => ({}));
-            return errResponse(`Anthropic API error: ${err.error?.message || anthropicRes.statusText}`, 502);
+            return errResponse(`Anthropic ${anthropicRes.status}: ${err.error?.message || anthropicRes.statusText}`, 502);
         }
 
+        step = 'parse-response';
         const result = await anthropicRes.json();
         const text = result.content?.[0]?.text?.trim() || '';
 
+        step = 'parse-json';
         const jsonMatch = text.match(/\{[\s\S]*\}/);
         if (!jsonMatch) {
-            return errResponse('Model did not return JSON. Response: ' + text.slice(0, 400), 500);
+            return errResponse('Model response: ' + text.slice(0, 300), 500);
         }
 
-        let fields;
-        try {
-            fields = JSON.parse(jsonMatch[0]);
-        } catch (parseErr) {
-            return errResponse('Malformed JSON from model: ' + parseErr.message, 500);
-        }
-
+        const fields = JSON.parse(jsonMatch[0]);
         return jsonResponse({ ok: true, fields });
 
     } catch (e) {
-        return errResponse(e.message);
+        return errResponse(`[${step}] ${e.message || String(e)}`, 500);
     }
 }
