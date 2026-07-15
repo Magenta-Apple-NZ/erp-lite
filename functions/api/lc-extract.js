@@ -1,28 +1,107 @@
-export async function onRequestGet() {
-    return new Response(JSON.stringify({ ok: true, fn: 'lc-extract', method: 'GET' }), {
+function jsonResponse(data, status = 200) {
+    return new Response(JSON.stringify(data), {
+        status,
         headers: { 'Content-Type': 'application/json' },
     });
 }
+function errResponse(msg, status = 500) {
+    return jsonResponse({ error: msg }, status);
+}
+
+const EXTRACT_PROMPT = `You are extracting fields from a SWIFT MT700 "Issue of a Documentary Credit" document.
+
+Return ONLY a valid JSON object with these exact fields (use null for any field not found):
+
+{
+  "lcNumber": "documentary credit number from field :20:",
+  "issuedDate": "YYYY-MM-DD issue date from :31C:",
+  "expiryDate": "YYYY-MM-DD expiry date from :31D:",
+  "latestShipDate": "YYYY-MM-DD latest date of shipment from :44C:",
+  "presentationDays": <integer days for presentation from :48:>,
+  "amount": <numeric value only from :32B:, no currency symbol or commas>,
+  "currency": "3-letter ISO currency code from :32B:",
+  "applicantName": "applicant company name from :50:",
+  "applicantAddress": "applicant city and country",
+  "applicantBankName": "issuing bank full name from :52A: or :52D:",
+  "applicantBankCity": "issuing bank city and country",
+  "applicantBankSwift": "issuing bank SWIFT/BIC code if present",
+  "advisingBankName": "advising bank full name from :57A: or :57D:",
+  "advisingBankCity": "advising bank city and country",
+  "goodsDescription": "complete goods description from :45A:",
+  "hsCode": "HS tariff/commodity code if stated",
+  "quantity": <total numeric quantity from :45A:>,
+  "quantityUnit": "unit of quantity: kg, mt, units, or pcs",
+  "packageCount": <integer number of packages/bales/cartons>,
+  "packageType": "package type: bales, cartons, pallets, rolls, etc.",
+  "unitPrice": <numeric unit price>,
+  "origin": "country of origin of goods",
+  "container": "container type and count, e.g. 1x40 FCL",
+  "incoterms": "full incoterms and named place",
+  "proformaRef": "proforma invoice or sales contract reference number",
+  "proformaDate": "YYYY-MM-DD date of proforma invoice",
+  "portLoading": "port or place of loading from :44E:",
+  "portDischarge": "port of discharge from :44F:",
+  "portFinal": "place of final destination from :44B:",
+  "governedBy": "applicable rules, e.g. UCP 600"
+}
+
+Rules:
+- Convert all SWIFT-format dates (YYMMDD or YYYYMMDD) to YYYY-MM-DD. If year 2-digit and >= 70 prefix 19, else prefix 20.
+- Strip currency symbols, commas, and units from numeric fields.
+- Return null for any field not clearly present. Do not guess.
+- Return ONLY the JSON object, no other text.`;
 
 export async function onRequestPost({ env, request }) {
+    let step = 'init';
     try {
-        const hasKey = !!env.ANTHROPIC_API_KEY;
-        const contentType = request.headers.get('content-type') || '';
-        let dataLength = 0;
-        try {
-            const body = await request.json();
-            dataLength = body?.data?.length ?? -1;
-        } catch (parseErr) {
-            return new Response(JSON.stringify({ ok: false, step: 'parse', error: parseErr.message, contentType }), {
-                status: 400, headers: { 'Content-Type': 'application/json' },
-            });
+        const apiKey = env.ANTHROPIC_API_KEY;
+        if (!apiKey) return errResponse('ANTHROPIC_API_KEY not configured', 500);
+
+        step = 'parse-request';
+        const body = await request.json();
+        const base64 = body?.data;
+        const mediaType = body?.mediaType || 'application/pdf';
+        if (!base64) return errResponse('No file data in request body', 400);
+
+        step = 'anthropic-fetch';
+        const anthropicRes = await fetch('https://api.anthropic.com/v1/messages', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'x-api-key': apiKey,
+                'anthropic-version': '2023-06-01',
+                'anthropic-beta': 'pdfs-2024-09-25',
+            },
+            body: JSON.stringify({
+                model: 'claude-haiku-4-5-20251001',
+                max_tokens: 1024,
+                messages: [{
+                    role: 'user',
+                    content: [
+                        { type: 'document', source: { type: 'base64', media_type: mediaType, data: base64 } },
+                        { type: 'text', text: EXTRACT_PROMPT },
+                    ],
+                }],
+            }),
+        });
+
+        step = 'anthropic-response';
+        if (!anthropicRes.ok) {
+            const err = await anthropicRes.json().catch(() => ({}));
+            return errResponse(`Anthropic ${anthropicRes.status}: ${err.error?.message || anthropicRes.statusText}`, 500);
         }
-        return new Response(JSON.stringify({ ok: true, hasKey, dataLength, contentType }), {
-            headers: { 'Content-Type': 'application/json' },
-        });
+
+        step = 'parse-model-response';
+        const result = await anthropicRes.json();
+        const text = result.content?.[0]?.text?.trim() || '';
+        const jsonMatch = text.match(/\{[\s\S]*\}/);
+        if (!jsonMatch) return errResponse('Model did not return JSON: ' + text.slice(0, 200), 500);
+
+        step = 'parse-fields';
+        const fields = JSON.parse(jsonMatch[0]);
+        return jsonResponse({ ok: true, fields });
+
     } catch (e) {
-        return new Response(JSON.stringify({ ok: false, error: e.message }), {
-            status: 500, headers: { 'Content-Type': 'application/json' },
-        });
+        return errResponse(`[${step}] ${e.message || String(e)}`, 500);
     }
 }

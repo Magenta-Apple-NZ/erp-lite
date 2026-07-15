@@ -482,6 +482,7 @@ const LC = (() => {
                 }
                 const json = await res.json();
                 if (!json.ok) throw new Error(json.error || 'Extraction failed');
+                if (!json.fields) throw new Error('No fields returned by extraction service');
                 fillFormFromFields(form, json.fields);
                 const num = json.fields.lcNumber || 'document';
                 showExtractStatus('ok', `Fields populated from LC #${num}`);
