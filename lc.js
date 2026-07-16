@@ -276,7 +276,7 @@ const LC = (() => {
                 <div class="lc-form-section">
                     <h2 class="lc-form-section-title">LC Identity</h2>
                     <div class="lc-form-grid">
-                        <div class="lc-field lc-field--wide">
+                        <div class="lc-field" style="grid-column:1/-1">
                             <label class="lc-label" for="f-lcNumber">LC Number <span class="lc-req">*</span></label>
                             <input class="lc-input lc-mono" id="f-lcNumber" name="lcNumber" required placeholder="e.g. 320126011494">
                         </div>
@@ -298,7 +298,7 @@ const LC = (() => {
                             <input class="lc-input" id="f-issuedDate" name="issuedDate" type="date">
                         </div>
                         <div class="lc-field">
-                            <label class="lc-label" for="f-latestShipDate">Latest Shipment Date</label>
+                            <label class="lc-label" for="f-latestShipDate">Latest Ship Date</label>
                             <input class="lc-input" id="f-latestShipDate" name="latestShipDate" type="date">
                         </div>
                         <div class="lc-field">
@@ -306,7 +306,7 @@ const LC = (() => {
                             <input class="lc-input" id="f-expiryDate" name="expiryDate" type="date">
                         </div>
                         <div class="lc-field">
-                            <label class="lc-label" for="f-presentationDays">Presentation Period (days)</label>
+                            <label class="lc-label" for="f-presentationDays">Presentation Days</label>
                             <input class="lc-input lc-mono" id="f-presentationDays" name="presentationDays" type="number" min="1" value="21">
                         </div>
                         <div class="lc-field">
@@ -319,20 +319,20 @@ const LC = (() => {
                 <div class="lc-form-section">
                     <h2 class="lc-form-section-title">Parties</h2>
                     <div class="lc-form-grid">
-                        <div class="lc-field lc-field--wide">
+                        <div class="lc-field" style="grid-column:1/-1">
                             <label class="lc-label" for="f-applicantName">Applicant Name <span class="lc-req">*</span></label>
                             <input class="lc-input" id="f-applicantName" name="applicantName" required placeholder="e.g. J.P.S. Enterprise">
                         </div>
-                        <div class="lc-field lc-field--wide">
+                        <div class="lc-field" style="grid-column:1/-1">
                             <label class="lc-label" for="f-applicantAddress">Applicant Address</label>
                             <input class="lc-input" id="f-applicantAddress" name="applicantAddress" placeholder="City, Country">
                         </div>
                         <div class="lc-field lc-field--wide">
-                            <label class="lc-label" for="f-applicantBankName">Applicant Bank</label>
+                            <label class="lc-label" for="f-applicantBankName">Issuing Bank</label>
                             <input class="lc-input" id="f-applicantBankName" name="applicantBankName" placeholder="e.g. SBAC Bank PLC">
                         </div>
                         <div class="lc-field">
-                            <label class="lc-label" for="f-applicantBankCity">Bank City / Country</label>
+                            <label class="lc-label" for="f-applicantBankCity">Bank City</label>
                             <input class="lc-input" id="f-applicantBankCity" name="applicantBankCity" placeholder="e.g. Dhaka, BD">
                         </div>
                         <div class="lc-field">
@@ -404,11 +404,11 @@ const LC = (() => {
                 <div class="lc-form-section">
                     <h2 class="lc-form-section-title">Routing &amp; References</h2>
                     <div class="lc-form-grid">
-                        <div class="lc-field lc-field--wide">
+                        <div class="lc-field">
                             <label class="lc-label" for="f-portLoading">Port of Loading</label>
                             <input class="lc-input" id="f-portLoading" name="portLoading" placeholder="e.g. Any port of Italy">
                         </div>
-                        <div class="lc-field lc-field--wide">
+                        <div class="lc-field">
                             <label class="lc-label" for="f-portDischarge">Port of Discharge</label>
                             <input class="lc-input" id="f-portDischarge" name="portDischarge" placeholder="e.g. Chattogram Sea Port">
                         </div>
