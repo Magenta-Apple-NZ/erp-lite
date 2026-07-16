@@ -270,191 +270,200 @@ const LC = (() => {
     }
 
     async function renderCreate(container) {
-        const UPLOAD_SVG = `<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>`;
+        const UPLOAD_SVG = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>`;
 
         container.innerHTML = `
         <div class="orders-view-inner">
-            <div class="lc-create-hd">
+            <div class="lc-detail-hd">
                 <a class="lc-back" href="#lc">← Letters of Credit</a>
-                <h1 class="lc-page-title">New Letter of Credit</h1>
+                <span class="lc-save-status">New Letter of Credit</span>
             </div>
 
-            <div class="lc-upload-wrap">
-                <div class="lc-upload-zone" id="lc-upload-zone" role="button" tabindex="0"
-                     aria-label="Upload MT700 PDF to auto-fill form">
-                    <input type="file" id="lc-file-input" accept=".pdf,application/pdf" hidden>
-                    <div class="lc-upload-icon">${UPLOAD_SVG}</div>
-                    <div class="lc-upload-prompt">Upload MT700 to auto-fill form</div>
-                    <div class="lc-upload-hint">Drop PDF here, or click to browse — fields will populate automatically</div>
+            <div class="lc-upload-strip" id="lc-upload-zone" role="button" tabindex="0"
+                 aria-label="Upload MT700 PDF to auto-fill form">
+                <input type="file" id="lc-file-input" accept=".pdf,application/pdf" hidden>
+                <span class="lc-upload-strip-icon">${UPLOAD_SVG}</span>
+                <div class="lc-upload-strip-body">
+                    <span class="lc-upload-prompt">Upload MT700 PDF to auto-fill</span>
+                    <span class="lc-upload-hint">Drop here, or click to browse</span>
                 </div>
                 <div class="lc-extract-status" id="lc-extract-status" hidden></div>
             </div>
 
-            <form id="lc-create-form" class="lc-form" autocomplete="off">
+            <form id="lc-create-form" class="lc-create-body" autocomplete="off">
 
-                <div class="lc-form-section">
-                    <h2 class="lc-form-section-title">LC Identity</h2>
-                    <div class="lc-form-grid">
-                        <div class="lc-field" style="grid-column:1/-1">
-                            <label class="lc-label" for="f-lcNumber">LC Number <span class="lc-req">*</span></label>
-                            <input class="lc-input lc-mono" id="f-lcNumber" name="lcNumber" required placeholder="e.g. 320126011494">
-                        </div>
-                        <div class="lc-field">
-                            <label class="lc-label" for="f-currency">Currency</label>
-                            <select class="lc-input" id="f-currency" name="currency">
-                                <option value="USD" selected>USD</option>
-                                <option value="EUR">EUR</option>
-                                <option value="GBP">GBP</option>
-                                <option value="NZD">NZD</option>
-                            </select>
-                        </div>
-                        <div class="lc-field">
-                            <label class="lc-label" for="f-amount">Amount <span class="lc-req">*</span></label>
-                            <input class="lc-input lc-mono" id="f-amount" name="amount" type="number" step="0.01" min="0" required placeholder="0.00">
-                        </div>
-                        <div class="lc-field">
-                            <label class="lc-label" for="f-issuedDate">Issued Date</label>
-                            <input class="lc-input" id="f-issuedDate" name="issuedDate" type="date">
-                        </div>
-                        <div class="lc-field">
-                            <label class="lc-label" for="f-latestShipDate">Latest Ship Date</label>
-                            <input class="lc-input" id="f-latestShipDate" name="latestShipDate" type="date">
-                        </div>
-                        <div class="lc-field">
-                            <label class="lc-label" for="f-expiryDate">Expiry Date</label>
-                            <input class="lc-input" id="f-expiryDate" name="expiryDate" type="date">
-                        </div>
-                        <div class="lc-field">
-                            <label class="lc-label" for="f-presentationDays">Presentation Days</label>
-                            <input class="lc-input lc-mono" id="f-presentationDays" name="presentationDays" type="number" min="1" value="21">
-                        </div>
-                        <div class="lc-field">
-                            <label class="lc-label" for="f-governedBy">Governed By</label>
-                            <input class="lc-input" id="f-governedBy" name="governedBy" value="UCP 600">
+                <div class="lc-checker-main">
+
+                    <div class="lc-scard">
+                        <div class="lc-scard-title">LC Identity</div>
+                        <div class="lc-form-grid">
+                            <div class="lc-field" style="grid-column:1/-1">
+                                <label class="lc-label" for="f-lcNumber">LC Number <span class="lc-req">*</span></label>
+                                <input class="lc-input lc-mono" id="f-lcNumber" name="lcNumber" required placeholder="e.g. 320126011494">
+                            </div>
+                            <div class="lc-field">
+                                <label class="lc-label" for="f-currency">Currency</label>
+                                <select class="lc-input" id="f-currency" name="currency">
+                                    <option value="USD" selected>USD</option>
+                                    <option value="EUR">EUR</option>
+                                    <option value="GBP">GBP</option>
+                                    <option value="NZD">NZD</option>
+                                </select>
+                            </div>
+                            <div class="lc-field">
+                                <label class="lc-label" for="f-amount">Amount <span class="lc-req">*</span></label>
+                                <input class="lc-input lc-mono" id="f-amount" name="amount" type="number" step="0.01" min="0" required placeholder="0.00">
+                            </div>
+                            <div class="lc-field">
+                                <label class="lc-label" for="f-issuedDate">Issued Date</label>
+                                <input class="lc-input" id="f-issuedDate" name="issuedDate" type="date">
+                            </div>
+                            <div class="lc-field">
+                                <label class="lc-label" for="f-latestShipDate">Latest Ship Date</label>
+                                <input class="lc-input" id="f-latestShipDate" name="latestShipDate" type="date">
+                            </div>
+                            <div class="lc-field">
+                                <label class="lc-label" for="f-expiryDate">Expiry Date</label>
+                                <input class="lc-input" id="f-expiryDate" name="expiryDate" type="date">
+                            </div>
+                            <div class="lc-field">
+                                <label class="lc-label" for="f-presentationDays">Presentation Days</label>
+                                <input class="lc-input lc-mono" id="f-presentationDays" name="presentationDays" type="number" min="1" value="21">
+                            </div>
+                            <div class="lc-field">
+                                <label class="lc-label" for="f-governedBy">Governed By</label>
+                                <input class="lc-input" id="f-governedBy" name="governedBy" value="UCP 600">
+                            </div>
                         </div>
                     </div>
-                </div>
 
-                <div class="lc-form-section">
-                    <h2 class="lc-form-section-title">Parties</h2>
-                    <div class="lc-form-grid">
-                        <div class="lc-field" style="grid-column:1/-1">
-                            <label class="lc-label" for="f-applicantName">Applicant Name <span class="lc-req">*</span></label>
-                            <input class="lc-input" id="f-applicantName" name="applicantName" required placeholder="e.g. J.P.S. Enterprise">
-                        </div>
-                        <div class="lc-field" style="grid-column:1/-1">
-                            <label class="lc-label" for="f-applicantAddress">Applicant Address</label>
-                            <input class="lc-input" id="f-applicantAddress" name="applicantAddress" placeholder="City, Country">
-                        </div>
-                        <div class="lc-field lc-field--wide">
-                            <label class="lc-label" for="f-applicantBankName">Issuing Bank</label>
-                            <input class="lc-input" id="f-applicantBankName" name="applicantBankName" placeholder="e.g. SBAC Bank PLC">
-                        </div>
-                        <div class="lc-field">
-                            <label class="lc-label" for="f-applicantBankCity">Bank City</label>
-                            <input class="lc-input" id="f-applicantBankCity" name="applicantBankCity" placeholder="e.g. Dhaka, BD">
-                        </div>
-                        <div class="lc-field">
-                            <label class="lc-label" for="f-applicantBankSwift">Bank SWIFT</label>
-                            <input class="lc-input lc-mono" id="f-applicantBankSwift" name="applicantBankSwift" placeholder="XXXXBDDH">
-                        </div>
-                        <div class="lc-field lc-field--wide">
-                            <label class="lc-label" for="f-advisingBankName">Advising Bank</label>
-                            <input class="lc-input" id="f-advisingBankName" name="advisingBankName" value="ANZ Bank NZ">
-                        </div>
-                        <div class="lc-field">
-                            <label class="lc-label" for="f-advisingBankCity">Advising Bank City</label>
-                            <input class="lc-input" id="f-advisingBankCity" name="advisingBankCity" value="Wellington">
+                    <div class="lc-scard">
+                        <div class="lc-scard-title">Goods</div>
+                        <div class="lc-form-grid">
+                            <div class="lc-field" style="grid-column:1/-1">
+                                <label class="lc-label" for="f-goodsDescription">Description</label>
+                                <textarea class="lc-input lc-textarea" id="f-goodsDescription" name="goodsDescription" rows="2" placeholder="e.g. Knitted nylon stocking material (toeclip)"></textarea>
+                            </div>
+                            <div class="lc-field">
+                                <label class="lc-label" for="f-hsCode">HS Code</label>
+                                <input class="lc-input lc-mono" id="f-hsCode" name="hsCode" placeholder="0000.00.00">
+                            </div>
+                            <div class="lc-field">
+                                <label class="lc-label" for="f-origin">Origin Country</label>
+                                <input class="lc-input" id="f-origin" name="origin" placeholder="e.g. Italy">
+                            </div>
+                            <div class="lc-field">
+                                <label class="lc-label" for="f-packageCount">Package Count</label>
+                                <input class="lc-input lc-mono" id="f-packageCount" name="packageCount" type="number" min="0" placeholder="40">
+                            </div>
+                            <div class="lc-field">
+                                <label class="lc-label" for="f-packageType">Package Type</label>
+                                <input class="lc-input" id="f-packageType" name="packageType" value="bales" placeholder="bales / cartons / pallets">
+                            </div>
+                            <div class="lc-field">
+                                <label class="lc-label" for="f-quantity">Quantity</label>
+                                <input class="lc-input lc-mono" id="f-quantity" name="quantity" type="number" step="0.01" min="0" placeholder="18754.00">
+                            </div>
+                            <div class="lc-field">
+                                <label class="lc-label" for="f-quantityUnit">Unit</label>
+                                <select class="lc-input" id="f-quantityUnit" name="quantityUnit">
+                                    <option value="kg" selected>kg</option>
+                                    <option value="mt">mt</option>
+                                    <option value="units">units</option>
+                                    <option value="pcs">pcs</option>
+                                </select>
+                            </div>
+                            <div class="lc-field">
+                                <label class="lc-label" for="f-unitPrice">Unit Price</label>
+                                <input class="lc-input lc-mono" id="f-unitPrice" name="unitPrice" type="number" step="0.0001" min="0" placeholder="1.18">
+                            </div>
+                            <div class="lc-field">
+                                <label class="lc-label" for="f-container">Container</label>
+                                <input class="lc-input" id="f-container" name="container" placeholder="e.g. 1×40 FCL">
+                            </div>
+                            <div class="lc-field" style="grid-column:1/-1">
+                                <label class="lc-label" for="f-incoterms">Incoterms</label>
+                                <input class="lc-input" id="f-incoterms" name="incoterms" placeholder="e.g. CPT ICD Kamlapur, Dhaka via Chattogram (Incoterms 2020)">
+                            </div>
                         </div>
                     </div>
+
                 </div>
 
-                <div class="lc-form-section">
-                    <h2 class="lc-form-section-title">Goods</h2>
-                    <div class="lc-form-grid">
-                        <div class="lc-field" style="grid-column:1/-1">
-                            <label class="lc-label" for="f-goodsDescription">Description</label>
-                            <textarea class="lc-input lc-textarea" id="f-goodsDescription" name="goodsDescription" rows="2" placeholder="e.g. Knitted nylon stocking material (toeclip) — by-product from manufacture of stockings"></textarea>
-                        </div>
-                        <div class="lc-field">
-                            <label class="lc-label" for="f-hsCode">HS Code</label>
-                            <input class="lc-input lc-mono" id="f-hsCode" name="hsCode" placeholder="0000.00.00">
-                        </div>
-                        <div class="lc-field">
-                            <label class="lc-label" for="f-origin">Origin Country</label>
-                            <input class="lc-input" id="f-origin" name="origin" placeholder="e.g. Italy">
-                        </div>
-                        <div class="lc-field">
-                            <label class="lc-label" for="f-packageCount">Package Count</label>
-                            <input class="lc-input lc-mono" id="f-packageCount" name="packageCount" type="number" min="0" placeholder="40">
-                        </div>
-                        <div class="lc-field">
-                            <label class="lc-label" for="f-packageType">Package Type</label>
-                            <input class="lc-input" id="f-packageType" name="packageType" value="bales" placeholder="bales / cartons / pallets">
-                        </div>
-                        <div class="lc-field">
-                            <label class="lc-label" for="f-quantity">Quantity</label>
-                            <input class="lc-input lc-mono" id="f-quantity" name="quantity" type="number" step="0.01" min="0" placeholder="18754.00">
-                        </div>
-                        <div class="lc-field">
-                            <label class="lc-label" for="f-quantityUnit">Unit</label>
-                            <select class="lc-input" id="f-quantityUnit" name="quantityUnit">
-                                <option value="kg" selected>kg</option>
-                                <option value="mt">mt</option>
-                                <option value="units">units</option>
-                                <option value="pcs">pcs</option>
-                            </select>
-                        </div>
-                        <div class="lc-field">
-                            <label class="lc-label" for="f-unitPrice">Unit Price</label>
-                            <input class="lc-input lc-mono" id="f-unitPrice" name="unitPrice" type="number" step="0.0001" min="0" placeholder="1.18">
-                        </div>
-                        <div class="lc-field">
-                            <label class="lc-label" for="f-container">Container</label>
-                            <input class="lc-input" id="f-container" name="container" placeholder="e.g. 1×40 FCL">
-                        </div>
-                        <div class="lc-field lc-field--wide">
-                            <label class="lc-label" for="f-incoterms">Incoterms</label>
-                            <input class="lc-input" id="f-incoterms" name="incoterms" placeholder="e.g. CPT ICD Kamlapur, Dhaka via Chattogram (Incoterms 2020)">
+                <div class="lc-create-sidebar">
+
+                    <div class="lc-scard">
+                        <div class="lc-scard-title">Parties</div>
+                        <div class="lc-form-grid lc-form-grid--col1">
+                            <div class="lc-field">
+                                <label class="lc-label" for="f-applicantName">Applicant <span class="lc-req">*</span></label>
+                                <input class="lc-input" id="f-applicantName" name="applicantName" required placeholder="e.g. J.P.S. Enterprise">
+                            </div>
+                            <div class="lc-field">
+                                <label class="lc-label" for="f-applicantAddress">Applicant Address</label>
+                                <input class="lc-input" id="f-applicantAddress" name="applicantAddress" placeholder="City, Country">
+                            </div>
+                            <div class="lc-field">
+                                <label class="lc-label" for="f-applicantBankName">Issuing Bank</label>
+                                <input class="lc-input" id="f-applicantBankName" name="applicantBankName" placeholder="e.g. SBAC Bank PLC">
+                            </div>
+                            <div class="lc-field">
+                                <label class="lc-label" for="f-applicantBankCity">Bank City</label>
+                                <input class="lc-input" id="f-applicantBankCity" name="applicantBankCity" placeholder="e.g. Dhaka, BD">
+                            </div>
+                            <div class="lc-field">
+                                <label class="lc-label" for="f-applicantBankSwift">Bank SWIFT</label>
+                                <input class="lc-input lc-mono" id="f-applicantBankSwift" name="applicantBankSwift" placeholder="XXXXBDDH">
+                            </div>
+                            <div class="lc-field">
+                                <label class="lc-label" for="f-advisingBankName">Advising Bank</label>
+                                <input class="lc-input" id="f-advisingBankName" name="advisingBankName" value="ANZ Bank NZ">
+                            </div>
+                            <div class="lc-field">
+                                <label class="lc-label" for="f-advisingBankCity">Advising Bank City</label>
+                                <input class="lc-input" id="f-advisingBankCity" name="advisingBankCity" value="Wellington">
+                            </div>
                         </div>
                     </div>
-                </div>
 
-                <div class="lc-form-section">
-                    <h2 class="lc-form-section-title">Routing &amp; References</h2>
-                    <div class="lc-form-grid">
-                        <div class="lc-field">
-                            <label class="lc-label" for="f-portLoading">Port of Loading</label>
-                            <input class="lc-input" id="f-portLoading" name="portLoading" placeholder="e.g. Any port of Italy">
-                        </div>
-                        <div class="lc-field">
-                            <label class="lc-label" for="f-portDischarge">Port of Discharge</label>
-                            <input class="lc-input" id="f-portDischarge" name="portDischarge" placeholder="e.g. Chattogram Sea Port">
-                        </div>
-                        <div class="lc-field lc-field--wide">
-                            <label class="lc-label" for="f-portFinal">Final Destination</label>
-                            <input class="lc-input" id="f-portFinal" name="portFinal" placeholder="e.g. ICD Kamlapur, Dhaka">
-                        </div>
-                        <div class="lc-field">
-                            <label class="lc-label" for="f-proformaRef">Proforma Invoice Ref</label>
-                            <input class="lc-input lc-mono" id="f-proformaRef" name="proformaRef" placeholder="e.g. 101/2026">
-                        </div>
-                        <div class="lc-field">
-                            <label class="lc-label" for="f-proformaDate">Proforma Invoice Date</label>
-                            <input class="lc-input" id="f-proformaDate" name="proformaDate" type="date">
-                        </div>
-                        <div class="lc-field lc-field--wide">
-                            <label class="lc-label" for="f-shipmentRef">Linked Shipment <span class="lc-sub-label">(optional — seq # or description)</span></label>
-                            <input class="lc-input" id="f-shipmentRef" name="shipmentRef" placeholder="e.g. Shipment #40">
+                    <div class="lc-scard">
+                        <div class="lc-scard-title">Routing &amp; References</div>
+                        <div class="lc-form-grid lc-form-grid--col1">
+                            <div class="lc-field">
+                                <label class="lc-label" for="f-portLoading">Port of Loading</label>
+                                <input class="lc-input" id="f-portLoading" name="portLoading" placeholder="e.g. Any port of Italy">
+                            </div>
+                            <div class="lc-field">
+                                <label class="lc-label" for="f-portDischarge">Port of Discharge</label>
+                                <input class="lc-input" id="f-portDischarge" name="portDischarge" placeholder="e.g. Chattogram Sea Port">
+                            </div>
+                            <div class="lc-field">
+                                <label class="lc-label" for="f-portFinal">Final Destination</label>
+                                <input class="lc-input" id="f-portFinal" name="portFinal" placeholder="e.g. ICD Kamlapur, Dhaka">
+                            </div>
+                            <div class="lc-field">
+                                <label class="lc-label" for="f-proformaRef">Proforma Ref</label>
+                                <input class="lc-input lc-mono" id="f-proformaRef" name="proformaRef" placeholder="e.g. 101/2026">
+                            </div>
+                            <div class="lc-field">
+                                <label class="lc-label" for="f-proformaDate">Proforma Date</label>
+                                <input class="lc-input" id="f-proformaDate" name="proformaDate" type="date">
+                            </div>
+                            <div class="lc-field">
+                                <label class="lc-label" for="f-shipmentRef">Linked Shipment</label>
+                                <input class="lc-input" id="f-shipmentRef" name="shipmentRef" placeholder="e.g. Shipment #40">
+                            </div>
                         </div>
                     </div>
+
+                    <div class="lc-create-actions">
+                        <button type="submit" class="lc-btn-primary" id="lc-submit-btn">Create LC</button>
+                        <a class="lc-btn-ghost" href="#lc">Cancel</a>
+                    </div>
+                    <p class="lc-form-error" id="lc-form-error" hidden></p>
+
                 </div>
 
-                <div class="lc-form-actions">
-                    <a class="lc-btn-ghost" href="#lc">Cancel</a>
-                    <button type="submit" class="lc-btn-primary" id="lc-submit-btn">Create LC</button>
-                </div>
-                <p class="lc-form-error" id="lc-form-error" hidden></p>
             </form>
         </div>`;
 
@@ -477,7 +486,7 @@ const LC = (() => {
                 return;
             }
             showExtractStatus('loading', 'Reading document…');
-            zone.classList.add('lc-upload-zone--busy');
+            zone.classList.add('lc-upload-strip--busy');
 
             try {
                 // Encode PDF to base64 in the browser — Workers have strict CPU limits
@@ -505,11 +514,11 @@ const LC = (() => {
                 fillFormFromFields(form, json.fields);
                 const num = json.fields.lcNumber || 'document';
                 showExtractStatus('ok', `Fields populated from LC #${num}`);
-                zone.classList.remove('lc-upload-zone--busy');
+                zone.classList.remove('lc-upload-strip--busy');
                 form.scrollIntoView({ behavior: 'smooth', block: 'start' });
             } catch (err) {
                 showExtractStatus('error', err.message || 'Failed to extract fields');
-                zone.classList.remove('lc-upload-zone--busy');
+                zone.classList.remove('lc-upload-strip--busy');
             }
         }
 
@@ -519,14 +528,14 @@ const LC = (() => {
         });
         zone.addEventListener('dragover', e => {
             e.preventDefault();
-            zone.classList.add('lc-upload-zone--drag');
+            zone.classList.add('lc-upload-strip--drag');
         });
         zone.addEventListener('dragleave', e => {
-            if (!zone.contains(e.relatedTarget)) zone.classList.remove('lc-upload-zone--drag');
+            if (!zone.contains(e.relatedTarget)) zone.classList.remove('lc-upload-strip--drag');
         });
         zone.addEventListener('drop', e => {
             e.preventDefault();
-            zone.classList.remove('lc-upload-zone--drag');
+            zone.classList.remove('lc-upload-strip--drag');
             const file = e.dataTransfer.files[0];
             if (file) handleUpload(file);
         });

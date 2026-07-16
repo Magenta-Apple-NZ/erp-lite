@@ -5553,79 +5553,66 @@ a.db-row:hover { background: #f8fafc; border-color: #e2e8f0; }
 .lc-docs-badge--done { background: #f0fdf4; color: #16a34a; }
 
 /* ── Upload zone ── */
-.lc-upload-wrap { margin-bottom: 1.25rem; display: flex; flex-direction: column; gap: 0.5rem; }
-
-.lc-upload-zone {
+/* ── Upload strip (compact horizontal, replaces big drop zone) ── */
+.lc-upload-strip {
     border: 2px dashed #cbd5e1;
-    border-radius: 10px;
-    padding: 1.75rem 1.5rem;
+    border-radius: 8px;
+    padding: 0.65rem 1rem;
     display: flex;
-    flex-direction: column;
     align-items: center;
-    gap: 0.4rem;
+    gap: 0.75rem;
     cursor: pointer;
-    transition: border-color 0.15s, background 0.15s;
     background: white;
-    text-align: center;
+    margin-bottom: 0.75rem;
+    transition: border-color 0.15s, background 0.15s;
+    user-select: none;
 }
-.lc-upload-zone:hover,
-.lc-upload-zone:focus-visible { border-color: #4f46e5; background: #fafbff; outline: none; }
-.lc-upload-zone--drag { border-color: #4f46e5; background: #eef2ff; }
-.lc-upload-zone--busy { pointer-events: none; opacity: 0.7; }
-
-.lc-upload-icon { color: #94a3b8; margin-bottom: 0.2rem; }
-.lc-upload-zone:hover .lc-upload-icon,
-.lc-upload-zone--drag .lc-upload-icon { color: #4f46e5; }
-
-.lc-upload-prompt {
-    font-size: 0.9rem;
-    font-weight: 600;
-    color: #334155;
-}
-.lc-upload-hint {
-    font-size: 0.78rem;
-    color: #94a3b8;
-}
+.lc-upload-strip:hover,
+.lc-upload-strip:focus-visible { border-color: #4f46e5; background: #fafbff; outline: none; }
+.lc-upload-strip--drag { border-color: #4f46e5; background: #eef2ff; }
+.lc-upload-strip--busy { pointer-events: none; opacity: 0.65; }
+.lc-upload-strip-icon { color: #94a3b8; flex-shrink: 0; display: flex; }
+.lc-upload-strip:hover .lc-upload-strip-icon,
+.lc-upload-strip--drag .lc-upload-strip-icon { color: #4f46e5; }
+.lc-upload-strip-body { display: flex; flex-direction: column; gap: 0.1rem; }
+.lc-upload-strip .lc-upload-prompt { font-size: 0.85rem; font-weight: 600; color: #334155; }
+.lc-upload-strip .lc-upload-hint  { font-size: 0.75rem; color: #94a3b8; }
 
 .lc-extract-status {
-    font-size: 0.85rem;
+    margin-left: auto;
+    font-size: 0.8rem;
     font-weight: 500;
-    padding: 0.55rem 0.9rem;
-    border-radius: 6px;
+    padding: 0.3rem 0.65rem;
+    border-radius: 5px;
+    white-space: nowrap;
 }
 .lc-extract-status--loading { background: #f1f5f9; color: #475569; }
-.lc-extract-status--ok  { background: #f0fdf4; color: #16a34a; }
-.lc-extract-status--error { background: #fef2f2; color: #dc2626; }
+.lc-extract-status--ok      { background: #f0fdf4; color: #16a34a; }
+.lc-extract-status--error   { background: #fef2f2; color: #dc2626; }
 
-/* ── Create form ── */
-.lc-create-hd { display: flex; flex-direction: column; gap: 0.25rem; margin-bottom: 1.25rem; }
-
-.lc-form { display: flex; flex-direction: column; gap: 1.5rem; max-width: 860px; }
-
-.lc-form-section { background: white; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden; }
-
-.lc-form-section-title {
-    font-size: 0.72rem;
-    font-weight: 700;
-    letter-spacing: 0.07em;
-    text-transform: uppercase;
-    color: #64748b;
-    padding: 0.75rem 1rem;
-    border-bottom: 1px solid #f1f5f9;
-    background: #f8fafc;
-    margin: 0;
+/* ── Create form — two-column layout ── */
+.lc-create-body {
+    display: grid;
+    grid-template-columns: 1fr 260px;
+    gap: 1rem;
+    align-items: start;
 }
+.lc-create-sidebar { display: flex; flex-direction: column; gap: 0.75rem; position: sticky; top: 0; }
+.lc-create-actions { display: flex; flex-direction: column; gap: 0.5rem; }
+.lc-create-actions .lc-btn-primary { width: 100%; justify-content: center; }
+.lc-create-actions .lc-btn-ghost   { width: 100%; justify-content: center; text-align: center; }
 
 .lc-form-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
     gap: 1px;
     background: #f1f5f9;
 }
+.lc-form-grid--col1 { grid-template-columns: 1fr; }
 
 .lc-field {
     background: white;
-    padding: 0.75rem 1rem;
+    padding: 0.65rem 0.85rem;
     display: flex;
     flex-direction: column;
     gap: 0.3rem;
@@ -5633,7 +5620,7 @@ a.db-row:hover { background: #f8fafc; border-color: #e2e8f0; }
 .lc-field--wide { grid-column: span 2; }
 
 .lc-label {
-    font-size: 0.72rem;
+    font-size: 0.69rem;
     font-weight: 600;
     letter-spacing: 0.04em;
     text-transform: uppercase;
@@ -5645,8 +5632,8 @@ a.db-row:hover { background: #f8fafc; border-color: #e2e8f0; }
 .lc-input {
     border: 1px solid #e2e8f0;
     border-radius: 5px;
-    padding: 0.45rem 0.6rem;
-    font-size: 0.875rem;
+    padding: 0.4rem 0.55rem;
+    font-size: 0.85rem;
     font-family: inherit;
     color: #1e293b;
     background: white;
@@ -5654,21 +5641,15 @@ a.db-row:hover { background: #f8fafc; border-color: #e2e8f0; }
     width: 100%;
 }
 .lc-input:focus { outline: none; border-color: #4f46e5; box-shadow: 0 0 0 3px rgba(79,70,229,0.08); }
-.lc-textarea { resize: vertical; min-height: 56px; }
+.lc-textarea { resize: vertical; min-height: 52px; }
 
-.lc-form-actions {
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-    padding-top: 0.25rem;
-}
 .lc-form-error {
-    font-size: 0.85rem;
+    font-size: 0.82rem;
     color: #dc2626;
     background: #fef2f2;
     border: 1px solid #fecaca;
     border-radius: 5px;
-    padding: 0.5rem 0.75rem;
+    padding: 0.45rem 0.7rem;
 }
 
 /* ── Detail header ── */
@@ -5955,8 +5936,10 @@ a.db-row:hover { background: #f8fafc; border-color: #e2e8f0; }
 
 /* ── Responsive ── */
 @media (max-width: 900px) {
-    .lc-checker-body { grid-template-columns: 1fr; }
-    .lc-ref-sidebar  { position: static; }
+    .lc-checker-body  { grid-template-columns: 1fr; }
+    .lc-ref-sidebar   { position: static; }
+    .lc-create-body   { grid-template-columns: 1fr; }
+    .lc-create-sidebar{ position: static; }
     .lc-checker-timeline { grid-template-columns: 1fr; }
     .lc-cond-grid { grid-template-columns: 1fr; }
     .lc-field--wide { grid-column: span 1; }
