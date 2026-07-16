@@ -41,6 +41,14 @@ const LC = (() => {
         })}`;
     }
 
+    function addDays(isoDate, days) {
+        if (!isoDate) return null;
+        const [y, m, d] = isoDate.split('-').map(Number);
+        const dt = new Date(y, m - 1, d);
+        dt.setDate(dt.getDate() + (days || 0));
+        return dt.toISOString().slice(0, 10);
+    }
+
     // ── Checklist generation (the 5% substituted into fixed structure) ────────
 
     function generateDocuments(lc) {
@@ -50,6 +58,10 @@ const LC = (() => {
         const ap = lc.applicant    || {};
         const amt = fmtAmt(lc.currency, lc.amount);
         const fd  = fmtDate;
+
+        const f47aChecks = (docId) => (lc.f47aConditions || [])
+            .filter(c => c.docId === docId)
+            .map((c, i) => ({ id: `f47a-${docId}-${i}`, text: c.text }));
 
         return [
             {
@@ -61,6 +73,7 @@ const LC = (() => {
                     { id: 'draft-lcref',  text: `LC number and issue date stated (#${lc.lcNumber} · ${fd(lc.issuedDate)})` },
                     { id: 'draft-date',   text: `Dated on or after LC opening date (not before ${fd(lc.issuedDate)})` },
                     { id: 'draft-signed', text: '2 originals signed by Enviroware Ltd' },
+                    ...f47aChecks('draft'),
                 ]
             },
             {
@@ -76,6 +89,7 @@ const LC = (() => {
                     { id: 'ci-goods',       text: `Goods: ${g.packageCount || '?'} ${g.packageType || 'packages'} · ${(g.quantity || 0).toLocaleString()} ${g.quantityUnit || 'kg'} · ${g.origin || '?'} origin` },
                     { id: 'ci-nopredate',   text: `Not dated before LC opening date (${fd(lc.issuedDate)})` },
                     { id: 'ci-copies',      text: '8 originals signed' },
+                    ...f47aChecks('commercialInvoice'),
                 ]
             },
             {
@@ -91,6 +105,7 @@ const LC = (() => {
                     { id: 'bl-container', text: `Container: ${g.container || '—'} stated` },
                     { id: 'bl-freetime',  text: '14 days free time at discharge port stated or evidenced' },
                     { id: 'bl-weights',   text: `Gross weight, net weight, quantity shown (${g.packageCount || '?'} ${g.packageType || 'packages'} · ${(g.quantity || 0).toLocaleString()} ${g.quantityUnit || 'kg'})` },
+                    ...f47aChecks('billOfLading'),
                 ]
             },
             {
@@ -102,6 +117,7 @@ const LC = (() => {
                     { id: 'co-desc',   text: 'Goods description matches commercial invoice' },
                     { id: 'co-hs',     text: `HS code ${g.hsCode || '—'} shown` },
                     { id: 'co-copies', text: '3 originals provided' },
+                    ...f47aChecks('certificateOfOrigin'),
                 ]
             },
             {
@@ -111,6 +127,7 @@ const LC = (() => {
                     { id: 'ins-note',   text: "Insurance is applicant's responsibility — Enviroware advises only" },
                     { id: 'ins-21days', text: 'Notification sent within 21 days of shipment' },
                     { id: 'ins-copy',   text: 'Copy of notification included with presentation documents' },
+                    ...f47aChecks('insuranceNotification'),
                 ]
             },
             {
@@ -122,6 +139,7 @@ const LC = (() => {
                     { id: 'bc-quantity', text: 'Certifies quantity conforms to proforma invoice' },
                     { id: 'bc-origin',   text: `Country of origin (${g.origin || '—'}) noted on packages confirmed` },
                     { id: 'bc-signed',   text: 'Signed by authorised representative of Enviroware Ltd' },
+                    ...f47aChecks('beneficiaryCertificate'),
                 ]
             },
             {
@@ -132,6 +150,7 @@ const LC = (() => {
                     { id: 'pi-shipment',  text: 'References vessel, container number(s), and B/L date' },
                     { id: 'pi-confirms',  text: 'Goods inspected before loading — quality and quantity confirmed' },
                     { id: 'pi-lcref',     text: `LC number and date on document (#${lc.lcNumber})` },
+                    ...f47aChecks('inspectionCertificate'),
                 ]
             },
         ];
@@ -635,9 +654,13 @@ const LC = (() => {
         const sideRow = (label, val, mono = false) =>
             `<div class="lc-srow"><span class="lc-srow-label">${label}</span><span class="lc-srow-val${mono ? ' lc-mono' : ''}">${esc(val || '—')}</span></div>`;
 
+        const f47aGeneral = (lc.f47aConditions || [])
+            .filter(c => c.docId === 'general')
+            .map((c, i) => ({ id: `f47a-general-${i}`, text: c.text }));
+        const allConditions = [...STANDARD_CONDITIONS, ...f47aGeneral];
         const condChecks = lc.condChecks || {};
-        const condDone   = STANDARD_CONDITIONS.filter(c => condChecks[c.id]).length;
-        const condItems  = STANDARD_CONDITIONS.map((c, i) => {
+        const condDone   = allConditions.filter(c => condChecks[c.id]).length;
+        const condItems  = allConditions.map((c, i) => {
             const checked = !!condChecks[c.id];
             return `<div class="lc-cond-item${checked ? ' lc-cond-item--done' : ''}">
                 <span class="lc-cond-num">${String(i + 1).padStart(2, '0')}</span>
@@ -680,9 +703,15 @@ const LC = (() => {
                     ${deltaHtml(shipDays)}
                 </div>
                 <div class="lc-tl-item">
+                    <div class="lc-tl-label">Actual shipment date</div>
+                    <input type="date" id="lc-shipment-date-input" class="lc-input lc-mono"
+                           value="${esc(lc.shipmentDate || '')}"
+                           style="margin-top:0.25rem;font-size:0.85rem;padding:0.25rem 0.4rem;width:auto;">
+                </div>
+                <div class="lc-tl-item" data-pdays="${lc.presentationDays || 21}">
                     <div class="lc-tl-label">Presentation deadline</div>
-                    <div class="lc-tl-date lc-mono">${lc.latestShipDate ? esc(fmtDate(lc.latestShipDate)) + ' + ' + (lc.presentationDays || 21) + 'd' : '—'}</div>
-                    <span class="lc-tl-note">${lc.presentationDays || 21} days after shipment</span>
+                    <div class="lc-tl-date lc-mono" id="lc-pres-deadline">${lc.shipmentDate ? esc(fmtDate(addDays(lc.shipmentDate, lc.presentationDays || 21))) : '—'}</div>
+                    ${lc.shipmentDate ? deltaHtml(daysUntil(addDays(lc.shipmentDate, lc.presentationDays || 21))) : '<span class="lc-tl-note">set shipment date above</span>'}
                 </div>
                 <div class="lc-tl-item">
                     <div class="lc-tl-label">LC expiry</div>
@@ -731,19 +760,42 @@ const LC = (() => {
 
                     <details class="lc-cond-section" id="lc-cond-section">
                         <summary class="lc-cond-summary">
-                            <span class="lc-cond-title">Additional Conditions — F47A</span>
-                            <span class="lc-cond-count" id="lc-cond-count">${condDone} of ${STANDARD_CONDITIONS.length} confirmed</span>
+                            <span class="lc-cond-title">General Conditions — F47A</span>
+                            <span class="lc-cond-count" id="lc-cond-count">${condDone} of ${allConditions.length} confirmed</span>
                         </summary>
                         <div class="lc-cond-grid" id="lc-cond-grid">${condItems}</div>
                     </details>
+
+                    <div class="lc-check-doc-section">
+                        <div class="lc-check-doc-hd">
+                            <span class="lc-section-label" style="margin:0">Check a Document</span>
+                            <select id="lc-check-doc-type" class="lc-check-doc-select">
+                                <option value="">Select document type…</option>
+                                <option value="draft">Draft at Sight</option>
+                                <option value="commercialInvoice">Commercial Invoice</option>
+                                <option value="billOfLading">Bill of Lading</option>
+                                <option value="certificateOfOrigin">Certificate of Origin</option>
+                                <option value="insuranceNotification">Insurance Notification</option>
+                                <option value="beneficiaryCertificate">Beneficiary Certificate</option>
+                                <option value="inspectionCertificate">Inspection Certificate</option>
+                            </select>
+                        </div>
+                        <div class="lc-check-upload-zone" id="lc-check-upload-zone">
+                            <input type="file" id="lc-check-file" accept=".pdf,application/pdf" hidden>
+                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                            <span>Drop PDF here or click to browse</span>
+                        </div>
+                        <div class="lc-check-status" id="lc-check-status" hidden></div>
+                        <div class="lc-check-results" id="lc-check-results" hidden></div>
+                    </div>
                 </main>
             </div>
         </div>`;
 
-        bindDetailEvents(container, id);
+        bindDetailEvents(container, id, docs);
     }
 
-    function bindDetailEvents(container, id) {
+    function bindDetailEvents(container, id, docs) {
         // Doc card expand/collapse
         container.querySelector('#lc-doc-list').addEventListener('click', e => {
             const hd = e.target.closest('.lc-doc-hd');
@@ -807,6 +859,114 @@ const LC = (() => {
             _pending.condChecks[cb.dataset.cond] = cb.checked;
             scheduleChecksave(id);
         });
+
+        // Shipment date input
+        const shipDateInput = container.querySelector('#lc-shipment-date-input');
+        if (shipDateInput) {
+            shipDateInput.addEventListener('change', async () => {
+                const val = shipDateInput.value;
+                await apiFetch('/api/lc/' + id, {
+                    method: 'PATCH',
+                    body: JSON.stringify({ shipmentDate: val }),
+                }).catch(() => {});
+                const pdays = parseInt(container.querySelector('[data-pdays]')?.dataset?.pdays || '21', 10);
+                const presDeadline = addDays(val, pdays);
+                const presEl = container.querySelector('#lc-pres-deadline');
+                if (presEl) presEl.textContent = presDeadline ? fmtDate(presDeadline) : '—';
+            });
+        }
+
+        // Check a Document handlers
+        const checkZone    = container.querySelector('#lc-check-upload-zone');
+        const checkFile    = container.querySelector('#lc-check-file');
+        const checkStatus  = container.querySelector('#lc-check-status');
+        const checkResults = container.querySelector('#lc-check-results');
+        const checkTypeSelect = container.querySelector('#lc-check-doc-type');
+
+        if (checkZone) {
+            checkZone.addEventListener('click', () => checkFile.click());
+            checkZone.addEventListener('dragover', e => {
+                e.preventDefault();
+                checkZone.classList.add('lc-upload-zone--drag');
+            });
+            checkZone.addEventListener('dragleave', e => {
+                if (!checkZone.contains(e.relatedTarget)) checkZone.classList.remove('lc-upload-zone--drag');
+            });
+            checkZone.addEventListener('drop', e => {
+                e.preventDefault();
+                checkZone.classList.remove('lc-upload-zone--drag');
+                const f = e.dataTransfer.files[0];
+                if (f) handleDocCheck(f);
+            });
+            checkFile.addEventListener('change', () => {
+                if (checkFile.files[0]) handleDocCheck(checkFile.files[0]);
+            });
+        }
+
+        async function handleDocCheck(file) {
+            const docTypeVal = checkTypeSelect.value;
+            if (!docTypeVal) {
+                checkStatus.hidden = false;
+                checkStatus.className = 'lc-check-status lc-check-status--error';
+                checkStatus.textContent = '✗ Select a document type first';
+                return;
+            }
+
+            const docDef = docs.find(d => d.id === docTypeVal);
+            if (!docDef) return;
+
+            checkStatus.hidden = false;
+            checkStatus.className = 'lc-check-status lc-check-status--loading';
+            checkStatus.textContent = '⏳ Reading document…';
+            checkResults.hidden = true;
+
+            try {
+                const base64 = await new Promise((resolve, reject) => {
+                    const reader = new FileReader();
+                    reader.onload = () => resolve(reader.result.split(',')[1]);
+                    reader.onerror = () => reject(new Error('Failed to read file'));
+                    reader.readAsDataURL(file);
+                });
+
+                checkStatus.textContent = '⏳ Checking against LC requirements…';
+
+                const res = await fetch('/api/lc-check', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        docType: docTypeVal,
+                        docTitle: docDef.title,
+                        checks: docDef.checks,
+                        data: base64,
+                        mediaType: 'application/pdf',
+                    }),
+                });
+
+                const json = await res.json();
+                if (!json.ok) throw new Error(json.error || 'Check failed');
+
+                const passCount = json.results.filter(r => r.pass).length;
+                const total = json.results.length;
+
+                checkStatus.className = `lc-check-status lc-check-status--${passCount === total ? 'ok' : 'warn'}`;
+                checkStatus.textContent = `${passCount === total ? '✓' : '⚠'} ${passCount}/${total} requirements met — ${docDef.title}`;
+
+                checkResults.hidden = false;
+                checkResults.innerHTML = json.results.map(r => `
+                    <div class="lc-check-result-row lc-check-result-row--${r.pass ? 'pass' : 'fail'}">
+                        <span class="lc-check-result-icon">${r.pass ? '✓' : '✗'}</span>
+                        <span class="lc-check-result-body">
+                            <span class="lc-check-result-text">${esc(r.note || '')}</span>
+                            <span class="lc-check-result-req">${esc(docDef.checks.find(c => c.id === r.checkId)?.text || r.checkId)}</span>
+                        </span>
+                    </div>
+                `).join('');
+
+            } catch (err) {
+                checkStatus.className = 'lc-check-status lc-check-status--error';
+                checkStatus.textContent = '✗ ' + err.message;
+            }
+        }
     }
 
     function updateClearance(container) {

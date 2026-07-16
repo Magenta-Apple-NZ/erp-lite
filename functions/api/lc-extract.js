@@ -42,13 +42,19 @@ Return ONLY a valid JSON object with these exact fields (use null for any field 
   "portLoading": "port or place of loading from :44E:",
   "portDischarge": "port of discharge from :44F:",
   "portFinal": "place of final destination from :44B:",
-  "governedBy": "applicable rules, e.g. UCP 600"
+  "governedBy": "applicable rules, e.g. UCP 600",
+  "f47aConditions": [
+    {"docId": "commercialInvoice", "text": "exact condition text from :47A:"},
+    {"docId": "billOfLading", "text": "..."},
+    {"docId": "general", "text": "..."}
+  ]
 }
 
 Rules:
 - Convert all SWIFT-format dates (YYMMDD or YYYYMMDD) to YYYY-MM-DD. If year 2-digit and >= 70 prefix 19, else prefix 20.
 - Strip currency symbols, commas, and units from numeric fields.
 - Return null for any field not clearly present. Do not guess.
+- Extract ALL conditions from field :47A: as f47aConditions. Assign each to the most relevant docId from: draft, commercialInvoice, billOfLading, certificateOfOrigin, insuranceNotification, beneficiaryCertificate, inspectionCertificate, general. Use "general" for conditions that apply to all documents. Return an empty array [] if :47A: is absent.
 - Return ONLY the JSON object, no other text.`;
 
 export async function onRequestPost({ env, request }) {
@@ -74,7 +80,7 @@ export async function onRequestPost({ env, request }) {
             },
             body: JSON.stringify({
                 model: 'claude-haiku-4-5-20251001',
-                max_tokens: 1024,
+                max_tokens: 2048,
                 messages: [{
                     role: 'user',
                     content: [

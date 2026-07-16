@@ -37,6 +37,7 @@ export async function onRequestPost({ env, request }) {
             issuedDate:      String(body.issuedDate || ''),
             expiryDate:      String(body.expiryDate || ''),
             latestShipDate:  String(body.latestShipDate || ''),
+            shipmentDate:    String(body.shipmentDate || ''),
             presentationDays: Number(body.presentationDays) || 21,
             amount:           Number(body.amount) || 0,
             currency:         String(body.currency || 'USD'),
@@ -74,6 +75,7 @@ export async function onRequestPost({ env, request }) {
                 discharge:        String(body.portDischarge || ''),
                 finalDestination: String(body.portFinal || ''),
             },
+            f47aConditions: Array.isArray(body.f47aConditions) ? body.f47aConditions : [],
             // Checklist state — persisted separately from generated structure
             docStatus:  {},
             docChecks:  {},
