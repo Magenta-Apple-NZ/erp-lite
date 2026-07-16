@@ -6032,6 +6032,38 @@ a.db-row:hover { background: #f8fafc; border-color: #e2e8f0; }
 .lc-check-result-text { font-size: 0.83rem; color: #334155; }
 .lc-check-result-req  { font-size: 0.75rem; color: #94a3b8; }
 
+/* ── Document link in card header ── */
+.lc-doc-link-wrap { margin-top: 0.25rem; }
+.lc-doc-link-pill { display: inline-flex; align-items: center; gap: 0.35rem; }
+.lc-doc-extlink {
+    display: inline-flex; align-items: center; gap: 0.3rem;
+    font-size: 0.75rem; color: #3b82f6; text-decoration: none;
+    background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 4px;
+    padding: 0.15rem 0.45rem; line-height: 1.4;
+}
+.lc-doc-extlink:hover { background: #dbeafe; text-decoration: none; }
+.lc-doc-link-edit-btn {
+    font-size: 0.7rem; color: #94a3b8; background: none; border: none;
+    padding: 0.1rem 0.2rem; cursor: pointer; line-height: 1;
+}
+.lc-doc-link-edit-btn:hover { color: #475569; }
+.lc-doc-link-add-btn {
+    font-size: 0.73rem; color: #94a3b8; background: none; border: none;
+    padding: 0; cursor: pointer; text-decoration: none;
+}
+.lc-doc-link-add-btn:hover { color: #3b82f6; }
+.lc-doc-link-form { padding: 0.6rem 0.75rem; border-bottom: 1px dashed #e2e8f0; background: #f8fafc; }
+.lc-doc-link-form-btns { display: flex; gap: 0.4rem; margin-top: 0.4rem; }
+.lc-doc-link-save, .lc-doc-link-cancel, .lc-doc-link-clear {
+    font-size: 0.75rem; padding: 0.2rem 0.55rem; border-radius: 4px; cursor: pointer; border: 1px solid;
+}
+.lc-doc-link-save   { background: #eff6ff; border-color: #93c5fd; color: #1d4ed8; }
+.lc-doc-link-save:hover { background: #dbeafe; }
+.lc-doc-link-cancel { background: white; border-color: #e2e8f0; color: #64748b; }
+.lc-doc-link-cancel:hover { background: #f1f5f9; }
+.lc-doc-link-clear  { background: none; border-color: #fecaca; color: #dc2626; margin-left: auto; }
+.lc-doc-link-clear:hover { background: #fef2f2; }
+
 /* ── Per-card document upload button ── */
 .lc-doc-upload-btn {
     display: flex; align-items: center; justify-content: center;

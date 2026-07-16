@@ -586,8 +586,20 @@ const LC = (() => {
         return Object.values(lc.docStatus || {}).filter(s => s === 'ready').length;
     }
 
+    function docLinkIcon(url) {
+        if (!url) return '';
+        if (url.includes('docs.google.com/spreadsheets'))
+            return `<svg width="12" height="12" viewBox="0 0 16 16"><rect width="16" height="16" rx="2" fill="#34a853"/><line x1="3" y1="5" x2="13" y2="5" stroke="white" stroke-width="1.5"/><line x1="3" y1="8" x2="13" y2="8" stroke="white" stroke-width="1.5"/><line x1="3" y1="11" x2="9" y2="11" stroke="white" stroke-width="1.5"/></svg>`;
+        if (url.includes('docs.google.com/document'))
+            return `<svg width="12" height="12" viewBox="0 0 16 16"><rect width="16" height="16" rx="2" fill="#4285f4"/><line x1="3" y1="5" x2="13" y2="5" stroke="white" stroke-width="1.5"/><line x1="3" y1="8" x2="13" y2="8" stroke="white" stroke-width="1.5"/><line x1="3" y1="11" x2="9" y2="11" stroke="white" stroke-width="1.5"/></svg>`;
+        if (url.includes('drive.google.com') || url.includes('docs.google.com'))
+            return `<svg width="12" height="12" viewBox="0 0 16 16"><rect width="16" height="16" rx="2" fill="#fbbc04"/><line x1="3" y1="5" x2="13" y2="5" stroke="white" stroke-width="1.5"/><line x1="3" y1="8" x2="13" y2="8" stroke="white" stroke-width="1.5"/><line x1="3" y1="11" x2="9" y2="11" stroke="white" stroke-width="1.5"/></svg>`;
+        return `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/><polyline points="15,3 21,3 21,9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>`;
+    }
+
     function renderDocCard(doc, lc) {
         const status  = (lc.docStatus || {})[doc.id] || 'todo';
+        const link    = (lc.docLinks  || {})[doc.id] || '';
         const checks  = lc.docChecks || {};
         const checked = doc.checks.filter(c => checks[c.id]).length;
         const ICONS = {
@@ -615,6 +627,12 @@ const LC = (() => {
                 <div class="lc-doc-meta">
                     <div class="lc-doc-title">${esc(doc.title)}</div>
                     <div class="lc-doc-copies">${esc(doc.copies)} &nbsp;·&nbsp; ${esc(doc.desc)}</div>
+                    <div class="lc-doc-link-wrap" id="lc-link-wrap-${doc.id}">
+                        ${link
+                            ? `<div class="lc-doc-link-pill"><a href="${esc(link)}" target="_blank" rel="noopener" class="lc-doc-extlink">${docLinkIcon(link)} Open →</a><button class="lc-doc-link-edit-btn" data-link-doc="${doc.id}" type="button" title="Edit link">✎</button></div>`
+                            : `<button class="lc-doc-link-add-btn" data-link-doc="${doc.id}" type="button">+ add link</button>`
+                        }
+                    </div>
                 </div>
                 <div class="lc-doc-right">
                     <span class="lc-doc-prog">${checked}/${doc.checks.length}</span>
@@ -625,7 +643,20 @@ const LC = (() => {
                     <svg class="lc-doc-chevron" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><polyline points="3,6 8,11 13,6"/></svg>
                 </div>
             </div>
-            <div class="lc-doc-checks">${checkItems}</div>
+            <div class="lc-doc-checks">
+                <div class="lc-doc-link-form" id="lc-link-form-${doc.id}" hidden>
+                    <input type="url" class="lc-doc-link-input lc-input"
+                           placeholder="Paste Google Drive, Docs, or Sheets URL…"
+                           value="${esc(link)}"
+                           style="width:100%;font-size:0.8rem;padding:0.35rem 0.5rem;">
+                    <div class="lc-doc-link-form-btns">
+                        <button class="lc-doc-link-save" data-save-link="${doc.id}" type="button">Save</button>
+                        <button class="lc-doc-link-cancel" data-cancel-link="${doc.id}" type="button">Cancel</button>
+                        <button class="lc-doc-link-clear" data-clear-link="${doc.id}" type="button">Remove</button>
+                    </div>
+                </div>
+                ${checkItems}
+            </div>
             <div class="lc-card-check-results" id="lccheck-${doc.id}" hidden></div>
         </div>`;
     }
@@ -798,13 +829,80 @@ const LC = (() => {
     }
 
     function bindDetailEvents(container, id, docs) {
-        // Doc card expand/collapse
+        // Doc card expand/collapse — exclude interactive elements
         container.querySelector('#lc-doc-list').addEventListener('click', e => {
             const hd = e.target.closest('.lc-doc-hd');
-            if (!hd || e.target.closest('.lc-chip')) return;
+            if (!hd) return;
+            if (e.target.closest('.lc-chip') || e.target.closest('[data-upload-doc]') ||
+                e.target.closest('[data-link-doc]') || e.target.closest('.lc-doc-extlink')) return;
             const card = hd.closest('.lc-doc-card');
             card.classList.toggle('lc-doc-card--open');
         });
+
+        // Document link: show/edit form
+        container.querySelector('#lc-doc-list').addEventListener('click', e => {
+            const btn = e.target.closest('[data-link-doc]');
+            if (!btn) return;
+            const docId = btn.dataset.linkDoc;
+            const card  = container.querySelector('#lcdoc-' + docId);
+            if (card) card.classList.add('lc-doc-card--open');
+            const form = container.querySelector('#lc-link-form-' + docId);
+            if (form) {
+                form.hidden = !form.hidden;
+                if (!form.hidden) form.querySelector('.lc-doc-link-input')?.focus();
+            }
+        });
+
+        // Document link: save / cancel / clear
+        container.querySelector('#lc-doc-list').addEventListener('click', async e => {
+            const saveBtn = e.target.closest('[data-save-link]');
+            if (saveBtn) {
+                const docId = saveBtn.dataset.saveLink;
+                const url   = container.querySelector('#lc-link-form-' + docId)?.querySelector('.lc-doc-link-input')?.value.trim() || '';
+                container.querySelector('#lc-link-form-' + docId).hidden = true;
+                updateDocLink(container, docId, url);
+                await apiFetch('/api/lc/' + id, { method: 'PATCH', body: JSON.stringify({ docLinks: { [docId]: url } }) }).catch(() => {});
+                return;
+            }
+            const cancelBtn = e.target.closest('[data-cancel-link]');
+            if (cancelBtn) {
+                container.querySelector('#lc-link-form-' + cancelBtn.dataset.cancelLink).hidden = true;
+                return;
+            }
+            const clearBtn = e.target.closest('[data-clear-link]');
+            if (clearBtn) {
+                const docId = clearBtn.dataset.clearLink;
+                container.querySelector('#lc-link-form-' + docId).hidden = true;
+                updateDocLink(container, docId, '');
+                await apiFetch('/api/lc/' + id, { method: 'PATCH', body: JSON.stringify({ docLinks: { [docId]: '' } }) }).catch(() => {});
+            }
+        });
+
+        // Enter key in link input
+        container.querySelector('#lc-doc-list').addEventListener('keydown', async e => {
+            if (e.key !== 'Enter') return;
+            const input = e.target.closest('.lc-doc-link-input');
+            if (!input) return;
+            const form  = input.closest('.lc-doc-link-form');
+            const docId = form?.querySelector('[data-save-link]')?.dataset.saveLink;
+            if (!docId) return;
+            form.hidden = true;
+            const url = input.value.trim();
+            updateDocLink(container, docId, url);
+            await apiFetch('/api/lc/' + id, { method: 'PATCH', body: JSON.stringify({ docLinks: { [docId]: url } }) }).catch(() => {});
+        });
+
+        function updateDocLink(container, docId, url) {
+            const wrap = container.querySelector('#lc-link-wrap-' + docId);
+            if (!wrap) return;
+            if (url) {
+                wrap.innerHTML = `<div class="lc-doc-link-pill"><a href="${esc(url)}" target="_blank" rel="noopener" class="lc-doc-extlink">${docLinkIcon(url)} Open →</a><button class="lc-doc-link-edit-btn" data-link-doc="${docId}" type="button" title="Edit link">✎</button></div>`;
+            } else {
+                wrap.innerHTML = `<button class="lc-doc-link-add-btn" data-link-doc="${docId}" type="button">+ add link</button>`;
+            }
+            const input = container.querySelector('#lc-link-form-' + docId)?.querySelector('.lc-doc-link-input');
+            if (input) input.value = url;
+        }
 
         // Status chip: cycle and save immediately
         container.querySelector('#lc-doc-list').addEventListener('click', async e => {

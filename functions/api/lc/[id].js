@@ -26,6 +26,7 @@ export async function onRequestPatch({ env, params, request }) {
             docStatus:  { ...lc.docStatus,  ...(body.docStatus  || {}) },
             docChecks:  { ...lc.docChecks,  ...(body.docChecks  || {}) },
             condChecks: { ...lc.condChecks, ...(body.condChecks || {}) },
+            docLinks:   { ...lc.docLinks,   ...(body.docLinks   || {}) },
             updatedAt:  new Date().toISOString(),
         };
 
