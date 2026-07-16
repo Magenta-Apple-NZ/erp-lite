@@ -270,6 +270,9 @@ const LC = (() => {
     }
 
     async function renderCreate(container) {
+        const shipRef = _pendingShipRef || '';
+        _pendingShipRef = null;
+
         const UPLOAD_SVG = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>`;
 
         container.innerHTML = `
@@ -451,7 +454,7 @@ const LC = (() => {
                             </div>
                             <div class="lc-field">
                                 <label class="lc-label" for="f-shipmentRef">Linked Shipment</label>
-                                <input class="lc-input" id="f-shipmentRef" name="shipmentRef" placeholder="e.g. Shipment #40">
+                                <input class="lc-input" id="f-shipmentRef" name="shipmentRef" placeholder="e.g. Shipment #40" value="${esc(shipRef)}">
                             </div>
                         </div>
                     </div>
@@ -566,6 +569,9 @@ const LC = (() => {
             }
         });
     }
+
+    // ── Pending context (set by callers before navigating to #lc/new) ────────
+    let _pendingShipRef = null;  // e.g. "Shipment #40"
 
     // ── Detail / checker view ─────────────────────────────────────────────────
 
@@ -1269,5 +1275,5 @@ const LC = (() => {
         return renderDetail(container, subpath);
     }
 
-    return { render };
+    return { render, setPendingShip: ref => { _pendingShipRef = ref; } };
 })();
