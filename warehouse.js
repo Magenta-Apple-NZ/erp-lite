@@ -2073,6 +2073,7 @@ const Warehouse = (() => {
             <div class="ship-detail-view ship-detail-view--new ship-detail-view--v3">
                 <div class="ship-detail-topbar">
                     <button class="ship-detail-back">← Shipments</button>
+                    <a class="ship-lc-btn" href="#lc/new">Register Letter of Credit</a>
                 </div>
 
                 <div class="ship-detail-layout">
@@ -2245,6 +2246,7 @@ const Warehouse = (() => {
             <div class="ship-detail-view ship-detail-view--new">
                 <div class="ship-detail-topbar">
                     <button class="ship-detail-back">← Shipments</button>
+                    <a class="ship-lc-btn" href="#lc/new">Register Letter of Credit</a>
                     <div class="ship-status-wrap" title="Derived from completed stages — tick milestones to advance.">
                         <span class="ship-status-dot" style="background:${statusMeta.c}"></span>
                         <span class="ship-status-badge">${statusMeta.l}</span>
@@ -2415,6 +2417,7 @@ const Warehouse = (() => {
             <div class="ship-detail-view">
                 <div class="ship-detail-topbar">
                     <button class="ship-detail-back">← Shipments</button>
+                    <a class="ship-lc-btn" href="#lc/new">Register Letter of Credit</a>
                     <div class="ship-status-wrap" title="Derived from completed stages — tick milestones to advance.">
                         <span class="ship-status-dot" style="background:${statusMeta.c}"></span>
                         <span class="ship-status-badge">${statusMeta.l}</span>

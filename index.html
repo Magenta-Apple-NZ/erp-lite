@@ -69,16 +69,6 @@
                 Payslips
             </a>
 
-            <a class="nav-item nav-item--admin-only" href="#lc" id="nav-lc">
-                <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M4 1h6l3 3v10a1 1 0 01-1 1H4a1 1 0 01-1-1V2a1 1 0 011-1z"/>
-                    <polyline points="9,1 9,4 12,4"/>
-                    <circle cx="10.5" cy="11" r="2"/>
-                    <line x1="5" y1="5.5" x2="10" y2="5.5"/>
-                </svg>
-                Letters of Credit
-            </a>
-
             <a class="nav-item nav-item--soon nav-item--admin-only" href="#" data-phase="Phase 5">
                 <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
                     <path d="M1 4.5h8v6.5H1z"/>
@@ -179,19 +169,19 @@
             <div class="orders-view-inner" id="admin-container"></div>
         </div>
 
-        <!-- ── View: Imports ── -->
+        <!-- ── View: Imports + Letters of Credit (tabbed) ── -->
         <div id="view-imports" class="app-view" style="display:none">
-            <div class="orders-view-inner" id="imports-container"></div>
+            <div class="imports-lc-tabs" id="imports-lc-tabs">
+                <a class="imports-tab" href="#imports" id="imports-tab-ships">Shipments</a>
+                <a class="imports-tab" href="#lc" id="imports-tab-lc">Letters of Credit</a>
+            </div>
+            <div class="orders-view-inner" id="imports-container" style="display:none"></div>
+            <div id="lc-container" style="display:none"></div>
         </div>
 
         <!-- ── View: Notifications ── -->
         <div id="view-notifications" class="app-view" style="display:none">
             <div class="orders-view-inner" id="notifications-container"></div>
-        </div>
-
-        <!-- ── View: LC Checker ── -->
-        <div id="view-lc" class="app-view" style="display:none">
-            <div id="lc-container"></div>
         </div>
 
         <!-- ── View: Payslips ── -->
