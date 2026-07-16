@@ -560,10 +560,11 @@ const LC = (() => {
 
     // ── Detail / checker view ─────────────────────────────────────────────────
 
-    let _saveTimer = null;
-    let _pending   = {};
-    let _activeLcId = null;
-    const _checkBase64 = new Map(); // docId → base64 from most recent check
+    let _saveTimer      = null;
+    let _pending        = {};
+    let _activeLcId     = null;
+    let _driveFolderUrl = '';       // current LC's linked Drive folder URL
+    const _checkBase64  = new Map(); // docId → base64 from most recent check
 
     function scheduleChecksave(id) {
         clearTimeout(_saveTimer);
@@ -672,6 +673,8 @@ const LC = (() => {
             container.innerHTML = `<p class="lc-error">Could not load LC: ${esc(e.message)}</p>`;
             return;
         }
+
+        _driveFolderUrl = lc.driveFolderUrl || '';
 
         const docs = generateDocuments(lc);
         const ready = readyCount(lc);
@@ -816,7 +819,32 @@ const LC = (() => {
                     <input type="file" id="lc-card-file-input" accept=".pdf,application/pdf" hidden>
 
                     <div class="lc-archive-section">
-                        <div class="lc-section-label">Archived Documents</div>
+                        <div class="lc-archive-hd">
+                            <div class="lc-section-label" style="margin:0">Archived Documents</div>
+                            <div class="lc-drive-folder-wrap" id="lc-drive-folder-wrap">
+                                ${lc.driveFolderUrl
+                                    ? `<a href="${esc(lc.driveFolderUrl)}" target="_blank" class="lc-drive-folder-link">
+                                           <svg width="13" height="13" viewBox="0 0 24 24" fill="none"><polygon points="7.5,3 16.5,3 22,13 13,13" fill="#fbbc04"/><polygon points="2,13 7.5,3 11.5,13 6,23" fill="#34a853"/><polygon points="12,13 6,23 18,23 24,13" fill="#4285f4"/></svg>
+                                           Drive folder ↗
+                                       </a>
+                                       <button class="lc-drive-change-btn" id="lc-drive-change-btn" type="button">Change</button>`
+                                    : `<button class="lc-drive-add-btn" id="lc-drive-add-btn" type="button">
+                                           + Link Drive folder
+                                       </button>`
+                                }
+                            </div>
+                        </div>
+                        <div class="lc-drive-folder-form" id="lc-drive-folder-form" hidden>
+                            <input type="url" id="lc-drive-folder-input" class="lc-input"
+                                   placeholder="Paste Google Drive folder URL…"
+                                   value="${esc(lc.driveFolderUrl || '')}"
+                                   style="width:100%;font-size:0.8rem;padding:0.35rem 0.5rem;margin-bottom:0.4rem;">
+                            <div class="lc-drive-form-btns">
+                                <button id="lc-drive-save-btn" type="button" class="lc-doc-link-save">Save</button>
+                                <button id="lc-drive-cancel-btn" type="button" class="lc-doc-link-cancel">Cancel</button>
+                                ${lc.driveFolderUrl ? `<button id="lc-drive-remove-btn" type="button" class="lc-doc-link-clear">Remove</button>` : ''}
+                            </div>
+                        </div>
                         <div class="lc-archive-list" id="lc-archive-list">
                             <span class="lc-archive-empty">Loading…</span>
                         </div>
@@ -1005,22 +1033,72 @@ const LC = (() => {
             const b64    = _checkBase64.get(dId);
             if (!b64) return;
             btn.disabled = true;
-            btn.textContent = 'Archiving…';
+            const hasDrive = !!_driveFolderUrl;
+            btn.textContent = hasDrive ? 'Archiving + uploading to Drive…' : 'Archiving…';
             try {
                 const r = await fetch('/api/lc-docs', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ lcId: id, docType: dId, docTitle: dTitle, filename: fname, data: b64 }),
+                    body: JSON.stringify({ lcId: id, docType: dId, docTitle: dTitle, filename: fname, data: b64, driveFolderUrl: _driveFolderUrl }),
                 });
                 const j = await r.json();
                 if (!j.ok) throw new Error(j.error);
-                btn.textContent = '✓ Archived';
+                const driveOk = j.meta?.driveViewLink;
+                const driveErr = j.meta?.driveError;
+                btn.textContent = driveErr
+                    ? `✓ Archived · Drive: ${driveErr.slice(0, 60)}`
+                    : driveOk ? '✓ Archived + Drive ↗' : '✓ Archived';
                 loadArchivedDocs(container, id);
             } catch (err) {
                 btn.disabled = false;
                 btn.textContent = '✗ Archive failed';
             }
         });
+
+        // Drive folder: show form on add/change
+        container.addEventListener('click', e => {
+            if (!e.target.closest('#lc-drive-add-btn') && !e.target.closest('#lc-drive-change-btn')) return;
+            container.querySelector('#lc-drive-folder-form').hidden = false;
+            container.querySelector('#lc-drive-folder-input')?.focus();
+        });
+
+        // Drive folder: save
+        container.querySelector('#lc-drive-save-btn')?.addEventListener('click', async () => {
+            const url = container.querySelector('#lc-drive-folder-input').value.trim();
+            container.querySelector('#lc-drive-folder-form').hidden = true;
+            _driveFolderUrl = url;
+            updateDriveFolderDisplay(container, url);
+            await apiFetch('/api/lc/' + id, { method: 'PATCH', body: JSON.stringify({ driveFolderUrl: url }) }).catch(() => {});
+        });
+
+        // Drive folder: cancel
+        container.querySelector('#lc-drive-cancel-btn')?.addEventListener('click', () => {
+            container.querySelector('#lc-drive-folder-form').hidden = true;
+        });
+
+        // Drive folder: remove
+        container.querySelector('#lc-drive-remove-btn')?.addEventListener('click', async () => {
+            container.querySelector('#lc-drive-folder-form').hidden = true;
+            _driveFolderUrl = '';
+            updateDriveFolderDisplay(container, '');
+            await apiFetch('/api/lc/' + id, { method: 'PATCH', body: JSON.stringify({ driveFolderUrl: '' }) }).catch(() => {});
+        });
+
+        function updateDriveFolderDisplay(container, url) {
+            const wrap = container.querySelector('#lc-drive-folder-wrap');
+            if (!wrap) return;
+            if (url) {
+                wrap.innerHTML = `<a href="${esc(url)}" target="_blank" class="lc-drive-folder-link">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none"><polygon points="7.5,3 16.5,3 22,13 13,13" fill="#fbbc04"/><polygon points="2,13 7.5,3 11.5,13 6,23" fill="#34a853"/><polygon points="12,13 6,23 18,23 24,13" fill="#4285f4"/></svg>
+                    Drive folder ↗
+                </a>
+                <button class="lc-drive-change-btn" id="lc-drive-change-btn" type="button">Change</button>`;
+            } else {
+                wrap.innerHTML = `<button class="lc-drive-add-btn" id="lc-drive-add-btn" type="button">+ Link Drive folder</button>`;
+            }
+            const input = container.querySelector('#lc-drive-folder-input');
+            if (input) input.value = url;
+        }
 
         // Archive list delete handler
         container.querySelector('#lc-archive-list').addEventListener('click', async e => {
@@ -1136,6 +1214,15 @@ const LC = (() => {
                     <span class="lc-archive-name">${esc(d.filename)}</span>
                     <span class="lc-archive-date">${esc(fmtDate((d.uploadedAt || '').slice(0, 10)))}</span>
                     <a class="lc-archive-view" href="/api/lc-doc-file?key=${encodeURIComponent(d.key)}&filename=${encodeURIComponent(d.filename)}" target="_blank">View PDF</a>
+                    ${d.driveViewLink
+                        ? `<a class="lc-archive-drive-link" href="${esc(d.driveViewLink)}" target="_blank" title="View in Google Drive">
+                               <svg width="12" height="12" viewBox="0 0 24 24" fill="none"><polygon points="7.5,3 16.5,3 22,13 13,13" fill="#fbbc04"/><polygon points="2,13 7.5,3 11.5,13 6,23" fill="#34a853"/><polygon points="12,13 6,23 18,23 24,13" fill="#4285f4"/></svg>
+                               Drive
+                           </a>`
+                        : d.driveError
+                            ? `<span class="lc-archive-drive-err" title="${esc(d.driveError)}">Drive ✗</span>`
+                            : ''
+                    }
                     <button class="lc-archive-del" data-del-key="${esc(d.key)}" type="button" title="Delete">✕</button>
                 </div>
             `).join('');
