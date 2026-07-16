@@ -22,22 +22,24 @@ export async function onRequestPost({ env, request }) {
 
         const checkList = checks.map((c, i) => `${i + 1}. [${c.id}] ${c.text}`).join('\n');
 
-        const prompt = `You are checking a ${docTitle || docType} against LC requirements.
+        const prompt = `You are checking a ${docTitle || docType} against LC (Letter of Credit) requirements. Be strict — any deviation, however small, must be flagged.
 
 Check each requirement below against the uploaded document. Return ONLY a JSON array:
 
 [
-  {"checkId": "id-from-list", "pass": true or false, "note": "brief note — what you found or what is missing/wrong"}
+  {"checkId": "id-from-list", "result": "pass", "note": "brief note — what you found or what is missing/wrong"}
 ]
 
 Requirements to check:
 ${checkList}
 
 Rules:
+- result must be exactly one of: "pass", "flag", or "fail"
+- "pass" — the document clearly and exactly satisfies the requirement, with no discrepancies
+- "flag" — the requirement is partially met but has a minor issue: misspelling, slightly different wording, near-match, ambiguous phrasing, or any detail not exactly matching the LC text. When in doubt, flag rather than pass.
+- "fail" — the requirement is not met: content is missing, clearly wrong, or cannot be verified from the document
+- note: one short sentence — quote the relevant text from the document if helpful, or state what is missing/wrong
 - check every item in the list
-- pass: true only if the document clearly satisfies the requirement
-- pass: false if the requirement cannot be verified or is clearly not met
-- note: one short sentence — quote the relevant text if helpful
 - return ONLY the JSON array, no other text`;
 
         step = 'anthropic-fetch';
@@ -74,7 +76,12 @@ Rules:
         const match = text.match(/\[[\s\S]*\]/);
         if (!match) return errResponse('No JSON array in model response: ' + text.slice(0, 200), 500);
         const results = JSON.parse(match[0]);
-        return jsonResponse({ ok: true, results });
+        // Normalise: if model still returns old {pass: bool} shape, convert
+        const normalised = results.map(r => ({
+            ...r,
+            result: r.result || (r.pass === true ? 'pass' : r.pass === false ? 'fail' : 'fail'),
+        }));
+        return jsonResponse({ ok: true, results: normalised });
 
     } catch (e) {
         return errResponse(`[${step}] ${e.message || String(e)}`, 500);

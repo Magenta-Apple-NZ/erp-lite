@@ -563,6 +563,7 @@ const LC = (() => {
     let _saveTimer = null;
     let _pending   = {};
     let _activeLcId = null;
+    const _checkBase64 = new Map(); // docId → base64 from most recent check
 
     function scheduleChecksave(id) {
         clearTimeout(_saveTimer);
@@ -617,11 +618,15 @@ const LC = (() => {
                 </div>
                 <div class="lc-doc-right">
                     <span class="lc-doc-prog">${checked}/${doc.checks.length}</span>
+                    <button class="lc-doc-upload-btn" data-upload-doc="${doc.id}" type="button" title="Check this document against LC">
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                    </button>
                     <button class="lc-chip lc-chip--${status}" data-status-doc="${doc.id}" type="button">${STATUS_LABELS[status]}</button>
                     <svg class="lc-doc-chevron" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><polyline points="3,6 8,11 13,6"/></svg>
                 </div>
             </div>
             <div class="lc-doc-checks">${checkItems}</div>
+            <div class="lc-card-check-results" id="lccheck-${doc.id}" hidden></div>
         </div>`;
     }
 
@@ -749,6 +754,17 @@ const LC = (() => {
                         ${sideRow('Port loading',   p.loading)}
                         ${sideRow('Port discharge', p.discharge)}
                         ${sideRow('Final dest.',    p.finalDestination)}
+                        <div class="lc-srow">
+                            <span class="lc-srow-label">Linked shipment</span>
+                            ${lc.linkedOrderId
+                                ? `<a href="#orders/${esc(lc.linkedOrderId)}" class="lc-srow-link lc-mono">${esc(lc.linkedOrderId)} →</a>`
+                                : `<button class="lc-link-btn" id="lc-link-shipment-btn" type="button">+ Link</button>`
+                            }
+                        </div>
+                        <div class="lc-link-shipment-form" id="lc-link-shipment-form" hidden>
+                            <input type="text" id="lc-link-order-id" class="lc-input" placeholder="Order ID (e.g. order-1)" style="font-size:0.8rem;padding:0.3rem 0.5rem;width:100%;margin-top:0.4rem;">
+                            <button class="lc-link-save-btn" id="lc-link-save-btn" type="button" style="margin-top:0.4rem;">Save link</button>
+                        </div>
                     </div>
                 </aside>
 
@@ -766,27 +782,13 @@ const LC = (() => {
                         <div class="lc-cond-grid" id="lc-cond-grid">${condItems}</div>
                     </details>
 
-                    <div class="lc-check-doc-section">
-                        <div class="lc-check-doc-hd">
-                            <span class="lc-section-label" style="margin:0">Check a Document</span>
-                            <select id="lc-check-doc-type" class="lc-check-doc-select">
-                                <option value="">Select document type…</option>
-                                <option value="draft">Draft at Sight</option>
-                                <option value="commercialInvoice">Commercial Invoice</option>
-                                <option value="billOfLading">Bill of Lading</option>
-                                <option value="certificateOfOrigin">Certificate of Origin</option>
-                                <option value="insuranceNotification">Insurance Notification</option>
-                                <option value="beneficiaryCertificate">Beneficiary Certificate</option>
-                                <option value="inspectionCertificate">Inspection Certificate</option>
-                            </select>
+                    <input type="file" id="lc-card-file-input" accept=".pdf,application/pdf" hidden>
+
+                    <div class="lc-archive-section">
+                        <div class="lc-section-label">Archived Documents</div>
+                        <div class="lc-archive-list" id="lc-archive-list">
+                            <span class="lc-archive-empty">Loading…</span>
                         </div>
-                        <div class="lc-check-upload-zone" id="lc-check-upload-zone">
-                            <input type="file" id="lc-check-file" accept=".pdf,application/pdf" hidden>
-                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-                            <span>Drop PDF here or click to browse</span>
-                        </div>
-                        <div class="lc-check-status" id="lc-check-status" hidden></div>
-                        <div class="lc-check-results" id="lc-check-results" hidden></div>
                     </div>
                 </main>
             </div>
@@ -876,96 +878,171 @@ const LC = (() => {
             });
         }
 
-        // Check a Document handlers
-        const checkZone    = container.querySelector('#lc-check-upload-zone');
-        const checkFile    = container.querySelector('#lc-check-file');
-        const checkStatus  = container.querySelector('#lc-check-status');
-        const checkResults = container.querySelector('#lc-check-results');
-        const checkTypeSelect = container.querySelector('#lc-check-doc-type');
+        // Per-card document check
+        const cardFileInput = container.querySelector('#lc-card-file-input');
+        let _activeUploadDocId = null;
 
-        if (checkZone) {
-            checkZone.addEventListener('click', () => checkFile.click());
-            checkZone.addEventListener('dragover', e => {
-                e.preventDefault();
-                checkZone.classList.add('lc-upload-zone--drag');
-            });
-            checkZone.addEventListener('dragleave', e => {
-                if (!checkZone.contains(e.relatedTarget)) checkZone.classList.remove('lc-upload-zone--drag');
-            });
-            checkZone.addEventListener('drop', e => {
-                e.preventDefault();
-                checkZone.classList.remove('lc-upload-zone--drag');
-                const f = e.dataTransfer.files[0];
-                if (f) handleDocCheck(f);
-            });
-            checkFile.addEventListener('change', () => {
-                if (checkFile.files[0]) handleDocCheck(checkFile.files[0]);
-            });
-        }
+        container.querySelector('#lc-doc-list').addEventListener('click', e => {
+            const btn = e.target.closest('[data-upload-doc]');
+            if (!btn) return;
+            e.stopPropagation();
+            _activeUploadDocId = btn.dataset.uploadDoc;
+            cardFileInput.value = '';
+            cardFileInput.click();
+        });
 
-        async function handleDocCheck(file) {
-            const docTypeVal = checkTypeSelect.value;
-            if (!docTypeVal) {
-                checkStatus.hidden = false;
-                checkStatus.className = 'lc-check-status lc-check-status--error';
-                checkStatus.textContent = '✗ Select a document type first';
-                return;
+        cardFileInput.addEventListener('change', () => {
+            if (cardFileInput.files[0] && _activeUploadDocId) {
+                handleDocCheck(cardFileInput.files[0], _activeUploadDocId);
             }
+        });
 
-            const docDef = docs.find(d => d.id === docTypeVal);
+        // Archive button handler (delegated)
+        container.addEventListener('click', async e => {
+            const btn = e.target.closest('[data-archive-doc]');
+            if (!btn) return;
+            const dId    = btn.dataset.archiveDoc;
+            const dTitle = btn.dataset.docTitle;
+            const fname  = btn.dataset.filename;
+            const b64    = _checkBase64.get(dId);
+            if (!b64) return;
+            btn.disabled = true;
+            btn.textContent = 'Archiving…';
+            try {
+                const r = await fetch('/api/lc-docs', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ lcId: id, docType: dId, docTitle: dTitle, filename: fname, data: b64 }),
+                });
+                const j = await r.json();
+                if (!j.ok) throw new Error(j.error);
+                btn.textContent = '✓ Archived';
+                loadArchivedDocs(container, id);
+            } catch (err) {
+                btn.disabled = false;
+                btn.textContent = '✗ Archive failed';
+            }
+        });
+
+        // Archive list delete handler
+        container.querySelector('#lc-archive-list').addEventListener('click', async e => {
+            const btn = e.target.closest('[data-del-key]');
+            if (!btn) return;
+            if (!confirm('Remove this archived document?')) return;
+            const key = btn.dataset.delKey;
+            try {
+                await fetch(`/api/lc-docs?key=${encodeURIComponent(key)}&lcId=${encodeURIComponent(id)}`, { method: 'DELETE' });
+                loadArchivedDocs(container, id);
+            } catch {}
+        });
+
+        // Shipment link handlers
+        container.querySelector('#lc-link-shipment-btn')?.addEventListener('click', () => {
+            container.querySelector('#lc-link-shipment-form').hidden = false;
+            container.querySelector('#lc-link-shipment-btn').closest('.lc-srow').hidden = true;
+        });
+        container.querySelector('#lc-link-save-btn')?.addEventListener('click', async () => {
+            const orderId = container.querySelector('#lc-link-order-id').value.trim();
+            if (!orderId) return;
+            await apiFetch('/api/lc/' + id, { method: 'PATCH', body: JSON.stringify({ linkedOrderId: orderId }) }).catch(() => {});
+            renderDetail(container, id);
+        });
+
+        loadArchivedDocs(container, id);
+
+        async function handleDocCheck(file, docId) {
+            const docDef = docs.find(d => d.id === docId);
             if (!docDef) return;
 
-            checkStatus.hidden = false;
-            checkStatus.className = 'lc-check-status lc-check-status--loading';
-            checkStatus.textContent = '⏳ Reading document…';
-            checkResults.hidden = true;
+            const resultsEl = container.querySelector('#lccheck-' + docId);
+            if (!resultsEl) return;
+
+            // Open the card so results are visible
+            const card = container.querySelector('#lcdoc-' + docId);
+            if (card) card.classList.add('lc-doc-card--open');
+
+            resultsEl.hidden = false;
+            resultsEl.innerHTML = '<div class="lc-card-check-loading">⏳ Reading document…</div>';
 
             try {
                 const base64 = await new Promise((resolve, reject) => {
                     const reader = new FileReader();
-                    reader.onload = () => resolve(reader.result.split(',')[1]);
+                    reader.onload  = () => resolve(reader.result.split(',')[1]);
                     reader.onerror = () => reject(new Error('Failed to read file'));
                     reader.readAsDataURL(file);
                 });
 
-                checkStatus.textContent = '⏳ Checking against LC requirements…';
+                _checkBase64.set(docId, base64);
+                const loadEl = resultsEl.querySelector('.lc-card-check-loading');
+                if (loadEl) loadEl.textContent = '⏳ Checking against LC requirements…';
 
-                const res = await fetch('/api/lc-check', {
+                const res  = await fetch('/api/lc-check', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        docType: docTypeVal,
-                        docTitle: docDef.title,
-                        checks: docDef.checks,
-                        data: base64,
-                        mediaType: 'application/pdf',
-                    }),
+                    body: JSON.stringify({ docType: docId, docTitle: docDef.title, checks: docDef.checks, data: base64, mediaType: 'application/pdf' }),
                 });
-
                 const json = await res.json();
                 if (!json.ok) throw new Error(json.error || 'Check failed');
 
-                const passCount = json.results.filter(r => r.pass).length;
-                const total = json.results.length;
+                const results = json.results;
+                const passed  = results.filter(r => r.result === 'pass').length;
+                const flagged = results.filter(r => r.result === 'flag').length;
+                const failed  = results.filter(r => r.result === 'fail').length;
 
-                checkStatus.className = `lc-check-status lc-check-status--${passCount === total ? 'ok' : 'warn'}`;
-                checkStatus.textContent = `${passCount === total ? '✓' : '⚠'} ${passCount}/${total} requirements met — ${docDef.title}`;
+                const sumCls  = failed > 0 ? 'fail' : flagged > 0 ? 'flag' : 'pass';
+                const sumIcon = failed > 0 ? '✗' : flagged > 0 ? '⚠' : '✓';
+                const sumText = `${passed} pass · ${flagged > 0 ? flagged + ' flag · ' : ''}${failed} fail`;
 
-                checkResults.hidden = false;
-                checkResults.innerHTML = json.results.map(r => `
-                    <div class="lc-check-result-row lc-check-result-row--${r.pass ? 'pass' : 'fail'}">
-                        <span class="lc-check-result-icon">${r.pass ? '✓' : '✗'}</span>
-                        <span class="lc-check-result-body">
-                            <span class="lc-check-result-text">${esc(r.note || '')}</span>
-                            <span class="lc-check-result-req">${esc(docDef.checks.find(c => c.id === r.checkId)?.text || r.checkId)}</span>
-                        </span>
+                resultsEl.innerHTML = `
+                    <div class="lc-card-check-summary lc-card-check-summary--${sumCls}">
+                        <span>${sumIcon} ${sumText} — ${esc(docDef.title)}</span>
+                        <button class="lc-archive-doc-btn"
+                                data-archive-doc="${esc(docId)}"
+                                data-doc-title="${esc(docDef.title)}"
+                                data-filename="${esc(file.name)}"
+                                type="button">Archive ↓</button>
                     </div>
-                `).join('');
+                    <div class="lc-card-check-rows">
+                        ${results.map(r => {
+                            const req = docDef.checks.find(c => c.id === r.checkId)?.text || r.checkId;
+                            const cls = r.result === 'pass' ? 'pass' : r.result === 'flag' ? 'flag' : 'fail';
+                            const icon = r.result === 'pass' ? '✓' : r.result === 'flag' ? '⚠' : '✗';
+                            return `<div class="lc-check-result-row lc-check-result-row--${cls}">
+                                <span class="lc-check-result-icon">${icon}</span>
+                                <span class="lc-check-result-body">
+                                    <span class="lc-check-result-text">${esc(r.note || '')}</span>
+                                    <span class="lc-check-result-req">${esc(req)}</span>
+                                </span>
+                            </div>`;
+                        }).join('')}
+                    </div>`;
 
             } catch (err) {
-                checkStatus.className = 'lc-check-status lc-check-status--error';
-                checkStatus.textContent = '✗ ' + err.message;
+                resultsEl.innerHTML = `<div class="lc-card-check-summary lc-card-check-summary--fail">✗ ${esc(err.message)}</div>`;
             }
+        }
+    }
+
+    async function loadArchivedDocs(container, lcId) {
+        const listEl = container.querySelector('#lc-archive-list');
+        if (!listEl) return;
+        try {
+            const json = await apiFetch('/api/lc-docs?lcId=' + lcId);
+            if (!json.docs?.length) {
+                listEl.innerHTML = '<span class="lc-archive-empty">No archived documents yet — use the upload button (↑) on each document card to check and archive.</span>';
+                return;
+            }
+            listEl.innerHTML = json.docs.map(d => `
+                <div class="lc-archive-row">
+                    <span class="lc-archive-type">${esc(d.docTitle || d.docType)}</span>
+                    <span class="lc-archive-name">${esc(d.filename)}</span>
+                    <span class="lc-archive-date">${esc(fmtDate((d.uploadedAt || '').slice(0, 10)))}</span>
+                    <a class="lc-archive-view" href="/api/lc-doc-file?key=${encodeURIComponent(d.key)}&filename=${encodeURIComponent(d.filename)}" target="_blank">View PDF</a>
+                    <button class="lc-archive-del" data-del-key="${esc(d.key)}" type="button" title="Delete">✕</button>
+                </div>
+            `).join('');
+        } catch {
+            listEl.innerHTML = '<span class="lc-archive-empty">Could not load archived documents</span>';
         }
     }
 
