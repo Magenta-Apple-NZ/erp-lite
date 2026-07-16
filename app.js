@@ -128,6 +128,30 @@ function notifRestoreAll() {
     localStorage.removeItem(NOTIF_DISMISS_KEY);
 }
 
+async function confirmShipmentArrival(shipId) {
+    try {
+        const forecast  = await fetch('/api/import/forecast').then(r => r.json());
+        const today     = new Date().toISOString().slice(0, 10);
+        const shipments = (forecast.shipments || []).map(s => {
+            if (s.id !== shipId) return s;
+            // Mark the last milestone as done (that's what triggered the notification)
+            const milestones = (s.milestones || []).map((m, i, arr) =>
+                i === arr.length - 1 && !m.done
+                    ? { ...m, done: true, date: m.date || today, confirmedAt: today }
+                    : m
+            );
+            return { ...s, milestones };
+        });
+        const res = await fetch('/api/import/forecast', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ shipments }),
+        });
+        const j = await res.json();
+        return j.ok === true;
+    } catch { return false; }
+}
+
 async function fetchNotificationItems() {
     const [xeroRes, ordersRes, forecastRes] = await Promise.allSettled([
         fetch('/api/xero/alerts').then(r => r.ok ? r.json() : null).catch(() => null),
@@ -179,9 +203,11 @@ async function fetchNotificationItems() {
             type: 'ship',
             severity: 'critical',
             icon: '🚢',
-            text: `<strong>Shipment #${_notifEsc(s.seq)}</strong> ${_notifEsc(s.label)} was due ${when} — confirm arrival`,
+            text: `<strong>Shipment #${_notifEsc(s.seq)}</strong> ${_notifEsc(s.label)} was due ${when}`,
             link: `#imports/ship/${encodeURIComponent(s.id || '')}`,
             linkLabel: 'Open shipment →',
+            confirmable: true,
+            shipId: s.id,
         });
     }
     for (const s of arrivingShips) {
@@ -230,14 +256,36 @@ async function loadDashboardAlerts() {
     const active = items.filter(n => !dismissed[n.id]);
     notifUpdateBadge(active.length);
     if (!active.length) { el.hidden = true; return; }
-    el.innerHTML = active.map(n => `
-        <a class="db-alert-row db-alert-row--${n.type}${n.severity === 'critical' ? ' db-alert-row--overdue' : ''}"
-           href="${n.link}"${n.external ? ' target="_blank" rel="noopener"' : ''}>
-            <span class="db-alert-icon">${n.icon}</span>
-            <span class="db-alert-main">${n.text}</span>
-            <span class="db-alert-link">${n.linkLabel}</span>
-        </a>`).join('');
+    el.innerHTML = active.map(n => n.confirmable
+        ? `<div class="db-alert-row db-alert-row--${n.type} db-alert-row--overdue">
+               <span class="db-alert-icon">${n.icon}</span>
+               <span class="db-alert-main">${n.text}</span>
+               <button class="db-alert-confirm-btn" data-ship-id="${_notifEsc(n.shipId)}" data-notif-id="${_notifEsc(n.id)}">✓ Confirm arrival</button>
+               <a class="db-alert-link" href="${n.link}">Open shipment →</a>
+           </div>`
+        : `<a class="db-alert-row db-alert-row--${n.type}${n.severity === 'critical' ? ' db-alert-row--overdue' : ''}"
+              href="${n.link}"${n.external ? ' target="_blank" rel="noopener"' : ''}>
+               <span class="db-alert-icon">${n.icon}</span>
+               <span class="db-alert-main">${n.text}</span>
+               <span class="db-alert-link">${n.linkLabel}</span>
+           </a>`
+    ).join('');
     el.hidden = false;
+
+    el.querySelectorAll('.db-alert-confirm-btn').forEach(btn => {
+        btn.addEventListener('click', async () => {
+            btn.disabled = true;
+            btn.textContent = 'Confirming…';
+            const ok = await confirmShipmentArrival(btn.dataset.shipId);
+            if (ok) {
+                notifDismiss(btn.dataset.notifId);
+                loadDashboardAlerts();
+            } else {
+                btn.disabled = false;
+                btn.textContent = '✓ Confirm arrival';
+            }
+        });
+    });
 }
 
 async function loadNotificationsView(container) {
@@ -267,7 +315,10 @@ async function loadNotificationsView(container) {
                 <span class="notif-row-text">${n.text}</span>
                 <a class="notif-row-link" href="${n.link}"${n.external ? ' target="_blank" rel="noopener"' : ''}>${n.linkLabel}</a>
             </span>
-            <button class="notif-dismiss-btn" data-id="${_notifEsc(n.id)}" title="Dismiss for 24h">✕</button>
+            <span class="notif-row-actions">
+                ${n.confirmable ? `<button class="notif-confirm-btn" data-ship-id="${_notifEsc(n.shipId)}" data-notif-id="${_notifEsc(n.id)}">✓ Confirm arrival</button>` : ''}
+                <button class="notif-dismiss-btn" data-id="${_notifEsc(n.id)}" title="Dismiss for 24h">✕</button>
+            </span>
         </div>`).join('');
 
     const footer = dimCount > 0
@@ -279,6 +330,24 @@ async function loadNotificationsView(container) {
             <div class="notif-list">${rows}</div>
             ${footer}
         </div>`;
+
+    container.querySelectorAll('.notif-confirm-btn').forEach(btn => {
+        btn.addEventListener('click', async e => {
+            e.stopPropagation();
+            btn.disabled = true;
+            btn.textContent = 'Confirming…';
+            const ok = await confirmShipmentArrival(btn.dataset.shipId);
+            if (ok) {
+                notifDismiss(btn.dataset.notifId);
+                btn.closest('.notif-row').remove();
+                notifUpdateBadge(container.querySelectorAll('.notif-row').length);
+                if (!container.querySelectorAll('.notif-row').length) loadNotificationsView(container);
+            } else {
+                btn.disabled = false;
+                btn.textContent = '✓ Confirm arrival';
+            }
+        });
+    });
 
     container.querySelectorAll('.notif-dismiss-btn').forEach(btn => {
         btn.addEventListener('click', e => {
