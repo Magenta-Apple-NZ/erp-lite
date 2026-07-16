@@ -28,6 +28,15 @@
         <nav class="sidebar-nav">
             <span class="nav-section-label nav-item--admin-only">Workspace</span>
 
+            <a class="nav-item active nav-item--admin-only" href="#notifications" id="nav-notifications" style="position:relative">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
+                    <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
+                </svg>
+                Notifications
+                <span class="nav-notif-badge" id="notif-nav-badge" hidden></span>
+            </a>
+
             <a class="nav-item active nav-item--admin-only" href="#" id="nav-dashboard">
                 <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
                     <rect x="1.5" y="1.5" width="5" height="5" rx="1"/>
@@ -173,6 +182,11 @@
         <!-- ── View: Imports ── -->
         <div id="view-imports" class="app-view" style="display:none">
             <div class="orders-view-inner" id="imports-container"></div>
+        </div>
+
+        <!-- ── View: Notifications ── -->
+        <div id="view-notifications" class="app-view" style="display:none">
+            <div class="orders-view-inner" id="notifications-container"></div>
         </div>
 
         <!-- ── View: LC Checker ── -->

@@ -100,18 +100,35 @@ function renderDashboardWidgets(config) {
     loadDashboardAlerts();
 }
 
-// ── Dashboard alerts banner ──────────────────────────────────────────────
-// Fetches three data sources in parallel and renders a row per active alert:
-//   1. Orders without a Xero invoice (pending push)
-//   2. Upcoming shipment arrivals (within 60 days)
-//   3. Unpaid Xero AR invoices
-async function loadDashboardAlerts() {
-    const el = document.getElementById('db-alerts');
-    if (!el) return;
-    const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-    const fmt = n => '$' + Number(n).toLocaleString('en-NZ', { maximumFractionDigits: 0 });
-    const infoIcon = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></svg>`;
+// ── Notification system ──────────────────────────────────────────────────
+// Shared data fetch + dismiss persistence for dashboard banner and #notifications view.
 
+const _notifEsc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+const _notifFmt = n => '$' + Number(n).toLocaleString('en-NZ', { maximumFractionDigits: 0 });
+const NOTIF_DISMISS_KEY = 'hub-notif-dismissed';
+const NOTIF_TTL = 86400000; // 24h
+
+function notifGetDismissed() {
+    try {
+        const raw = JSON.parse(localStorage.getItem(NOTIF_DISMISS_KEY) || '{}');
+        const now = Date.now();
+        const clean = {};
+        for (const [k, ts] of Object.entries(raw)) {
+            if (now - ts < NOTIF_TTL) clean[k] = ts;
+        }
+        return clean;
+    } catch { return {}; }
+}
+function notifDismiss(id) {
+    const d = notifGetDismissed();
+    d[id] = Date.now();
+    localStorage.setItem(NOTIF_DISMISS_KEY, JSON.stringify(d));
+}
+function notifRestoreAll() {
+    localStorage.removeItem(NOTIF_DISMISS_KEY);
+}
+
+async function fetchNotificationItems() {
     const [xeroRes, ordersRes, forecastRes] = await Promise.allSettled([
         fetch('/api/xero/alerts').then(r => r.ok ? r.json() : null).catch(() => null),
         fetch('/api/orders').then(r => r.ok ? r.json() : []).catch(() => []),
@@ -121,77 +138,163 @@ async function loadDashboardAlerts() {
     const orders   = ordersRes.status   === 'fulfilled' ? ordersRes.value   : [];
     const forecast = forecastRes.status === 'fulfilled' ? forecastRes.value : {};
 
-    const rows = [];
+    const items = [];
 
-    // ── 1. Orders pending Xero push ──
+    // 1. Orders pending Xero push
     const pendingPush = (orders || []).filter(o => !o.xeroInvoiceId && o.status !== 'cancelled');
     if (pendingPush.length) {
-        rows.push(`<a class="db-alert-row db-alert-row--push" href="#orders">
-            ${infoIcon}
-            <span class="db-alert-main"><strong>${pendingPush.length} order${pendingPush.length === 1 ? '' : 's'}</strong> not yet sent to Xero</span>
-            <span class="db-alert-link">Open Orders →</span>
-        </a>`);
+        items.push({
+            id: 'orders-pending-xero',
+            type: 'push',
+            severity: 'info',
+            icon: `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></svg>`,
+            text: `<strong>${pendingPush.length} order${pendingPush.length === 1 ? '' : 's'}</strong> not yet sent to Xero`,
+            link: '#orders',
+            linkLabel: 'Open Orders →',
+        });
     }
 
-    // ── 2. Shipment arrivals — overdue (past, undone) and upcoming (≤60 days) ──
+    // 2. Shipments — overdue and upcoming (≤60 days)
     const today = new Date(); today.setHours(0, 0, 0, 0);
     const cutoff = new Date(today); cutoff.setDate(cutoff.getDate() + 60);
-    const overdue = [], arriving = [];
+    const overdueShips = [], arrivingShips = [];
     for (const s of (forecast.shipments || [])) {
-        const ms = (s.milestones || []);
+        const ms = s.milestones || [];
         const last = ms[ms.length - 1];
         if (last && last.date && !last.done) {
             const d = new Date(last.date + 'T00:00:00');
             const days = Math.round((d - today) / 86400000);
-            if (days < 0) {
-                overdue.push({ seq: s.seq, id: s.id, label: last.label, days });
-            } else if (d <= cutoff) {
-                arriving.push({ seq: s.seq, id: s.id, label: last.label, days });
-            }
+            if (days < 0) overdueShips.push({ seq: s.seq, id: s.id, label: last.label, days });
+            else if (d <= cutoff) arrivingShips.push({ seq: s.seq, id: s.id, label: last.label, days });
         }
     }
-    overdue.sort((a, b) => a.days - b.days);   // most overdue first
-    arriving.sort((a, b) => a.days - b.days);
+    overdueShips.sort((a, b) => a.days - b.days);
+    arrivingShips.sort((a, b) => a.days - b.days);
 
-    if (overdue.length) {
-        const first = overdue[0];
-        const daysAgo = Math.abs(first.days);
+    for (const s of overdueShips) {
+        const daysAgo = Math.abs(s.days);
         const when = daysAgo === 0 ? 'today' : daysAgo === 1 ? 'yesterday' : `${daysAgo} days ago`;
-        const extra = overdue.length > 1 ? ` <span class="db-alert-extra">+${overdue.length - 1} more</span>` : '';
-        rows.push(`<a class="db-alert-row db-alert-row--ship db-alert-row--overdue" href="#imports/ship/${encodeURIComponent(first.id || '')}">
-            <span class="db-alert-ship-icon">🚢</span>
-            <span class="db-alert-main"><strong>Shipment #${esc(first.seq)}</strong> was due ${when} — confirm arrival${extra}</span>
-            <span class="db-alert-link">Open shipment →</span>
-        </a>`);
+        items.push({
+            id: `shipment-overdue-${s.id}`,
+            type: 'ship',
+            severity: 'critical',
+            icon: '🚢',
+            text: `<strong>Shipment #${_notifEsc(s.seq)}</strong> ${_notifEsc(s.label)} was due ${when} — confirm arrival`,
+            link: `#imports/ship/${encodeURIComponent(s.id || '')}`,
+            linkLabel: 'Open shipment →',
+        });
     }
-    if (arriving.length) {
-        const first = arriving[0];
-        const when = first.days === 0 ? 'today' : first.days === 1 ? 'tomorrow' : `in ${first.days} days`;
-        const extra = arriving.length > 1 ? ` <span class="db-alert-extra">+${arriving.length - 1} more</span>` : '';
-        rows.push(`<a class="db-alert-row db-alert-row--ship" href="#imports/ship/${encodeURIComponent(first.id || '')}">
-            <span class="db-alert-ship-icon">🚢</span>
-            <span class="db-alert-main"><strong>Shipment #${esc(first.seq)}</strong> ${esc(first.label)} ${when}${extra}</span>
-            <span class="db-alert-link">Open shipment →</span>
-        </a>`);
+    for (const s of arrivingShips) {
+        const when = s.days === 0 ? 'today' : s.days === 1 ? 'tomorrow' : `in ${s.days} days`;
+        items.push({
+            id: `shipment-arriving-${s.id}`,
+            type: 'ship',
+            severity: 'warning',
+            icon: '🚢',
+            text: `<strong>Shipment #${_notifEsc(s.seq)}</strong> ${_notifEsc(s.label)} arriving ${when}`,
+            link: `#imports/ship/${encodeURIComponent(s.id || '')}`,
+            linkLabel: 'Open shipment →',
+        });
     }
 
-    // ── 3. Xero AR unpaid invoices ──
+    // 3. Xero AR unpaid invoices
     if (xero && xero.unpaidCount) {
-        const overdue = xero.overdueCount > 0
-            ? `<span class="db-alert-badge db-alert-badge--red">${xero.overdueCount} overdue · ${fmt(xero.overdueTotal)}</span>`
-            : '';
-        rows.push(`<a class="db-alert-row db-alert-row--xero${xero.overdueCount > 0 ? ' db-alert-row--overdue' : ''}"
-                href="https://go.xero.com/AccountsReceivable/Search.aspx" target="_blank" rel="noopener">
-            ${infoIcon}
-            <span class="db-alert-main"><strong>${xero.unpaidCount} unpaid invoice${xero.unpaidCount === 1 ? '' : 's'}</strong> · ${fmt(xero.unpaidTotal)} owed <span class="db-alert-gst">incl. GST</span></span>
-            ${overdue}
-            <span class="db-alert-link">Open Xero AR ↗</span>
-        </a>`);
+        const badge = xero.overdueCount > 0
+            ? `<span class="db-alert-badge db-alert-badge--red">${xero.overdueCount} overdue · ${_notifFmt(xero.overdueTotal)}</span>` : '';
+        items.push({
+            id: 'xero-ar',
+            type: 'xero',
+            severity: xero.overdueCount > 0 ? 'critical' : 'info',
+            icon: `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></svg>`,
+            text: `<strong>${xero.unpaidCount} unpaid invoice${xero.unpaidCount === 1 ? '' : 's'}</strong> · ${_notifFmt(xero.unpaidTotal)} owed <span class="db-alert-gst">incl. GST</span>${badge}`,
+            link: 'https://go.xero.com/AccountsReceivable/Search.aspx',
+            linkLabel: 'Open Xero AR ↗',
+            external: true,
+        });
     }
 
-    if (!rows.length) { el.hidden = true; return; }
-    el.innerHTML = rows.join('');
+    return items;
+}
+
+function notifUpdateBadge(activeCount) {
+    const badge = document.getElementById('notif-nav-badge');
+    if (!badge) return;
+    badge.textContent = activeCount || '';
+    badge.hidden = !activeCount;
+}
+
+async function loadDashboardAlerts() {
+    const el = document.getElementById('db-alerts');
+    if (!el) return;
+    const [items, dismissed] = [await fetchNotificationItems(), notifGetDismissed()];
+    const active = items.filter(n => !dismissed[n.id]);
+    notifUpdateBadge(active.length);
+    if (!active.length) { el.hidden = true; return; }
+    el.innerHTML = active.map(n => `
+        <a class="db-alert-row db-alert-row--${n.type}${n.severity === 'critical' ? ' db-alert-row--overdue' : ''}"
+           href="${n.link}"${n.external ? ' target="_blank" rel="noopener"' : ''}>
+            <span class="db-alert-icon">${n.icon}</span>
+            <span class="db-alert-main">${n.text}</span>
+            <span class="db-alert-link">${n.linkLabel}</span>
+        </a>`).join('');
     el.hidden = false;
+}
+
+async function loadNotificationsView(container) {
+    container.innerHTML = '<div class="notif-loading">Loading…</div>';
+    const [items, dismissed] = [await fetchNotificationItems(), notifGetDismissed()];
+
+    const active = items.filter(n => !dismissed[n.id]);
+    const dimCount = items.filter(n => dismissed[n.id]).length;
+    notifUpdateBadge(active.length);
+
+    if (!items.length) {
+        container.innerHTML = `
+            <div class="notif-page">
+                <h2 class="notif-page-title">Notifications</h2>
+                <div class="notif-empty">
+                    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+                    <p>No active notifications</p>
+                </div>
+            </div>`;
+        return;
+    }
+
+    const rows = active.map(n => `
+        <div class="notif-row notif-row--${n.severity}" data-id="${_notifEsc(n.id)}">
+            <span class="notif-row-icon">${n.icon}</span>
+            <span class="notif-row-body">
+                <span class="notif-row-text">${n.text}</span>
+                <a class="notif-row-link" href="${n.link}"${n.external ? ' target="_blank" rel="noopener"' : ''}>${n.linkLabel}</a>
+            </span>
+            <button class="notif-dismiss-btn" data-id="${_notifEsc(n.id)}" title="Dismiss for 24h">✕</button>
+        </div>`).join('');
+
+    const footer = dimCount > 0
+        ? `<div class="notif-footer"><button class="notif-restore-btn">${dimCount} dismissed — restore all</button></div>` : '';
+
+    container.innerHTML = `
+        <div class="notif-page">
+            <h2 class="notif-page-title">Notifications</h2>
+            <div class="notif-list">${rows}</div>
+            ${footer}
+        </div>`;
+
+    container.querySelectorAll('.notif-dismiss-btn').forEach(btn => {
+        btn.addEventListener('click', e => {
+            e.stopPropagation();
+            notifDismiss(btn.dataset.id);
+            btn.closest('.notif-row').remove();
+            const remaining = container.querySelectorAll('.notif-row').length;
+            notifUpdateBadge(remaining);
+            if (!remaining) loadNotificationsView(container);
+        });
+    });
+
+    container.querySelector('.notif-restore-btn')?.addEventListener('click', () => {
+        notifRestoreAll();
+        loadNotificationsView(container);
+    });
 }
 
 // ── Calendar module ──────────────────────────────────────────────────────
@@ -358,7 +461,7 @@ function showToast(msg) {
 document.getElementById('reload-btn').addEventListener('click', () => { location.reload(); });
 
 // ── Hash router ──
-const VIEWS = ['view-dashboard', 'view-orders', 'view-orders-new', 'view-orders-detail', 'view-orders-edit', 'view-warehouse', 'view-admin', 'view-imports', 'view-lc', 'view-payslips', 'view-sales', 'view-calendar'];
+const VIEWS = ['view-dashboard', 'view-orders', 'view-orders-new', 'view-orders-detail', 'view-orders-edit', 'view-warehouse', 'view-admin', 'view-imports', 'view-lc', 'view-payslips', 'view-sales', 'view-calendar', 'view-notifications'];
 
 function setActiveView(viewId) {
     VIEWS.forEach(id => {
@@ -537,6 +640,13 @@ async function handleRoute() {
         setActiveView('view-calendar');
         setActiveNav('nav-calendar');
         await CalendarView.render(document.getElementById('calendar-container'));
+        return;
+    }
+
+    if (hash === 'notifications') {
+        setActiveView('view-notifications');
+        setActiveNav('nav-notifications');
+        await loadNotificationsView(document.getElementById('notifications-container'));
         return;
     }
 

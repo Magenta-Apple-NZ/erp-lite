@@ -5961,3 +5961,52 @@ a.db-row:hover { background: #f8fafc; border-color: #e2e8f0; }
     .lc-cond-grid { grid-template-columns: 1fr; }
     .lc-field--wide { grid-column: span 1; }
 }
+
+/* ── Notifications view ── */
+.notif-page { max-width: 680px; padding: 2rem 1.5rem; }
+.notif-page-title { font-size: 1.35rem; font-weight: 600; color: #0f172a; margin: 0 0 1.5rem; }
+.notif-loading { color: #94a3b8; font-size: 0.9rem; padding: 2rem 1.5rem; }
+.notif-empty { display: flex; flex-direction: column; align-items: center; gap: 0.75rem; padding: 3rem 1rem; color: #94a3b8; text-align: center; }
+.notif-empty svg { opacity: 0.35; }
+.notif-empty p { margin: 0; font-size: 0.9rem; }
+.notif-list { display: flex; flex-direction: column; gap: 0.5rem; }
+
+.notif-row {
+    display: flex; align-items: center; gap: 0.75rem;
+    padding: 0.85rem 1rem; border-radius: 8px;
+    background: #fff; border: 1px solid #e2e8f0;
+    border-left-width: 3px;
+}
+.notif-row--info     { border-left-color: #6366f1; }
+.notif-row--warning  { border-left-color: #f59e0b; }
+.notif-row--critical { border-left-color: #ef4444; }
+
+.notif-row-icon { font-size: 1rem; flex-shrink: 0; color: #64748b; line-height: 1; }
+.notif-row-body { flex: 1; display: flex; align-items: baseline; gap: 0.75rem; flex-wrap: wrap; min-width: 0; }
+.notif-row-text { font-size: 0.875rem; color: #334155; }
+.notif-row-text strong { color: #0f172a; }
+.notif-row-link { font-size: 0.8rem; color: #6366f1; white-space: nowrap; text-decoration: none; }
+.notif-row-link:hover { text-decoration: underline; }
+
+.notif-dismiss-btn {
+    flex-shrink: 0; background: none; border: none; cursor: pointer;
+    color: #94a3b8; font-size: 0.8rem; padding: 0.25rem 0.4rem;
+    border-radius: 4px; line-height: 1; transition: color 0.15s, background 0.15s;
+}
+.notif-dismiss-btn:hover { color: #475569; background: #f1f5f9; }
+
+.notif-footer { margin-top: 1.25rem; }
+.notif-restore-btn {
+    background: none; border: none; cursor: pointer;
+    font-size: 0.8rem; color: #94a3b8; padding: 0;
+}
+.notif-restore-btn:hover { color: #475569; text-decoration: underline; }
+
+/* Nav badge */
+.nav-notif-badge {
+    position: absolute; right: 0.75rem; top: 50%; transform: translateY(-50%);
+    background: #ef4444; color: #fff; font-size: 0.65rem; font-weight: 700;
+    min-width: 17px; height: 17px; border-radius: 9px;
+    display: inline-flex; align-items: center; justify-content: center;
+    padding: 0 4px; line-height: 1;
+}
