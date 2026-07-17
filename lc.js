@@ -1552,19 +1552,16 @@ const LC = (() => {
         // Shipment link — populate dropdown from active orders
         const shipSelect = container.querySelector('#lc-ship-select');
         if (shipSelect) {
-            apiFetch('/api/orders').then(orders => {
-                const active = (orders || []).filter(o =>
-                    o.customer?.isExport &&
-                    o.status !== 'cancelled' && o.status !== 'archived'
-                );
-                if (!active.length) {
-                    shipSelect.innerHTML = '<option value="">No active shipments found</option>';
+            apiFetch('/api/import/forecast').then(data => {
+                const ships = (data && data.shipments) ? data.shipments : [];
+                if (!ships.length) {
+                    shipSelect.innerHTML = '<option value="">No import shipments found</option>';
                     return;
                 }
                 shipSelect.innerHTML = '<option value="">Select shipment…</option>'
-                    + active.map(o => {
-                        const label = o.id + (o.customer?.name ? ' — ' + o.customer.name : '') + (o.poNumber ? ' / ' + o.poNumber : '');
-                        return '<option value="' + esc(o.id) + '">' + esc(label) + '</option>';
+                    + ships.map(s => {
+                        const label = (s.note || s.id) + (s.ym ? ' — arrives ' + s.ym : '');
+                        return '<option value="' + esc(s.id) + '">' + esc(label) + '</option>';
                     }).join('');
             }).catch(() => {
                 shipSelect.innerHTML = '<option value="">Could not load shipments</option>';
