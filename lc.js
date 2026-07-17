@@ -1553,7 +1553,10 @@ const LC = (() => {
         const shipSelect = container.querySelector('#lc-ship-select');
         if (shipSelect) {
             apiFetch('/api/orders').then(orders => {
-                const active = (orders || []).filter(o => o.status !== 'cancelled' && o.status !== 'archived');
+                const active = (orders || []).filter(o =>
+                    o.customer?.isExport &&
+                    o.status !== 'cancelled' && o.status !== 'archived'
+                );
                 if (!active.length) {
                     shipSelect.innerHTML = '<option value="">No active shipments found</option>';
                     return;
