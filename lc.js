@@ -1614,10 +1614,30 @@ const LC = (() => {
 
                 // Step 2 — Check against LC requirements
                 if (loadEl()) loadEl().textContent = '⏳ Checking against LC requirements…';
+                const lcContext = {
+                    lcNumber:         lc.lcNumber,
+                    issuedDate:       lc.issuedDate,
+                    expiryDate:       lc.expiryDate,
+                    latestShipDate:   lc.latestShipDate,
+                    currency:         lc.currency,
+                    amount:           lc.amount,
+                    presentationDays: lc.presentationDays,
+                    beneficiary:      lc.beneficiary,
+                    applicant:        lc.applicant,
+                    applicantBank:    lc.applicantBank,
+                    advisingBank:     lc.advisingBank,
+                    goods:            lc.goods,
+                    ports:            lc.ports,
+                    proformaRef:      lc.proformaRef,
+                    proformaDate:     lc.proformaDate,
+                    insurance:        lc.insurance,
+                    governedBy:       lc.governedBy,
+                    f47aConditions:   lc.f47aConditions,
+                };
                 const res  = await fetch('/api/lc-check', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ docType: docId, docTitle: docDef.title, checks: docDef.checks, data: base64, mediaType: 'application/pdf' }),
+                    body: JSON.stringify({ docType: docId, docTitle: docDef.title, checks: docDef.checks, data: base64, mediaType: 'application/pdf', lcContext }),
                 });
                 const json = await res.json();
                 if (!json.ok) throw new Error(json.error || 'Check failed');

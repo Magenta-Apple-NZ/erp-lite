@@ -8,6 +8,50 @@ function errResponse(msg, status = 500) {
     return jsonResponse({ error: msg }, status);
 }
 
+function buildLcContextBlock(lc) {
+    if (!lc) return '';
+    const g  = lc.goods    || {};
+    const p  = lc.ports    || {};
+    const ap = lc.applicant || {};
+    const ab = lc.applicantBank || {};
+    const lines = [
+        `LC Number:          ${lc.lcNumber || '—'}`,
+        `Issued Date:        ${lc.issuedDate || '—'}`,
+        `Expiry Date:        ${lc.expiryDate || '—'}`,
+        `Latest Ship Date:   ${lc.latestShipDate || '—'}`,
+        `Amount:             ${lc.currency || 'USD'} ${lc.amount != null ? Number(lc.amount).toFixed(2) : '—'}`,
+        `Governed By:        ${lc.governedBy || 'UCP 600'}`,
+        `Presentation Days:  ${lc.presentationDays || 21} days after shipment`,
+        ``,
+        `Beneficiary:        ${lc.beneficiary || '—'}`,
+        `Applicant Name:     ${ap.name || '—'}`,
+        `Applicant Address:  ${ap.address || '—'}`,
+        `Applicant Bank:     ${ab.name || '—'}, ${ab.city || '—'} (SWIFT: ${ab.swift || '—'})`,
+        `Advising Bank:      ${(lc.advisingBank || {}).name || '—'}, ${(lc.advisingBank || {}).city || '—'}`,
+        ``,
+        `Goods Description:  ${g.description || '—'}`,
+        `HS Code:            ${g.hsCode || '—'}`,
+        `Quantity:           ${g.quantity != null ? g.quantity.toLocaleString() : '—'} ${g.quantityUnit || 'kg'}`,
+        `Package Count:      ${g.packageCount || '—'} ${g.packageType || ''}`,
+        `Unit Price:         ${lc.currency || 'USD'} ${g.unitPrice != null ? g.unitPrice : '—'} / ${g.quantityUnit || 'kg'}`,
+        `Origin:             ${g.origin || '—'}`,
+        `Container:          ${g.container || '—'}`,
+        `Incoterms:          ${g.incoterms || '—'}`,
+        ``,
+        `Port of Loading:    ${p.loading || '—'}`,
+        `Port of Discharge:  ${p.discharge || '—'}`,
+        `Final Destination:  ${p.finalDestination || '—'}`,
+        ``,
+        `Proforma Ref:       No. ${lc.proformaRef || '—'}`,
+        `Proforma Date:      ${lc.proformaDate || '—'}`,
+    ];
+    if (lc.f47aConditions && lc.f47aConditions.length) {
+        lines.push('', 'Field 47A Special Conditions:');
+        lc.f47aConditions.forEach((c, i) => lines.push(`  ${i + 1}. ${c}`));
+    }
+    return lines.join('\n');
+}
+
 export async function onRequestPost({ env, request }) {
     let step = 'init';
     try {
@@ -16,31 +60,48 @@ export async function onRequestPost({ env, request }) {
 
         step = 'parse-request';
         const body = await request.json();
-        const { docType, docTitle, checks, data: base64, mediaType = 'application/pdf' } = body;
+        const { docType, docTitle, checks, data: base64, mediaType = 'application/pdf', lcContext } = body;
         if (!base64) return errResponse('No document data', 400);
         if (!checks?.length) return errResponse('No checks provided', 400);
 
         const checkList = checks.map((c, i) => `${i + 1}. [${c.id}] ${c.text}`).join('\n');
+        const lcBlock   = buildLcContextBlock(lcContext);
 
-        const prompt = `You are checking a ${docTitle || docType} against LC (Letter of Credit) requirements. Be strict — any deviation, however small, must be flagged.
+        const prompt = `You are a senior trade finance document checker at a confirming bank. Your job is to find discrepancies that would cause a bank to reject a presentation under UCP 600. You are checking a ${docTitle || docType}.
 
-Check each requirement below against the uploaded document. Return ONLY a JSON array:
+## LC Ground Truth
+The following values come directly from the Letter of Credit and are the authoritative reference. Any deviation in the document — even minor wording, number, date, or spelling differences — is a discrepancy.
 
+\`\`\`
+${lcBlock}
+\`\`\`
+
+## Your task
+Check each numbered requirement below against the uploaded document. For every check:
+- Extract the actual value/text from the document
+- Compare it EXACTLY against the LC ground truth above
+- Numerical amounts: verify to the cent — USD 22,129.72 ≠ USD 22,130.00
+- Dates: verify exact format and value
+- Names/addresses: verify character-for-character — abbreviation, different punctuation, or reordering is a discrepancy
+- If information is ABSENT from the document, result is "fail"
+- If information is PRESENT but differs in any way, result is "flag" (minor) or "fail" (material)
+- Only "pass" if the document text exactly and unambiguously satisfies the requirement
+
+Return ONLY a JSON array, no other text:
 [
-  {"checkId": "id-from-list", "result": "pass", "note": "brief note — what you found or what is missing/wrong"}
+  {"checkId": "id-from-list", "result": "pass|flag|fail", "note": "Quote the actual document text, then state any discrepancy. If failing, state exactly what is wrong or missing."}
 ]
 
-Requirements to check:
+## Checks to perform
 ${checkList}
 
-Rules:
-- result must be exactly one of: "pass", "flag", or "fail"
-- "pass" — the document clearly and exactly satisfies the requirement, with no discrepancies
-- "flag" — the requirement is partially met but has a minor issue: misspelling, slightly different wording, near-match, ambiguous phrasing, or any detail not exactly matching the LC text. When in doubt, flag rather than pass.
-- "fail" — the requirement is not met: content is missing, clearly wrong, or cannot be verified from the document
-- note: one short sentence — quote the relevant text from the document if helpful, or state what is missing/wrong
-- check every item in the list
-- return ONLY the JSON array, no other text`;
+## Grading rules
+- "pass"  — exact match, no discrepancy whatsoever
+- "flag"  — present but minor issue: near-match amount, slight wording variation, ambiguity, format difference. When uncertain between pass and flag, choose flag.
+- "fail"  — missing entirely, clearly wrong value, or a material discrepancy that would cause bank rejection
+- Never give "pass" when you cannot find and quote the relevant text in the document
+- Never give "pass" on a numerical check without confirming the exact figure
+- Return one object per check — every check in the list must appear in the output`;
 
         step = 'anthropic-fetch';
         const res = await fetch('https://api.anthropic.com/v1/messages', {
@@ -52,8 +113,8 @@ Rules:
                 'anthropic-beta': 'pdfs-2024-09-25',
             },
             body: JSON.stringify({
-                model: 'claude-haiku-4-5-20251001',
-                max_tokens: 2048,
+                model: 'claude-sonnet-5-20251101',
+                max_tokens: 4096,
                 messages: [{
                     role: 'user',
                     content: [
@@ -76,10 +137,9 @@ Rules:
         const match = text.match(/\[[\s\S]*\]/);
         if (!match) return errResponse('No JSON array in model response: ' + text.slice(0, 200), 500);
         const results = JSON.parse(match[0]);
-        // Normalise: if model still returns old {pass: bool} shape, convert
         const normalised = results.map(r => ({
             ...r,
-            result: r.result || (r.pass === true ? 'pass' : r.pass === false ? 'fail' : 'fail'),
+            result: r.result || (r.pass === true ? 'pass' : 'fail'),
         }));
         return jsonResponse({ ok: true, results: normalised });
 
