@@ -834,18 +834,22 @@ const LC = (() => {
             const presIso = shipDate ? addDays(shipDate, pdays2) : null;
             const shipPct = tlPct(shipDate);
             const presPct = tlPct(presIso);
+            const shipIsToday = shipDate && shipDate === todayIso;
+
             let html = '<div class="lc-tl2-rail"></div>';
             if (todayPct !== null) {
                 html += '<div class="lc-tl2-progress" style="width:' + todayPct + '%"></div>';
             }
-            // LC Issued — 0%, label below, grey dot
+
+            // LC Issued — 0%, label below
             html += '<div class="lc-tl2-mark" style="left:0%">'
+                + '<div class="lc-tl2-dot"></div>'
                 + '<div class="lc-tl2-info lc-tl2-info--below">'
                 + '<div class="lc-tl2-name">LC Issued</div>'
                 + '<div class="lc-tl2-date">' + esc(fmtDate(lc.issuedDate)) + '</div>'
                 + '</div>'
-                + '<div class="lc-tl2-dot"></div>'
                 + '</div>';
+
             // Latest Ship — amber dot, label above
             if (latestShipPct !== null) {
                 const lsDays = daysUntil(lc.latestShipDate);
@@ -853,21 +857,12 @@ const LC = (() => {
                     + '<div class="lc-tl2-info lc-tl2-info--above">'
                     + '<div class="lc-tl2-name">Latest Ship</div>'
                     + '<div class="lc-tl2-date">' + esc(fmtDate(lc.latestShipDate)) + '</div>'
-                    + (lsDays !== null ? '<div>' + deltaHtml(lsDays) + '</div>' : '')
+                    + (lsDays !== null ? '<div class="lc-tl2-delta">' + deltaHtml(lsDays) + '</div>' : '')
                     + '</div>'
                     + '<div class="lc-tl2-dot lc-tl2-dot--latestship"></div>'
                     + '</div>';
             }
-            // Actual Ship — green dot, label below (only if set)
-            if (shipDate && shipPct !== null) {
-                html += '<div class="lc-tl2-mark" style="left:' + shipPct + '%">'
-                    + '<div class="lc-tl2-info lc-tl2-info--below">'
-                    + '<div class="lc-tl2-name">Shipped</div>'
-                    + '<div class="lc-tl2-date">' + esc(fmtDate(shipDate)) + '</div>'
-                    + '</div>'
-                    + '<div class="lc-tl2-dot lc-tl2-dot--shipped"></div>'
-                    + '</div>';
-            }
+
             // Present by — purple dot, label above (only if shipDate set)
             if (presIso && presPct !== null) {
                 const presDays = daysUntil(presIso);
@@ -875,27 +870,61 @@ const LC = (() => {
                     + '<div class="lc-tl2-info lc-tl2-info--above">'
                     + '<div class="lc-tl2-name">Present by</div>'
                     + '<div class="lc-tl2-date">' + esc(fmtDate(presIso)) + '</div>'
-                    + (presDays !== null ? '<div>' + deltaHtml(presDays) + '</div>' : '')
+                    + (presDays !== null ? '<div class="lc-tl2-delta">' + deltaHtml(presDays) + '</div>' : '')
                     + '</div>'
                     + '<div class="lc-tl2-dot lc-tl2-dot--pres"></div>'
                     + '</div>';
             }
-            // Today — small blue dot, label below
-            if (todayPct !== null) {
+
+            // Actual Ship — if same day as today, merge into one "Shipped · Today" mark
+            // otherwise separate Ship (below) + Today (below)
+            if (shipDate && shipPct !== null) {
+                if (shipIsToday) {
+                    html += '<div class="lc-tl2-mark lc-tl2-mark--today" style="left:' + shipPct + '%">'
+                        + '<div class="lc-tl2-dot lc-tl2-dot--shipped-today"></div>'
+                        + '<div class="lc-tl2-info lc-tl2-info--below">'
+                        + '<div class="lc-tl2-name">Shipped · Today</div>'
+                        + '<div class="lc-tl2-date">' + esc(fmtDate(shipDate)) + '</div>'
+                        + '</div>'
+                        + '</div>';
+                } else {
+                    html += '<div class="lc-tl2-mark" style="left:' + shipPct + '%">'
+                        + '<div class="lc-tl2-dot lc-tl2-dot--shipped"></div>'
+                        + '<div class="lc-tl2-info lc-tl2-info--below">'
+                        + '<div class="lc-tl2-name">Shipped</div>'
+                        + '<div class="lc-tl2-date">' + esc(fmtDate(shipDate)) + '</div>'
+                        + '</div>'
+                        + '</div>';
+                    if (todayPct !== null) {
+                        html += '<div class="lc-tl2-mark lc-tl2-mark--today" style="left:' + todayPct + '%">'
+                            + '<div class="lc-tl2-dot lc-tl2-dot--today"></div>'
+                            + '<div class="lc-tl2-info lc-tl2-info--below">'
+                            + '<div class="lc-tl2-name">Today</div>'
+                            + '<div class="lc-tl2-date">' + esc(fmtDate(todayIso)) + '</div>'
+                            + '</div>'
+                            + '</div>';
+                    }
+                }
+            } else if (todayPct !== null) {
+                // No ship date — show Today with label below
                 html += '<div class="lc-tl2-mark lc-tl2-mark--today" style="left:' + todayPct + '%">'
                     + '<div class="lc-tl2-dot lc-tl2-dot--today"></div>'
-                    + '<div class="lc-tl2-today-tag">Today</div>'
+                    + '<div class="lc-tl2-info lc-tl2-info--below">'
+                    + '<div class="lc-tl2-name">Today</div>'
+                    + '<div class="lc-tl2-date">' + esc(fmtDate(todayIso)) + '</div>'
+                    + '</div>'
                     + '</div>';
             }
+
             // LC Expiry — red dot, label below
             const expDays = daysUntil(lc.expiryDate);
             html += '<div class="lc-tl2-mark" style="left:100%">'
+                + '<div class="lc-tl2-dot lc-tl2-dot--expiry"></div>'
                 + '<div class="lc-tl2-info lc-tl2-info--below">'
                 + '<div class="lc-tl2-name">LC Expiry</div>'
                 + '<div class="lc-tl2-date">' + esc(fmtDate(lc.expiryDate)) + '</div>'
-                + (expDays !== null ? '<div>' + deltaHtml(expDays) + '</div>' : '')
+                + (expDays !== null ? '<div class="lc-tl2-delta">' + deltaHtml(expDays) + '</div>' : '')
                 + '</div>'
-                + '<div class="lc-tl2-dot lc-tl2-dot--expiry"></div>'
                 + '</div>';
             return html;
         }
@@ -1003,17 +1032,34 @@ const LC = (() => {
             </div>
 
             <div class="lc-checker-identity">
-                <div class="lc-identity-left">
-                    <span class="lc-mono lc-identity-ref">#${esc(lc.lcNumber)}</span>
-                    <span class="lc-identity-parties">${esc(lc.beneficiary || 'Enviroware Ltd')} → ${esc(ap.name || '—')}</span>
-                    ${lc.shipmentRef ? `<span class="lc-identity-ship">Shipment: ${esc(lc.shipmentRef)}</span>` : ''}
+                <div class="lc-identity-row1">
+                    <div class="lc-identity-left">
+                        <span class="lc-mono lc-identity-ref">#${esc(lc.lcNumber)}</span>
+                        <button class="lc-copy-btn" data-copy="${esc(lc.lcNumber)}" type="button" title="Copy LC number">
+                            <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="5" width="9" height="9" rx="1.5"/><path d="M3 11V3a1 1 0 011-1h8"/></svg>
+                        </button>
+                        <span class="lc-identity-parties">${esc(lc.beneficiary || 'Enviroware Ltd')} → ${esc(ap.name || '—')}</span>
+                    </div>
+                    <div class="lc-identity-right">
+                        <div class="lc-identity-amt lc-mono">${esc(fmtAmt(lc.currency, lc.amount))}</div>
+                        <span class="lc-clearance-chip ${isCleared ? 'lc-clearance--ok' : 'lc-clearance--no'}"
+                              id="lc-clearance">
+                            ${isCleared ? 'Cleared to present' : 'Not cleared to present'}
+                        </span>
+                    </div>
                 </div>
-                <div class="lc-identity-right">
-                    <div class="lc-identity-amt lc-mono">${esc(fmtAmt(lc.currency, lc.amount))}</div>
-                    <span class="lc-clearance-chip ${isCleared ? 'lc-clearance--ok' : 'lc-clearance--no'}"
-                          id="lc-clearance">
-                        ${isCleared ? 'Cleared to present' : 'Not cleared to present'}
-                    </span>
+                <div class="lc-identity-row2" id="lc-ship-link-row">
+                    <span class="lc-identity-ship-label">Shipment</span>
+                    ${lc.linkedOrderId
+                        ? `<div class="lc-ship-linked">
+                               <a href="#orders/${esc(lc.linkedOrderId)}" class="lc-ship-linked-id">${esc(lc.linkedOrderId)} ↗</a>
+                               <button class="lc-ship-unlink-btn" id="lc-ship-unlink-btn" type="button">Unlink</button>
+                           </div>`
+                        : `<select class="lc-ship-select" id="lc-ship-select">
+                               <option value="">Loading shipments…</option>
+                           </select>
+                           <button class="lc-ship-link-btn" id="lc-ship-link-btn" type="button">Link</button>`
+                    }
                 </div>
             </div>
 
@@ -1025,49 +1071,6 @@ const LC = (() => {
             ${tlWrap}
 
             <div class="lc-checker-body">
-                <aside class="lc-ref-sidebar">
-                    <div class="lc-scard">
-                        <div class="lc-scard-title">Amounts &amp; Goods</div>
-                        ${sideRow('LC Amount',   fmtAmt(lc.currency, lc.amount), true)}
-                        ${sideRow('Unit price',  `${lc.currency || 'USD'} ${g.unitPrice || '—'} / ${g.quantityUnit || 'kg'}`, true)}
-                        ${sideRow('Quantity',    `${(g.quantity || 0).toLocaleString()} ${g.quantityUnit || 'kg'}`, true)}
-                        ${sideRow('Packages',    `${g.packageCount || '?'} ${g.packageType || 'packages'}`, true)}
-                        ${sideRow('HS Code',     g.hsCode, true)}
-                        ${sideRow('Origin',      g.origin)}
-                        ${sideRow('Container',   g.container)}
-                        ${sideRow('Incoterms',   g.incoterms)}
-                    </div>
-                    <div class="lc-scard">
-                        <div class="lc-scard-title">Parties</div>
-                        ${sideRow('Beneficiary',   lc.beneficiary || 'Enviroware Ltd')}
-                        ${sideRow('Applicant',     ap.name + (ap.address ? ', ' + ap.address : ''))}
-                        ${sideRow('Issuing bank',  ab.name + (ab.city ? ', ' + ab.city : ''))}
-                        ${sideRow('Advising bank', adv.name + (adv.city ? ', ' + adv.city : ''))}
-                    </div>
-                    <div class="lc-scard">
-                        <div class="lc-scard-title">References</div>
-                        ${sideRow('Proforma',    lc.proformaRef, true)}
-                        ${sideRow('PI date',     fmtDate(lc.proformaDate))}
-                        ${sideRow('LC issued',   fmtDate(lc.issuedDate))}
-                        ${sideRow('Governed by', lc.governedBy)}
-                        ${sideRow('Port loading',   p.loading)}
-                        ${sideRow('Port discharge', p.discharge)}
-                        ${sideRow('Final dest.',    p.finalDestination)}
-                        <div class="lc-srow">
-                            <span class="lc-srow-label">Linked shipment</span>
-                            ${lc.linkedOrderId
-                                ? `<a href="#orders/${esc(lc.linkedOrderId)}" class="lc-srow-link lc-mono">${esc(lc.linkedOrderId)} →</a>`
-                                : `<button class="lc-link-btn" id="lc-link-shipment-btn" type="button">+ Link</button>`
-                            }
-                        </div>
-                        <div class="lc-link-shipment-form" id="lc-link-shipment-form" hidden>
-                            <input type="text" id="lc-link-order-id" class="lc-input" placeholder="Order ID (e.g. order-1)" style="font-size:0.8rem;padding:0.3rem 0.5rem;width:100%;margin-top:0.4rem;">
-                            <button class="lc-link-save-btn" id="lc-link-save-btn" type="button" style="margin-top:0.4rem;">Save link</button>
-                        </div>
-                    </div>
-                    ${insCardHtml}
-                </aside>
-
                 <main class="lc-checker-main">
                     <div class="lc-doc-list" id="lc-doc-list">
                         ${docListHtml}
@@ -1116,6 +1119,38 @@ const LC = (() => {
                     </div>
                     ${lcRawHtml}
                 </main>
+
+                <aside class="lc-ref-sidebar">
+                    <div class="lc-scard">
+                        <div class="lc-scard-title">Amounts &amp; Goods</div>
+                        ${sideRow('LC Amount',   fmtAmt(lc.currency, lc.amount), true)}
+                        ${sideRow('Unit price',  `${lc.currency || 'USD'} ${g.unitPrice || '—'} / ${g.quantityUnit || 'kg'}`, true)}
+                        ${sideRow('Quantity',    `${(g.quantity || 0).toLocaleString()} ${g.quantityUnit || 'kg'}`, true)}
+                        ${sideRow('Packages',    `${g.packageCount || '?'} ${g.packageType || 'packages'}`, true)}
+                        ${sideRow('HS Code',     g.hsCode, true)}
+                        ${sideRow('Origin',      g.origin)}
+                        ${sideRow('Container',   g.container)}
+                        ${sideRow('Incoterms',   g.incoterms)}
+                    </div>
+                    <div class="lc-scard">
+                        <div class="lc-scard-title">Parties</div>
+                        ${sideRow('Beneficiary',   lc.beneficiary || 'Enviroware Ltd')}
+                        ${sideRow('Applicant',     ap.name + (ap.address ? ', ' + ap.address : ''))}
+                        ${sideRow('Issuing bank',  ab.name + (ab.city ? ', ' + ab.city : ''))}
+                        ${sideRow('Advising bank', adv.name + (adv.city ? ', ' + adv.city : ''))}
+                    </div>
+                    <div class="lc-scard">
+                        <div class="lc-scard-title">References</div>
+                        ${sideRow('Proforma',    lc.proformaRef, true)}
+                        ${sideRow('PI date',     fmtDate(lc.proformaDate))}
+                        ${sideRow('LC issued',   fmtDate(lc.issuedDate))}
+                        ${sideRow('Governed by', lc.governedBy)}
+                        ${sideRow('Port loading',   p.loading)}
+                        ${sideRow('Port discharge', p.discharge)}
+                        ${sideRow('Final dest.',    p.finalDestination)}
+                    </div>
+                    ${insCardHtml}
+                </aside>
             </div>
         </div>`;
 
@@ -1511,15 +1546,45 @@ const LC = (() => {
             strip.querySelector('.lc-email-preview-cancel').addEventListener('click', () => strip.remove());
         });
 
-        // Shipment link handlers
-        container.querySelector('#lc-link-shipment-btn')?.addEventListener('click', () => {
-            container.querySelector('#lc-link-shipment-form').hidden = false;
-            container.querySelector('#lc-link-shipment-btn').closest('.lc-srow').hidden = true;
+        // Copy LC number to clipboard
+        container.querySelector('[data-copy]')?.addEventListener('click', async function() {
+            const text = this.dataset.copy;
+            try {
+                await navigator.clipboard.writeText(text);
+                this.classList.add('lc-copy-btn--ok');
+                setTimeout(() => this.classList.remove('lc-copy-btn--ok'), 1500);
+            } catch {}
         });
-        container.querySelector('#lc-link-save-btn')?.addEventListener('click', async () => {
-            const orderId = container.querySelector('#lc-link-order-id').value.trim();
-            if (!orderId) return;
-            await apiFetch('/api/lc/' + id, { method: 'PATCH', body: JSON.stringify({ linkedOrderId: orderId }) }).catch(() => {});
+
+        // Shipment link — populate dropdown from active orders
+        const shipSelect = container.querySelector('#lc-ship-select');
+        if (shipSelect) {
+            apiFetch('/api/orders').then(orders => {
+                const active = (orders || []).filter(o => o.status !== 'cancelled' && o.status !== 'archived');
+                if (!active.length) {
+                    shipSelect.innerHTML = '<option value="">No active shipments found</option>';
+                    return;
+                }
+                shipSelect.innerHTML = '<option value="">Select shipment…</option>'
+                    + active.map(o => {
+                        const label = o.id + (o.customer?.name ? ' — ' + o.customer.name : '') + (o.poNumber ? ' / ' + o.poNumber : '');
+                        return '<option value="' + esc(o.id) + '">' + esc(label) + '</option>';
+                    }).join('');
+            }).catch(() => {
+                shipSelect.innerHTML = '<option value="">Could not load shipments</option>';
+            });
+
+            container.querySelector('#lc-ship-link-btn')?.addEventListener('click', async () => {
+                const orderId = shipSelect.value;
+                if (!orderId) return;
+                await apiFetch('/api/lc/' + id, { method: 'PATCH', body: JSON.stringify({ linkedOrderId: orderId }) }).catch(() => {});
+                renderDetail(container, id);
+            });
+        }
+
+        // Unlink shipment
+        container.querySelector('#lc-ship-unlink-btn')?.addEventListener('click', async () => {
+            await apiFetch('/api/lc/' + id, { method: 'PATCH', body: JSON.stringify({ linkedOrderId: null }) }).catch(() => {});
             renderDetail(container, id);
         });
 

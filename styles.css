@@ -5667,18 +5667,61 @@ a.db-row:hover { background: #f8fafc; border-color: #e2e8f0; }
     border-radius: 8px;
     padding: 0.9rem 1.1rem;
     display: flex;
-    align-items: center;
-    justify-content: space-between;
-    flex-wrap: wrap;
-    gap: 0.75rem;
+    flex-direction: column;
+    gap: 0.65rem;
     margin-bottom: 0.5rem;
 }
+.lc-identity-row1 { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 0.75rem; }
 .lc-identity-left { display: flex; align-items: center; flex-wrap: wrap; gap: 0.6rem; }
 .lc-identity-ref  { font-size: 0.92rem; font-weight: 700; color: #4f46e5; background: #eef2ff; padding: 0.2rem 0.6rem; border-radius: 4px; }
 .lc-identity-parties { font-size: 0.875rem; color: #334155; }
 .lc-identity-ship { font-size: 0.78rem; color: #64748b; background: #f1f5f9; padding: 0.15rem 0.5rem; border-radius: 4px; }
 .lc-identity-right { display: flex; align-items: center; gap: 0.75rem; flex-shrink: 0; }
 .lc-identity-amt { font-size: 1rem; font-weight: 700; color: #1e293b; }
+
+/* Copy LC number button */
+.lc-copy-btn {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 22px; height: 22px; padding: 0;
+    background: transparent; border: 1px solid #c7d2fe; border-radius: 4px;
+    color: #6366f1; cursor: pointer; transition: background 0.15s, color 0.15s;
+    vertical-align: middle;
+}
+.lc-copy-btn:hover { background: #eef2ff; color: #4f46e5; }
+.lc-copy-btn--ok { background: #dcfce7 !important; border-color: #86efac !important; color: #16a34a !important; }
+
+/* Shipment link row in identity section */
+.lc-identity-row2 {
+    display: flex; align-items: center; gap: 0.6rem;
+    padding-top: 0.5rem; border-top: 1px solid #f1f5f9;
+    font-size: 0.8rem;
+}
+.lc-identity-ship-label { font-size: 0.72rem; font-weight: 600; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.04em; white-space: nowrap; }
+.lc-ship-select {
+    flex: 1; min-width: 0; max-width: 280px;
+    font-size: 0.82rem; padding: 0.25rem 0.5rem;
+    border: 1px solid #e2e8f0; border-radius: 5px; color: #334155;
+    background: #f8fafc; cursor: pointer;
+}
+.lc-ship-select:focus { outline: none; border-color: #818cf8; }
+.lc-ship-link-btn {
+    padding: 0.25rem 0.65rem; font-size: 0.78rem; font-weight: 600;
+    color: #fff; background: #4f46e5; border: none; border-radius: 5px;
+    cursor: pointer; transition: background 0.15s;
+}
+.lc-ship-link-btn:hover { background: #4338ca; }
+.lc-ship-linked {
+    display: flex; align-items: center; gap: 0.5rem;
+    font-size: 0.82rem; color: #334155;
+}
+.lc-ship-linked-id { font-family: monospace; font-weight: 600; color: #4f46e5; text-decoration: none; }
+.lc-ship-linked-id:hover { text-decoration: underline; }
+.lc-ship-unlink-btn {
+    padding: 0.18rem 0.5rem; font-size: 0.75rem; font-weight: 500;
+    color: #94a3b8; background: transparent; border: 1px solid #e2e8f0;
+    border-radius: 4px; cursor: pointer; transition: color 0.15s, border-color 0.15s;
+}
+.lc-ship-unlink-btn:hover { color: #ef4444; border-color: #fca5a5; }
 
 .lc-clearance-chip {
     font-size: 0.72rem;
@@ -5743,7 +5786,7 @@ a.db-row:hover { background: #f8fafc; border-color: #e2e8f0; }
 /* ── Checker body layout ── */
 .lc-checker-body {
     display: grid;
-    grid-template-columns: 220px 1fr;
+    grid-template-columns: 1fr 220px;
     gap: 1rem;
     align-items: start;
 }
@@ -6313,7 +6356,7 @@ a.db-row:hover { background: #f8fafc; border-color: #e2e8f0; }
 
 /* ── LC timeline bar ── */
 .lc-tl2 { padding: 0.75rem 1.5rem 0; background: var(--bg,#fff); border-bottom: 1px solid #e5e7eb; }
-.lc-tl2-track { position: relative; height: 72px; margin: 0.5rem 1.5rem; }
+.lc-tl2-track { position: relative; height: 88px; margin: 0.5rem 2rem; }
 .lc-tl2-rail { position: absolute; top: 50%; left: 0; right: 0; height: 2px; background: #e2e8f0; transform: translateY(-50%); }
 .lc-tl2-progress { position: absolute; top: 50%; left: 0; height: 2px; background: #93c5fd; transform: translateY(-50%); }
 .lc-tl2-mark { position: absolute; top: 50%; transform: translate(-50%,-50%); display: flex; flex-direction: column; align-items: center; z-index: 2; }
@@ -6324,12 +6367,13 @@ a.db-row:hover { background: #f8fafc; border-color: #e2e8f0; }
 .lc-tl2-dot--pres { background: #7c3aed; box-shadow: 0 0 0 1.5px #7c3aed; }
 .lc-tl2-dot--expiry { background: #ef4444; box-shadow: 0 0 0 1.5px #ef4444; }
 .lc-tl2-dot--today { background: #2563eb; box-shadow: 0 0 0 1.5px #2563eb; width: 12px; height: 12px; }
+.lc-tl2-dot--shipped-today { background: #16a34a; box-shadow: 0 0 0 1.5px #2563eb, 0 0 0 3px #fff, 0 0 0 4.5px #16a34a; width: 12px; height: 12px; }
 .lc-tl2-info { position: absolute; white-space: nowrap; text-align: center; font-size: 0.7rem; line-height: 1.3; pointer-events: none; }
-.lc-tl2-info--above { bottom: calc(100% + 8px); }
-.lc-tl2-info--below { top: calc(100% + 8px); }
+.lc-tl2-info--above { bottom: calc(100% + 10px); }
+.lc-tl2-info--below { top: calc(100% + 10px); }
 .lc-tl2-name { font-weight: 600; color: #334155; }
 .lc-tl2-date { color: #64748b; font-size: 0.68rem; }
-.lc-tl2-today-tag { position: absolute; top: calc(100% + 6px); font-size: 0.68rem; font-weight: 700; color: #2563eb; white-space: nowrap; }
+.lc-tl2-delta { font-size: 0.67rem; font-weight: 600; }
 .lc-tl2-missing { padding: 1rem; font-size: 0.82rem; color: #94a3b8; text-align: center; }
 .lc-tl2-controls { display: flex; align-items: flex-start; gap: 2rem; padding: 0.75rem 0 0.75rem; flex-wrap: wrap; font-size: 0.82rem; }
 .lc-tl2-ctrl-item { display: flex; flex-direction: column; gap: 0.25rem; }
