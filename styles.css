@@ -6513,25 +6513,80 @@ a.db-row:hover { background: #f8fafc; border-color: #e2e8f0; }
 .lc-tl2-ship-done:hover { background: #f1f5f9; }
 
 /* ── LC plain text reference ── */
-.lc-raw-ref { border-top: 1px solid #e5e7eb; margin-top: 1.5rem; }
-.lc-raw-ref-summary { padding: 0.65rem 0; cursor: pointer; font-size: 0.8rem; font-weight: 600; color: #64748b; list-style: none; display: flex; align-items: center; gap: 0.4rem; }
-.lc-raw-ref-summary::-webkit-details-marker { display: none; }
-.lc-raw-ref-summary::before { content: '▶'; font-size: 0.6rem; transition: transform 0.15s; }
-.lc-raw-ref[open] .lc-raw-ref-summary::before { transform: rotate(90deg); }
-.lc-raw-body { padding: 0.5rem 0 1.5rem; }
-.lc-raw-field { margin-bottom: 1.25rem; padding-left: 0.5rem; border-left: 2px solid #e2e8f0; }
-.lc-raw-field:target, .lc-raw-doc-item:target { border-left-color: #2563eb; background: #eff6ff; border-radius: 0 4px 4px 0; }
-.lc-raw-field-hd { font-size: 0.72rem; margin-bottom: 0.3rem; }
-.lc-raw-field-num { font-weight: 700; color: #2563eb; letter-spacing: 0.04em; margin-right: 0.5rem; }
-.lc-raw-field-label { font-weight: 600; color: #475569; text-transform: uppercase; letter-spacing: 0.03em; }
-.lc-raw-field-val { font-size: 0.82rem; color: #1e293b; white-space: pre-wrap; font-family: 'ui-monospace', monospace; margin-top: 0.2rem; }
-.lc-raw-doc-item { margin-top: 0.4rem; padding: 0.35rem 0.6rem; border-left: 2px solid #e2e8f0; font-size: 0.82rem; color: #334155; }
-.lc-raw-doc-title { font-weight: 600; }
-.lc-raw-cond-item { margin-top: 0.3rem; font-size: 0.82rem; color: #475569; padding: 0.2rem 0; white-space: pre-wrap; font-family: 'ui-monospace', monospace; }
+/* ── LC Reference section (always open, anchored MT700 fields) ── */
+.lc-raw-section { border-top: 2px solid #e2e8f0; margin-top: 2rem; padding-top: 1.25rem; }
+.lc-raw-section-hd { margin-bottom: 1rem; }
+.lc-raw-body {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 0.75rem 1.5rem;
+    padding-bottom: 2rem;
+}
+/* F46A and F47A span full width — they're list fields */
+#lc-f-46a, #lc-f-47a, #lc-f-ins { grid-column: 1 / -1; }
 
-/* ── Doc card citation link ── */
+.lc-raw-field {
+    padding: 0.6rem 0.75rem;
+    border: 1px solid #e2e8f0;
+    border-radius: 6px;
+    background: #fafafa;
+    scroll-margin-top: 80px;
+}
+.lc-raw-field:target {
+    border-color: #2563eb;
+    background: #eff6ff;
+    box-shadow: 0 0 0 3px rgba(37,99,235,0.12);
+}
+.lc-raw-doc-item:target {
+    outline: 2px solid #2563eb;
+    border-radius: 4px;
+    background: #eff6ff;
+}
+#lc-f47a-0:target, [id^="lc-f47a-"]:target {
+    background: #eff6ff;
+    border-radius: 4px;
+    outline: 2px solid #2563eb;
+}
+.lc-raw-field-hd { display: flex; align-items: baseline; gap: 0.45rem; margin-bottom: 0.35rem; }
+.lc-raw-field-num {
+    font-size: 0.68rem; font-weight: 700; color: #2563eb;
+    letter-spacing: 0.06em; font-family: 'ui-monospace', monospace;
+    background: #dbeafe; padding: 0.1rem 0.35rem; border-radius: 3px;
+    flex-shrink: 0;
+}
+.lc-raw-field-label { font-size: 0.72rem; font-weight: 600; color: #64748b; text-transform: uppercase; letter-spacing: 0.04em; }
+.lc-raw-field-val { font-size: 0.85rem; color: #1e293b; line-height: 1.6; }
+.lc-raw-doc-item {
+    margin-top: 0.5rem; padding: 0.45rem 0.6rem;
+    border-left: 3px solid #e2e8f0; font-size: 0.82rem; color: #334155;
+    scroll-margin-top: 80px;
+}
+.lc-raw-doc-title { font-weight: 600; font-size: 0.83rem; color: #1e293b; }
+.lc-raw-doc-copies { font-size: 0.75rem; color: #64748b; margin-top: 0.1rem; }
+.lc-raw-doc-desc { font-size: 0.78rem; color: #475569; margin-top: 0.1rem; }
+.lc-raw-cond-item {
+    display: flex; gap: 0.5rem; align-items: flex-start;
+    margin-top: 0.45rem; padding: 0.35rem 0.5rem;
+    border-left: 3px solid #e2e8f0; font-size: 0.82rem; color: #334155;
+    scroll-margin-top: 80px; line-height: 1.5;
+}
+.lc-raw-cond-item--empty { color: #94a3b8; border-left-color: #f1f5f9; }
+.lc-raw-cond-num { flex-shrink: 0; font-weight: 700; color: #64748b; min-width: 1.4rem; font-size: 0.75rem; padding-top: 0.1rem; }
+.lc-raw-cond-text { flex: 1; }
+
+/* ── Doc card citation link (§ on title) ── */
 .lc-doc-cite { font-size: 0.72rem; color: #94a3b8; text-decoration: none; margin-left: 0.35rem; font-weight: 400; vertical-align: super; }
 .lc-doc-cite:hover { color: #2563eb; }
+
+/* ── Per-check cite link (§ inline with label) ── */
+.lc-cite-link {
+    font-size: 0.68rem; color: #94a3b8; text-decoration: none;
+    margin-left: 0.3rem; font-weight: 400; vertical-align: super;
+    opacity: 0; transition: opacity 0.12s;
+}
+.lc-check-item:hover .lc-cite-link,
+.lc-check-item--ai:hover .lc-cite-link { opacity: 1; }
+.lc-cite-link:hover { color: #2563eb; }
 
 /* ── Order detail tabs ── */
 .order-detail-tabs {

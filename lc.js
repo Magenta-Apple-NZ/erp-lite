@@ -60,21 +60,22 @@ const LC = (() => {
         const fd  = fmtDate;
 
         const f47aChecks = (docId) => (lc.f47aConditions || [])
-            .filter(c => c.docId === docId)
-            .map((c, i) => ({ id: `f47a-${docId}-${i}`, text: c.text }));
+            .map((c, gi) => ({ c, gi }))
+            .filter(({ c }) => c.docId === docId)
+            .map(({ c, gi }, i) => ({ id: `f47a-${docId}-${i}`, text: c.text, cite: `lc-f47a-${gi}` }));
 
         return [
             {
                 id: 'draft', title: 'Draft at Sight', copies: '2 originals', group: 'admin',
                 desc: `Bill of exchange drawn on ${ab.name || '—'}`,
                 checks: [
-                    { id: 'draft-bank',   text: `Drawn at sight on ${ab.name || '—'}${ab.city ? ', ' + ab.city : ''}` },
-                    { id: 'draft-drawee', text: `Drawee is exactly ${ab.name || '—'} as per LC F 42A — full bank name, not abbreviated` },
-                    { id: 'draft-drawer', text: 'Drawer name (Enviroware Ltd) explicitly stated on draft' },
-                    { id: 'draft-amount', text: `Amount: 100% of invoice value (${amt})` },
-                    { id: 'draft-lcref',  text: `LC number and issue date stated (#${lc.lcNumber} · ${fd(lc.issuedDate)})` },
-                    { id: 'draft-date',   text: `Dated on or after LC opening date (not before ${fd(lc.issuedDate)})` },
-                    { id: 'draft-signed', text: '2 originals signed by Enviroware Ltd' },
+                    { id: 'draft-bank',   cite: 'lc-f-41d', text: `Drawn at sight on ${ab.name || '—'}${ab.city ? ', ' + ab.city : ''}` },
+                    { id: 'draft-drawee', cite: 'lc-f-41d', text: `Drawee is exactly ${ab.name || '—'} as per LC F 42A — full bank name, not abbreviated` },
+                    { id: 'draft-drawer', cite: 'lc-f-46a-draft', text: 'Drawer name (Enviroware Ltd) explicitly stated on draft' },
+                    { id: 'draft-amount', cite: 'lc-f-32b', text: `Amount: 100% of invoice value (${amt})` },
+                    { id: 'draft-lcref',  cite: 'lc-f-20',  text: `LC number and issue date stated (#${lc.lcNumber} · ${fd(lc.issuedDate)})` },
+                    { id: 'draft-date',   cite: 'lc-f-31c', text: `Dated on or after LC opening date (not before ${fd(lc.issuedDate)})` },
+                    { id: 'draft-signed', cite: 'lc-f-46a-draft', text: '2 originals signed by Enviroware Ltd' },
                     ...f47aChecks('draft'),
                 ]
             },
@@ -82,34 +83,34 @@ const LC = (() => {
                 id: 'commercialInvoice', title: 'Commercial Invoice', copies: '8 originals', group: 'enviro',
                 desc: 'FOB value + freight shown separately',
                 checks: [
-                    { id: 'ci-invoicedate',
+                    { id: 'ci-invoicedate', cite: 'lc-f-31d',
                       text: `Invoice date within LC validity`,
                       detail: `Invoice date: extract the stated date. Must be on or after LC opening date ${fd(lc.issuedDate)} and on or before expiry ${fd(lc.expiryDate)}. State the date found.` },
-                    { id: 'ci-total',
+                    { id: 'ci-total', cite: 'lc-f-32b',
                       text: `Total, FOB, and freight amounts correct`,
                       detail: `Invoice amounts: (1) Extract the final invoice total and confirm it equals exactly ${amt} to the cent. (2) Extract the FOB line-item — must appear separately. (3) Extract the freight line-item — must appear separately. (4) Confirm FOB + Freight arithmetically equals the invoice total. Any rounding or discrepancy on any figure is a fail.` },
-                    { id: 'ci-unitprice',
+                    { id: 'ci-unitprice', cite: 'lc-f-45a',
                       text: `Unit price exactly ${lc.currency || 'USD'} ${g.unitPrice || '—'}/${g.quantityUnit || 'kg'}`,
                       detail: `Unit price: extract the price per ${g.quantityUnit || 'kg'} and confirm it exactly matches ${lc.currency || 'USD'} ${g.unitPrice || '—'}. A difference of even one cent is a fail.` },
-                    { id: 'ci-wtinternal',
+                    { id: 'ci-wtinternal', cite: 'lc-f-45a',
                       text: `Net weight consistent throughout document`,
                       detail: `Net weight internal consistency: scan the ENTIRE document and find every mention of net weight, total weight, or quantity — goods line items, weight summary table, packing details section, footer, certification clause, anywhere. List every figure found and confirm all instances equal exactly ${(g.quantity || 0).toLocaleString()} ${g.quantityUnit || 'kg'}. If any section shows a different figure — even if the price calculations appear correct — that is a fail.` },
-                    { id: 'ci-goods',
+                    { id: 'ci-goods', cite: 'lc-f-45a',
                       text: `Goods: ${(g.quantity || 0).toLocaleString()} ${g.quantityUnit || 'kg'} · ${g.packageCount || '?'} ${g.packageType || 'bales'} · ${g.origin || '?'} origin`,
                       detail: `Goods description and quantity: extract the goods description wording and confirm it is consistent with the LC. Confirm package count is ${g.packageCount || '?'} ${g.packageType || 'bales'} and origin is ${g.origin || '?'}.` },
-                    { id: 'ci-incoterms',
+                    { id: 'ci-incoterms', cite: 'lc-f-44d',
                       text: `Incoterms exactly as per LC`,
                       detail: `Incoterms: extract the exact wording and confirm it matches "${g.incoterms || '—'}". Flag any abbreviation (C&F, C&I, CFR without "Incoterms 2020"). Quote what the document actually says.` },
-                    { id: 'ci-portloading',
+                    { id: 'ci-portloading', cite: 'lc-f-44a',
                       text: `Port of loading: ${p.loading || '—'}`,
                       detail: `Port of loading: extract the exact wording and confirm it matches "${p.loading || '—'}". Flag any abbreviation, alternative spelling, or vague wording such as "any port of Italy".` },
-                    { id: 'ci-proforma',
+                    { id: 'ci-proforma', cite: 'lc-f-47a',
                       text: `Proforma ref No. ${lc.proformaRef || '—'}${lc.proformaDate ? ' · ' + fd(lc.proformaDate) : ''}`,
                       detail: `Proforma reference: extract the stated reference number and date. Must exactly match No. ${lc.proformaRef || '—'}${lc.proformaDate ? ' dated ' + fd(lc.proformaDate) : ''}. A wrong digit or wrong date is a common rejection reason.` },
-                    { id: 'ci-importer',
+                    { id: 'ci-importer', cite: 'lc-f-50',
                       text: `Importer name and address exact`,
                       detail: `Importer: extract the full name and address and confirm exact match to "${ap.name || '—'}${ap.address ? ', ' + ap.address : ''}". Different punctuation, abbreviation, or word order is a discrepancy.` },
-                    { id: 'ci-regs',
+                    { id: 'ci-regs', cite: 'lc-f-47a',
                       text: `BIN, TIN, IRC, HS code ${g.hsCode || '—'} present`,
                       detail: `Regulatory numbers: confirm BIN, TIN, IRC for ${ap.name || 'importer'} and TIN/VAT for ${ab.name || 'applicant bank'} all appear. Extract the HS code and confirm it matches ${g.hsCode || '—'} in full.` },
                     ...f47aChecks('commercialInvoice'),
@@ -119,19 +120,19 @@ const LC = (() => {
                 id: 'billOfLading', title: 'Clean Shipped-on-Board Ocean B/L', copies: 'Full set (3/3 originals)', group: '3rdparty',
                 desc: `To order of ${ab.name || '—'}`,
                 checks: [
-                    { id: 'bl-sob',        text: `Shipped on board: extract the notation and confirm it includes the actual on-board date — "received for shipment" or no date is a fail` },
-                    { id: 'bl-shipdate',   text: `On-board date: extract the date and confirm it is on or before latest shipment date ${fd(lc.latestShipDate)} and not before LC opening date ${fd(lc.issuedDate)}` },
-                    { id: 'bl-consignee',  text: `Consignee: extract exact wording and confirm it matches the LC instruction — "to order of ${ab.name || '—'}" — any variation (direct consignment, wrong bank name) is a fail` },
-                    { id: 'bl-notify',     text: `Notify party 1: extract the name and address and confirm exact match to "${ap.name || '—'}${ap.address ? ', ' + ap.address : ''}" — any abbreviation or address variation is a flag` },
-                    { id: 'bl-banknotify', text: `Notify party 2: extract name and address and confirm it matches issuing bank "${ab.name || '—'}, ${ab.city || '—'}" as per LC F 46A` },
-                    { id: 'bl-loading',    text: `Port of loading: extract exact wording and confirm it matches "${p.loading || '—'}" — abbreviated or alternate port name is a discrepancy` },
-                    { id: 'bl-discharge',  text: `Port of discharge: extract exact wording and confirm it matches "${p.discharge || '—'}${p.finalDestination ? ' / ' + p.finalDestination : ''}" — not abbreviated` },
-                    { id: 'bl-freight',    text: `Freight: extract the freight notation — confirm it reads "Freight Prepaid" — "Freight Collect" or blank is a fail` },
-                    { id: 'bl-container',  text: `Container number: extract the container number and confirm it matches ${g.container || '—'} as per the shipping documents` },
-                    { id: 'bl-weights',    text: `Weights and quantity: extract gross weight, net weight, and package count — confirm ${g.packageCount || '?'} ${g.packageType || 'packages'} and ${(g.quantity || 0).toLocaleString()} ${g.quantityUnit || 'kg'} net` },
-                    { id: 'bl-freetime',   text: `Free time: confirm 14 days free time at discharge port is stated or evidenced on the B/L or attached certificate` },
-                    { id: 'bl-banktax',    text: `Bank tax numbers: confirm ${ab.name || 'applicant bank'} TIN No. and VAT Reg. No. appear on the B/L` },
-                    { id: 'bl-clean',      text: `Clean B/L: confirm there are no clauses noting damaged, inadequate, or suspect packaging — any such notation is a fail` },
+                    { id: 'bl-sob',        cite: 'lc-f-46a-billOfLading', text: `Shipped on board: extract the notation and confirm it includes the actual on-board date — "received for shipment" or no date is a fail` },
+                    { id: 'bl-shipdate',   cite: 'lc-f-44c', text: `On-board date: extract the date and confirm it is on or before latest shipment date ${fd(lc.latestShipDate)} and not before LC opening date ${fd(lc.issuedDate)}` },
+                    { id: 'bl-consignee',  cite: 'lc-f-46a-billOfLading', text: `Consignee: extract exact wording and confirm it matches the LC instruction — "to order of ${ab.name || '—'}" — any variation (direct consignment, wrong bank name) is a fail` },
+                    { id: 'bl-notify',     cite: 'lc-f-46a-billOfLading', text: `Notify party 1: extract the name and address and confirm exact match to "${ap.name || '—'}${ap.address ? ', ' + ap.address : ''}" — any abbreviation or address variation is a flag` },
+                    { id: 'bl-banknotify', cite: 'lc-f-46a-billOfLading', text: `Notify party 2: extract name and address and confirm it matches issuing bank "${ab.name || '—'}, ${ab.city || '—'}" as per LC F 46A` },
+                    { id: 'bl-loading',    cite: 'lc-f-44a', text: `Port of loading: extract exact wording and confirm it matches "${p.loading || '—'}" — abbreviated or alternate port name is a discrepancy` },
+                    { id: 'bl-discharge',  cite: 'lc-f-44b', text: `Port of discharge: extract exact wording and confirm it matches "${p.discharge || '—'}${p.finalDestination ? ' / ' + p.finalDestination : ''}" — not abbreviated` },
+                    { id: 'bl-freight',    cite: 'lc-f-46a-billOfLading', text: `Freight: extract the freight notation — confirm it reads "Freight Prepaid" — "Freight Collect" or blank is a fail` },
+                    { id: 'bl-container',  cite: 'lc-f-45a', text: `Container number: extract the container number and confirm it matches ${g.container || '—'} as per the shipping documents` },
+                    { id: 'bl-weights',    cite: 'lc-f-46a-billOfLading', text: `Weights and quantity: extract gross weight, net weight, and package count — confirm ${g.packageCount || '?'} ${g.packageType || 'packages'} and ${(g.quantity || 0).toLocaleString()} ${g.quantityUnit || 'kg'} net` },
+                    { id: 'bl-freetime',   cite: 'lc-f-47a', text: `Free time: confirm 14 days free time at discharge port is stated or evidenced on the B/L or attached certificate` },
+                    { id: 'bl-banktax',    cite: 'lc-f-47a', text: `Bank tax numbers: confirm ${ab.name || 'applicant bank'} TIN No. and VAT Reg. No. appear on the B/L` },
+                    { id: 'bl-clean',      cite: 'lc-f-46a-billOfLading', text: `Clean B/L: confirm there are no clauses noting damaged, inadequate, or suspect packaging — any such notation is a fail` },
                     ...f47aChecks('billOfLading'),
                 ]
             },
@@ -139,12 +140,12 @@ const LC = (() => {
                 id: 'certificateOfOrigin', title: 'Certificate of Origin', copies: '3 originals', group: '3rdparty',
                 desc: `${g.origin || '—'} — issued by authorised certifying body`,
                 checks: [
-                    { id: 'co-origin',  text: `Country of origin: extract the stated country and confirm it matches "${g.origin || '—'}" exactly` },
-                    { id: 'co-body',    text: `Issuing body: extract the certifying organisation name — must be an authorised chamber of commerce or government authority, not self-certified` },
-                    { id: 'co-desc',    text: `Goods description: extract the wording and confirm it is consistent with the commercial invoice description — any material difference is a flag` },
-                    { id: 'co-hs',      text: `HS code: extract the full code and confirm it matches ${g.hsCode || '—'} in full including all sub-headings — abbreviated code (e.g. 6002 instead of 6002.90.00) is a fail` },
-                    { id: 'co-shipper', text: `Shipper/exporter: extract name and address and confirm it matches the beneficiary (Enviroware Ltd) and is consistent with the B/L` },
-                    { id: 'co-qty',     text: `Quantity on COO: extract the stated quantity and confirm it matches the commercial invoice and B/L — any discrepancy in kg or package count is a flag` },
+                    { id: 'co-origin',  cite: 'lc-f-46a-certificateOfOrigin', text: `Country of origin: extract the stated country and confirm it matches "${g.origin || '—'}" exactly` },
+                    { id: 'co-body',    cite: 'lc-f-46a-certificateOfOrigin', text: `Issuing body: extract the certifying organisation name — must be an authorised chamber of commerce or government authority, not self-certified` },
+                    { id: 'co-desc',    cite: 'lc-f-46a-certificateOfOrigin', text: `Goods description: extract the wording and confirm it is consistent with the commercial invoice description — any material difference is a flag` },
+                    { id: 'co-hs',      cite: 'lc-f-47a', text: `HS code: extract the full code and confirm it matches ${g.hsCode || '—'} in full including all sub-headings — abbreviated code (e.g. 6002 instead of 6002.90.00) is a fail` },
+                    { id: 'co-shipper', cite: 'lc-f-46a-certificateOfOrigin', text: `Shipper/exporter: extract name and address and confirm it matches the beneficiary (Enviroware Ltd) and is consistent with the B/L` },
+                    { id: 'co-qty',     cite: 'lc-f-45a', text: `Quantity on COO: extract the stated quantity and confirm it matches the commercial invoice and B/L — any discrepancy in kg or package count is a flag` },
                     ...f47aChecks('certificateOfOrigin'),
                 ]
             },
@@ -152,11 +153,11 @@ const LC = (() => {
                 id: 'insuranceNotification', title: 'Insurance Notification', copies: '1 copy', group: 'email',
                 desc: 'Applicant opens insurance — beneficiary to advise within 21 days',
                 checks: [
-                    { id: 'ins-note',       text: "Insurance is applicant's responsibility — Enviroware advises only" },
-                    { id: 'ins-21days',     text: 'Notification sent within 21 days of shipment (or within LC-specified period)' },
-                    { id: 'ins-covernote',  text: 'Cover note number stated on shipping/insurance advice' },
-                    { id: 'ins-addressed',  text: `Addressed to both applicant (${ap.name || '—'}) and the insurance company` },
-                    { id: 'ins-copy',       text: 'Copy of notification included with presentation documents' },
+                    { id: 'ins-note',       cite: 'lc-f-46a-insuranceNotification', text: "Insurance is applicant's responsibility — Enviroware advises only" },
+                    { id: 'ins-21days',     cite: 'lc-f-46a-insuranceNotification', text: 'Notification sent within 21 days of shipment (or within LC-specified period)' },
+                    { id: 'ins-covernote',  cite: 'lc-f-46a-insuranceNotification', text: 'Cover note number stated on shipping/insurance advice' },
+                    { id: 'ins-addressed',  cite: 'lc-f-46a-insuranceNotification', text: `Addressed to both applicant (${ap.name || '—'}) and the insurance company` },
+                    { id: 'ins-copy',       cite: 'lc-f-46a-insuranceNotification', text: 'Copy of notification included with presentation documents' },
                     ...f47aChecks('insuranceNotification'),
                 ]
             },
@@ -164,11 +165,11 @@ const LC = (() => {
                 id: 'beneficiaryCertificate', title: "Beneficiary's Certificate of Conformity", copies: '1 original', group: 'enviro',
                 desc: `References Proforma Invoice ${lc.proformaRef || '—'}`,
                 checks: [
-                    { id: 'bc-ref',      text: `Proforma reference: extract the stated ref/date and confirm it matches No. ${lc.proformaRef || '—'}${lc.proformaDate ? ' dated ' + fd(lc.proformaDate) : ''} — wrong ref or date is a discrepancy` },
-                    { id: 'bc-quantity', text: `Quantity: extract the certified quantity and confirm it matches ${(g.quantity || 0).toLocaleString()} ${g.quantityUnit || 'kg'} — any variance is a flag` },
-                    { id: 'bc-freight',  text: `Trade terms: extract the stated Incoterms/freight term and confirm it matches "${g.incoterms || '—'}" exactly — substitution (e.g. CPT vs CFR) is a fail` },
-                    { id: 'bc-origin',   text: `Origin marking: confirm that country of origin (${g.origin || '—'}) on packages is certified — extract exact wording` },
-                    { id: 'bc-packingclause', text: `Packing: extract the packing description and confirm it states exactly "export standard seaworthy packaging" — any paraphrase is a flag` },
+                    { id: 'bc-ref',      cite: 'lc-f-46a-beneficiaryCertificate', text: `Proforma reference: extract the stated ref/date and confirm it matches No. ${lc.proformaRef || '—'}${lc.proformaDate ? ' dated ' + fd(lc.proformaDate) : ''} — wrong ref or date is a discrepancy` },
+                    { id: 'bc-quantity', cite: 'lc-f-45a', text: `Quantity: extract the certified quantity and confirm it matches ${(g.quantity || 0).toLocaleString()} ${g.quantityUnit || 'kg'} — any variance is a flag` },
+                    { id: 'bc-freight',  cite: 'lc-f-44d', text: `Trade terms: extract the stated Incoterms/freight term and confirm it matches "${g.incoterms || '—'}" exactly — substitution (e.g. CPT vs CFR) is a fail` },
+                    { id: 'bc-origin',   cite: 'lc-f-47a', text: `Origin marking: confirm that country of origin (${g.origin || '—'}) on packages is certified — extract exact wording` },
+                    { id: 'bc-packingclause', cite: 'lc-f-47a', text: `Packing: extract the packing description and confirm it states exactly "export standard seaworthy packaging" — any paraphrase is a flag` },
                     ...f47aChecks('beneficiaryCertificate'),
                 ]
             },
@@ -176,11 +177,11 @@ const LC = (() => {
                 id: 'inspectionCertificate', title: 'Pre-Shipment Inspection Certificate', copies: '1 original', group: 'enviro',
                 desc: 'Issued by Enviroware Ltd (self-certification)',
                 checks: [
-                    { id: 'pi-date',      text: `Issue date: extract the certificate date and confirm it is before or on the shipment/B/L date and not before LC opening ${fd(lc.issuedDate)}` },
-                    { id: 'pi-container', text: `Container: extract the stated container number and confirm it matches ${g.container || '—'}` },
-                    { id: 'pi-qty',       text: `Quantity: extract certified quantity and confirm it matches ${(g.quantity || 0).toLocaleString()} ${g.quantityUnit || 'kg'} · ${g.packageCount || '?'} ${g.packageType || 'packages'}` },
-                    { id: 'pi-lcref',     text: `LC reference: confirm LC number #${lc.lcNumber} appears on the certificate` },
-                    { id: 'pi-signed',    text: `Signatory: extract the name/title and confirm signed by an authorised representative of Enviroware Ltd` },
+                    { id: 'pi-date',      cite: 'lc-f-44c', text: `Issue date: extract the certificate date and confirm it is before or on the shipment/B/L date and not before LC opening ${fd(lc.issuedDate)}` },
+                    { id: 'pi-container', cite: 'lc-f-45a', text: `Container: extract the stated container number and confirm it matches ${g.container || '—'}` },
+                    { id: 'pi-qty',       cite: 'lc-f-45a', text: `Quantity: extract certified quantity and confirm it matches ${(g.quantity || 0).toLocaleString()} ${g.quantityUnit || 'kg'} · ${g.packageCount || '?'} ${g.packageType || 'packages'}` },
+                    { id: 'pi-lcref',     cite: 'lc-f-20',  text: `LC reference: confirm LC number #${lc.lcNumber} appears on the certificate` },
+                    { id: 'pi-signed',    cite: 'lc-f-46a-inspectionCertificate', text: `Signatory: extract the name/title and confirm signed by an authorised representative of Enviroware Ltd` },
                     ...f47aChecks('inspectionCertificate'),
                 ]
             },
@@ -188,10 +189,10 @@ const LC = (() => {
                 id: 'applicantEmail', title: 'Applicant Documents Email', copies: '1 email + copy', group: 'email',
                 desc: 'Full set of non-negotiable docs emailed to applicant within 21 days of shipment',
                 checks: [
-                    { id: 'apemail-21days',  text: 'Email sent within 21 days of shipment date' },
-                    { id: 'apemail-fullset', text: 'Full set of non-negotiable documents attached (invoice, packing list, B/L, COO, certs)' },
-                    { id: 'apemail-address', text: `Addressed to applicant: ${ap.name || '—'}` },
-                    { id: 'apemail-copy',    text: 'Copy of email printed and included with original presentation documents' },
+                    { id: 'apemail-21days',  cite: 'lc-f-47a', text: 'Email sent within 21 days of shipment date' },
+                    { id: 'apemail-fullset', cite: 'lc-f-46a-applicantEmail', text: 'Full set of non-negotiable documents attached (invoice, packing list, B/L, COO, certs)' },
+                    { id: 'apemail-address', cite: 'lc-f-50', text: `Addressed to applicant: ${ap.name || '—'}` },
+                    { id: 'apemail-copy',    cite: 'lc-f-47a', text: 'Copy of email printed and included with original presentation documents' },
                     ...f47aChecks('applicantEmail'),
                 ]
             },
@@ -714,10 +715,11 @@ const LC = (() => {
 
         const checkItems = doc.checks.map(c => {
             const isChecked = !!checks[c.id];
-            return `<div class="lc-check-item${isChecked ? ' lc-check-item--done' : ''}">
-                <input type="checkbox" id="chk-${c.id}" data-check="${c.id}" ${isChecked ? 'checked' : ''}>
-                <label for="chk-${c.id}">${esc(c.text)}</label>
-            </div>`;
+            const citeLink  = c.cite ? '<a class="lc-cite-link" href="#' + c.cite + '" title="View in LC reference">§</a>' : '';
+            return '<div class="lc-check-item' + (isChecked ? ' lc-check-item--done' : '') + '">'
+                + '<input type="checkbox" id="chk-' + c.id + '" data-check="' + c.id + '"' + (isChecked ? ' checked' : '') + '>'
+                + '<label for="chk-' + c.id + '">' + esc(c.text) + citeLink + '</label>'
+                + '</div>';
         }).join('');
 
         return `
@@ -953,16 +955,24 @@ const LC = (() => {
             + '</div>';
 
         // ── MT700 LC Reference pre-computation ────────────────────────────────
+        function rawLines(val) {
+            return esc(val || '—').replace(/\n/g, '<br>');
+        }
         function rawField(num, label, val) {
-            return '<div class="lc-raw-field">'
-                + '<div class="lc-raw-field-hd"><span class="lc-raw-field-num">FIELD ' + num + '</span>'
-                + '<span class="lc-raw-field-label">' + esc(label) + '</span></div>'
-                + '<div class="lc-raw-field-val">' + esc(val || '—') + '</div>'
+            const anchorId = 'lc-f-' + num.toLowerCase().replace(/\s/g, '');
+            return '<div class="lc-raw-field" id="' + anchorId + '">'
+                + '<div class="lc-raw-field-hd">'
+                + '<span class="lc-raw-field-num">F' + num + '</span>'
+                + '<span class="lc-raw-field-label">' + esc(label) + '</span>'
+                + '</div>'
+                + '<div class="lc-raw-field-val">' + rawLines(val) + '</div>'
                 + '</div>';
         }
 
-        let lcRawHtml = '<details class="lc-raw-ref" id="lc-raw-ref">'
-            + '<summary class="lc-raw-ref-summary">LC Document Reference (MT700)</summary>'
+        let lcRawHtml = '<section class="lc-raw-section" id="lc-raw-section">'
+            + '<div class="lc-raw-section-hd">'
+            + '<span class="lc-section-label">LC Reference — MT700</span>'
+            + '</div>'
             + '<div class="lc-raw-body">';
 
         lcRawHtml += rawField('20',  'Documentary Credit Number', lc.lcNumber);
@@ -971,44 +981,56 @@ const LC = (() => {
         lcRawHtml += rawField('50',  'Applicant',                 (ap.name || '') + (ap.address ? '\n' + ap.address : ''));
         lcRawHtml += rawField('59',  'Beneficiary',               lc.beneficiary || 'Enviroware Ltd');
         lcRawHtml += rawField('32B', 'Currency / Amount',         fmtAmt(lc.currency, lc.amount));
-        lcRawHtml += rawField('41D', 'Available With / By',       (ab.name || '—') + '\nBY SIGHT');
+        lcRawHtml += rawField('41D', 'Available With / By',       (ab.name || '—') + '\nBY SIGHT PAYMENT');
         lcRawHtml += rawField('44A', 'Port of Loading',           p.loading);
         lcRawHtml += rawField('44B', 'For Transportation to',     (p.discharge || '') + (p.finalDestination ? '\n' + p.finalDestination : ''));
         lcRawHtml += rawField('44C', 'Latest Date of Shipment',   lc.latestShipDate);
         lcRawHtml += rawField('44D', 'Shipment Period / Incoterms', g.incoterms);
         lcRawHtml += rawField('45A', 'Description of Goods',      g.description || lc.goodsDescription || '');
 
-        lcRawHtml += '<div class="lc-raw-field">'
-            + '<div class="lc-raw-field-hd"><span class="lc-raw-field-num">FIELD 46A</span>'
-            + '<span class="lc-raw-field-label">Documents Required</span></div>';
+        lcRawHtml += '<div class="lc-raw-field" id="lc-f-46a">'
+            + '<div class="lc-raw-field-hd">'
+            + '<span class="lc-raw-field-num">F46A</span>'
+            + '<span class="lc-raw-field-label">Documents Required</span>'
+            + '</div>';
         docs.forEach(function(d) {
             lcRawHtml += '<div class="lc-raw-doc-item" id="lcref-46a-' + esc(d.id) + '">'
                 + '<div class="lc-raw-doc-title">' + esc(d.title) + '</div>'
-                + '<div>' + esc(d.copies) + '</div>'
-                + '<div>' + esc(d.desc) + '</div>'
+                + '<div class="lc-raw-doc-copies">' + esc(d.copies) + '</div>'
+                + '<div class="lc-raw-doc-desc">' + esc(d.desc) + '</div>'
                 + '</div>';
         });
         lcRawHtml += '</div>';
 
         const f47aAll = lc.f47aConditions || [];
+        lcRawHtml += '<div class="lc-raw-field" id="lc-f-47a">'
+            + '<div class="lc-raw-field-hd">'
+            + '<span class="lc-raw-field-num">F47A</span>'
+            + '<span class="lc-raw-field-label">Additional Conditions</span>'
+            + '</div>';
         if (f47aAll.length > 0) {
-            lcRawHtml += '<div class="lc-raw-field">'
-                + '<div class="lc-raw-field-hd"><span class="lc-raw-field-num">FIELD 47A</span>'
-                + '<span class="lc-raw-field-label">Additional Conditions</span></div>';
-            f47aAll.forEach(function(c) {
-                lcRawHtml += '<div class="lc-raw-cond-item">' + esc(c.text) + '</div>';
+            f47aAll.forEach(function(c, i) {
+                lcRawHtml += '<div class="lc-raw-cond-item" id="lc-f47a-' + i + '">'
+                    + '<span class="lc-raw-cond-num">' + (i + 1) + '.</span>'
+                    + '<span class="lc-raw-cond-text">' + rawLines(c.text) + '</span>'
+                    + '</div>';
             });
-            lcRawHtml += '</div>';
+        } else {
+            lcRawHtml += '<div class="lc-raw-cond-item lc-raw-cond-item--empty">No additional conditions recorded.</div>';
         }
+        lcRawHtml += '</div>';
 
         if (ins.clauseText) {
-            lcRawHtml += '<div class="lc-raw-field">'
-                + '<div class="lc-raw-field-hd"><span class="lc-raw-field-label">Insurance Clause</span></div>'
-                + '<div class="lc-raw-field-val">' + esc(ins.clauseText) + '</div>'
+            lcRawHtml += '<div class="lc-raw-field" id="lc-f-ins">'
+                + '<div class="lc-raw-field-hd">'
+                + '<span class="lc-raw-field-num">INS</span>'
+                + '<span class="lc-raw-field-label">Insurance Clause</span>'
+                + '</div>'
+                + '<div class="lc-raw-field-val">' + rawLines(ins.clauseText) + '</div>'
                 + '</div>';
         }
 
-        lcRawHtml += '</div></details>';
+        lcRawHtml += '</div></section>';
 
         // ── Grouped document list ──────────────────────────────────────────────
         const DOC_GROUPS = [
@@ -1773,10 +1795,11 @@ const LC = (() => {
                         const cls       = r.result === 'flag' ? 'flag' : 'fail';
                         const icon      = r.result === 'flag' ? '⚠' : '✗';
                         const noteAttr  = r.note ? ' data-ai-note="' + esc(r.note) + '"' : '';
+                        const citeLink  = c.cite ? '<a class="lc-cite-link" href="#' + c.cite + '" title="View in LC reference">§</a>' : '';
                         return '<div class="lc-check-item lc-check-item--ai lc-check-item--ai-' + cls + (isChecked ? ' lc-check-item--done' : '') + '">'
                             + '<input type="checkbox" id="chk-' + c.id + '" data-check="' + c.id + '"' + (isChecked ? ' checked' : '') + '>'
                             + '<div class="lc-check-item-body">'
-                            + '<label for="chk-' + c.id + '">' + esc(c.text) + '</label>'
+                            + '<label for="chk-' + c.id + '">' + esc(c.text) + citeLink + '</label>'
                             + (r.note ? '<span class="lc-check-ai-note">' + esc(r.note) + '</span>' : '')
                             + '</div>'
                             + '<span class="lc-check-ai-badge lc-check-ai-badge--' + cls + '">' + icon + '</span>'
