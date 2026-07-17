@@ -6576,7 +6576,7 @@ a.db-row:hover { background: #f8fafc; border-color: #e2e8f0; }
 /* All marks sit at the rail (bottom 16px from bottom of track) */
 .lc-tl2-mark {
     position: absolute; bottom: 16px; transform: translateX(-50%);
-    display: flex; flex-direction: column-reverse; align-items: center; z-index: 2;
+    display: flex; flex-direction: column-reverse; align-items: center; z-index: 5;
 }
 .lc-tl2-mark--btn { cursor: pointer; }
 .lc-tl2-mark--btn:hover .lc-tl2-dot { filter: brightness(1.15); transform: scale(1.2); }
