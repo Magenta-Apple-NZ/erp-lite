@@ -113,7 +113,7 @@ ${checkList}
                 'anthropic-beta': 'pdfs-2024-09-25',
             },
             body: JSON.stringify({
-                model: 'claude-sonnet-5-20251101',
+                model: 'claude-sonnet-5',
                 max_tokens: 4096,
                 messages: [{
                     role: 'user',
