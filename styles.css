@@ -5915,6 +5915,7 @@ a.db-row:hover { background: #f8fafc; border-color: #e2e8f0; }
 .lc-doc-card--open .lc-doc-checks { display: flex; }
 
 .lc-doc-checklist { display: flex; flex-direction: column; gap: 1px; }
+.lc-doc-checklist[hidden] { display: none; }
 .lc-doc-checklist-toggle {
     background: none; border: none; padding: 0.3rem 0; cursor: pointer;
     font-size: 0.73rem; color: #94a3b8; text-align: left;
