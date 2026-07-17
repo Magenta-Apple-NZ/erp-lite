@@ -80,7 +80,7 @@ export async function onRequestPost({ env, request }) {
             },
             body: JSON.stringify({
                 model: 'claude-sonnet-5',
-                max_tokens: 4096,
+                max_tokens: 16000,
                 messages: [{
                     role: 'user',
                     content: [
