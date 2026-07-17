@@ -6307,31 +6307,51 @@ a.db-row:hover { background: #f8fafc; border-color: #e2e8f0; }
 .lc-ins-compose-btn:hover { background: #bae6fd; border-color: #38bdf8; }
 
 /* ── Email compose preview strip ── */
-.lc-email-preview {
-    display: flex; align-items: center; gap: 0.6rem;
-    padding: 0.55rem 0.75rem; background: #f0f9ff;
-    border-top: 1px solid #bae6fd; border-bottom: 1px solid #bae6fd;
-    font-size: 0.82rem;
+/* ── Email content modal ── */
+.lc-email-modal {
+    position: fixed; inset: 0; background: rgba(15,23,42,0.45);
+    display: flex; align-items: center; justify-content: center;
+    z-index: 1000; padding: 1rem;
 }
-.lc-email-preview-to {
-    flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis;
-    white-space: nowrap; color: #0c4a6e;
+.lc-email-modal-box {
+    background: #fff; border-radius: 10px; width: 100%; max-width: 540px;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.2); display: flex; flex-direction: column; gap: 0;
+    overflow: hidden;
 }
-.lc-email-preview-to strong { font-weight: 600; }
-.lc-email-preview-open {
-    padding: 0.28rem 0.7rem; font-size: 0.78rem; font-weight: 600;
-    color: #fff; background: #0369a1; border: none; border-radius: 5px;
-    cursor: pointer; white-space: nowrap;
-    transition: background 0.15s;
+.lc-email-modal-hd {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 0.85rem 1rem 0.75rem; border-bottom: 1px solid #f1f5f9;
 }
-.lc-email-preview-open:hover { background: #0284c7; }
-.lc-email-preview-cancel {
-    padding: 0.28rem 0.6rem; font-size: 0.78rem; font-weight: 500;
-    color: #64748b; background: transparent; border: 1px solid #cbd5e1;
-    border-radius: 5px; cursor: pointer;
-    transition: background 0.15s;
+.lc-email-modal-title { font-size: 0.88rem; font-weight: 600; color: #1e293b; }
+.lc-email-modal-close {
+    background: none; border: none; cursor: pointer; color: #94a3b8;
+    font-size: 0.9rem; padding: 0; line-height: 1;
 }
-.lc-email-preview-cancel:hover { background: #f1f5f9; }
+.lc-email-modal-close:hover { color: #475569; }
+.lc-email-modal-field {
+    padding: 0.65rem 1rem 0; display: flex; flex-direction: column; gap: 0.3rem;
+}
+.lc-email-modal-field--body { padding-bottom: 1rem; }
+.lc-email-modal-label { font-size: 0.7rem; font-weight: 600; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.05em; }
+.lc-email-modal-row { display: flex; gap: 0.4rem; align-items: center; }
+.lc-email-modal-input {
+    flex: 1; font-size: 0.82rem; padding: 0.35rem 0.5rem;
+    border: 1px solid #e2e8f0; border-radius: 5px; color: #334155;
+    background: #f8fafc; font-family: inherit;
+}
+.lc-email-modal-textarea {
+    width: 100%; min-height: 220px; font-size: 0.8rem; line-height: 1.6;
+    padding: 0.5rem 0.6rem; border: 1px solid #e2e8f0; border-radius: 5px;
+    color: #334155; background: #f8fafc; font-family: inherit; resize: vertical;
+}
+.lc-email-modal-copy {
+    white-space: nowrap; font-size: 0.75rem; padding: 0.28rem 0.65rem;
+    background: #f1f5f9; border: 1px solid #e2e8f0; border-radius: 4px;
+    cursor: pointer; color: #475569; font-weight: 500;
+    transition: background 0.12s;
+}
+.lc-email-modal-copy:hover { background: #e2e8f0; }
+.lc-email-modal-copy--body { align-self: flex-end; margin-top: 0.3rem; }
 
 /* ── Upload confirm bar ── */
 .lc-upload-confirm {

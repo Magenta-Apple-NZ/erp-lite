@@ -1169,6 +1169,56 @@ const LC = (() => {
         bindDetailEvents(container, id, docs, lc, buildTlTrack);
     }
 
+    function showEmailPanel(toEmail, subject, body) {
+        document.querySelector('.lc-email-modal')?.remove();
+
+        const modal = document.createElement('div');
+        modal.className = 'lc-email-modal';
+        modal.innerHTML = '<div class="lc-email-modal-box">'
+            + '<div class="lc-email-modal-hd">'
+            + '<span class="lc-email-modal-title">Email Content</span>'
+            + '<button class="lc-email-modal-close" type="button" aria-label="Close">✕</button>'
+            + '</div>'
+            + '<div class="lc-email-modal-field">'
+            + '<label class="lc-email-modal-label">To</label>'
+            + '<div class="lc-email-modal-row">'
+            + '<input class="lc-email-modal-input" id="lc-em-to" readonly value="' + esc(toEmail) + '">'
+            + '<button class="lc-email-modal-copy" data-copy-target="lc-em-to" type="button">Copy</button>'
+            + '</div>'
+            + '</div>'
+            + '<div class="lc-email-modal-field">'
+            + '<label class="lc-email-modal-label">Subject</label>'
+            + '<div class="lc-email-modal-row">'
+            + '<input class="lc-email-modal-input" id="lc-em-sub" readonly value="' + esc(subject) + '">'
+            + '<button class="lc-email-modal-copy" data-copy-target="lc-em-sub" type="button">Copy</button>'
+            + '</div>'
+            + '</div>'
+            + '<div class="lc-email-modal-field lc-email-modal-field--body">'
+            + '<label class="lc-email-modal-label">Body</label>'
+            + '<textarea class="lc-email-modal-textarea" id="lc-em-body" readonly>' + esc(body) + '</textarea>'
+            + '<button class="lc-email-modal-copy lc-email-modal-copy--body" data-copy-target="lc-em-body" type="button">Copy body</button>'
+            + '</div>'
+            + '</div>';
+
+        document.body.appendChild(modal);
+
+        modal.querySelector('.lc-email-modal-close').addEventListener('click', () => modal.remove());
+        modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
+
+        modal.querySelectorAll('.lc-email-modal-copy').forEach(btn => {
+            btn.addEventListener('click', async () => {
+                const el = modal.querySelector('#' + btn.dataset.copyTarget);
+                if (!el) return;
+                try {
+                    await navigator.clipboard.writeText(el.value);
+                    const orig = btn.textContent;
+                    btn.textContent = 'Copied!';
+                    setTimeout(() => { btn.textContent = orig; }, 1500);
+                } catch {}
+            });
+        });
+    }
+
     function bindDetailEvents(container, id, docs, lc, buildTlTrack) {
         // Doc card expand/collapse — exclude interactive elements
         container.querySelector('#lc-doc-list').addEventListener('click', e => {
@@ -1522,16 +1572,11 @@ const LC = (() => {
             if (!btn) return;
             e.stopPropagation();
 
-            const ins = lc.insurance || {};
-
-            // If preview strip already open, "Open in Mail" fires the mailto
-            const existingPreview = btn.closest('.lc-doc-hd').parentElement.querySelector('.lc-email-preview');
-            if (existingPreview) {
-                const href = existingPreview.dataset.mailtoHref;
-                if (href) window.location.href = href;
-                existingPreview.remove();
-                return;
-            }
+            const ins         = lc.insurance || {};
+            const toEmail     = ins.email || '';
+            const contactName = ins.contactName || 'Sir/Madam';
+            const lcRef       = lc.lcNumber || '—';
+            const issued      = fmtDate(lc.issuedDate) || '—';
 
             let finalDocs = [];
             try {
@@ -1539,25 +1584,17 @@ const LC = (() => {
                 finalDocs = (res.docs || []).filter(d => !d.draft && !d.superseded);
             } catch {}
 
-            const toEmail     = ins.email || '';
-            const contactName = ins.contactName || 'Sir/Madam';
-            const lcRef       = lc.lcNumber || '—';
-            const issued      = fmtDate(lc.issuedDate) || '—';
-            const coverNoteRef = ins.coverNote ? 'Referring Cover Note No. ' + ins.coverNote + '.' : '';
-
             const docLines = finalDocs.length
                 ? finalDocs.map(d => 'Final ' + (d.docTitle || d.docType)).join('\n')
-                : '[No final documents archived yet — upload and archive them first]';
-
-            const clausePara = ins.clauseText
-                ? '\n\nThese documents are required by the LC as stated:\n\n' + ins.clauseText
-                : '';
+                : '[No final documents archived yet]';
+            const coverNoteRef = ins.coverNote ? 'Referring Cover Note No. ' + ins.coverNote + '.' : '';
+            const clausePara   = ins.clauseText ? '\n\nThese documents are required by the LC as stated:\n\n' + ins.clauseText : '';
 
             const subject = 'Insurance Notification — LC #' + lcRef;
             const body = [
                 'Hi ' + contactName + ',',
                 '',
-                'Please find the attached Final shipping documents for LC:' + lcRef,
+                'Please find the attached Final shipping documents for LC: ' + lcRef,
                 'Issued ' + issued + '.',
                 '',
                 docLines,
@@ -1567,40 +1604,17 @@ const LC = (() => {
                 'Thanks',
             ].join('\n');
 
-            const mailtoHref = 'mailto:' + encodeURIComponent(toEmail) + '?subject=' + encodeURIComponent(subject) + '&body=' + encodeURIComponent(body);
-
-            const strip = document.createElement('div');
-            strip.className = 'lc-email-preview';
-            strip.dataset.mailtoHref = mailtoHref;
-            strip.innerHTML = '<span class="lc-email-preview-to">To: <strong>' + esc(toEmail || '(no email set)') + '</strong></span>'
-                + '<button class="lc-email-preview-open" type="button">Open in Mail</button>'
-                + '<button class="lc-email-preview-cancel" type="button">Cancel</button>';
-
-            const card = btn.closest('.lc-doc-card');
-            card.querySelector('.lc-doc-hd').after(strip);
-
-            strip.querySelector('.lc-email-preview-open').addEventListener('click', () => {
-                window.location.href = mailtoHref;
-                strip.remove();
-            });
-            strip.querySelector('.lc-email-preview-cancel').addEventListener('click', () => strip.remove());
+            showEmailPanel(toEmail, subject, body);
         });
 
-        // Applicant documents email — send email (preview strip then open mail client)
+        // Applicant documents email — show copyable text panel
         container.querySelector('#lc-doc-list').addEventListener('click', async e => {
             const btn = e.target.closest('[data-compose-applicant]');
             if (!btn) return;
             e.stopPropagation();
 
-            const ap = lc.applicant || {};
-
-            const existingPreview = btn.closest('.lc-doc-hd').parentElement.querySelector('.lc-email-preview');
-            if (existingPreview) {
-                const href = existingPreview.dataset.mailtoHref;
-                if (href) window.location.href = href;
-                existingPreview.remove();
-                return;
-            }
+            const ap    = lc.applicant || {};
+            const lcRef = lc.lcNumber || '—';
 
             let finalDocs = [];
             try {
@@ -1608,12 +1622,9 @@ const LC = (() => {
                 finalDocs = (res.docs || []).filter(d => !d.draft && !d.superseded);
             } catch {}
 
-            const toEmail = ap.email || '';
-            const lcRef   = lc.lcNumber || '—';
-
             const docLines = finalDocs.length
                 ? finalDocs.map(d => '- ' + (d.docTitle || d.docType)).join('\n')
-                : '[No final documents archived yet — upload and archive them first]';
+                : '[No final documents archived yet]';
 
             const subject = 'Shipping Documents — LC #' + lcRef;
             const body = [
@@ -1630,23 +1641,7 @@ const LC = (() => {
                 'Enviroware Ltd',
             ].join('\n');
 
-            const mailtoHref = 'mailto:' + encodeURIComponent(toEmail) + '?subject=' + encodeURIComponent(subject) + '&body=' + encodeURIComponent(body);
-
-            const strip = document.createElement('div');
-            strip.className = 'lc-email-preview';
-            strip.dataset.mailtoHref = mailtoHref;
-            strip.innerHTML = '<span class="lc-email-preview-to">To: <strong>' + esc(toEmail || '(no email set — add applicant email in edit)') + '</strong></span>'
-                + '<button class="lc-email-preview-open" type="button">Open in Mail</button>'
-                + '<button class="lc-email-preview-cancel" type="button">Cancel</button>';
-
-            const card = btn.closest('.lc-doc-card');
-            card.querySelector('.lc-doc-hd').after(strip);
-
-            strip.querySelector('.lc-email-preview-open').addEventListener('click', () => {
-                window.location.href = mailtoHref;
-                strip.remove();
-            });
-            strip.querySelector('.lc-email-preview-cancel').addEventListener('click', () => strip.remove());
+            showEmailPanel(ap.email || '', subject, body);
         });
 
         // Copy LC number to clipboard
