@@ -1077,6 +1077,11 @@ const LC = (() => {
                               id="lc-clearance">
                             ${isCleared ? 'Cleared to present' : 'Not cleared to present'}
                         </span>
+                        <button class="lc-extract-btn" id="lc-extract-btn" type="button" title="Upload LC PDF to re-extract all fields with AI">
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                            Upload LC PDF
+                        </button>
+                        <input type="file" id="lc-extract-file-input" accept=".pdf,application/pdf" hidden>
                     </div>
                 </div>
                 <div class="lc-identity-row2" id="lc-ship-link-row">
@@ -1189,6 +1194,150 @@ const LC = (() => {
         </div>`;
 
         bindDetailEvents(container, id, docs, lc, buildTlTrack);
+    }
+
+    function showExtractReviewModal(fields, lc, lcId, onSaved) {
+        document.querySelector('.lc-extract-modal')?.remove();
+
+        // Map extracted field names → current LC values for comparison
+        const g  = lc.goods || {};
+        const p  = lc.ports || {};
+        const ap = lc.applicant || {};
+        const ab = lc.applicantBank || {};
+
+        const FIELD_MAP = [
+            { key: 'lcNumber',        label: 'LC Number',            cur: lc.lcNumber,          ext: fields.lcNumber },
+            { key: 'issuedDate',      label: 'Date of Issue',        cur: lc.issuedDate,        ext: fields.issuedDate },
+            { key: 'expiryDate',      label: 'Expiry Date',          cur: lc.expiryDate,        ext: fields.expiryDate },
+            { key: 'latestShipDate',  label: 'Latest Ship Date',     cur: lc.latestShipDate,    ext: fields.latestShipDate },
+            { key: 'currency',        label: 'Currency',             cur: lc.currency,          ext: fields.currency },
+            { key: 'amount',          label: 'Amount',               cur: String(lc.amount || ''), ext: fields.amount != null ? String(fields.amount) : null },
+            { key: 'presentationDays',label: 'Presentation Days',    cur: String(lc.presentationDays || ''), ext: fields.presentationDays != null ? String(fields.presentationDays) : null },
+            { key: 'governedBy',      label: 'Governed By',          cur: lc.governedBy,        ext: fields.governedBy },
+            { key: 'applicantName',   label: 'Applicant Name',       cur: ap.name,              ext: fields.applicantName },
+            { key: 'applicantAddress',label: 'Applicant Address',    cur: ap.address,           ext: fields.applicantAddress },
+            { key: 'applicantBankName',  label: 'Issuing Bank',      cur: ab.name,              ext: fields.applicantBankName },
+            { key: 'applicantBankCity',  label: 'Issuing Bank City', cur: ab.city,              ext: fields.applicantBankCity },
+            { key: 'applicantBankSwift', label: 'Issuing Bank SWIFT',cur: ab.swift,             ext: fields.applicantBankSwift },
+            { key: 'portLoading',     label: 'Port of Loading',      cur: p.loading,            ext: fields.portLoading },
+            { key: 'portDischarge',   label: 'Port of Discharge',    cur: p.discharge,          ext: fields.portDischarge },
+            { key: 'portFinal',       label: 'Final Destination',    cur: p.finalDestination,   ext: fields.portFinal },
+            { key: 'incoterms',       label: 'Incoterms',            cur: g.incoterms,          ext: fields.incoterms },
+            { key: 'goodsDescription',label: 'Goods Description',    cur: g.description,        ext: fields.goodsDescription },
+            { key: 'quantity',        label: 'Quantity',             cur: String(g.quantity || ''), ext: fields.quantity != null ? String(fields.quantity) : null },
+            { key: 'quantityUnit',    label: 'Quantity Unit',        cur: g.quantityUnit,       ext: fields.quantityUnit },
+            { key: 'packageCount',    label: 'Package Count',        cur: String(g.packageCount || ''), ext: fields.packageCount != null ? String(fields.packageCount) : null },
+            { key: 'packageType',     label: 'Package Type',         cur: g.packageType,        ext: fields.packageType },
+            { key: 'unitPrice',       label: 'Unit Price',           cur: String(g.unitPrice || ''), ext: fields.unitPrice != null ? String(fields.unitPrice) : null },
+            { key: 'hsCode',          label: 'HS Code',              cur: g.hsCode,             ext: fields.hsCode },
+            { key: 'origin',          label: 'Origin',               cur: g.origin,             ext: fields.origin },
+            { key: 'container',       label: 'Container',            cur: g.container,          ext: fields.container },
+            { key: 'proformaRef',     label: 'Proforma Ref',         cur: lc.proformaRef,       ext: fields.proformaRef },
+            { key: 'proformaDate',    label: 'Proforma Date',        cur: lc.proformaDate,      ext: fields.proformaDate },
+        ];
+
+        const changed = FIELD_MAP.filter(f => {
+            const e = (f.ext || '').toString().trim();
+            const c = (f.cur || '').toString().trim();
+            return e && e !== c;
+        });
+
+        const extractedConds = Array.isArray(fields.f47aConditions) ? fields.f47aConditions : [];
+        const currentConds   = lc.f47aConditions || [];
+
+        const fieldRows = changed.length
+            ? changed.map((f, i) => {
+                const isNew = !f.cur;
+                return '<div class="lc-er-row' + (isNew ? ' lc-er-row--new' : '') + '">'
+                    + '<label class="lc-er-check-wrap">'
+                    + '<input type="checkbox" class="lc-er-cb" data-er-idx="' + i + '" checked>'
+                    + '<span class="lc-er-label">' + esc(f.label) + '</span>'
+                    + '</label>'
+                    + '<div class="lc-er-vals">'
+                    + (f.cur ? '<span class="lc-er-cur">' + esc(f.cur) + '</span>' : '<span class="lc-er-empty">not set</span>')
+                    + '<span class="lc-er-arrow">→</span>'
+                    + '<span class="lc-er-new">' + esc(f.ext) + '</span>'
+                    + '</div>'
+                    + '</div>';
+            }).join('')
+            : '<p class="lc-er-none">All stored field values match the document.</p>';
+
+        const condRows = extractedConds.map((c, i) => {
+            const alreadyHave = currentConds.some(x => x.text.trim() === c.text.trim());
+            return '<div class="lc-er-row lc-er-row--cond' + (alreadyHave ? ' lc-er-row--dupe' : '') + '">'
+                + '<label class="lc-er-check-wrap">'
+                + '<input type="checkbox" class="lc-er-cond-cb" data-cond-idx="' + i + '"' + (alreadyHave ? '' : ' checked') + '>'
+                + '<span class="lc-er-label">' + esc(c.docId && c.docId !== 'general' ? c.docId : 'General') + '</span>'
+                + '</label>'
+                + '<span class="lc-er-cond-text">' + esc(c.text) + (alreadyHave ? ' <em>(already stored)</em>' : '') + '</span>'
+                + '</div>';
+        }).join('') || '<p class="lc-er-none">No F47A conditions extracted.</p>';
+
+        const modal = document.createElement('div');
+        modal.className = 'lc-extract-modal';
+        modal.innerHTML = '<div class="lc-extract-modal-box">'
+            + '<div class="lc-extract-modal-hd">'
+            + '<span class="lc-extract-modal-title">Review Extracted Fields</span>'
+            + '<span class="lc-extract-modal-sub">Check changes to accept · uncheck to keep current value</span>'
+            + '<button class="lc-email-modal-close" id="lc-er-close" type="button">✕</button>'
+            + '</div>'
+            + '<div class="lc-extract-modal-body">'
+            + (changed.length ? '<div class="lc-er-section-hd">Field Changes (' + changed.length + ')</div>' + fieldRows : fieldRows)
+            + '<div class="lc-er-section-hd lc-er-section-hd--cond">F47A Conditions from document</div>'
+            + condRows
+            + '</div>'
+            + '<div class="lc-extract-modal-ft">'
+            + '<button class="lc-er-save" id="lc-er-save" type="button">Apply selected changes</button>'
+            + '<button class="lc-er-cancel" id="lc-er-cancel" type="button">Cancel</button>'
+            + '</div>'
+            + '</div>';
+
+        document.body.appendChild(modal);
+
+        modal.querySelector('#lc-er-close').addEventListener('click', () => modal.remove());
+        modal.querySelector('#lc-er-cancel').addEventListener('click', () => modal.remove());
+        modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
+
+        modal.querySelector('#lc-er-save').addEventListener('click', async () => {
+            const saveBtn = modal.querySelector('#lc-er-save');
+            saveBtn.disabled = true;
+            saveBtn.textContent = 'Saving…';
+
+            // Build patch from checked field rows
+            const patch = {};
+            modal.querySelectorAll('.lc-er-cb:checked').forEach(cb => {
+                const f = changed[Number(cb.dataset.erIdx)];
+                if (f) patch[f.key] = f.ext;
+            });
+
+            // Collect checked new conditions
+            const newConds = [...currentConds];
+            modal.querySelectorAll('.lc-er-cond-cb:checked').forEach(cb => {
+                const c = extractedConds[Number(cb.dataset.condIdx)];
+                if (c && !newConds.some(x => x.text.trim() === c.text.trim())) {
+                    newConds.push({ text: c.text, docId: c.docId === 'general' ? null : c.docId });
+                }
+            });
+            if (modal.querySelectorAll('.lc-er-cond-cb:checked').length) {
+                patch.f47aConditions = newConds;
+            }
+
+            if (!Object.keys(patch).length) { modal.remove(); return; }
+
+            try {
+                await apiFetch('/api/lc/' + lcId, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(patch),
+                });
+                modal.remove();
+                onSaved();
+            } catch (err) {
+                saveBtn.disabled = false;
+                saveBtn.textContent = 'Apply selected changes';
+                alert('Could not save: ' + err.message);
+            }
+        });
     }
 
     function showEmailPanel(toEmail, subject, body) {
@@ -1675,6 +1824,40 @@ const LC = (() => {
                 setTimeout(() => this.classList.remove('lc-copy-btn--ok'), 1500);
             } catch {}
         });
+
+        // Upload LC PDF to re-extract fields
+        const extractBtn   = container.querySelector('#lc-extract-btn');
+        const extractInput = container.querySelector('#lc-extract-file-input');
+        if (extractBtn && extractInput) {
+            extractBtn.addEventListener('click', () => extractInput.click());
+            extractInput.addEventListener('change', async () => {
+                const file = extractInput.files[0];
+                if (!file) return;
+                extractInput.value = '';
+                extractBtn.disabled = true;
+                extractBtn.textContent = 'Reading…';
+                try {
+                    const base64 = await new Promise((resolve, reject) => {
+                        const reader = new FileReader();
+                        reader.onload = () => resolve(reader.result.split(',')[1]);
+                        reader.onerror = () => reject(new Error('Failed to read file'));
+                        reader.readAsDataURL(file);
+                    });
+                    extractBtn.textContent = 'Extracting…';
+                    const json = await apiFetch('/api/lc-extract', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ data: base64, mediaType: 'application/pdf' }),
+                    });
+                    showExtractReviewModal(json.fields, lc, id, () => renderDetail(container, id));
+                } catch (err) {
+                    alert('Extraction failed: ' + err.message);
+                } finally {
+                    extractBtn.disabled = false;
+                    extractBtn.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg> Upload LC PDF';
+                }
+            });
+        }
 
         // Shipment link — populate dropdown from active orders
         // Unlink shipment

@@ -79,8 +79,8 @@ export async function onRequestPost({ env, request }) {
                 'anthropic-beta': 'pdfs-2024-09-25',
             },
             body: JSON.stringify({
-                model: 'claude-haiku-4-5-20251001',
-                max_tokens: 2048,
+                model: 'claude-sonnet-5',
+                max_tokens: 4096,
                 messages: [{
                     role: 'user',
                     content: [
@@ -94,12 +94,14 @@ export async function onRequestPost({ env, request }) {
         step = 'anthropic-response';
         if (!anthropicRes.ok) {
             const err = await anthropicRes.json().catch(() => ({}));
-            return errResponse(`Anthropic ${anthropicRes.status}: ${err.error?.message || anthropicRes.statusText}`, 500);
+            return errResponse('Anthropic ' + anthropicRes.status + ': ' + (err.error?.message || anthropicRes.statusText), 500);
         }
 
         step = 'parse-model-response';
-        const result = await anthropicRes.json();
-        const text = result.content?.[0]?.text?.trim() || '';
+        const result    = await anthropicRes.json();
+        // Sonnet 5 may return thinking blocks — find first text block
+        const textBlock = (result.content || []).find(b => b.type === 'text');
+        const text      = textBlock?.text?.trim() || '';
         const jsonMatch = text.match(/\{[\s\S]*\}/);
         if (!jsonMatch) return errResponse('Model did not return JSON: ' + text.slice(0, 200), 500);
 
