@@ -969,68 +969,134 @@ const LC = (() => {
                 + '</div>';
         }
 
+        // TAG → anchor id map for verbatim raw rendering
+        const TAG_ANCHORS = {
+            '20': 'lc-f-20', '31C': 'lc-f-31c', '31D': 'lc-f-31d',
+            '32B': 'lc-f-32b', '40A': 'lc-f-40a', '41A': 'lc-f-41a', '41D': 'lc-f-41d',
+            '42C': 'lc-f-42c', '42A': 'lc-f-42a', '43P': 'lc-f-43p', '43T': 'lc-f-43t',
+            '44A': 'lc-f-44a', '44B': 'lc-f-44b', '44C': 'lc-f-44c', '44D': 'lc-f-44d',
+            '44E': 'lc-f-44e', '44F': 'lc-f-44f',
+            '45A': 'lc-f-45a', '46A': 'lc-f-46a', '47A': 'lc-f-47a',
+            '48': 'lc-f-48', '49': 'lc-f-49', '50': 'lc-f-50', '59': 'lc-f-59',
+            '71B': 'lc-f-71b', '72': 'lc-f-72', '78': 'lc-f-78',
+        };
+
         let lcRawHtml = '<section class="lc-raw-section" id="lc-raw-section">'
             + '<div class="lc-raw-section-hd">'
             + '<span class="lc-section-label">LC Reference — MT700</span>'
-            + '</div>'
-            + '<div class="lc-raw-body">';
-
-        lcRawHtml += rawField('20',  'Documentary Credit Number', lc.lcNumber);
-        lcRawHtml += rawField('31C', 'Date of Issue',             lc.issuedDate);
-        lcRawHtml += rawField('31D', 'Date and Place of Expiry',  (lc.expiryDate || '') + (lc.expiryPlace ? '\n' + lc.expiryPlace : ''));
-        lcRawHtml += rawField('50',  'Applicant',                 (ap.name || '') + (ap.address ? '\n' + ap.address : ''));
-        lcRawHtml += rawField('59',  'Beneficiary',               lc.beneficiary || 'Enviroware Ltd');
-        lcRawHtml += rawField('32B', 'Currency / Amount',         fmtAmt(lc.currency, lc.amount));
-        lcRawHtml += rawField('41D', 'Available With / By',       (ab.name || '—') + '\nBY SIGHT PAYMENT');
-        lcRawHtml += rawField('44A', 'Port of Loading',           p.loading);
-        lcRawHtml += rawField('44B', 'For Transportation to',     (p.discharge || '') + (p.finalDestination ? '\n' + p.finalDestination : ''));
-        lcRawHtml += rawField('44C', 'Latest Date of Shipment',   lc.latestShipDate);
-        lcRawHtml += rawField('44D', 'Shipment Period / Incoterms', g.incoterms);
-        lcRawHtml += rawField('45A', 'Description of Goods',      g.description || lc.goodsDescription || '');
-
-        lcRawHtml += '<div class="lc-raw-field" id="lc-f-46a">'
-            + '<div class="lc-raw-field-hd">'
-            + '<span class="lc-raw-field-num">F46A</span>'
-            + '<span class="lc-raw-field-label">Documents Required</span>'
+            + (lc.rawMt700 ? '' : '<span class="lc-raw-verbatim-hint">Upload the LC PDF above to show verbatim text</span>')
             + '</div>';
-        docs.forEach(function(d) {
-            lcRawHtml += '<div class="lc-raw-doc-item" id="lcref-46a-' + esc(d.id) + '">'
-                + '<div class="lc-raw-doc-title">' + esc(d.title) + '</div>'
-                + '<div class="lc-raw-doc-copies">' + esc(d.copies) + '</div>'
-                + '<div class="lc-raw-doc-desc">' + esc(d.desc) + '</div>'
-                + '</div>';
-        });
-        lcRawHtml += '</div>';
 
-        const f47aAll = lc.f47aConditions || [];
-        lcRawHtml += '<div class="lc-raw-field" id="lc-f-47a">'
-            + '<div class="lc-raw-field-hd">'
-            + '<span class="lc-raw-field-num">F47A</span>'
-            + '<span class="lc-raw-field-label">Additional Conditions</span>'
-            + '</div>';
-        if (f47aAll.length > 0) {
-            f47aAll.forEach(function(c, i) {
-                lcRawHtml += '<div class="lc-raw-cond-item" id="lc-f47a-' + i + '">'
-                    + '<span class="lc-raw-cond-num">' + (i + 1) + '.</span>'
-                    + '<span class="lc-raw-cond-text">' + rawLines(c.text) + '</span>'
+        if (lc.rawMt700) {
+            // Verbatim raw text — split on :TAG: markers and inject anchors
+            const raw    = lc.rawMt700;
+            const tagRe  = /(?=^|\n)(:([0-9A-Z]{2,3}):)/gm;
+            const parts  = raw.split(/\n(?=:[0-9A-Z]{2,3}:)/);
+
+            // Also need F47A condition anchors — count occurrences as we go
+            const f47aAll = lc.f47aConditions || [];
+            let f47aIdx = 0;
+
+            lcRawHtml += '<div class="lc-raw-verbatim">';
+            parts.forEach(function(part) {
+                const tagMatch = part.match(/^:([0-9A-Z]{2,3}):/);
+                const tag      = tagMatch ? tagMatch[1].toUpperCase() : null;
+                const anchorId = tag ? (TAG_ANCHORS[tag] || ('lc-f-' + tag.toLowerCase())) : null;
+                const content  = part.replace(/^:[0-9A-Z]{2,3}:\n?/, '');
+
+                if (tag === '47A') {
+                    // For F47A, also emit per-condition anchors so §47A.N links work
+                    lcRawHtml += '<div class="lc-raw-verbatim-field" id="' + anchorId + '">'
+                        + '<span class="lc-raw-verbatim-tag">:' + tag + ':</span>';
+
+                    // Split numbered conditions (lines starting with a number + dot/bracket)
+                    const condParts = content.split(/\n(?=\d+[.)]\s)/);
+                    condParts.forEach(function(cp, ci) {
+                        const condAnchor = f47aAll[ci] ? 'lc-f47a-' + ci : '';
+                        lcRawHtml += '<span class="lc-raw-verbatim-cond"'
+                            + (condAnchor ? ' id="' + condAnchor + '"' : '') + '>'
+                            + esc(cp.trim())
+                            + '</span>';
+                    });
+                    lcRawHtml += '</div>';
+                } else if (tag === '46A') {
+                    // For F46A, inject doc-specific anchors by matching doc titles
+                    lcRawHtml += '<div class="lc-raw-verbatim-field" id="' + anchorId + '">'
+                        + '<span class="lc-raw-verbatim-tag">:' + tag + ':</span>';
+
+                    docs.forEach(function(d) {
+                        const escaped = esc(d.title).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                        lcRawHtml += '<span class="lc-raw-verbatim-doc-anchor" id="lcref-46a-' + esc(d.id) + '"></span>';
+                    });
+                    lcRawHtml += '<span class="lc-raw-verbatim-body">' + esc(content) + '</span>'
+                        + '</div>';
+                } else if (tag) {
+                    lcRawHtml += '<div class="lc-raw-verbatim-field" id="' + anchorId + '">'
+                        + '<span class="lc-raw-verbatim-tag">:' + tag + ':</span>'
+                        + '<span class="lc-raw-verbatim-body">' + esc(content) + '</span>'
+                        + '</div>';
+                } else if (part.trim()) {
+                    lcRawHtml += '<div class="lc-raw-verbatim-field">'
+                        + '<span class="lc-raw-verbatim-body">' + esc(part) + '</span>'
+                        + '</div>';
+                }
+            });
+            lcRawHtml += '</div>';
+        } else {
+            // Fallback: reconstructed grid from stored fields
+            lcRawHtml += '<div class="lc-raw-body">';
+            lcRawHtml += rawField('20',  'Documentary Credit Number', lc.lcNumber);
+            lcRawHtml += rawField('31C', 'Date of Issue',             lc.issuedDate);
+            lcRawHtml += rawField('31D', 'Date and Place of Expiry',  (lc.expiryDate || '') + (lc.expiryPlace ? '\n' + lc.expiryPlace : ''));
+            lcRawHtml += rawField('50',  'Applicant',                 (ap.name || '') + (ap.address ? '\n' + ap.address : ''));
+            lcRawHtml += rawField('59',  'Beneficiary',               lc.beneficiary || 'Enviroware Ltd');
+            lcRawHtml += rawField('32B', 'Currency / Amount',         fmtAmt(lc.currency, lc.amount));
+            lcRawHtml += rawField('41D', 'Available With / By',       (ab.name || '—') + '\nBY SIGHT PAYMENT');
+            lcRawHtml += rawField('44A', 'Port of Loading',           p.loading);
+            lcRawHtml += rawField('44B', 'For Transportation to',     (p.discharge || '') + (p.finalDestination ? '\n' + p.finalDestination : ''));
+            lcRawHtml += rawField('44C', 'Latest Date of Shipment',   lc.latestShipDate);
+            lcRawHtml += rawField('44D', 'Shipment Period / Incoterms', g.incoterms);
+            lcRawHtml += rawField('45A', 'Description of Goods',      g.description || lc.goodsDescription || '');
+
+            lcRawHtml += '<div class="lc-raw-field" id="lc-f-46a">'
+                + '<div class="lc-raw-field-hd"><span class="lc-raw-field-num">F46A</span>'
+                + '<span class="lc-raw-field-label">Documents Required</span></div>';
+            docs.forEach(function(d) {
+                lcRawHtml += '<div class="lc-raw-doc-item" id="lcref-46a-' + esc(d.id) + '">'
+                    + '<div class="lc-raw-doc-title">' + esc(d.title) + '</div>'
+                    + '<div class="lc-raw-doc-copies">' + esc(d.copies) + '</div>'
+                    + '<div class="lc-raw-doc-desc">' + esc(d.desc) + '</div>'
                     + '</div>';
             });
-        } else {
-            lcRawHtml += '<div class="lc-raw-cond-item lc-raw-cond-item--empty">No additional conditions recorded.</div>';
-        }
-        lcRawHtml += '</div>';
+            lcRawHtml += '</div>';
 
-        if (ins.clauseText) {
-            lcRawHtml += '<div class="lc-raw-field" id="lc-f-ins">'
-                + '<div class="lc-raw-field-hd">'
-                + '<span class="lc-raw-field-num">INS</span>'
-                + '<span class="lc-raw-field-label">Insurance Clause</span>'
-                + '</div>'
-                + '<div class="lc-raw-field-val">' + rawLines(ins.clauseText) + '</div>'
-                + '</div>';
+            const f47aAll = lc.f47aConditions || [];
+            lcRawHtml += '<div class="lc-raw-field" id="lc-f-47a">'
+                + '<div class="lc-raw-field-hd"><span class="lc-raw-field-num">F47A</span>'
+                + '<span class="lc-raw-field-label">Additional Conditions</span></div>';
+            if (f47aAll.length > 0) {
+                f47aAll.forEach(function(c, i) {
+                    lcRawHtml += '<div class="lc-raw-cond-item" id="lc-f47a-' + i + '">'
+                        + '<span class="lc-raw-cond-num">' + (i + 1) + '.</span>'
+                        + '<span class="lc-raw-cond-text">' + rawLines(c.text) + '</span>'
+                        + '</div>';
+                });
+            } else {
+                lcRawHtml += '<div class="lc-raw-cond-item lc-raw-cond-item--empty">No additional conditions recorded. Upload the LC PDF above to populate.</div>';
+            }
+            lcRawHtml += '</div>';
+
+            if (ins.clauseText) {
+                lcRawHtml += '<div class="lc-raw-field" id="lc-f-ins">'
+                    + '<div class="lc-raw-field-hd"><span class="lc-raw-field-num">INS</span>'
+                    + '<span class="lc-raw-field-label">Insurance Clause</span></div>'
+                    + '<div class="lc-raw-field-val">' + rawLines(ins.clauseText) + '</div>'
+                    + '</div>';
+            }
+            lcRawHtml += '</div>';
         }
 
-        lcRawHtml += '</div></section>';
+        lcRawHtml += '</section>';
 
         // ── Grouped document list ──────────────────────────────────────────────
         const DOC_GROUPS = [
@@ -1322,6 +1388,7 @@ const LC = (() => {
                 patch.f47aConditions = newConds;
             }
 
+            if (fields.rawText) patch.rawMt700 = fields.rawText;
             if (!Object.keys(patch).length) { modal.remove(); return; }
 
             try {

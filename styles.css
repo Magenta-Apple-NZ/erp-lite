@@ -6588,6 +6588,38 @@ a.db-row:hover { background: #f8fafc; border-color: #e2e8f0; }
 /* F46A and F47A span full width — they're list fields */
 #lc-f-46a, #lc-f-47a, #lc-f-ins { grid-column: 1 / -1; }
 
+/* Verbatim raw transcript mode */
+.lc-raw-verbatim-hint { font-size: 0.72rem; color: #94a3b8; margin-left: 0.75rem; font-weight: 400; }
+.lc-raw-verbatim {
+    font-family: 'ui-monospace', 'Menlo', 'Consolas', monospace;
+    font-size: 0.8rem; line-height: 1.65; color: #1e293b;
+    display: flex; flex-direction: column; gap: 0;
+    border: 1px solid #e2e8f0; border-radius: 6px; overflow: hidden;
+}
+.lc-raw-verbatim-field {
+    display: flex; flex-direction: column;
+    padding: 0.55rem 0.85rem;
+    border-bottom: 1px solid #f1f5f9;
+    scroll-margin-top: 80px;
+}
+.lc-raw-verbatim-field:last-child { border-bottom: none; }
+.lc-raw-verbatim-field:target {
+    background: #eff6ff;
+    box-shadow: inset 3px 0 0 #2563eb;
+}
+.lc-raw-verbatim-tag {
+    font-weight: 700; color: #2563eb; font-size: 0.72rem;
+    letter-spacing: 0.06em; margin-bottom: 0.2rem; display: block;
+}
+.lc-raw-verbatim-body { white-space: pre-wrap; color: #1e293b; }
+.lc-raw-verbatim-cond {
+    display: block; white-space: pre-wrap; padding: 0.3rem 0;
+    border-bottom: 1px solid #f8fafc; scroll-margin-top: 80px;
+}
+.lc-raw-verbatim-cond:last-child { border-bottom: none; }
+.lc-raw-verbatim-cond:target { background: #eff6ff; border-radius: 3px; }
+.lc-raw-verbatim-doc-anchor { display: block; height: 0; scroll-margin-top: 80px; }
+
 .lc-raw-field {
     padding: 0.6rem 0.75rem;
     border: 1px solid #e2e8f0;

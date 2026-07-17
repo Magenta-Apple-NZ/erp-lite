@@ -55,7 +55,8 @@ Rules:
 - Strip currency symbols, commas, and units from numeric fields.
 - Return null for any field not clearly present. Do not guess.
 - Extract ALL conditions from field :47A: as f47aConditions. Assign each to the most relevant docId from: draft, commercialInvoice, billOfLading, certificateOfOrigin, insuranceNotification, beneficiaryCertificate, inspectionCertificate, general. Use "general" for conditions that apply to all documents. Return an empty array [] if :47A: is absent.
-- Return ONLY the JSON object, no other text.`;
+- Return ONLY the JSON object, no other text.
+- Also include a "rawText" field: the complete verbatim content of the LC, field by field, exactly as printed in the document. Format each field as ":TAG:\n[verbatim content]" with a blank line between fields. Do not paraphrase, summarise, or reformat — copy the exact wording, spacing, numbering, and punctuation from the document.`;
 
 export async function onRequestPost({ env, request }) {
     let step = 'init';
