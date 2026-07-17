@@ -5951,6 +5951,10 @@ a.db-row:hover { background: #f8fafc; border-color: #e2e8f0; }
 .lc-check-item--ai-fail { background: #fef2f2; border-radius: 4px; padding: 0.45rem 0.4rem; }
 .lc-check-ai-bar { margin: 0 -0.9rem 0.5rem; }
 .lc-check-matrix-bar.lc-check-ai-bar { border-radius: 0; margin-bottom: 0.4rem; }
+.lc-check-pass-summary {
+    font-size: 0.75rem; color: #15803d; padding: 0.4rem 0.4rem 0;
+    border-top: 1px solid #dcfce7; margin-top: 0.35rem;
+}
 
 /* ── Conditions accordion ── */
 .lc-cond-section {

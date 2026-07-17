@@ -99,8 +99,13 @@ Check each numbered requirement below against the uploaded document. For every c
 
 Return ONLY a JSON array, no other text:
 [
-  {"checkId": "id-from-list", "result": "pass|flag|fail", "note": "Quote the actual document text, then state any discrepancy. If failing, state exactly what is wrong or missing."}
+  {"checkId": "id-from-list", "result": "pass|flag|fail", "note": "..."}
 ]
+
+Note format rules:
+- pass: quote only the key value or phrase found in the document (e.g. "18,754 kg net" or "CFR Auckland, New Zealand"). Keep it to one short phrase — no commentary.
+- flag: one sentence. State what the document shows and why it is questionable (e.g. "Shows 'C&F' — LC requires full Incoterms 2020 wording").
+- fail: one sentence. State what the document shows (or that it is absent) vs what the LC requires (e.g. "Document shows 18,749 kg in weight summary; LC quantity is 18,754 kg").
 
 ## Checks to perform
 ${checkList}

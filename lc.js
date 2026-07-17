@@ -1676,22 +1676,33 @@ const LC = (() => {
                     + (archiveLabel ? '<span class="lc-doc-version-badge lc-doc-version-badge--' + archiveCls + '">' + esc(archiveLabel) + '</span>' : '')
                     + '</div>';
 
-                const enrichedItems = docDef.checks.map(c => {
-                    const r       = results.find(x => x.checkId === c.id);
-                    const chkEl   = container.querySelector('#chk-' + c.id);
-                    const isChecked = chkEl ? chkEl.checked : !!(lc.docChecks && lc.docChecks[c.id]);
-                    const cls     = r ? (r.result === 'pass' ? 'pass' : r.result === 'flag' ? 'flag' : 'fail') : '';
-                    const icon    = r ? (r.result === 'pass' ? '✓' : r.result === 'flag' ? '⚠' : '✗') : '';
-                    const note    = r ? (r.note || '') : '';
-                    return '<div class="lc-check-item lc-check-item--ai' + (cls ? ' lc-check-item--ai-' + cls : '') + (isChecked ? ' lc-check-item--done' : '') + '">'
-                        + '<input type="checkbox" id="chk-' + c.id + '" data-check="' + c.id + '"' + (isChecked ? ' checked' : '') + '>'
-                        + '<div class="lc-check-item-body">'
-                        + '<label for="chk-' + c.id + '">' + esc(c.text) + '</label>'
-                        + (r ? '<span class="lc-check-ai-note">' + esc(note) + '</span>' : '')
-                        + '</div>'
-                        + (r ? '<span class="lc-check-ai-badge lc-check-ai-badge--' + cls + '">' + icon + '</span>' : '')
-                        + '</div>';
-                }).join('');
+                // Only render flag/fail items individually; passes collapse to a single summary row
+                const passItems  = results.filter(r => r.result === 'pass');
+                const issueItems = results.filter(r => r.result !== 'pass');
+
+                const issueRows = docDef.checks
+                    .filter(c => issueItems.some(r => r.checkId === c.id))
+                    .map(c => {
+                        const r         = issueItems.find(r => r.checkId === c.id);
+                        const chkEl     = container.querySelector('#chk-' + c.id);
+                        const isChecked = chkEl ? chkEl.checked : !!(lc.docChecks && lc.docChecks[c.id]);
+                        const cls       = r.result === 'flag' ? 'flag' : 'fail';
+                        const icon      = r.result === 'flag' ? '⚠' : '✗';
+                        return '<div class="lc-check-item lc-check-item--ai lc-check-item--ai-' + cls + (isChecked ? ' lc-check-item--done' : '') + '">'
+                            + '<input type="checkbox" id="chk-' + c.id + '" data-check="' + c.id + '"' + (isChecked ? ' checked' : '') + '>'
+                            + '<div class="lc-check-item-body">'
+                            + '<label for="chk-' + c.id + '">' + esc(c.text) + '</label>'
+                            + (r.note ? '<span class="lc-check-ai-note">' + esc(r.note) + '</span>' : '')
+                            + '</div>'
+                            + '<span class="lc-check-ai-badge lc-check-ai-badge--' + cls + '">' + icon + '</span>'
+                            + '</div>';
+                    }).join('');
+
+                const passRow = passItems.length
+                    ? '<div class="lc-check-pass-summary">✓ ' + passItems.length + ' item' + (passItems.length === 1 ? '' : 's') + ' passed</div>'
+                    : '';
+
+                const enrichedItems = issueRows + passRow;
 
                 if (checksEl) {
                     checksEl.innerHTML = (linkFormEl ? linkFormEl.outerHTML : '')
