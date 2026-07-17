@@ -1896,6 +1896,25 @@ const LC = (() => {
         const extractBtn   = container.querySelector('#lc-extract-btn');
         const extractInput = container.querySelector('#lc-extract-file-input');
         if (extractBtn && extractInput) {
+            function showExtractOverlay(msg) {
+                let ov = document.getElementById('lc-extract-overlay');
+                if (!ov) {
+                    ov = document.createElement('div');
+                    ov.id = 'lc-extract-overlay';
+                    ov.className = 'lc-extract-overlay';
+                    ov.innerHTML = '<div class="lc-extract-overlay-box">'
+                        + '<div class="lc-extract-overlay-spinner"></div>'
+                        + '<div class="lc-extract-overlay-msg" id="lc-extract-overlay-msg"></div>'
+                        + '</div>';
+                    document.body.appendChild(ov);
+                }
+                document.getElementById('lc-extract-overlay-msg').textContent = msg;
+                ov.classList.add('lc-extract-overlay--visible');
+            }
+            function hideExtractOverlay() {
+                document.getElementById('lc-extract-overlay')?.classList.remove('lc-extract-overlay--visible');
+            }
+
             extractBtn.addEventListener('click', () => extractInput.click());
             extractInput.addEventListener('change', async () => {
                 const file = extractInput.files[0];
@@ -1903,6 +1922,7 @@ const LC = (() => {
                 extractInput.value = '';
                 extractBtn.disabled = true;
                 extractBtn.textContent = 'Reading…';
+                showExtractOverlay('Reading document…');
                 try {
                     const base64 = await new Promise((resolve, reject) => {
                         const reader = new FileReader();
@@ -1911,13 +1931,16 @@ const LC = (() => {
                         reader.readAsDataURL(file);
                     });
                     extractBtn.textContent = 'Extracting…';
+                    showExtractOverlay('Extracting fields with AI…');
                     const json = await apiFetch('/api/lc-extract', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ data: base64, mediaType: 'application/pdf' }),
                     });
+                    hideExtractOverlay();
                     showExtractReviewModal(json.fields, lc, id, () => renderDetail(container, id));
                 } catch (err) {
+                    hideExtractOverlay();
                     alert('Extraction failed: ' + err.message);
                 } finally {
                     extractBtn.disabled = false;

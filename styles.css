@@ -6431,6 +6431,50 @@ a.db-row:hover { background: #f8fafc; border-color: #e2e8f0; }
     background: none; border: 1px solid #e2e8f0; border-radius: 5px; cursor: pointer; color: #64748b;
 }
 
+/* Fullscreen overlay during LC PDF extraction */
+.lc-extract-overlay {
+    position: fixed; inset: 0; z-index: 9999;
+    background: rgba(2, 6, 23, 0.72);
+    display: flex; align-items: center; justify-content: center;
+    opacity: 0; pointer-events: none;
+    transition: opacity 0.2s ease;
+    backdrop-filter: blur(3px);
+}
+.lc-extract-overlay--visible {
+    opacity: 1; pointer-events: auto;
+}
+.lc-extract-overlay-box {
+    display: flex; flex-direction: column; align-items: center; gap: 1.25rem;
+    background: #fff; border-radius: 12px; padding: 2.5rem 3rem;
+    box-shadow: 0 24px 48px rgba(0,0,0,0.25);
+    min-width: 260px; text-align: center;
+}
+.lc-extract-overlay-spinner {
+    width: 40px; height: 40px;
+    border: 3px solid #e2e8f0;
+    border-top-color: #2563eb;
+    border-radius: 50%;
+    animation: lc-spin 0.75s linear infinite;
+}
+@keyframes lc-spin { to { transform: rotate(360deg); } }
+.lc-extract-overlay-msg {
+    font-size: 0.9rem; font-weight: 500; color: #334155; line-height: 1.4;
+}
+@media (prefers-color-scheme: dark) {
+    .lc-extract-overlay { background: rgba(2, 6, 23, 0.82); }
+    .lc-extract-overlay-box { background: #1e293b; }
+    .lc-extract-overlay-spinner { border-color: #334155; border-top-color: #60a5fa; }
+    .lc-extract-overlay-msg { color: #cbd5e1; }
+}
+:root[data-theme="dark"] .lc-extract-overlay { background: rgba(2, 6, 23, 0.82); }
+:root[data-theme="dark"] .lc-extract-overlay-box { background: #1e293b; }
+:root[data-theme="dark"] .lc-extract-overlay-spinner { border-color: #334155; border-top-color: #60a5fa; }
+:root[data-theme="dark"] .lc-extract-overlay-msg { color: #cbd5e1; }
+:root[data-theme="light"] .lc-extract-overlay { background: rgba(2, 6, 23, 0.72); }
+:root[data-theme="light"] .lc-extract-overlay-box { background: #fff; }
+:root[data-theme="light"] .lc-extract-overlay-spinner { border-color: #e2e8f0; border-top-color: #2563eb; }
+:root[data-theme="light"] .lc-extract-overlay-msg { color: #334155; }
+
 .lc-upload-draft-chk { cursor: pointer; }
 .lc-upload-confirm-btn {
     padding: 0.3rem 0.75rem; background: #2563eb; color: #fff;
@@ -6554,7 +6598,7 @@ a.db-row:hover { background: #f8fafc; border-color: #e2e8f0; }
 .lc-tl2-info {
     position: absolute; bottom: calc(100% + 6px); white-space: nowrap;
     text-align: center; font-size: 0.7rem; line-height: 1.3; pointer-events: none;
-    background: rgba(255,255,255,0.82); border-radius: 3px; padding: 1px 4px;
+    background: rgba(255,255,255,0.20); border-radius: 3px; padding: 1px 4px;
 }
 .lc-tl2-info--above { bottom: calc(100% + 6px); }
 .lc-tl2-name { font-weight: 600; color: #334155; }
