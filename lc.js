@@ -761,6 +761,16 @@ const LC = (() => {
         const sideRow = (label, val, mono = false) =>
             `<div class="lc-srow"><span class="lc-srow-label">${label}</span><span class="lc-srow-val${mono ? ' lc-mono' : ''}">${esc(val || '—')}</span></div>`;
 
+        const insCardHtml = (ins.contactName || ins.email || ins.coverNote)
+            ? '<div class="lc-scard">'
+                + '<div class="lc-scard-title">Insurance Contact</div>'
+                + (ins.contactName ? sideRow('Contact', ins.contactName) : '')
+                + (ins.email ? '<div class="lc-srow"><span class="lc-srow-label">Email</span>'
+                    + '<a href="mailto:' + esc(ins.email) + '" class="lc-srow-link" style="font-size:0.8rem">' + esc(ins.email) + '</a></div>' : '')
+                + (ins.coverNote ? sideRow('Cover Note', ins.coverNote, true) : '')
+                + '</div>'
+            : '';
+
         const f47aGeneral = (lc.f47aConditions || [])
             .filter(c => c.docId === 'general')
             .map((c, i) => ({ id: `f47a-general-${i}`, text: c.text }));
@@ -868,13 +878,7 @@ const LC = (() => {
                             <button class="lc-link-save-btn" id="lc-link-save-btn" type="button" style="margin-top:0.4rem;">Save link</button>
                         </div>
                     </div>
-                    ${(ins.contactName || ins.email || ins.coverNote) ? `
-                    <div class="lc-scard">
-                        <div class="lc-scard-title">Insurance Contact</div>
-                        ${ins.contactName ? sideRow('Contact', ins.contactName) : ''}
-                        ${ins.email       ? `<div class="lc-srow"><span class="lc-srow-label">Email</span><a href="mailto:${esc(ins.email)}" class="lc-srow-link" style="font-size:0.8rem">${esc(ins.email)}</a></div>` : ''}
-                        ${ins.coverNote   ? sideRow('Cover Note', ins.coverNote, true) : ''}
-                    </div>` : ''}
+                    ${insCardHtml}
                 </aside>
 
                 <main class="lc-checker-main">
@@ -1382,7 +1386,8 @@ const LC = (() => {
                     }
                     <button class="lc-archive-del" data-del-key="${esc(d.key)}" type="button" title="Delete">✕</button>
                 </div>
-            `).join('');
+            `;
+            }).join('');
         } catch {
             listEl.innerHTML = '<span class="lc-archive-empty">Could not load archived documents</span>';
         }
