@@ -1668,7 +1668,8 @@ const LC = (() => {
 
                 const enrichedItems = docDef.checks.map(c => {
                     const r       = results.find(x => x.checkId === c.id);
-                    const isChecked = !!checks[c.id];
+                    const chkEl   = container.querySelector('#chk-' + c.id);
+                    const isChecked = chkEl ? chkEl.checked : !!(lc.docChecks && lc.docChecks[c.id]);
                     const cls     = r ? (r.result === 'pass' ? 'pass' : r.result === 'flag' ? 'flag' : 'fail') : '';
                     const icon    = r ? (r.result === 'pass' ? '✓' : r.result === 'flag' ? '⚠' : '✗') : '';
                     const note    = r ? (r.note || '') : '';
