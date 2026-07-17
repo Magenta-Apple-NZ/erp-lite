@@ -280,6 +280,10 @@ const LC = (() => {
             container: 'f-container', incoterms: 'f-incoterms',
             portLoading: 'f-portLoading', portDischarge: 'f-portDischarge', portFinal: 'f-portFinal',
             proformaRef: 'f-proformaRef', proformaDate: 'f-proformaDate',
+            insuranceContactName: 'f-insuranceContactName',
+            insuranceEmail: 'f-insuranceEmail',
+            insuranceCoverNote: 'f-insuranceCoverNote',
+            insuranceClauseText: 'f-insuranceClauseText',
         };
         for (const [key, id] of Object.entries(MAP)) {
             const val = fields[key];
@@ -479,6 +483,28 @@ const LC = (() => {
                         </div>
                     </div>
 
+                    <div class="lc-scard">
+                        <div class="lc-scard-title">Insurance Contact</div>
+                        <div class="lc-form-grid lc-form-grid--col1">
+                            <div class="lc-field">
+                                <label class="lc-label" for="f-insuranceContactName">Contact Name</label>
+                                <input class="lc-input" id="f-insuranceContactName" name="insuranceContactName" placeholder="e.g. Paul">
+                            </div>
+                            <div class="lc-field">
+                                <label class="lc-label" for="f-insuranceEmail">Insurance Email</label>
+                                <input class="lc-input" id="f-insuranceEmail" name="insuranceEmail" type="email" placeholder="e.g. badiulalam082@gmail.com">
+                            </div>
+                            <div class="lc-field">
+                                <label class="lc-label" for="f-insuranceCoverNote">Cover Note No.</label>
+                                <input class="lc-input lc-mono" id="f-insuranceCoverNote" name="insuranceCoverNote" placeholder="e.g. GIL/MIR/MC-00555/10/2025">
+                            </div>
+                            <div class="lc-field">
+                                <label class="lc-label" for="f-insuranceClauseText">LC Insurance Clause</label>
+                                <textarea class="lc-input lc-textarea" id="f-insuranceClauseText" name="insuranceClauseText" rows="4" placeholder="Paste the insurance clause from the LC (Field 47A)…"></textarea>
+                            </div>
+                        </div>
+                    </div>
+
                     <div class="lc-create-actions">
                         <button type="submit" class="lc-btn-primary" id="lc-submit-btn">Create LC</button>
                         <a class="lc-btn-ghost" href="#lc">Cancel</a>
@@ -672,6 +698,11 @@ const LC = (() => {
                 </div>
                 <div class="lc-doc-right">
                     <span class="lc-doc-prog">${checked}/${doc.checks.length}</span>
+                    ${doc.id === 'insuranceNotification' ? `
+                    <button class="lc-ins-compose-btn" data-compose-insurance type="button">
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><polyline points="2,4 12,13 22,4"/></svg>
+                        Compose Email
+                    </button>` : ''}
                     <button class="lc-doc-upload-btn" data-upload-doc="${doc.id}" type="button">
                         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
                         Upload PDF
@@ -720,11 +751,12 @@ const LC = (() => {
         const shipDays   = daysUntil(lc.latestShipDate);
         const expiryDays = daysUntil(lc.expiryDate);
 
-        const g  = lc.goods        || {};
-        const p  = lc.ports        || {};
-        const ab = lc.applicantBank|| {};
-        const ap = lc.applicant    || {};
-        const adv= lc.advisingBank || {};
+        const g   = lc.goods        || {};
+        const p   = lc.ports        || {};
+        const ab  = lc.applicantBank|| {};
+        const ap  = lc.applicant    || {};
+        const adv = lc.advisingBank || {};
+        const ins = lc.insurance    || {};
 
         const sideRow = (label, val, mono = false) =>
             `<div class="lc-srow"><span class="lc-srow-label">${label}</span><span class="lc-srow-val${mono ? ' lc-mono' : ''}">${esc(val || '—')}</span></div>`;
@@ -836,6 +868,13 @@ const LC = (() => {
                             <button class="lc-link-save-btn" id="lc-link-save-btn" type="button" style="margin-top:0.4rem;">Save link</button>
                         </div>
                     </div>
+                    ${(ins.contactName || ins.email || ins.coverNote) ? `
+                    <div class="lc-scard">
+                        <div class="lc-scard-title">Insurance Contact</div>
+                        ${ins.contactName ? sideRow('Contact', ins.contactName) : ''}
+                        ${ins.email       ? `<div class="lc-srow"><span class="lc-srow-label">Email</span><a href="mailto:${esc(ins.email)}" class="lc-srow-link" style="font-size:0.8rem">${esc(ins.email)}</a></div>` : ''}
+                        ${ins.coverNote   ? sideRow('Cover Note', ins.coverNote, true) : ''}
+                    </div>` : ''}
                 </aside>
 
                 <main class="lc-checker-main">
@@ -898,7 +937,8 @@ const LC = (() => {
             const hd = e.target.closest('.lc-doc-hd');
             if (!hd) return;
             if (e.target.closest('.lc-chip') || e.target.closest('[data-upload-doc]') ||
-                e.target.closest('[data-link-doc]') || e.target.closest('.lc-doc-extlink')) return;
+                e.target.closest('[data-link-doc]') || e.target.closest('.lc-doc-extlink') ||
+                e.target.closest('[data-compose-insurance]')) return;
             const card = hd.closest('.lc-doc-card');
             card.classList.toggle('lc-doc-card--open');
         });
@@ -1140,6 +1180,50 @@ const LC = (() => {
                 await fetch(`/api/lc-docs?key=${encodeURIComponent(key)}&lcId=${encodeURIComponent(id)}`, { method: 'DELETE' });
                 loadArchivedDocs(container, id);
             } catch {}
+        });
+
+        // Insurance notification compose email
+        container.querySelector('#lc-doc-list').addEventListener('click', async e => {
+            const btn = e.target.closest('[data-compose-insurance]');
+            if (!btn) return;
+            e.stopPropagation();
+
+            // Fetch Final archived docs for this LC
+            let finalDocs = [];
+            try {
+                const res = await apiFetch('/api/lc-docs?lcId=' + encodeURIComponent(id));
+                finalDocs = (res.docs || []).filter(d => !d.draft && !d.superseded);
+            } catch {}
+
+            const toEmail      = ins.email || '';
+            const contactName  = ins.contactName || 'Sir/Madam';
+            const lcRef        = lc.lcNumber || '—';
+            const issued       = fmtDate(lc.issuedDate) || '—';
+            const coverNoteRef = ins.coverNote ? `\nReferring Cover Note No. ${ins.coverNote}.` : '';
+
+            const docLines = finalDocs.length
+                ? finalDocs.map(d => `Final ${d.docTitle || d.docType}`).join('\n')
+                : '[No final documents archived yet — upload and archive them first]';
+
+            const clausePara = ins.clauseText
+                ? `\n\nThese documents are required by the LC as stated:\n\n${ins.clauseText}`
+                : '';
+
+            const subject = `Insurance Notification — LC #${lcRef}`;
+            const body = [
+                `Hi ${contactName},`,
+                '',
+                `Please find the attached Final shipping documents for LC:${lcRef}`,
+                `Issued ${issued}.`,
+                '',
+                docLines,
+                coverNoteRef,
+                clausePara,
+                '',
+                'Thanks',
+            ].join('\n');
+
+            window.location.href = `mailto:${encodeURIComponent(toEmail)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
         });
 
         // Shipment link handlers

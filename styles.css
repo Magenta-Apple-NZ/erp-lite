@@ -6168,6 +6168,17 @@ a.db-row:hover { background: #f8fafc; border-color: #e2e8f0; }
 .ship-lc-btn:hover { background: #1d4ed8; }
 .lc-srow-link:hover { text-decoration: underline; }
 
+/* ── Insurance Notification compose button ── */
+.lc-ins-compose-btn {
+    display: inline-flex; align-items: center; gap: 0.35rem;
+    padding: 0.3rem 0.7rem; font-size: 0.78rem; font-weight: 600;
+    color: #0369a1; background: #e0f2fe;
+    border: 1px solid #7dd3fc; border-radius: 5px;
+    cursor: pointer; white-space: nowrap;
+    transition: background 0.15s, border-color 0.15s;
+}
+.lc-ins-compose-btn:hover { background: #bae6fd; border-color: #38bdf8; }
+
 /* ── Upload confirm bar ── */
 .lc-upload-confirm {
     display: flex; align-items: center; gap: 0.6rem;

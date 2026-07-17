@@ -75,6 +75,12 @@ export async function onRequestPost({ env, request }) {
                 discharge:        String(body.portDischarge || ''),
                 finalDestination: String(body.portFinal || ''),
             },
+            insurance: {
+                contactName: String(body.insuranceContactName || ''),
+                email:       String(body.insuranceEmail || ''),
+                coverNote:   String(body.insuranceCoverNote || ''),
+                clauseText:  String(body.insuranceClauseText || ''),
+            },
             f47aConditions: Array.isArray(body.f47aConditions) ? body.f47aConditions : [],
             // Checklist state — persisted separately from generated structure
             docStatus:  {},
