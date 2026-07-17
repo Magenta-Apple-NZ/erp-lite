@@ -6068,13 +6068,7 @@ a.db-row:hover { background: #f8fafc; border-color: #e2e8f0; }
 .lc-doc-link-clear:hover { background: #fef2f2; }
 
 /* ── Per-card document upload button ── */
-.lc-doc-upload-btn {
-    display: flex; align-items: center; justify-content: center;
-    width: 26px; height: 26px; border-radius: 5px; border: 1px solid #e2e8f0;
-    background: white; color: #64748b; cursor: pointer; flex-shrink: 0;
-    transition: background 0.15s, color 0.15s, border-color 0.15s;
-}
-.lc-doc-upload-btn:hover { background: #eff6ff; color: #3b82f6; border-color: #93c5fd; }
+/* .lc-doc-upload-btn — full rule lives later in the file */
 
 /* ── Per-card check results ── */
 .lc-card-check-results { border-top: 1px dashed #e2e8f0; background: #fafafa; }

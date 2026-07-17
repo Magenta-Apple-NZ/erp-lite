@@ -701,7 +701,7 @@ const LC = (() => {
                     ${doc.id === 'insuranceNotification' ? `
                     <button class="lc-ins-compose-btn" data-compose-insurance type="button">
                         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><polyline points="2,4 12,13 22,4"/></svg>
-                        Compose Email
+                        Send Email
                     </button>` : ''}
                     <button class="lc-doc-upload-btn" data-upload-doc="${doc.id}" type="button">
                         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
@@ -932,10 +932,10 @@ const LC = (() => {
             </div>
         </div>`;
 
-        bindDetailEvents(container, id, docs);
+        bindDetailEvents(container, id, docs, lc);
     }
 
-    function bindDetailEvents(container, id, docs) {
+    function bindDetailEvents(container, id, docs, lc) {
         // Doc card expand/collapse — exclude interactive elements
         container.querySelector('#lc-doc-list').addEventListener('click', e => {
             const hd = e.target.closest('.lc-doc-hd');
@@ -1186,11 +1186,13 @@ const LC = (() => {
             } catch {}
         });
 
-        // Insurance notification compose email
+        // Insurance notification — send email
         container.querySelector('#lc-doc-list').addEventListener('click', async e => {
             const btn = e.target.closest('[data-compose-insurance]');
             if (!btn) return;
             e.stopPropagation();
+
+            const ins = lc.insurance || {};
 
             // Fetch Final archived docs for this LC
             let finalDocs = [];
@@ -1199,26 +1201,26 @@ const LC = (() => {
                 finalDocs = (res.docs || []).filter(d => !d.draft && !d.superseded);
             } catch {}
 
-            const toEmail      = ins.email || '';
-            const contactName  = ins.contactName || 'Sir/Madam';
-            const lcRef        = lc.lcNumber || '—';
-            const issued       = fmtDate(lc.issuedDate) || '—';
-            const coverNoteRef = ins.coverNote ? `\nReferring Cover Note No. ${ins.coverNote}.` : '';
+            const toEmail     = ins.email || '';
+            const contactName = ins.contactName || 'Sir/Madam';
+            const lcRef       = lc.lcNumber || '—';
+            const issued      = fmtDate(lc.issuedDate) || '—';
+            const coverNoteRef = ins.coverNote ? 'Referring Cover Note No. ' + ins.coverNote + '.' : '';
 
             const docLines = finalDocs.length
-                ? finalDocs.map(d => `Final ${d.docTitle || d.docType}`).join('\n')
+                ? finalDocs.map(d => 'Final ' + (d.docTitle || d.docType)).join('\n')
                 : '[No final documents archived yet — upload and archive them first]';
 
             const clausePara = ins.clauseText
-                ? `\n\nThese documents are required by the LC as stated:\n\n${ins.clauseText}`
+                ? '\n\nThese documents are required by the LC as stated:\n\n' + ins.clauseText
                 : '';
 
-            const subject = `Insurance Notification — LC #${lcRef}`;
+            const subject = 'Insurance Notification — LC #' + lcRef;
             const body = [
-                `Hi ${contactName},`,
+                'Hi ' + contactName + ',',
                 '',
-                `Please find the attached Final shipping documents for LC:${lcRef}`,
-                `Issued ${issued}.`,
+                'Please find the attached Final shipping documents for LC:' + lcRef,
+                'Issued ' + issued + '.',
                 '',
                 docLines,
                 coverNoteRef,
@@ -1227,7 +1229,7 @@ const LC = (() => {
                 'Thanks',
             ].join('\n');
 
-            window.location.href = `mailto:${encodeURIComponent(toEmail)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+            window.location.href = 'mailto:' + encodeURIComponent(toEmail) + '?subject=' + encodeURIComponent(subject) + '&body=' + encodeURIComponent(body);
         });
 
         // Shipment link handlers
