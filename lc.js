@@ -1037,15 +1037,12 @@ const LC = (() => {
                 </div>
                 <div class="lc-identity-row2" id="lc-ship-link-row">
                     <span class="lc-identity-ship-label">Shipment</span>
-                    ${lc.linkedOrderId
-                        ? `<div class="lc-ship-linked">
-                               <a href="#orders/${esc(lc.linkedOrderId)}" class="lc-ship-linked-id">${esc(lc.linkedOrderId)} ↗</a>
-                               <button class="lc-ship-unlink-btn" id="lc-ship-unlink-btn" type="button">Unlink</button>
-                           </div>`
-                        : `<select class="lc-ship-select" id="lc-ship-select">
-                               <option value="">Loading shipments…</option>
-                           </select>
-                           <button class="lc-ship-link-btn" id="lc-ship-link-btn" type="button">Link</button>`
+                    ${lc.linkedShipmentId
+                        ? '<div class="lc-ship-linked">'
+                            + '<a href="#imports" class="lc-ship-linked-id">' + esc(lc.shipmentRef || lc.linkedShipmentId) + ' ↗</a>'
+                            + '<button class="lc-ship-unlink-btn" id="lc-ship-unlink-btn" type="button">Unlink</button>'
+                          + '</div>'
+                        : '<span class="lc-ship-hint">Link from the shipment\'s Letter of Credit tab</span>'
                     }
                 </div>
             </div>
@@ -1554,34 +1551,9 @@ const LC = (() => {
         });
 
         // Shipment link — populate dropdown from active orders
-        const shipSelect = container.querySelector('#lc-ship-select');
-        if (shipSelect) {
-            apiFetch('/api/import/forecast').then(data => {
-                const ships = (data && data.shipments) ? data.shipments : [];
-                if (!ships.length) {
-                    shipSelect.innerHTML = '<option value="">No import shipments found</option>';
-                    return;
-                }
-                shipSelect.innerHTML = '<option value="">Select shipment…</option>'
-                    + ships.map(s => {
-                        const label = (s.note || s.id) + (s.ym ? ' — arrives ' + s.ym : '');
-                        return '<option value="' + esc(s.id) + '">' + esc(label) + '</option>';
-                    }).join('');
-            }).catch(() => {
-                shipSelect.innerHTML = '<option value="">Could not load shipments</option>';
-            });
-
-            container.querySelector('#lc-ship-link-btn')?.addEventListener('click', async () => {
-                const orderId = shipSelect.value;
-                if (!orderId) return;
-                await apiFetch('/api/lc/' + id, { method: 'PATCH', body: JSON.stringify({ linkedOrderId: orderId }) }).catch(() => {});
-                renderDetail(container, id);
-            });
-        }
-
         // Unlink shipment
         container.querySelector('#lc-ship-unlink-btn')?.addEventListener('click', async () => {
-            await apiFetch('/api/lc/' + id, { method: 'PATCH', body: JSON.stringify({ linkedOrderId: null }) }).catch(() => {});
+            await apiFetch('/api/lc/' + id, { method: 'PATCH', body: JSON.stringify({ linkedShipmentId: '' }) }).catch(() => {});
             renderDetail(container, id);
         });
 

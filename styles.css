@@ -6521,3 +6521,5 @@ a.db-row:hover { background: #f8fafc; border-color: #e2e8f0; }
 .ship-lc-meta { display: grid; grid-template-columns: auto 1fr; gap: 0.3rem 1rem; }
 .ship-lc-label { font-size: 0.72rem; font-weight: 600; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.04em; }
 .ship-lc-val { font-size: 0.82rem; color: #334155; }
+
+.lc-ship-hint { font-size: 0.78rem; color: #94a3b8; font-style: italic; }
