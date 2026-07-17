@@ -6214,7 +6214,8 @@ a.db-row:hover { background: #f8fafc; border-color: #e2e8f0; }
     padding: 0.35rem 0.85rem; font-size: 0.8rem; font-weight: 600;
     color: #1d4ed8; background: #eff6ff;
     border: 1px solid #93c5fd; border-radius: 5px;
-    cursor: pointer; transition: background 0.15s, color 0.15s, border-color 0.15s;
+    cursor: pointer; white-space: nowrap;
+    transition: background 0.15s, color 0.15s, border-color 0.15s;
 }
 .lc-doc-upload-btn:hover { background: #dbeafe; border-color: #60a5fa; }
 
