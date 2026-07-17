@@ -1657,47 +1657,55 @@ const LC = (() => {
                 if (failed)  sumParts.push(`${failed} fail`);
                 const archiveCls = isDraft ? 'draft' : 'final';
 
-                // Step 3 — Render matrix
-                resultsEl.innerHTML = `
-                    <div class="lc-check-matrix-bar lc-check-matrix-bar--${sumCls}">
-                        <span class="lc-check-matrix-tally">${sumIcon} ${sumParts.join(' · ')} — ${esc(docDef.title)}</span>
-                        ${archiveLabel ? `<span class="lc-doc-version-badge lc-doc-version-badge--${archiveCls}">${esc(archiveLabel)}</span>` : ''}
-                    </div>
-                    <div class="lc-check-matrix-wrap">
-                        <table class="lc-check-matrix">
-                            <colgroup>
-                                <col style="width:40%">
-                                <col style="width:60px">
-                                <col>
-                            </colgroup>
-                            <thead>
-                                <tr>
-                                    <th>LC Requirement</th>
-                                    <th>Result</th>
-                                    <th>Found in document</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                ${results.map(r => {
-                                    const req = docDef.checks.find(c => c.id === r.checkId)?.text || r.checkId;
-                                    const cls  = r.result === 'pass' ? 'pass' : r.result === 'flag' ? 'flag' : 'fail';
-                                    const icon = r.result === 'pass' ? '✓' : r.result === 'flag' ? '⚠' : '✗';
-                                    return `<tr class="lc-check-matrix-row--${cls}">
-                                        <td class="lc-check-matrix-req">${esc(req)}</td>
-                                        <td class="lc-check-matrix-result"><span class="lc-check-matrix-badge lc-check-matrix-badge--${cls}">${icon}</span></td>
-                                        <td class="lc-check-matrix-note">${esc(r.note || '—')}</td>
-                                    </tr>`;
-                                }).join('')}
-                            </tbody>
-                        </table>
-                    </div>`;
+                // Step 3 — Merge AI results into the checklist (replace separate matrix)
+                const checksEl = container.querySelector('#lcdoc-' + docId + ' .lc-doc-checks');
+                const linkFormEl = checksEl ? checksEl.querySelector('.lc-doc-link-form') : null;
+
+                const summaryBar = '<div class="lc-check-matrix-bar lc-check-matrix-bar--' + sumCls + ' lc-check-ai-bar">'
+                    + '<span class="lc-check-matrix-tally">' + sumIcon + ' ' + sumParts.join(' · ') + '</span>'
+                    + (archiveLabel ? '<span class="lc-doc-version-badge lc-doc-version-badge--' + archiveCls + '">' + esc(archiveLabel) + '</span>' : '')
+                    + '</div>';
+
+                const enrichedItems = docDef.checks.map(c => {
+                    const r       = results.find(x => x.checkId === c.id);
+                    const isChecked = !!checks[c.id];
+                    const cls     = r ? (r.result === 'pass' ? 'pass' : r.result === 'flag' ? 'flag' : 'fail') : '';
+                    const icon    = r ? (r.result === 'pass' ? '✓' : r.result === 'flag' ? '⚠' : '✗') : '';
+                    const note    = r ? (r.note || '') : '';
+                    return '<div class="lc-check-item lc-check-item--ai' + (cls ? ' lc-check-item--ai-' + cls : '') + (isChecked ? ' lc-check-item--done' : '') + '">'
+                        + '<input type="checkbox" id="chk-' + c.id + '" data-check="' + c.id + '"' + (isChecked ? ' checked' : '') + '>'
+                        + '<div class="lc-check-item-body">'
+                        + '<label for="chk-' + c.id + '">' + esc(c.text) + '</label>'
+                        + (r ? '<span class="lc-check-ai-note">' + esc(note) + '</span>' : '')
+                        + '</div>'
+                        + (r ? '<span class="lc-check-ai-badge lc-check-ai-badge--' + cls + '">' + icon + '</span>' : '')
+                        + '</div>';
+                }).join('');
+
+                if (checksEl) {
+                    checksEl.innerHTML = (linkFormEl ? linkFormEl.outerHTML : '')
+                        + summaryBar
+                        + enrichedItems;
+                    // Re-bind the link form cancel button (outerHTML clone loses listeners)
+                    const newLinkForm = checksEl.querySelector('.lc-doc-link-form');
+                    if (newLinkForm) {
+                        newLinkForm.querySelector('[data-cancel-link]')?.addEventListener('click', () => { newLinkForm.hidden = true; });
+                    }
+                }
+                resultsEl.hidden = true;
 
             } catch (err) {
-                resultsEl.innerHTML = `
-                    <div class="lc-check-matrix-bar lc-check-matrix-bar--fail">
-                        <span class="lc-check-matrix-tally">✗ ${esc(err.message)}</span>
-                        ${archiveLabel ? `<span class="lc-doc-version-badge lc-doc-version-badge--${isDraft ? 'draft' : 'final'}">${esc(archiveLabel)}</span>` : ''}
-                    </div>`;
+                const checksEl2 = container.querySelector('#lcdoc-' + docId + ' .lc-doc-checks');
+                const errBar = '<div class="lc-check-matrix-bar lc-check-matrix-bar--fail lc-check-ai-bar">'
+                    + '<span class="lc-check-matrix-tally">✗ ' + esc(err.message) + '</span>'
+                    + (archiveLabel ? '<span class="lc-doc-version-badge lc-doc-version-badge--' + (isDraft ? 'draft' : 'final') + '">' + esc(archiveLabel) + '</span>' : '')
+                    + '</div>';
+                if (checksEl2) {
+                    const existingBar = checksEl2.querySelector('.lc-check-ai-bar');
+                    if (existingBar) existingBar.outerHTML = errBar;
+                    else checksEl2.insertAdjacentHTML('afterbegin', errBar);
+                }
+                resultsEl.hidden = true;
             }
         }
     }

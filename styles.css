@@ -5933,6 +5933,25 @@ a.db-row:hover { background: #f8fafc; border-color: #e2e8f0; }
 .lc-check-item label { font-size: 0.8rem; color: #475569; cursor: pointer; line-height: 1.4; }
 .lc-check-item--done label { color: #94a3b8; text-decoration: line-through; text-decoration-color: #cbd5e1; }
 
+/* AI-enriched combined check items */
+.lc-check-item--ai { align-items: flex-start; gap: 0.5rem; padding: 0.45rem 0; }
+.lc-check-item-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 0.2rem; }
+.lc-check-item-body label { font-size: 0.8rem; font-weight: 500; }
+.lc-check-ai-note { font-size: 0.75rem; color: #64748b; line-height: 1.4; }
+.lc-check-ai-badge {
+    flex-shrink: 0; width: 20px; height: 20px; border-radius: 50%;
+    display: inline-flex; align-items: center; justify-content: center;
+    font-size: 0.72rem; font-weight: 700; margin-top: 1px;
+}
+.lc-check-ai-badge--pass { background: #dcfce7; color: #15803d; }
+.lc-check-ai-badge--flag { background: #fef9c3; color: #a16207; }
+.lc-check-ai-badge--fail { background: #fee2e2; color: #b91c1c; }
+.lc-check-item--ai-pass { background: #f0fdf4; border-radius: 4px; padding: 0.45rem 0.4rem; }
+.lc-check-item--ai-flag { background: #fefce8; border-radius: 4px; padding: 0.45rem 0.4rem; }
+.lc-check-item--ai-fail { background: #fef2f2; border-radius: 4px; padding: 0.45rem 0.4rem; }
+.lc-check-ai-bar { margin: 0 -0.9rem 0.5rem; }
+.lc-check-matrix-bar.lc-check-ai-bar { border-radius: 0; margin-bottom: 0.4rem; }
+
 /* ── Conditions accordion ── */
 .lc-cond-section {
     background: white;
