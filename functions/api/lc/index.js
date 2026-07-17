@@ -46,6 +46,7 @@ export async function onRequestPost({ env, request }) {
             applicant: {
                 name:    String(body.applicantName || ''),
                 address: String(body.applicantAddress || ''),
+                email:   String(body.applicantEmail || ''),
             },
             applicantBank: {
                 name:  String(body.applicantBankName || ''),

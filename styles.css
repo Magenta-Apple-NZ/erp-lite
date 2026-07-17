@@ -6163,6 +6163,15 @@ a.db-row:hover { background: #f8fafc; border-color: #e2e8f0; }
 .lc-srow-link:hover { text-decoration: underline; }
 
 /* ── Insurance Notification compose button ── */
+/* ── Document group headers ── */
+.lc-doc-group-hd {
+    font-size: 0.7rem; font-weight: 700; letter-spacing: 0.06em;
+    text-transform: uppercase; color: #94a3b8;
+    padding: 0.9rem 0 0.35rem; margin-top: 0.25rem;
+    border-top: 1px solid #f1f5f9;
+}
+.lc-doc-group-hd:first-child { border-top: none; padding-top: 0; }
+
 .lc-ins-compose-btn {
     display: inline-flex; align-items: center; gap: 0.35rem;
     padding: 0.3rem 0.7rem; font-size: 0.78rem; font-weight: 600;
@@ -6172,6 +6181,33 @@ a.db-row:hover { background: #f8fafc; border-color: #e2e8f0; }
     transition: background 0.15s, border-color 0.15s;
 }
 .lc-ins-compose-btn:hover { background: #bae6fd; border-color: #38bdf8; }
+
+/* ── Email compose preview strip ── */
+.lc-email-preview {
+    display: flex; align-items: center; gap: 0.6rem;
+    padding: 0.55rem 0.75rem; background: #f0f9ff;
+    border-top: 1px solid #bae6fd; border-bottom: 1px solid #bae6fd;
+    font-size: 0.82rem;
+}
+.lc-email-preview-to {
+    flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis;
+    white-space: nowrap; color: #0c4a6e;
+}
+.lc-email-preview-to strong { font-weight: 600; }
+.lc-email-preview-open {
+    padding: 0.28rem 0.7rem; font-size: 0.78rem; font-weight: 600;
+    color: #fff; background: #0369a1; border: none; border-radius: 5px;
+    cursor: pointer; white-space: nowrap;
+    transition: background 0.15s;
+}
+.lc-email-preview-open:hover { background: #0284c7; }
+.lc-email-preview-cancel {
+    padding: 0.28rem 0.6rem; font-size: 0.78rem; font-weight: 500;
+    color: #64748b; background: transparent; border: 1px solid #cbd5e1;
+    border-radius: 5px; cursor: pointer;
+    transition: background 0.15s;
+}
+.lc-email-preview-cancel:hover { background: #f1f5f9; }
 
 /* ── Upload confirm bar ── */
 .lc-upload-confirm {

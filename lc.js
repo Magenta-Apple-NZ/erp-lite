@@ -65,7 +65,7 @@ const LC = (() => {
 
         return [
             {
-                id: 'draft', title: 'Draft at Sight', copies: '2 originals',
+                id: 'draft', title: 'Draft at Sight', copies: '2 originals', group: 'admin',
                 desc: `Bill of exchange drawn on ${ab.name || '—'}`,
                 checks: [
                     { id: 'draft-bank',   text: `Drawn at sight on ${ab.name || '—'}${ab.city ? ', ' + ab.city : ''}` },
@@ -79,7 +79,7 @@ const LC = (() => {
                 ]
             },
             {
-                id: 'commercialInvoice', title: 'Commercial Invoice', copies: '8 originals',
+                id: 'commercialInvoice', title: 'Commercial Invoice', copies: '8 originals', group: 'enviro',
                 desc: 'FOB value + freight shown separately',
                 checks: [
                     { id: 'ci-fob',         text: 'FOB value stated as a separate line item' },
@@ -101,7 +101,7 @@ const LC = (() => {
                 ]
             },
             {
-                id: 'billOfLading', title: 'Clean Shipped-on-Board Ocean B/L', copies: 'Full set (3/3 originals)',
+                id: 'billOfLading', title: 'Clean Shipped-on-Board Ocean B/L', copies: 'Full set (3/3 originals)', group: '3rdparty',
                 desc: `To order of ${ab.name || '—'}`,
                 checks: [
                     { id: 'bl-sob',        text: '"Shipped on board" notation with actual date' },
@@ -122,7 +122,7 @@ const LC = (() => {
                 ]
             },
             {
-                id: 'certificateOfOrigin', title: 'Certificate of Origin', copies: '3 originals',
+                id: 'certificateOfOrigin', title: 'Certificate of Origin', copies: '3 originals', group: '3rdparty',
                 desc: `${g.origin || '—'} — issued by authorised certifying body`,
                 checks: [
                     { id: 'co-origin',     text: `Country of origin: ${g.origin || '—'}` },
@@ -136,7 +136,7 @@ const LC = (() => {
                 ]
             },
             {
-                id: 'insuranceNotification', title: 'Insurance Notification', copies: '1 copy',
+                id: 'insuranceNotification', title: 'Insurance Notification', copies: '1 copy', group: 'email',
                 desc: 'Applicant opens insurance — beneficiary to advise within 21 days',
                 checks: [
                     { id: 'ins-note',       text: "Insurance is applicant's responsibility — Enviroware advises only" },
@@ -148,7 +148,7 @@ const LC = (() => {
                 ]
             },
             {
-                id: 'beneficiaryCertificate', title: "Beneficiary's Certificate of Conformity", copies: '1 original',
+                id: 'beneficiaryCertificate', title: "Beneficiary's Certificate of Conformity", copies: '1 original', group: 'enviro',
                 desc: `References Proforma Invoice ${lc.proformaRef || '—'}`,
                 checks: [
                     { id: 'bc-ref',      text: `References Proforma Invoice ${lc.proformaRef || '—'}${lc.proformaDate ? ' dated ' + fd(lc.proformaDate) : ''}` },
@@ -161,7 +161,7 @@ const LC = (() => {
                 ]
             },
             {
-                id: 'inspectionCertificate', title: 'Pre-Shipment Inspection Certificate', copies: '1 original',
+                id: 'inspectionCertificate', title: 'Pre-Shipment Inspection Certificate', copies: '1 original', group: 'enviro',
                 desc: 'Issued by Enviroware Ltd (self-certification)',
                 checks: [
                     { id: 'pi-issued',    text: 'Issued and signed by Enviroware Ltd prior to loading' },
@@ -169,6 +169,17 @@ const LC = (() => {
                     { id: 'pi-confirms',  text: 'Goods inspected before loading — quality and quantity confirmed' },
                     { id: 'pi-lcref',     text: `LC number and date on document (#${lc.lcNumber})` },
                     ...f47aChecks('inspectionCertificate'),
+                ]
+            },
+            {
+                id: 'applicantEmail', title: 'Applicant Documents Email', copies: '1 email + copy', group: 'email',
+                desc: 'Full set of non-negotiable docs emailed to applicant within 21 days of shipment',
+                checks: [
+                    { id: 'apemail-21days',  text: 'Email sent within 21 days of shipment date' },
+                    { id: 'apemail-fullset', text: 'Full set of non-negotiable documents attached (invoice, packing list, B/L, COO, certs)' },
+                    { id: 'apemail-address', text: `Addressed to applicant: ${ap.name || '—'}` },
+                    { id: 'apemail-copy',    text: 'Copy of email printed and included with original presentation documents' },
+                    ...f47aChecks('applicantEmail'),
                 ]
             },
         ];
@@ -225,7 +236,7 @@ const LC = (() => {
                 <td class="lc-list-amt lc-mono">${esc(fmtAmt(lc.currency, lc.amount))}</td>
                 <td class="lc-list-exp ${expCls}">${esc(fmtDate(lc.expiryDate))}</td>
                 <td class="lc-list-docs">
-                    <span class="lc-docs-badge${readyCount === 7 ? ' lc-docs-badge--done' : ''}">${readyCount}/7 ready</span>
+                    <span class="lc-docs-badge${readyCount === 8 ? ' lc-docs-badge--done' : ''}">${readyCount}/8 ready</span>
                 </td>
                 <td class="lc-list-ship lc-list-ship--sub">${lc.shipmentRef ? esc(lc.shipmentRef) : '<span class="lc-none">—</span>'}</td>
             </tr>`;
@@ -284,6 +295,7 @@ const LC = (() => {
             insuranceEmail: 'f-insuranceEmail',
             insuranceCoverNote: 'f-insuranceCoverNote',
             insuranceClauseText: 'f-insuranceClauseText',
+            applicantEmail: 'f-applicantEmail',
         };
         for (const [key, id] of Object.entries(MAP)) {
             const val = fields[key];
@@ -429,6 +441,10 @@ const LC = (() => {
                             <div class="lc-field">
                                 <label class="lc-label" for="f-applicantAddress">Applicant Address</label>
                                 <input class="lc-input" id="f-applicantAddress" name="applicantAddress" placeholder="City, Country">
+                            </div>
+                            <div class="lc-field">
+                                <label class="lc-label" for="f-applicantEmail">Applicant Email</label>
+                                <input class="lc-input" id="f-applicantEmail" name="applicantEmail" type="email" placeholder="e.g. BADIULALAM082@GMAIL.COM">
                             </div>
                             <div class="lc-field">
                                 <label class="lc-label" for="f-applicantBankName">Issuing Bank</label>
@@ -670,6 +686,7 @@ const LC = (() => {
             billOfLading:           `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M1 11l4-6h6l4 6"/><line x1="1" y1="11" x2="15" y2="11"/><line x1="3" y1="13" x2="13" y2="13"/></svg>`,
             certificateOfOrigin:    `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="6"/><path d="M5.5 8l2 2 3-3"/></svg>`,
             insuranceNotification:  `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 1.5l5 2.5v4c0 3-2 5-5 6C6 13 3 11 3 8V4z"/></svg>`,
+            applicantEmail:         `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="3" width="14" height="10" rx="1.5"/><polyline points="1,3 8,9 15,3"/></svg>`,
             beneficiaryCertificate: `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="1" width="12" height="14" rx="1"/><path d="M5.5 8l2 2 3-3"/></svg>`,
             inspectionCertificate:  `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="6.5" cy="6.5" r="4"/><path d="M9.5 9.5l4 4"/></svg>`,
         };
@@ -700,6 +717,11 @@ const LC = (() => {
                     <span class="lc-doc-prog">${checked}/${doc.checks.length}</span>
                     ${doc.id === 'insuranceNotification' ? `
                     <button class="lc-ins-compose-btn" data-compose-insurance type="button">
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><polyline points="2,4 12,13 22,4"/></svg>
+                        Send Email
+                    </button>` : ''}
+                    ${doc.id === 'applicantEmail' ? `
+                    <button class="lc-ins-compose-btn" data-compose-applicant type="button">
                         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><polyline points="2,4 12,13 22,4"/></svg>
                         Send Email
                     </button>` : ''}
@@ -745,8 +767,9 @@ const LC = (() => {
 
         const docs = generateDocuments(lc);
         const ready = readyCount(lc);
-        const isCleared = ready === 7;
-        const pct = Math.round((ready / 7) * 100);
+        const DOC_TOTAL = 8;
+        const isCleared = ready === DOC_TOTAL;
+        const pct = Math.round((ready / DOC_TOTAL) * 100);
 
         const shipDays   = daysUntil(lc.latestShipDate);
         const expiryDays = daysUntil(lc.expiryDate);
@@ -957,6 +980,21 @@ const LC = (() => {
 
         lcRawHtml += '</div></details>';
 
+        // ── Grouped document list ──────────────────────────────────────────────
+        const DOC_GROUPS = [
+            { id: 'admin',    label: 'Bank / Admin' },
+            { id: '3rdparty', label: '3rd Party Documents' },
+            { id: 'enviro',   label: 'Enviroware Documents' },
+            { id: 'email',    label: 'Email Notifications' },
+        ];
+        let docListHtml = '';
+        DOC_GROUPS.forEach(function(grp) {
+            const grpDocs = docs.filter(function(d) { return d.group === grp.id; });
+            if (!grpDocs.length) return;
+            docListHtml += '<div class="lc-doc-group-hd">' + esc(grp.label) + '</div>';
+            grpDocs.forEach(function(d) { docListHtml += renderDocCard(d, lc); });
+        });
+
         container.innerHTML = `
         <div class="orders-view-inner">
             <div class="lc-detail-hd">
@@ -981,7 +1019,7 @@ const LC = (() => {
 
             <div class="lc-progress-wrap">
                 <div class="lc-progress-track"><div class="lc-progress-fill" id="lc-pfill" style="width:${pct}%"></div></div>
-                <span class="lc-progress-label" id="lc-plabel">${ready} of 7 documents ready</span>
+                <span class="lc-progress-label" id="lc-plabel">${ready} of ${DOC_TOTAL} documents ready</span>
             </div>
 
             ${tlWrap}
@@ -1031,9 +1069,8 @@ const LC = (() => {
                 </aside>
 
                 <main class="lc-checker-main">
-                    <div class="lc-section-label">Documents Required — F46A</div>
                     <div class="lc-doc-list" id="lc-doc-list">
-                        ${docs.map(d => renderDocCard(d, lc)).join('')}
+                        ${docListHtml}
                     </div>
 
                     <details class="lc-cond-section" id="lc-cond-section">
@@ -1092,7 +1129,7 @@ const LC = (() => {
             if (!hd) return;
             if (e.target.closest('.lc-chip') || e.target.closest('[data-upload-doc]') ||
                 e.target.closest('[data-link-doc]') || e.target.closest('.lc-doc-extlink') ||
-                e.target.closest('[data-compose-insurance]')) return;
+                e.target.closest('[data-compose-insurance]') || e.target.closest('[data-compose-applicant]')) return;
             const card = hd.closest('.lc-doc-card');
             card.classList.toggle('lc-doc-card--open');
         });
@@ -1341,7 +1378,7 @@ const LC = (() => {
             } catch {}
         });
 
-        // Insurance notification — send email
+        // Insurance notification — send email (preview strip then open mail client)
         container.querySelector('#lc-doc-list').addEventListener('click', async e => {
             const btn = e.target.closest('[data-compose-insurance]');
             if (!btn) return;
@@ -1349,7 +1386,15 @@ const LC = (() => {
 
             const ins = lc.insurance || {};
 
-            // Fetch Final archived docs for this LC
+            // If preview strip already open, "Open in Mail" fires the mailto
+            const existingPreview = btn.closest('.lc-doc-hd').parentElement.querySelector('.lc-email-preview');
+            if (existingPreview) {
+                const href = existingPreview.dataset.mailtoHref;
+                if (href) window.location.href = href;
+                existingPreview.remove();
+                return;
+            }
+
             let finalDocs = [];
             try {
                 const res = await apiFetch('/api/lc-docs?lcId=' + encodeURIComponent(id));
@@ -1384,7 +1429,86 @@ const LC = (() => {
                 'Thanks',
             ].join('\n');
 
-            window.location.href = 'mailto:' + encodeURIComponent(toEmail) + '?subject=' + encodeURIComponent(subject) + '&body=' + encodeURIComponent(body);
+            const mailtoHref = 'mailto:' + encodeURIComponent(toEmail) + '?subject=' + encodeURIComponent(subject) + '&body=' + encodeURIComponent(body);
+
+            const strip = document.createElement('div');
+            strip.className = 'lc-email-preview';
+            strip.dataset.mailtoHref = mailtoHref;
+            strip.innerHTML = '<span class="lc-email-preview-to">To: <strong>' + esc(toEmail || '(no email set)') + '</strong></span>'
+                + '<button class="lc-email-preview-open" type="button">Open in Mail</button>'
+                + '<button class="lc-email-preview-cancel" type="button">Cancel</button>';
+
+            const card = btn.closest('.lc-doc-card');
+            card.querySelector('.lc-doc-hd').after(strip);
+
+            strip.querySelector('.lc-email-preview-open').addEventListener('click', () => {
+                window.location.href = mailtoHref;
+                strip.remove();
+            });
+            strip.querySelector('.lc-email-preview-cancel').addEventListener('click', () => strip.remove());
+        });
+
+        // Applicant documents email — send email (preview strip then open mail client)
+        container.querySelector('#lc-doc-list').addEventListener('click', async e => {
+            const btn = e.target.closest('[data-compose-applicant]');
+            if (!btn) return;
+            e.stopPropagation();
+
+            const ap = lc.applicant || {};
+
+            const existingPreview = btn.closest('.lc-doc-hd').parentElement.querySelector('.lc-email-preview');
+            if (existingPreview) {
+                const href = existingPreview.dataset.mailtoHref;
+                if (href) window.location.href = href;
+                existingPreview.remove();
+                return;
+            }
+
+            let finalDocs = [];
+            try {
+                const res = await apiFetch('/api/lc-docs?lcId=' + encodeURIComponent(id));
+                finalDocs = (res.docs || []).filter(d => !d.draft && !d.superseded);
+            } catch {}
+
+            const toEmail = ap.email || '';
+            const lcRef   = lc.lcNumber || '—';
+
+            const docLines = finalDocs.length
+                ? finalDocs.map(d => '- ' + (d.docTitle || d.docType)).join('\n')
+                : '[No final documents archived yet — upload and archive them first]';
+
+            const subject = 'Shipping Documents — LC #' + lcRef;
+            const body = [
+                'Dear ' + (ap.name || 'Sir/Madam') + ',',
+                '',
+                'Please find attached one full set of non-negotiable shipping documents for LC #' + lcRef + ':',
+                '',
+                docLines,
+                '',
+                'As required under the LC, this email and its attachments constitute the forwarding of documents within 21 days of shipment.',
+                'Please retain a copy of this email to present with the original shipping documents.',
+                '',
+                'Regards,',
+                'Enviroware Ltd',
+            ].join('\n');
+
+            const mailtoHref = 'mailto:' + encodeURIComponent(toEmail) + '?subject=' + encodeURIComponent(subject) + '&body=' + encodeURIComponent(body);
+
+            const strip = document.createElement('div');
+            strip.className = 'lc-email-preview';
+            strip.dataset.mailtoHref = mailtoHref;
+            strip.innerHTML = '<span class="lc-email-preview-to">To: <strong>' + esc(toEmail || '(no email set — add applicant email in edit)') + '</strong></span>'
+                + '<button class="lc-email-preview-open" type="button">Open in Mail</button>'
+                + '<button class="lc-email-preview-cancel" type="button">Cancel</button>';
+
+            const card = btn.closest('.lc-doc-card');
+            card.querySelector('.lc-doc-hd').after(strip);
+
+            strip.querySelector('.lc-email-preview-open').addEventListener('click', () => {
+                window.location.href = mailtoHref;
+                strip.remove();
+            });
+            strip.querySelector('.lc-email-preview-cancel').addEventListener('click', () => strip.remove());
         });
 
         // Shipment link handlers
@@ -1559,9 +1683,9 @@ const LC = (() => {
         const label = container.querySelector('#lc-plabel');
         const chip  = container.querySelector('#lc-clearance');
         if (fill)  fill.style.width = pct + '%';
-        if (label) label.textContent = `${ready} of 7 documents ready`;
+        if (label) label.textContent = `${ready} of 8 documents ready`;
         if (chip) {
-            const cleared = ready === 7;
+            const cleared = ready === 8;
             chip.textContent = cleared ? 'Cleared to present' : 'Not cleared to present';
             chip.className   = `lc-clearance-chip ${cleared ? 'lc-clearance--ok' : 'lc-clearance--no'}`;
         }
