@@ -6274,3 +6274,50 @@ a.db-row:hover { background: #f8fafc; border-color: #e2e8f0; }
 .lc-check-matrix-badge--pass { background: #dcfce7; color: #15803d; }
 .lc-check-matrix-badge--flag { background: #fef9c3; color: #b45309; }
 .lc-check-matrix-badge--fail { background: #fee2e2; color: #b91c1c; }
+
+/* ── LC timeline bar ── */
+.lc-tl2 { padding: 0.75rem 1.5rem 0; background: var(--bg,#fff); border-bottom: 1px solid #e5e7eb; }
+.lc-tl2-track { position: relative; height: 72px; margin: 0.5rem 1.5rem; }
+.lc-tl2-rail { position: absolute; top: 50%; left: 0; right: 0; height: 2px; background: #e2e8f0; transform: translateY(-50%); }
+.lc-tl2-progress { position: absolute; top: 50%; left: 0; height: 2px; background: #93c5fd; transform: translateY(-50%); }
+.lc-tl2-mark { position: absolute; top: 50%; transform: translate(-50%,-50%); display: flex; flex-direction: column; align-items: center; z-index: 2; }
+.lc-tl2-mark--today { z-index: 3; }
+.lc-tl2-dot { width: 10px; height: 10px; border-radius: 50%; background: #cbd5e1; border: 2px solid #fff; box-shadow: 0 0 0 1.5px #cbd5e1; position: relative; }
+.lc-tl2-dot--latestship { background: #f59e0b; box-shadow: 0 0 0 1.5px #f59e0b; }
+.lc-tl2-dot--shipped { background: #16a34a; box-shadow: 0 0 0 1.5px #16a34a; }
+.lc-tl2-dot--pres { background: #7c3aed; box-shadow: 0 0 0 1.5px #7c3aed; }
+.lc-tl2-dot--expiry { background: #ef4444; box-shadow: 0 0 0 1.5px #ef4444; }
+.lc-tl2-dot--today { background: #2563eb; box-shadow: 0 0 0 1.5px #2563eb; width: 12px; height: 12px; }
+.lc-tl2-info { position: absolute; white-space: nowrap; text-align: center; font-size: 0.7rem; line-height: 1.3; pointer-events: none; }
+.lc-tl2-info--above { bottom: calc(100% + 8px); }
+.lc-tl2-info--below { top: calc(100% + 8px); }
+.lc-tl2-name { font-weight: 600; color: #334155; }
+.lc-tl2-date { color: #64748b; font-size: 0.68rem; }
+.lc-tl2-today-tag { position: absolute; top: calc(100% + 6px); font-size: 0.68rem; font-weight: 700; color: #2563eb; white-space: nowrap; }
+.lc-tl2-missing { padding: 1rem; font-size: 0.82rem; color: #94a3b8; text-align: center; }
+.lc-tl2-controls { display: flex; align-items: flex-start; gap: 2rem; padding: 0.75rem 0 0.75rem; flex-wrap: wrap; font-size: 0.82rem; }
+.lc-tl2-ctrl-item { display: flex; flex-direction: column; gap: 0.25rem; }
+.lc-tl2-ctrl-label { font-size: 0.72rem; font-weight: 600; color: #64748b; text-transform: uppercase; letter-spacing: 0.03em; }
+.lc-tl2-pres-val { display: flex; align-items: center; gap: 0.5rem; font-size: 0.85rem; }
+.lc-tl2-hint { color: #94a3b8; font-size: 0.8rem; }
+
+/* ── LC plain text reference ── */
+.lc-raw-ref { border-top: 1px solid #e5e7eb; margin-top: 1.5rem; }
+.lc-raw-ref-summary { padding: 0.65rem 0; cursor: pointer; font-size: 0.8rem; font-weight: 600; color: #64748b; list-style: none; display: flex; align-items: center; gap: 0.4rem; }
+.lc-raw-ref-summary::-webkit-details-marker { display: none; }
+.lc-raw-ref-summary::before { content: '▶'; font-size: 0.6rem; transition: transform 0.15s; }
+.lc-raw-ref[open] .lc-raw-ref-summary::before { transform: rotate(90deg); }
+.lc-raw-body { padding: 0.5rem 0 1.5rem; }
+.lc-raw-field { margin-bottom: 1.25rem; padding-left: 0.5rem; border-left: 2px solid #e2e8f0; }
+.lc-raw-field:target, .lc-raw-doc-item:target { border-left-color: #2563eb; background: #eff6ff; border-radius: 0 4px 4px 0; }
+.lc-raw-field-hd { font-size: 0.72rem; margin-bottom: 0.3rem; }
+.lc-raw-field-num { font-weight: 700; color: #2563eb; letter-spacing: 0.04em; margin-right: 0.5rem; }
+.lc-raw-field-label { font-weight: 600; color: #475569; text-transform: uppercase; letter-spacing: 0.03em; }
+.lc-raw-field-val { font-size: 0.82rem; color: #1e293b; white-space: pre-wrap; font-family: 'ui-monospace', monospace; margin-top: 0.2rem; }
+.lc-raw-doc-item { margin-top: 0.4rem; padding: 0.35rem 0.6rem; border-left: 2px solid #e2e8f0; font-size: 0.82rem; color: #334155; }
+.lc-raw-doc-title { font-weight: 600; }
+.lc-raw-cond-item { margin-top: 0.3rem; font-size: 0.82rem; color: #475569; padding: 0.2rem 0; white-space: pre-wrap; font-family: 'ui-monospace', monospace; }
+
+/* ── Doc card citation link ── */
+.lc-doc-cite { font-size: 0.72rem; color: #94a3b8; text-decoration: none; margin-left: 0.35rem; font-weight: 400; vertical-align: super; }
+.lc-doc-cite:hover { color: #2563eb; }
