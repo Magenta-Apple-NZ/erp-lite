@@ -5914,6 +5914,14 @@ a.db-row:hover { background: #f8fafc; border-color: #e2e8f0; }
 }
 .lc-doc-card--open .lc-doc-checks { display: flex; }
 
+.lc-doc-checklist { display: flex; flex-direction: column; gap: 1px; }
+.lc-doc-checklist-toggle {
+    background: none; border: none; padding: 0.3rem 0; cursor: pointer;
+    font-size: 0.73rem; color: #94a3b8; text-align: left;
+    margin-top: 0.15rem;
+}
+.lc-doc-checklist-toggle:hover { color: #64748b; }
+
 .lc-check-item {
     display: flex;
     align-items: flex-start;

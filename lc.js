@@ -766,7 +766,8 @@ const LC = (() => {
                         <button class="lc-doc-link-clear" data-clear-link="${doc.id}" type="button">Remove</button>
                     </div>
                 </div>
-                ${checkItems}
+                <div class="lc-doc-checklist" hidden>${checkItems}</div>
+                <button class="lc-doc-checklist-toggle" data-toggle-checklist="${doc.id}" type="button">Show requirements</button>
             </div>
             <div class="lc-card-check-results" id="lccheck-${doc.id}" hidden></div>
         </div>`;
@@ -1169,9 +1170,23 @@ const LC = (() => {
             if (!hd) return;
             if (e.target.closest('.lc-chip') || e.target.closest('[data-upload-doc]') ||
                 e.target.closest('[data-link-doc]') || e.target.closest('.lc-doc-extlink') ||
-                e.target.closest('[data-compose-insurance]') || e.target.closest('[data-compose-applicant]')) return;
+                e.target.closest('[data-compose-insurance]') || e.target.closest('[data-compose-applicant]') ||
+                e.target.closest('[data-toggle-checklist]')) return;
             const card = hd.closest('.lc-doc-card');
             card.classList.toggle('lc-doc-card--open');
+        });
+
+        // Checklist toggle
+        container.querySelector('#lc-doc-list').addEventListener('click', e => {
+            const btn = e.target.closest('[data-toggle-checklist]');
+            if (!btn) return;
+            const docId   = btn.dataset.toggleChecklist;
+            const card    = container.querySelector('#lcdoc-' + docId);
+            const listEl  = card?.querySelector('.lc-doc-checklist');
+            if (!listEl) return;
+            const open = listEl.hidden;
+            listEl.hidden = !open;
+            btn.textContent = open ? 'Hide requirements' : 'Show requirements';
         });
 
         // Document link: show/edit form
