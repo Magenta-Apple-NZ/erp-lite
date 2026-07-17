@@ -6375,30 +6375,59 @@ a.db-row:hover { background: #f8fafc; border-color: #e2e8f0; }
 
 /* ── LC timeline bar ── */
 .lc-tl2 { padding: 0.75rem 1.5rem 0; background: var(--bg,#fff); border-bottom: 1px solid #e5e7eb; }
-.lc-tl2-track { position: relative; height: 88px; margin: 0.5rem 2rem; }
-.lc-tl2-rail { position: absolute; top: 50%; left: 0; right: 0; height: 2px; background: #e2e8f0; transform: translateY(-50%); }
-.lc-tl2-progress { position: absolute; top: 50%; left: 0; height: 2px; background: #93c5fd; transform: translateY(-50%); }
-.lc-tl2-mark { position: absolute; top: 50%; transform: translate(-50%,-50%); display: flex; flex-direction: column; align-items: center; z-index: 2; }
-.lc-tl2-mark--today { z-index: 3; }
-.lc-tl2-dot { width: 10px; height: 10px; border-radius: 50%; background: #cbd5e1; border: 2px solid #fff; box-shadow: 0 0 0 1.5px #cbd5e1; position: relative; }
+.lc-tl2-track { position: relative; height: 96px; margin: 0.5rem 2rem 0; }
+.lc-tl2-rail { position: absolute; bottom: 16px; left: 0; right: 0; height: 2px; background: #e2e8f0; }
+
+/* Today = thin black line spanning full track height */
+.lc-tl2-today-line {
+    position: absolute; top: 0; bottom: 0; width: 2px;
+    background: #1e293b; transform: translateX(-50%); z-index: 4; pointer-events: none;
+}
+
+/* All marks sit at the rail (bottom 16px from bottom of track) */
+.lc-tl2-mark {
+    position: absolute; bottom: 16px; transform: translateX(-50%);
+    display: flex; flex-direction: column-reverse; align-items: center; z-index: 2;
+}
+.lc-tl2-mark--btn { cursor: pointer; }
+.lc-tl2-mark--btn:hover .lc-tl2-dot { filter: brightness(1.15); transform: scale(1.2); }
+
+.lc-tl2-dot {
+    width: 10px; height: 10px; border-radius: 50%;
+    background: #cbd5e1; border: 2px solid #fff;
+    box-shadow: 0 0 0 1.5px #cbd5e1; flex-shrink: 0;
+    transition: transform 0.12s, filter 0.12s;
+}
+.lc-tl2-dot--grey      { background: #e2e8f0; box-shadow: 0 0 0 1.5px #e2e8f0; }
 .lc-tl2-dot--latestship { background: #f59e0b; box-shadow: 0 0 0 1.5px #f59e0b; }
-.lc-tl2-dot--shipped { background: #16a34a; box-shadow: 0 0 0 1.5px #16a34a; }
-.lc-tl2-dot--pres { background: #7c3aed; box-shadow: 0 0 0 1.5px #7c3aed; }
-.lc-tl2-dot--expiry { background: #ef4444; box-shadow: 0 0 0 1.5px #ef4444; }
-.lc-tl2-dot--today { background: #2563eb; box-shadow: 0 0 0 1.5px #2563eb; width: 12px; height: 12px; }
-.lc-tl2-dot--shipped-today { background: #16a34a; box-shadow: 0 0 0 1.5px #2563eb, 0 0 0 3px #fff, 0 0 0 4.5px #16a34a; width: 12px; height: 12px; }
-.lc-tl2-info { position: absolute; white-space: nowrap; text-align: center; font-size: 0.7rem; line-height: 1.3; pointer-events: none; }
-.lc-tl2-info--above { bottom: calc(100% + 10px); }
-.lc-tl2-info--below { top: calc(100% + 10px); }
+.lc-tl2-dot--estship   { background: #0ea5e9; box-shadow: 0 0 0 1.5px #0ea5e9; }
+.lc-tl2-dot--shipped   { background: #16a34a; box-shadow: 0 0 0 1.5px #16a34a; }
+.lc-tl2-dot--pres      { background: #7c3aed; box-shadow: 0 0 0 1.5px #7c3aed; }
+.lc-tl2-dot--expiry    { background: #ef4444; box-shadow: 0 0 0 1.5px #ef4444; }
+
+/* Labels always above — sit between dot and top of track */
+.lc-tl2-info {
+    position: absolute; bottom: calc(100% + 6px); white-space: nowrap;
+    text-align: center; font-size: 0.7rem; line-height: 1.3; pointer-events: none;
+}
+.lc-tl2-info--above { bottom: calc(100% + 6px); }
 .lc-tl2-name { font-weight: 600; color: #334155; }
 .lc-tl2-date { color: #64748b; font-size: 0.68rem; }
 .lc-tl2-delta { font-size: 0.67rem; font-weight: 600; }
 .lc-tl2-missing { padding: 1rem; font-size: 0.82rem; color: #94a3b8; text-align: center; }
-.lc-tl2-controls { display: flex; align-items: flex-start; gap: 2rem; padding: 0.75rem 0 0.75rem; flex-wrap: wrap; font-size: 0.82rem; }
-.lc-tl2-ctrl-item { display: flex; flex-direction: column; gap: 0.25rem; }
+
+/* Actual ship date row — replaces old controls */
+.lc-tl2-ship-row {
+    display: flex; align-items: center; gap: 0.6rem;
+    padding: 0.5rem 0.1rem 0; font-size: 0.82rem;
+}
 .lc-tl2-ctrl-label { font-size: 0.72rem; font-weight: 600; color: #64748b; text-transform: uppercase; letter-spacing: 0.03em; }
-.lc-tl2-pres-val { display: flex; align-items: center; gap: 0.5rem; font-size: 0.85rem; }
-.lc-tl2-hint { color: #94a3b8; font-size: 0.8rem; }
+.lc-tl2-ship-done {
+    padding: 0.2rem 0.6rem; font-size: 0.75rem; font-weight: 500;
+    color: #64748b; background: transparent; border: 1px solid #e2e8f0;
+    border-radius: 4px; cursor: pointer;
+}
+.lc-tl2-ship-done:hover { background: #f1f5f9; }
 
 /* ── LC plain text reference ── */
 .lc-raw-ref { border-top: 1px solid #e5e7eb; margin-top: 1.5rem; }
@@ -6420,3 +6449,42 @@ a.db-row:hover { background: #f8fafc; border-color: #e2e8f0; }
 /* ── Doc card citation link ── */
 .lc-doc-cite { font-size: 0.72rem; color: #94a3b8; text-decoration: none; margin-left: 0.35rem; font-weight: 400; vertical-align: super; }
 .lc-doc-cite:hover { color: #2563eb; }
+
+/* ── Order detail tabs ── */
+.order-detail-tabs {
+    display: flex; gap: 0; border-bottom: 2px solid #e2e8f0;
+    margin-bottom: 1.25rem;
+}
+.order-detail-tab {
+    padding: 0.5rem 1.1rem; font-size: 0.82rem; font-weight: 500;
+    color: #64748b; background: none; border: none;
+    border-bottom: 2px solid transparent; margin-bottom: -2px;
+    cursor: pointer; transition: color 0.12s, border-color 0.12s;
+}
+.order-detail-tab:hover { color: #1e293b; }
+.order-detail-tab--active { color: #2563eb; border-bottom-color: #2563eb; font-weight: 600; }
+.order-tab-panel[hidden] { display: none; }
+
+/* ── Order LC panel ── */
+.order-lc-loading { padding: 2rem 0; text-align: center; font-size: 0.82rem; color: #94a3b8; }
+.order-lc-empty { padding: 1.5rem 0; text-align: center; }
+.order-lc-empty p { font-size: 0.82rem; color: #94a3b8; margin: 0 0 0.75rem; }
+.order-lc-card { border: 1px solid #e2e8f0; border-radius: 8px; padding: 1rem 1.2rem; }
+.order-lc-card-hd {
+    display: flex; align-items: baseline; justify-content: space-between;
+    gap: 1rem; margin-bottom: 0.75rem;
+}
+.order-lc-ref { font-size: 0.95rem; font-weight: 700; color: #1e293b; font-family: 'ui-monospace', monospace; }
+.order-lc-open {
+    font-size: 0.78rem; font-weight: 500; color: #2563eb;
+    text-decoration: none; white-space: nowrap;
+}
+.order-lc-open:hover { text-decoration: underline; }
+.order-lc-meta { display: grid; grid-template-columns: 1fr 1fr; gap: 0.35rem 1.5rem; }
+.order-lc-row { display: contents; }
+.order-lc-label { font-size: 0.72rem; font-weight: 600; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.04em; }
+.order-lc-val { font-size: 0.82rem; color: #334155; }
+.order-lc-shipped { color: #16a34a; font-weight: 600; }
+.order-lc-exp--ok   { color: #16a34a; font-weight: 500; }
+.order-lc-exp--warn { color: #d97706; font-weight: 600; }
+.order-lc-exp--crit { color: #dc2626; font-weight: 700; }

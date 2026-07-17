@@ -1349,22 +1349,81 @@ const Orders = (() => {
             </div>
         </div>
 
-        ${needsXeroPush ? `
-        <div class="xero-push-banner no-print" id="xero-push-banner">
-            <div class="xero-push-banner-text">
-                <strong>Ready to push to Xero</strong>
-                <span>${order.source === 'inbound' ? 'This order came in via API and has no invoice yet.' : 'No Xero invoice linked yet.'}</span>
-            </div>
-            <button id="xero-push-banner-btn" class="btn-primary">Send to Xero</button>
-        </div>` : ''}
+        <!-- Detail tabs -->
+        <div class="order-detail-tabs no-print">
+            <button class="order-detail-tab order-detail-tab--active" data-tab="overview">Overview</button>
+            <button class="order-detail-tab" data-tab="lc">Letter of Credit</button>
+        </div>
 
-        <!-- Packing Slip (printable) -->
-        <div class="packing-slip" id="packing-slip">${slipBodyHTML(order)}</div>
+        <!-- Overview panel -->
+        <div id="order-tab-overview" class="order-tab-panel">
+            ${needsXeroPush ? `
+            <div class="xero-push-banner" id="xero-push-banner">
+                <div class="xero-push-banner-text">
+                    <strong>Ready to push to Xero</strong>
+                    <span>${order.source === 'inbound' ? 'This order came in via API and has no invoice yet.' : 'No Xero invoice linked yet.'}</span>
+                </div>
+                <button id="xero-push-banner-btn" class="btn-primary">Send to Xero</button>
+            </div>` : ''}
+            <div class="packing-slip" id="packing-slip">${slipBodyHTML(order)}</div>
+            ${renderEventLog(order.events || [])}
+        </div>
 
-        <!-- Activity log (hidden when printing) -->
-        ${renderEventLog(order.events || [])}`;
+        <!-- LC panel — loaded lazily on first switch -->
+        <div id="order-tab-lc" class="order-tab-panel" hidden>
+            <div class="order-lc-loading">Loading LC data…</div>
+        </div>`;
 
         wireDetailButtons(order);
+
+        // Tab switching
+        body.querySelectorAll('.order-detail-tab').forEach(btn => {
+            btn.addEventListener('click', () => {
+                body.querySelectorAll('.order-detail-tab').forEach(b => b.classList.remove('order-detail-tab--active'));
+                btn.classList.add('order-detail-tab--active');
+                const tab = btn.dataset.tab;
+                body.querySelector('#order-tab-overview').hidden = (tab !== 'overview');
+                const lcPanel = body.querySelector('#order-tab-lc');
+                lcPanel.hidden = (tab !== 'lc');
+                if (tab === 'lc' && lcPanel.querySelector('.order-lc-loading')) {
+                    loadOrderLcPanel(lcPanel, orderId);
+                }
+            });
+        });
+    }
+
+    async function loadOrderLcPanel(panel, orderId) {
+        try {
+            const lcs = await api('/api/lc');
+            const linked = (lcs.lcs || lcs || []).find(l => l.linkedOrderId === orderId);
+            if (!linked) {
+                panel.innerHTML = '<div class="order-lc-empty">No LC linked to this shipment. Open an LC and use the "Shipment" dropdown to link it.</div>';
+                return;
+            }
+            const fmtD = iso => iso ? new Date(iso + 'T00:00:00').toLocaleDateString('en-NZ', { day: 'numeric', month: 'short', year: 'numeric' }) : '—';
+            const expDays = linked.expiryDate ? Math.round((new Date(linked.expiryDate + 'T00:00:00') - new Date()) / 86400000) : null;
+            const expCls  = expDays === null ? '' : expDays < 0 ? 'order-lc-exp--crit' : expDays <= 21 ? 'order-lc-exp--warn' : 'order-lc-exp--ok';
+            const readyCount = Object.values(linked.docStatus || {}).filter(s => s === 'ready').length;
+            panel.innerHTML = `
+            <div class="order-lc-card">
+                <div class="order-lc-card-hd">
+                    <span class="order-lc-ref lc-mono">#${escHtml(linked.lcNumber)}</span>
+                    <a href="#lc/${escHtml(linked.id)}" class="order-lc-open">Open LC →</a>
+                </div>
+                <div class="order-lc-meta">
+                    <div class="order-lc-row"><span class="order-lc-label">Beneficiary</span><span>${escHtml(linked.beneficiary || 'Enviroware Ltd')}</span></div>
+                    <div class="order-lc-row"><span class="order-lc-label">Applicant</span><span>${escHtml((linked.applicant || {}).name || '—')}</span></div>
+                    <div class="order-lc-row"><span class="order-lc-label">Amount</span><span class="lc-mono">${escHtml((linked.currency || 'USD') + ' ' + (linked.amount || 0).toLocaleString('en-NZ', { minimumFractionDigits: 2 }))}</span></div>
+                    <div class="order-lc-row"><span class="order-lc-label">Issued</span><span>${fmtD(linked.issuedDate)}</span></div>
+                    <div class="order-lc-row"><span class="order-lc-label">Expiry</span><span class="${expCls}">${fmtD(linked.expiryDate)}${expDays !== null ? ' <small>(' + (expDays < 0 ? 'expired' : expDays + ' days') + ')</small>' : ''}</span></div>
+                    <div class="order-lc-row"><span class="order-lc-label">Latest Ship</span><span>${fmtD(linked.latestShipDate)}</span></div>
+                    ${linked.shipmentDate ? `<div class="order-lc-row"><span class="order-lc-label">Shipped</span><span class="order-lc-shipped">${fmtD(linked.shipmentDate)}</span></div>` : ''}
+                    <div class="order-lc-row"><span class="order-lc-label">Documents</span><span>${readyCount} / 8 ready</span></div>
+                </div>
+            </div>`;
+        } catch (e) {
+            panel.innerHTML = `<div class="order-lc-empty">Could not load LC data: ${escHtml(e.message)}</div>`;
+        }
     }
 
     function renderEventLog(events) {

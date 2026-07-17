@@ -279,7 +279,7 @@ const LC = (() => {
     function fillFormFromFields(form, fields) {
         const MAP = {
             lcNumber: 'f-lcNumber', currency: 'f-currency', amount: 'f-amount',
-            issuedDate: 'f-issuedDate', latestShipDate: 'f-latestShipDate',
+            issuedDate: 'f-issuedDate', latestShipDate: 'f-latestShipDate', estimatedShipDate: 'f-estimatedShipDate',
             expiryDate: 'f-expiryDate', presentationDays: 'f-presentationDays',
             governedBy: 'f-governedBy', applicantName: 'f-applicantName',
             applicantAddress: 'f-applicantAddress', applicantBankName: 'f-applicantBankName',
@@ -360,6 +360,10 @@ const LC = (() => {
                             <div class="lc-field">
                                 <label class="lc-label" for="f-latestShipDate">Latest Ship Date</label>
                                 <input class="lc-input" id="f-latestShipDate" name="latestShipDate" type="date">
+                            </div>
+                            <div class="lc-field">
+                                <label class="lc-label" for="f-estimatedShipDate">Est. Ship Date</label>
+                                <input class="lc-input" id="f-estimatedShipDate" name="estimatedShipDate" type="date">
                             </div>
                             <div class="lc-field">
                                 <label class="lc-label" for="f-expiryDate">Expiry Date</label>
@@ -829,28 +833,48 @@ const LC = (() => {
             if (!tlRange) return '<div class="lc-tl2-missing">Set issued date and expiry date to see timeline</div>';
             const todayIso = new Date().toISOString().slice(0, 10);
             const todayPct = tlPct(todayIso);
+            const pdays2   = lc.presentationDays || 21;
+            const presIso  = shipDate ? addDays(shipDate, pdays2) : null;
+            const shipPct       = tlPct(shipDate);
+            const presPct       = tlPct(presIso);
             const latestShipPct = tlPct(lc.latestShipDate);
-            const pdays2 = lc.presentationDays || 21;
-            const presIso = shipDate ? addDays(shipDate, pdays2) : null;
-            const shipPct = tlPct(shipDate);
-            const presPct = tlPct(presIso);
-            const shipIsToday = shipDate && shipDate === todayIso;
+            const estShipPct    = tlPct(lc.estimatedShipDate);
+            const shipIsToday   = shipDate && shipDate === todayIso;
+
+            // Past dots are coloured; future dots are grey.
+            const dotCls = (dateIso, colourCls) =>
+                (todayIso && dateIso && dateIso > todayIso) ? 'lc-tl2-dot--grey' : colourCls;
 
             let html = '<div class="lc-tl2-rail"></div>';
+
+            // Today = simple black vertical line, no dot, no label
             if (todayPct !== null) {
-                html += '<div class="lc-tl2-progress" style="width:' + todayPct + '%"></div>';
+                html += '<div class="lc-tl2-today-line" style="left:' + todayPct + '%"></div>';
             }
 
-            // LC Issued — 0%, label below
+            // LC Issued -- left anchor, label above
             html += '<div class="lc-tl2-mark" style="left:0%">'
-                + '<div class="lc-tl2-dot"></div>'
-                + '<div class="lc-tl2-info lc-tl2-info--below">'
+                + '<div class="lc-tl2-info lc-tl2-info--above">'
                 + '<div class="lc-tl2-name">LC Issued</div>'
                 + '<div class="lc-tl2-date">' + esc(fmtDate(lc.issuedDate)) + '</div>'
                 + '</div>'
+                + '<div class="lc-tl2-dot ' + dotCls(lc.issuedDate, '') + '"></div>'
                 + '</div>';
 
-            // Latest Ship — amber dot, label above
+            // Est. Ship -- interactive, label above (only if field set)
+            if (lc.estimatedShipDate && estShipPct !== null) {
+                const estDays = daysUntil(lc.estimatedShipDate);
+                html += '<div class="lc-tl2-mark lc-tl2-mark--btn" data-setship title="Click to record actual shipment date" style="left:' + estShipPct + '%">'
+                    + '<div class="lc-tl2-info lc-tl2-info--above">'
+                    + '<div class="lc-tl2-name">Est. Ship</div>'
+                    + '<div class="lc-tl2-date">' + esc(fmtDate(lc.estimatedShipDate)) + '</div>'
+                    + (estDays !== null ? '<div class="lc-tl2-delta">' + deltaHtml(estDays) + '</div>' : '')
+                    + '</div>'
+                    + '<div class="lc-tl2-dot ' + dotCls(lc.estimatedShipDate, 'lc-tl2-dot--estship') + '"></div>'
+                    + '</div>';
+            }
+
+            // Latest Ship -- LC deadline, label above
             if (latestShipPct !== null) {
                 const lsDays = daysUntil(lc.latestShipDate);
                 html += '<div class="lc-tl2-mark" style="left:' + latestShipPct + '%">'
@@ -859,11 +883,11 @@ const LC = (() => {
                     + '<div class="lc-tl2-date">' + esc(fmtDate(lc.latestShipDate)) + '</div>'
                     + (lsDays !== null ? '<div class="lc-tl2-delta">' + deltaHtml(lsDays) + '</div>' : '')
                     + '</div>'
-                    + '<div class="lc-tl2-dot lc-tl2-dot--latestship"></div>'
+                    + '<div class="lc-tl2-dot ' + dotCls(lc.latestShipDate, 'lc-tl2-dot--latestship') + '"></div>'
                     + '</div>';
             }
 
-            // Present by — purple dot, label above (only if shipDate set)
+            // Present by -- label above (only if shipDate set)
             if (presIso && presPct !== null) {
                 const presDays = daysUntil(presIso);
                 html += '<div class="lc-tl2-mark" style="left:' + presPct + '%">'
@@ -872,82 +896,41 @@ const LC = (() => {
                     + '<div class="lc-tl2-date">' + esc(fmtDate(presIso)) + '</div>'
                     + (presDays !== null ? '<div class="lc-tl2-delta">' + deltaHtml(presDays) + '</div>' : '')
                     + '</div>'
-                    + '<div class="lc-tl2-dot lc-tl2-dot--pres"></div>'
+                    + '<div class="lc-tl2-dot ' + dotCls(presIso, 'lc-tl2-dot--pres') + '"></div>'
                     + '</div>';
             }
 
-            // Actual Ship — if same day as today, merge into one "Shipped · Today" mark
-            // otherwise separate Ship (below) + Today (below)
+            // Actual Ship -- clickable to edit, label above
             if (shipDate && shipPct !== null) {
-                if (shipIsToday) {
-                    html += '<div class="lc-tl2-mark lc-tl2-mark--today" style="left:' + shipPct + '%">'
-                        + '<div class="lc-tl2-dot lc-tl2-dot--shipped-today"></div>'
-                        + '<div class="lc-tl2-info lc-tl2-info--below">'
-                        + '<div class="lc-tl2-name">Shipped · Today</div>'
-                        + '<div class="lc-tl2-date">' + esc(fmtDate(shipDate)) + '</div>'
-                        + '</div>'
-                        + '</div>';
-                } else {
-                    html += '<div class="lc-tl2-mark" style="left:' + shipPct + '%">'
-                        + '<div class="lc-tl2-dot lc-tl2-dot--shipped"></div>'
-                        + '<div class="lc-tl2-info lc-tl2-info--below">'
-                        + '<div class="lc-tl2-name">Shipped</div>'
-                        + '<div class="lc-tl2-date">' + esc(fmtDate(shipDate)) + '</div>'
-                        + '</div>'
-                        + '</div>';
-                    if (todayPct !== null) {
-                        html += '<div class="lc-tl2-mark lc-tl2-mark--today" style="left:' + todayPct + '%">'
-                            + '<div class="lc-tl2-dot lc-tl2-dot--today"></div>'
-                            + '<div class="lc-tl2-info lc-tl2-info--below">'
-                            + '<div class="lc-tl2-name">Today</div>'
-                            + '<div class="lc-tl2-date">' + esc(fmtDate(todayIso)) + '</div>'
-                            + '</div>'
-                            + '</div>';
-                    }
-                }
-            } else if (todayPct !== null) {
-                // No ship date — show Today with label below
-                html += '<div class="lc-tl2-mark lc-tl2-mark--today" style="left:' + todayPct + '%">'
-                    + '<div class="lc-tl2-dot lc-tl2-dot--today"></div>'
-                    + '<div class="lc-tl2-info lc-tl2-info--below">'
-                    + '<div class="lc-tl2-name">Today</div>'
-                    + '<div class="lc-tl2-date">' + esc(fmtDate(todayIso)) + '</div>'
+                const label = shipIsToday ? 'Shipped · Today' : 'Shipped';
+                html += '<div class="lc-tl2-mark lc-tl2-mark--btn" data-setship title="Click to edit shipment date" style="left:' + shipPct + '%">'
+                    + '<div class="lc-tl2-info lc-tl2-info--above">'
+                    + '<div class="lc-tl2-name">' + label + '</div>'
+                    + '<div class="lc-tl2-date">' + esc(fmtDate(shipDate)) + '</div>'
                     + '</div>'
+                    + '<div class="lc-tl2-dot ' + dotCls(shipDate, 'lc-tl2-dot--shipped') + '"></div>'
                     + '</div>';
             }
 
-            // LC Expiry — red dot, label below
+            // LC Expiry -- right anchor, label above
             const expDays = daysUntil(lc.expiryDate);
             html += '<div class="lc-tl2-mark" style="left:100%">'
-                + '<div class="lc-tl2-dot lc-tl2-dot--expiry"></div>'
-                + '<div class="lc-tl2-info lc-tl2-info--below">'
+                + '<div class="lc-tl2-info lc-tl2-info--above">'
                 + '<div class="lc-tl2-name">LC Expiry</div>'
                 + '<div class="lc-tl2-date">' + esc(fmtDate(lc.expiryDate)) + '</div>'
                 + (expDays !== null ? '<div class="lc-tl2-delta">' + deltaHtml(expDays) + '</div>' : '')
                 + '</div>'
+                + '<div class="lc-tl2-dot ' + dotCls(lc.expiryDate, 'lc-tl2-dot--expiry') + '"></div>'
                 + '</div>';
             return html;
         }
 
-        const pdays = lc.presentationDays || 21;
-        const presDate = lc.shipmentDate ? addDays(lc.shipmentDate, pdays) : null;
-
         const tlWrap = '<div class="lc-tl2" id="lc-tl2">'
             + '<div class="lc-tl2-track" id="lc-tl2-track">' + buildTlTrack(lc.shipmentDate) + '</div>'
-            + '<div class="lc-tl2-controls" data-pdays="' + pdays + '">'
-            + '<div class="lc-tl2-ctrl-item">'
+            + '<div class="lc-tl2-ship-row" id="lc-tl2-ship-row"' + (lc.shipmentDate && lc.estimatedShipDate ? ' hidden' : '') + '>'
             + '<span class="lc-tl2-ctrl-label">Actual shipment date</span>'
-            + '<input type="date" id="lc-shipment-date-input" class="lc-input lc-mono" value="' + esc(lc.shipmentDate || '') + '" style="font-size:0.85rem;padding:0.25rem 0.4rem;width:auto;">'
-            + '</div>'
-            + '<div class="lc-tl2-ctrl-item">'
-            + '<span class="lc-tl2-ctrl-label">Presentation deadline</span>'
-            + '<div class="lc-tl2-pres-val">'
-            + '<span id="lc-pres-deadline" class="' + (presDate ? 'lc-mono' : 'lc-tl2-hint') + '">'
-            + (presDate ? esc(fmtDate(presDate)) : 'set shipment date')
-            + '</span>'
-            + (presDate ? deltaHtml(daysUntil(presDate)) : '')
-            + '</div>'
-            + '</div>'
+            + '<input type="date" id="lc-shipment-date-input" class="lc-input lc-mono" value="' + esc(lc.shipmentDate || '') + '" style="font-size:0.82rem;padding:0.22rem 0.4rem;width:auto;">'
+            + (lc.shipmentDate ? '<button class="lc-tl2-ship-done" id="lc-tl2-ship-done" type="button">Done</button>' : '')
             + '</div>'
             + '</div>';
 
@@ -1290,7 +1273,24 @@ const LC = (() => {
             scheduleChecksave(id);
         });
 
-        // Shipment date input
+        // Timeline: click Est. Ship or Shipped dot to reveal/hide ship date input
+        container.querySelector('#lc-tl2')?.addEventListener('click', e => {
+            const mark = e.target.closest('[data-setship]');
+            if (!mark) return;
+            const row = container.querySelector('#lc-tl2-ship-row');
+            if (row) {
+                row.hidden = !row.hidden;
+                if (!row.hidden) row.querySelector('#lc-shipment-date-input')?.focus();
+            }
+        });
+
+        // "Done" button collapses the row when ship date already set
+        container.querySelector('#lc-tl2-ship-done')?.addEventListener('click', () => {
+            const row = container.querySelector('#lc-tl2-ship-row');
+            if (row) row.hidden = true;
+        });
+
+        // Shipment date input — patch + redraw track
         const shipDateInput = container.querySelector('#lc-shipment-date-input');
         if (shipDateInput) {
             shipDateInput.addEventListener('change', async () => {
@@ -1301,13 +1301,6 @@ const LC = (() => {
                 }).catch(() => {});
                 const trackEl = container.querySelector('#lc-tl2-track');
                 if (trackEl && buildTlTrack) trackEl.innerHTML = buildTlTrack(val);
-                const pdays2 = parseInt(container.querySelector('.lc-tl2-controls[data-pdays]')?.dataset?.pdays || '21', 10);
-                const presDeadline = addDays(val, pdays2);
-                const presEl = container.querySelector('#lc-pres-deadline');
-                if (presEl) {
-                    presEl.textContent = presDeadline ? fmtDate(presDeadline) : 'set shipment date';
-                    presEl.className = presDeadline ? 'lc-mono' : 'lc-tl2-hint';
-                }
             });
         }
 
