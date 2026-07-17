@@ -2073,9 +2073,13 @@ const Warehouse = (() => {
             <div class="ship-detail-view ship-detail-view--new ship-detail-view--v3">
                 <div class="ship-detail-topbar">
                     <button class="ship-detail-back">← Shipments</button>
-                    <a class="ship-lc-btn" href="#lc/new" onclick="LC?.setPendingShip('Shipment #${s.seq}')">Register Letter of Credit</a>
+                </div>
+                <div class="ship-detail-tabs no-print">
+                    <button class="ship-detail-tab ship-detail-tab--active" data-tab="overview">Overview</button>
+                    <button class="ship-detail-tab" data-tab="lc">Letter of Credit</button>
                 </div>
 
+                <div id="ship-tab-overview" class="ship-tab-panel">
                 <div class="ship-detail-layout">
                     <div class="ship-detail-main">
                         <div class="ship-detail-hdr">
@@ -2212,9 +2216,73 @@ const Warehouse = (() => {
 
                     ${buildPctChartHtmlV3(totals.sectionTotals, total)}
                 </div>
+                </div>
+
+                <div id="ship-tab-lc" class="ship-tab-panel" hidden>
+                    <div class="ship-lc-loading">Loading LC data…</div>
+                </div>
             </div>`;
 
             if (typeof initCharts === 'function') initCharts(body);
+
+            // Tab switching
+            body.querySelectorAll('.ship-detail-tab').forEach(function(btn) {
+                btn.addEventListener('click', function() {
+                    body.querySelectorAll('.ship-detail-tab').forEach(function(b) { b.classList.remove('ship-detail-tab--active'); });
+                    btn.classList.add('ship-detail-tab--active');
+                    var tab = btn.dataset.tab;
+                    body.querySelectorAll('.ship-tab-panel').forEach(function(p) { p.hidden = true; });
+                    var panel = body.querySelector('#ship-tab-' + tab);
+                    if (!panel) return;
+                    panel.hidden = false;
+                    if (tab === 'lc' && panel.querySelector('.ship-lc-loading')) {
+                        loadShipLcPanel(panel, s);
+                    }
+                });
+            });
+        }
+
+        async function loadShipLcPanel(panel, s) {
+            try {
+                var data = await fetch('/api/lc').then(function(r) { return r.json(); });
+                var lcs  = (data && data.lcs) ? data.lcs : [];
+                var linked = lcs.find(function(l) { return l.linkedShipmentId === s.id; });
+                if (linked) {
+                    panel.innerHTML =
+                        '<div class="ship-lc-card">'
+                        + '<div class="ship-lc-card-hd">'
+                        + '<span class="ship-lc-ref">#' + escHtml(linked.lcNumber) + '</span>'
+                        + '<a class="ship-lc-open" href="#lc/' + escHtml(linked.id) + '">Open LC →</a>'
+                        + '</div>'
+                        + '<div class="ship-lc-meta">'
+                        + '<span class="ship-lc-label">Beneficiary</span><span class="ship-lc-val">' + escHtml(linked.beneficiary || '—') + '</span>'
+                        + '<span class="ship-lc-label">Applicant</span><span class="ship-lc-val">' + escHtml((linked.applicant && linked.applicant.name) || '—') + '</span>'
+                        + '<span class="ship-lc-label">Amount</span><span class="ship-lc-val">' + escHtml((linked.currency || '') + ' ' + (linked.amount ? Number(linked.amount).toLocaleString('en-NZ') : '—')) + '</span>'
+                        + '<span class="ship-lc-label">Expires</span><span class="ship-lc-val">' + escHtml(linked.expiryDate || '—') + '</span>'
+                        + '<span class="ship-lc-label">Latest Ship</span><span class="ship-lc-val">' + escHtml(linked.latestShipDate || '—') + '</span>'
+                        + '</div>'
+                        + '</div>';
+                } else {
+                    var seqLabel = s.seq ? '#' + s.seq : s.id;
+                    panel.innerHTML =
+                        '<div class="ship-lc-empty">'
+                        + '<p>No Letter of Credit linked to this shipment.</p>'
+                        + '<a class="btn-primary" href="#lc/new" id="ship-reg-lc-btn">Register LC for Shipment ' + escHtml(seqLabel) + '</a>'
+                        + '</div>';
+                    var regBtn = panel.querySelector('#ship-reg-lc-btn');
+                    if (regBtn) {
+                        regBtn.addEventListener('click', function(e) {
+                            e.preventDefault();
+                            if (typeof LC !== 'undefined' && LC.setPendingShipId) {
+                                LC.setPendingShipId(s.id, s.seq || s.id);
+                            }
+                            location.hash = 'lc/new';
+                        });
+                    }
+                }
+            } catch (err) {
+                panel.innerHTML = '<p class="ship-lc-err">Could not load LC data.</p>';
+            }
         }
 
         function renderShipDetailNew(s) {

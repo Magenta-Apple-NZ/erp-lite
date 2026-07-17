@@ -307,7 +307,9 @@ const LC = (() => {
 
     async function renderCreate(container) {
         const shipRef = _pendingShipRef || '';
+        const shipId  = _pendingShipId  || '';
         _pendingShipRef = null;
+        _pendingShipId  = null;
 
         const UPLOAD_SVG = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>`;
 
@@ -499,6 +501,7 @@ const LC = (() => {
                             <div class="lc-field">
                                 <label class="lc-label" for="f-shipmentRef">Linked Shipment</label>
                                 <input class="lc-input" id="f-shipmentRef" name="shipmentRef" placeholder="e.g. Shipment #40" value="${esc(shipRef)}">
+                                <input type="hidden" name="linkedShipmentId" value="${esc(shipId)}">
                             </div>
                         </div>
                     </div>
@@ -637,7 +640,8 @@ const LC = (() => {
     }
 
     // ── Pending context (set by callers before navigating to #lc/new) ────────
-    let _pendingShipRef = null;  // e.g. "Shipment #40"
+    let _pendingShipRef = null;   // e.g. "Shipment #40" (display label)
+    let _pendingShipId  = null;   // e.g. "moqkexin47pa" (import shipment KV id)
 
     // ── Detail / checker view ─────────────────────────────────────────────────
 
@@ -1770,5 +1774,9 @@ const LC = (() => {
         return renderDetail(container, subpath);
     }
 
-    return { render, setPendingShip: ref => { _pendingShipRef = ref; } };
+    return {
+        render,
+        setPendingShip:   ref           => { _pendingShipRef = ref; },
+        setPendingShipId: (shipId, seq) => { _pendingShipId = shipId; _pendingShipRef = 'Shipment #' + seq; },
+    };
 })();

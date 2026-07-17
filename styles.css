@@ -6489,3 +6489,35 @@ a.db-row:hover { background: #f8fafc; border-color: #e2e8f0; }
 .order-lc-exp--ok   { color: #16a34a; font-weight: 500; }
 .order-lc-exp--warn { color: #d97706; font-weight: 600; }
 .order-lc-exp--crit { color: #dc2626; font-weight: 700; }
+
+/* ── Ship detail tabs (imports page) ── */
+.ship-detail-tabs {
+    display: flex; gap: 0; border-bottom: 2px solid #e2e8f0;
+    margin: 0 0 1.25rem;
+}
+.ship-detail-tab {
+    padding: 0.5rem 1.1rem; font-size: 0.82rem; font-weight: 500;
+    color: #64748b; background: none; border: none;
+    border-bottom: 2px solid transparent; margin-bottom: -2px;
+    cursor: pointer; transition: color 0.12s, border-color 0.12s;
+}
+.ship-detail-tab:hover { color: #1e293b; }
+.ship-detail-tab--active { color: #2563eb; border-bottom-color: #2563eb; font-weight: 600; }
+.ship-tab-panel[hidden] { display: none; }
+
+/* ── Ship LC panel ── */
+.ship-lc-loading { padding: 2rem 0; text-align: center; font-size: 0.82rem; color: #94a3b8; }
+.ship-lc-err { padding: 1rem 0; font-size: 0.82rem; color: #dc2626; }
+.ship-lc-empty { padding: 1.5rem 0; }
+.ship-lc-empty p { font-size: 0.82rem; color: #94a3b8; margin: 0 0 0.75rem; }
+.ship-lc-card { border: 1px solid #e2e8f0; border-radius: 8px; padding: 1rem 1.2rem; max-width: 480px; }
+.ship-lc-card-hd {
+    display: flex; align-items: baseline; justify-content: space-between;
+    gap: 1rem; margin-bottom: 0.75rem;
+}
+.ship-lc-ref { font-size: 0.95rem; font-weight: 700; color: #1e293b; font-family: 'ui-monospace', monospace; }
+.ship-lc-open { font-size: 0.78rem; font-weight: 500; color: #2563eb; text-decoration: none; }
+.ship-lc-open:hover { text-decoration: underline; }
+.ship-lc-meta { display: grid; grid-template-columns: auto 1fr; gap: 0.3rem 1rem; }
+.ship-lc-label { font-size: 0.72rem; font-weight: 600; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.04em; }
+.ship-lc-val { font-size: 0.82rem; color: #334155; }

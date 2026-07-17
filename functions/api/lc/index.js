@@ -32,7 +32,8 @@ export async function onRequestPost({ env, request }) {
         const lc = {
             id,
             lcNumber,
-            shipmentRef:     String(body.shipmentRef || '').trim(),
+            shipmentRef:       String(body.shipmentRef || '').trim(),
+            linkedShipmentId:  String(body.linkedShipmentId || ''),
             status:          'active',
             issuedDate:      String(body.issuedDate || ''),
             expiryDate:      String(body.expiryDate || ''),
