@@ -6600,7 +6600,6 @@ a.db-row:hover { background: #f8fafc; border-color: #e2e8f0; }
     text-align: center; font-size: 0.7rem; line-height: 1.3; pointer-events: none;
     background: rgba(255,255,255,0.82); border-radius: 3px; padding: 1px 4px;
 }
-.lc-tl2-info--above { bottom: 34px; }
 .lc-tl2-name { font-weight: 600; color: #334155; }
 .lc-tl2-date { color: #64748b; font-size: 0.68rem; }
 .lc-tl2-delta { font-size: 0.67rem; font-weight: 600; }

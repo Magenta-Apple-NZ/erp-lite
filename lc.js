@@ -789,6 +789,11 @@ const LC = (() => {
 
         _driveFolderUrl = lc.driveFolderUrl || '';
 
+        // Normalise F47A conditions — older records may hold plain strings
+        lc.f47aConditions = (lc.f47aConditions || []).map(c =>
+            typeof c === 'string' ? { text: c, docId: null } : c
+        ).filter(c => c && c.text);
+
         const docs = generateDocuments(lc);
         const ready = readyCount(lc);
         const DOC_TOTAL = 8;
@@ -819,7 +824,7 @@ const LC = (() => {
             : '';
 
         const f47aGeneral = (lc.f47aConditions || [])
-            .filter(c => c.docId === 'general')
+            .filter(c => !c.docId || c.docId === 'general')
             .map((c, i) => ({ id: `f47a-general-${i}`, text: c.text }));
         const allConditions = [...STANDARD_CONDITIONS, ...f47aGeneral];
         const condChecks = lc.condChecks || {};
@@ -973,7 +978,6 @@ const LC = (() => {
         if (lc.rawMt700) {
             // Verbatim raw text — split on :TAG: markers and inject anchors
             const raw    = lc.rawMt700;
-            const tagRe  = /(?=^|\n)(:([0-9A-Z]{2,3}):)/gm;
             const parts  = raw.split(/\n(?=:[0-9A-Z]{2,3}:)/);
 
             // Also need F47A condition anchors — count occurrences as we go
@@ -1008,7 +1012,6 @@ const LC = (() => {
                         + '<span class="lc-raw-verbatim-tag">:' + tag + ':</span>';
 
                     docs.forEach(function(d) {
-                        const escaped = esc(d.title).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
                         lcRawHtml += '<span class="lc-raw-verbatim-doc-anchor" id="lcref-46a-' + esc(d.id) + '"></span>';
                     });
                     lcRawHtml += '<span class="lc-raw-verbatim-body">' + esc(content) + '</span>'

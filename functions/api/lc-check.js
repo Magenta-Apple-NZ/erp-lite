@@ -47,7 +47,7 @@ function buildLcContextBlock(lc) {
     ];
     if (lc.f47aConditions && lc.f47aConditions.length) {
         lines.push('', 'Field 47A Special Conditions:');
-        lc.f47aConditions.forEach((c, i) => lines.push(`  ${i + 1}. ${c}`));
+        lc.f47aConditions.forEach((c, i) => lines.push(`  ${i + 1}. ${typeof c === 'string' ? c : (c.text || '')}`));
     }
     return lines.join('\n');
 }
@@ -134,6 +134,7 @@ ${checkList}
 - "fail"  — missing entirely, clearly wrong value, or a material discrepancy that would cause bank rejection
 - Never give "pass" when you cannot find and quote the relevant text in the document
 - Never give "pass" on a numerical check without confirming the exact figure
+- Exception — some checks are LC special conditions that do not concern this document type at all (e.g. a bill-of-lading free-time clause when checking an invoice, bank charge clauses, container size, import policy references). If a condition genuinely cannot apply to this document, grade it "pass" with note "N/A for this document" — do NOT fail a document for not containing a condition that was never meant to appear on it. Conditions like "all documents must bear the LC number" DO apply to every document and must be checked normally.
 - For any value that could appear in multiple places (weight, quantity, amount, date): scan the ENTIRE document — headers, line items, summary tables, footers, certification clauses — and report every instance. If two sections show different figures, that is a fail regardless of which figure matches the LC.
 - Return one object per check — every check in the list must appear in the output`;
 
