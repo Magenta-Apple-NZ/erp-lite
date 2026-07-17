@@ -5958,6 +5958,55 @@ a.db-row:hover { background: #f8fafc; border-color: #e2e8f0; }
 .lc-check-item--ai-pass { background: #f0fdf4; border-radius: 4px; padding: 0.45rem 0.4rem; }
 .lc-check-item--ai-flag { background: #fefce8; border-radius: 4px; padding: 0.45rem 0.4rem; }
 .lc-check-item--ai-fail { background: #fef2f2; border-radius: 4px; padding: 0.45rem 0.4rem; }
+/* Flag-as-issue button on result rows */
+.lc-flag-issue-btn {
+    background: none; border: none; cursor: pointer; padding: 0 2px;
+    font-size: 0.82rem; color: #cbd5e1; line-height: 1; flex-shrink: 0;
+    margin-top: 1px; opacity: 0;
+    transition: opacity 0.15s, color 0.15s;
+}
+.lc-check-item:hover .lc-flag-issue-btn,
+.lc-check-item--ai:hover .lc-flag-issue-btn { opacity: 1; }
+.lc-flag-issue-btn:hover { color: #f59e0b; }
+.lc-flag-issue-btn--saved { color: #f59e0b !important; opacity: 1 !important; }
+
+.lc-flag-form {
+    grid-column: 1 / -1; width: 100%; margin-top: 0.4rem;
+    display: flex; flex-direction: column; gap: 0.3rem;
+}
+.lc-flag-pattern {
+    width: 100%; font-size: 0.78rem; padding: 0.35rem 0.45rem;
+    border: 1px solid #e2e8f0; border-radius: 5px; resize: vertical;
+    font-family: inherit; color: #334155;
+}
+.lc-flag-form-btns { display: flex; gap: 0.4rem; }
+.lc-flag-save {
+    font-size: 0.75rem; padding: 0.25rem 0.65rem;
+    background: #f59e0b; color: white; border: none; border-radius: 4px; cursor: pointer;
+}
+.lc-flag-save:hover { background: #d97706; }
+.lc-flag-cancel {
+    font-size: 0.75rem; padding: 0.25rem 0.55rem;
+    background: none; border: 1px solid #e2e8f0; border-radius: 4px; cursor: pointer; color: #64748b;
+}
+
+/* Known issues sidebar panel */
+.lc-known-issues-hint { font-weight: 400; font-size: 0.7rem; color: #94a3b8; }
+.lc-known-issues-empty { font-size: 0.75rem; color: #94a3b8; line-height: 1.5; }
+.lc-ki-row {
+    display: flex; align-items: flex-start; gap: 0.5rem;
+    padding: 0.4rem 0; border-bottom: 1px solid #f1f5f9;
+}
+.lc-ki-row:last-child { border-bottom: none; }
+.lc-ki-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 0.15rem; }
+.lc-ki-doc { font-size: 0.68rem; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.03em; }
+.lc-ki-pattern { font-size: 0.75rem; color: #334155; line-height: 1.4; }
+.lc-ki-del {
+    background: none; border: none; cursor: pointer; color: #cbd5e1;
+    font-size: 0.75rem; padding: 0; flex-shrink: 0; margin-top: 2px;
+}
+.lc-ki-del:hover { color: #ef4444; }
+
 .lc-check-ai-bar { margin: 0 -0.9rem 0.5rem; }
 .lc-check-matrix-bar.lc-check-ai-bar { border-radius: 0; margin-bottom: 0.4rem; }
 .lc-check-pass-summary {

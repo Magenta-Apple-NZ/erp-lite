@@ -1156,6 +1156,12 @@ const LC = (() => {
                         ${sideRow('Final dest.',    p.finalDestination)}
                     </div>
                     ${insCardHtml}
+                    <div class="lc-scard lc-known-issues-card" id="lc-known-issues-card">
+                        <div class="lc-scard-title">Recurring Issues
+                            <span class="lc-known-issues-hint">— flagged from past checks</span>
+                        </div>
+                        <div id="lc-known-issues-list"><span class="lc-known-issues-empty">Loading…</span></div>
+                    </div>
                 </aside>
             </div>
         </div>`;
@@ -1294,6 +1300,54 @@ const LC = (() => {
             scheduleChecksave(id);
         });
 
+        // Flag issue as recurring pattern
+        container.querySelector('#lc-doc-list').addEventListener('click', async e => {
+            const btn = e.target.closest('.lc-flag-issue-btn');
+            if (!btn) return;
+            if (btn.classList.contains('lc-flag-issue-btn--saving')) return;
+
+            const checkId   = btn.dataset.flagCheck;
+            const checkText = btn.dataset.flagText;
+            const aiNote    = btn.dataset.aiNote || '';
+            const docId     = btn.dataset.flagDoc;
+            const docDef    = docs.find(d => d.id === docId);
+            const docTitle  = docDef ? docDef.title : docId;
+
+            // Show inline form just below the button
+            const existingForm = btn.parentElement.querySelector('.lc-flag-form');
+            if (existingForm) { existingForm.remove(); return; }
+
+            const form = document.createElement('div');
+            form.className = 'lc-flag-form';
+            form.innerHTML = '<textarea class="lc-flag-pattern" rows="2" placeholder="Describe the pattern to watch for in future checks…">' + esc(aiNote) + '</textarea>'
+                + '<div class="lc-flag-form-btns">'
+                + '<button class="lc-flag-save" type="button">Save pattern</button>'
+                + '<button class="lc-flag-cancel" type="button">Cancel</button>'
+                + '</div>';
+            btn.parentElement.appendChild(form);
+            form.querySelector('.lc-flag-pattern').focus();
+
+            form.querySelector('.lc-flag-cancel').addEventListener('click', () => form.remove());
+            form.querySelector('.lc-flag-save').addEventListener('click', async () => {
+                const pattern = form.querySelector('.lc-flag-pattern').value.trim();
+                if (!pattern) return;
+                btn.classList.add('lc-flag-issue-btn--saving');
+                try {
+                    await apiFetch('/api/lc-known-issues', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ docType: docId, docTitle, checkId, checkText, pattern }),
+                    });
+                    btn.classList.add('lc-flag-issue-btn--saved');
+                    btn.title = 'Saved as recurring issue';
+                    form.remove();
+                } catch (err) {
+                    alert('Could not save: ' + err.message);
+                    btn.classList.remove('lc-flag-issue-btn--saving');
+                }
+            });
+        });
+
         // Condition checkboxes
         container.querySelector('#lc-cond-grid').addEventListener('change', e => {
             const cb = e.target.closest('[data-cond]');
@@ -1308,6 +1362,25 @@ const LC = (() => {
             if (!_pending.condChecks) _pending.condChecks = {};
             _pending.condChecks[cb.dataset.cond] = cb.checked;
             scheduleChecksave(id);
+        });
+
+        // Delete known issue
+        container.querySelector('#lc-known-issues-card')?.addEventListener('click', async e => {
+            const btn = e.target.closest('[data-del-ki]');
+            if (!btn) return;
+            const kiId = btn.dataset.delKi;
+            btn.disabled = true;
+            try {
+                await apiFetch('/api/lc-known-issues?id=' + encodeURIComponent(kiId), { method: 'DELETE' });
+                btn.closest('.lc-ki-row').remove();
+                const listEl = container.querySelector('#lc-known-issues-list');
+                if (listEl && !listEl.querySelector('.lc-ki-row')) {
+                    listEl.innerHTML = '<span class="lc-known-issues-empty">No recurring issues flagged yet.</span>';
+                }
+            } catch (err) {
+                btn.disabled = false;
+                alert('Could not delete: ' + err.message);
+            }
         });
 
         // Timeline: click Est. Ship or Shipped dot to reveal/hide ship date input
@@ -1594,6 +1667,7 @@ const LC = (() => {
         });
 
         loadArchivedDocs(container, id);
+        loadKnownIssues(container);
 
         async function handleDocCheck(file, docId, isDraft = false) {
             const docDef = docs.find(d => d.id === docId);
@@ -1703,6 +1777,7 @@ const LC = (() => {
                         const isChecked = chkEl ? chkEl.checked : !!(lc.docChecks && lc.docChecks[c.id]);
                         const cls       = r.result === 'flag' ? 'flag' : 'fail';
                         const icon      = r.result === 'flag' ? '⚠' : '✗';
+                        const noteAttr  = r.note ? ' data-ai-note="' + esc(r.note) + '"' : '';
                         return '<div class="lc-check-item lc-check-item--ai lc-check-item--ai-' + cls + (isChecked ? ' lc-check-item--done' : '') + '">'
                             + '<input type="checkbox" id="chk-' + c.id + '" data-check="' + c.id + '"' + (isChecked ? ' checked' : '') + '>'
                             + '<div class="lc-check-item-body">'
@@ -1710,6 +1785,8 @@ const LC = (() => {
                             + (r.note ? '<span class="lc-check-ai-note">' + esc(r.note) + '</span>' : '')
                             + '</div>'
                             + '<span class="lc-check-ai-badge lc-check-ai-badge--' + cls + '">' + icon + '</span>'
+                            + '<button class="lc-flag-issue-btn" type="button" title="Flag as recurring issue"'
+                            + ' data-flag-doc="' + esc(docId) + '" data-flag-check="' + esc(c.id) + '" data-flag-text="' + esc(c.text) + '"' + noteAttr + '>⚑</button>'
                             + '</div>';
                     }).join('');
 
@@ -1781,6 +1858,30 @@ const LC = (() => {
             }).join('');
         } catch {
             listEl.innerHTML = '<span class="lc-archive-empty">Could not load archived documents</span>';
+        }
+    }
+
+    async function loadKnownIssues(container) {
+        const listEl = container.querySelector('#lc-known-issues-list');
+        if (!listEl) return;
+        try {
+            const json   = await apiFetch('/api/lc-known-issues');
+            const issues = json.issues || [];
+            if (!issues.length) {
+                listEl.innerHTML = '<span class="lc-known-issues-empty">No recurring issues flagged yet. Use the ⚑ button on a check result to add one.</span>';
+                return;
+            }
+            listEl.innerHTML = issues.map(i => {
+                return '<div class="lc-ki-row" data-ki-id="' + esc(i.id) + '">'
+                    + '<div class="lc-ki-body">'
+                    + (i.docTitle ? '<span class="lc-ki-doc">' + esc(i.docTitle) + '</span>' : '')
+                    + '<span class="lc-ki-pattern">' + esc(i.pattern) + '</span>'
+                    + '</div>'
+                    + '<button class="lc-ki-del" data-del-ki="' + esc(i.id) + '" type="button" title="Remove">✕</button>'
+                    + '</div>';
+            }).join('');
+        } catch {
+            listEl.innerHTML = '<span class="lc-known-issues-empty">Could not load.</span>';
         }
     }
 

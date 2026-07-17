@@ -64,20 +64,38 @@ export async function onRequestPost({ env, request }) {
         if (!base64) return errResponse('No document data', 400);
         if (!checks?.length) return errResponse('No checks provided', 400);
 
+        // Load user-flagged known issues from KV
+        step = 'load-known-issues';
+        let knownIssues = [];
+        try {
+            const raw = await env.ORDERS_KV.get('lc_known_issues');
+            knownIssues = raw ? JSON.parse(raw) : [];
+        } catch (_) { /* non-fatal */ }
+
         // Use 'detail' for AI instruction if present, otherwise fall back to 'text'
         const checkList = checks.map((c, i) => `${i + 1}. [${c.id}] ${c.detail || c.text}`).join('\n');
         const lcBlock   = buildLcContextBlock(lcContext);
+
+        // Build known patterns block — hardcoded baseline + user-flagged additions
+        const basePatterns = [
+            'Net weight appearing correctly in the goods/price section but differently in a separate weight summary, packing details, or footer. Both figures must match exactly.',
+            'Incoterms abbreviated (C&F, C&I, CFR) rather than the full required form with "Incoterms 2020".',
+            'Proforma invoice reference number or date slightly wrong (e.g. one digit off, wrong year).',
+            'Port of loading vaguely stated or abbreviated rather than the exact LC wording.',
+            'Importer name/address differing in punctuation, spacing, or abbreviation from the LC.',
+            'Invoice dated before LC opening date.',
+        ];
+        const userPatterns = knownIssues
+            .filter(i => !i.docType || i.docType === docType)
+            .map(i => i.pattern);
+        const allPatterns  = [...basePatterns, ...userPatterns];
+        const patternBlock = allPatterns.map(p => `- ${p}`).join('\n');
 
         const prompt = `You are a senior trade finance document checker at a confirming bank. Your job is to find discrepancies that would cause a bank to reject a presentation under UCP 600. You are checking a ${docTitle || docType}.
 
 ## Known discrepancy patterns for this trade relationship
 These are real issues found on previous presentations — be especially alert for them:
-- Net weight appearing correctly in the goods/price section but differently in a separate weight summary, packing details, or footer. Both figures must match exactly.
-- Incoterms abbreviated (C&F, C&I, CFR) rather than the full required form with "Incoterms 2020".
-- Proforma invoice reference number or date slightly wrong (e.g. one digit off, wrong year).
-- Port of loading vaguely stated or abbreviated rather than the exact LC wording.
-- Importer name/address differing in punctuation, spacing, or abbreviation from the LC.
-- Invoice dated before LC opening date.
+${patternBlock}
 
 ## LC Ground Truth
 The following values come directly from the Letter of Credit and are the authoritative reference. Any deviation in the document — even minor wording, number, date, or spelling differences — is a discrepancy.
