@@ -672,8 +672,9 @@ const LC = (() => {
                 </div>
                 <div class="lc-doc-right">
                     <span class="lc-doc-prog">${checked}/${doc.checks.length}</span>
-                    <button class="lc-doc-upload-btn" data-upload-doc="${doc.id}" type="button" title="Check this document against LC">
-                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                    <button class="lc-doc-upload-btn" data-upload-doc="${doc.id}" type="button">
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                        Upload PDF
                     </button>
                     <button class="lc-chip lc-chip--${status}" data-status-doc="${doc.id}" type="button">${STATUS_LABELS[status]}</button>
                     <svg class="lc-doc-chevron" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><polyline points="3,6 8,11 13,6"/></svg>
@@ -1039,7 +1040,7 @@ const LC = (() => {
             });
         }
 
-        // Per-card document check
+        // Per-card document upload — shows draft/final confirm before archiving + checking
         const cardFileInput = container.querySelector('#lc-card-file-input');
         let _activeUploadDocId = null;
 
@@ -1054,41 +1055,35 @@ const LC = (() => {
 
         cardFileInput.addEventListener('change', () => {
             if (cardFileInput.files[0] && _activeUploadDocId) {
-                handleDocCheck(cardFileInput.files[0], _activeUploadDocId);
+                showUploadConfirm(cardFileInput.files[0], _activeUploadDocId);
             }
         });
 
-        // Archive button handler (delegated)
-        container.addEventListener('click', async e => {
-            const btn = e.target.closest('[data-archive-doc]');
-            if (!btn) return;
-            const dId    = btn.dataset.archiveDoc;
-            const dTitle = btn.dataset.docTitle;
-            const fname  = btn.dataset.filename;
-            const b64    = _checkBase64.get(dId);
-            if (!b64) return;
-            btn.disabled = true;
-            const hasDrive = !!_driveFolderUrl;
-            btn.textContent = hasDrive ? 'Archiving + uploading to Drive…' : 'Archiving…';
-            try {
-                const r = await fetch('/api/lc-docs', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ lcId: id, docType: dId, docTitle: dTitle, filename: fname, data: b64, driveFolderUrl: _driveFolderUrl }),
-                });
-                const j = await r.json();
-                if (!j.ok) throw new Error(j.error);
-                const driveOk = j.meta?.driveViewLink;
-                const driveErr = j.meta?.driveError;
-                btn.textContent = driveErr
-                    ? `✓ Archived · Drive: ${driveErr.slice(0, 60)}`
-                    : driveOk ? '✓ Archived + Drive ↗' : '✓ Archived';
-                loadArchivedDocs(container, id);
-            } catch (err) {
-                btn.disabled = false;
-                btn.textContent = '✗ Archive failed';
-            }
-        });
+        function showUploadConfirm(file, docId) {
+            const resultsEl = container.querySelector('#lccheck-' + docId);
+            if (!resultsEl) return;
+            const card = container.querySelector('#lcdoc-' + docId);
+            if (card) card.classList.add('lc-doc-card--open');
+            resultsEl.hidden = false;
+            resultsEl.innerHTML = `
+                <div class="lc-upload-confirm">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14,2 14,8 20,8"/></svg>
+                    <span class="lc-upload-confirm-fname">${esc(file.name)}</span>
+                    <label class="lc-upload-confirm-draft-label">
+                        <input type="checkbox" class="lc-upload-draft-chk"> Draft
+                    </label>
+                    <button class="lc-upload-confirm-btn" type="button">Upload &amp; Check</button>
+                    <button class="lc-upload-cancel-btn" type="button">Cancel</button>
+                </div>`;
+            resultsEl.querySelector('.lc-upload-confirm-btn').addEventListener('click', () => {
+                const isDraft = resultsEl.querySelector('.lc-upload-draft-chk').checked;
+                handleDocCheck(file, docId, isDraft);
+            });
+            resultsEl.querySelector('.lc-upload-cancel-btn').addEventListener('click', () => {
+                resultsEl.hidden = true;
+                resultsEl.innerHTML = '';
+            });
+        }
 
         // Drive folder: show form on add/change
         container.addEventListener('click', e => {
@@ -1161,20 +1156,20 @@ const LC = (() => {
 
         loadArchivedDocs(container, id);
 
-        async function handleDocCheck(file, docId) {
+        async function handleDocCheck(file, docId, isDraft = false) {
             const docDef = docs.find(d => d.id === docId);
             if (!docDef) return;
 
             const resultsEl = container.querySelector('#lccheck-' + docId);
             if (!resultsEl) return;
 
-            // Open the card so results are visible
             const card = container.querySelector('#lcdoc-' + docId);
             if (card) card.classList.add('lc-doc-card--open');
 
             resultsEl.hidden = false;
             resultsEl.innerHTML = '<div class="lc-card-check-loading">⏳ Reading document…</div>';
 
+            let archiveLabel = '';
             try {
                 const base64 = await new Promise((resolve, reject) => {
                     const reader = new FileReader();
@@ -1182,11 +1177,32 @@ const LC = (() => {
                     reader.onerror = () => reject(new Error('Failed to read file'));
                     reader.readAsDataURL(file);
                 });
-
                 _checkBase64.set(docId, base64);
-                const loadEl = resultsEl.querySelector('.lc-card-check-loading');
-                if (loadEl) loadEl.textContent = '⏳ Checking against LC requirements…';
 
+                // Step 1 — Archive immediately
+                const loadEl = () => resultsEl.querySelector('.lc-card-check-loading');
+                if (loadEl()) loadEl().textContent = _driveFolderUrl ? '⏳ Saving to KV + Drive…' : '⏳ Saving document…';
+                try {
+                    const ar = await fetch('/api/lc-docs', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ lcId: id, docType: docId, docTitle: docDef.title, filename: file.name, data: base64, driveFolderUrl: _driveFolderUrl, draft: isDraft }),
+                    });
+                    const aj = await ar.json();
+                    if (aj.ok) {
+                        const driveOk  = aj.meta?.driveViewLink;
+                        const driveErr = aj.meta?.driveError;
+                        archiveLabel   = isDraft
+                            ? 'Draft saved'
+                            : driveErr  ? `Final saved · Drive error`
+                            : driveOk   ? 'Final saved + Drive ↗'
+                            : 'Final saved';
+                        loadArchivedDocs(container, id);
+                    }
+                } catch (_) { archiveLabel = 'Save failed'; }
+
+                // Step 2 — Check against LC requirements
+                if (loadEl()) loadEl().textContent = '⏳ Checking against LC requirements…';
                 const res  = await fetch('/api/lc-check', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -1202,34 +1218,52 @@ const LC = (() => {
 
                 const sumCls  = failed > 0 ? 'fail' : flagged > 0 ? 'flag' : 'pass';
                 const sumIcon = failed > 0 ? '✗' : flagged > 0 ? '⚠' : '✓';
-                const sumText = `${passed} pass · ${flagged > 0 ? flagged + ' flag · ' : ''}${failed} fail`;
+                const sumParts = [`${passed} pass`];
+                if (flagged) sumParts.push(`${flagged} flag`);
+                if (failed)  sumParts.push(`${failed} fail`);
+                const archiveCls = isDraft ? 'draft' : 'final';
 
+                // Step 3 — Render matrix
                 resultsEl.innerHTML = `
-                    <div class="lc-card-check-summary lc-card-check-summary--${sumCls}">
-                        <span>${sumIcon} ${sumText} — ${esc(docDef.title)}</span>
-                        <button class="lc-archive-doc-btn"
-                                data-archive-doc="${esc(docId)}"
-                                data-doc-title="${esc(docDef.title)}"
-                                data-filename="${esc(file.name)}"
-                                type="button">Archive ↓</button>
+                    <div class="lc-check-matrix-bar lc-check-matrix-bar--${sumCls}">
+                        <span class="lc-check-matrix-tally">${sumIcon} ${sumParts.join(' · ')} — ${esc(docDef.title)}</span>
+                        ${archiveLabel ? `<span class="lc-doc-version-badge lc-doc-version-badge--${archiveCls}">${esc(archiveLabel)}</span>` : ''}
                     </div>
-                    <div class="lc-card-check-rows">
-                        ${results.map(r => {
-                            const req = docDef.checks.find(c => c.id === r.checkId)?.text || r.checkId;
-                            const cls = r.result === 'pass' ? 'pass' : r.result === 'flag' ? 'flag' : 'fail';
-                            const icon = r.result === 'pass' ? '✓' : r.result === 'flag' ? '⚠' : '✗';
-                            return `<div class="lc-check-result-row lc-check-result-row--${cls}">
-                                <span class="lc-check-result-icon">${icon}</span>
-                                <span class="lc-check-result-body">
-                                    <span class="lc-check-result-text">${esc(r.note || '')}</span>
-                                    <span class="lc-check-result-req">${esc(req)}</span>
-                                </span>
-                            </div>`;
-                        }).join('')}
+                    <div class="lc-check-matrix-wrap">
+                        <table class="lc-check-matrix">
+                            <colgroup>
+                                <col style="width:40%">
+                                <col style="width:60px">
+                                <col>
+                            </colgroup>
+                            <thead>
+                                <tr>
+                                    <th>LC Requirement</th>
+                                    <th>Result</th>
+                                    <th>Found in document</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${results.map(r => {
+                                    const req = docDef.checks.find(c => c.id === r.checkId)?.text || r.checkId;
+                                    const cls  = r.result === 'pass' ? 'pass' : r.result === 'flag' ? 'flag' : 'fail';
+                                    const icon = r.result === 'pass' ? '✓' : r.result === 'flag' ? '⚠' : '✗';
+                                    return `<tr class="lc-check-matrix-row--${cls}">
+                                        <td class="lc-check-matrix-req">${esc(req)}</td>
+                                        <td class="lc-check-matrix-result"><span class="lc-check-matrix-badge lc-check-matrix-badge--${cls}">${icon}</span></td>
+                                        <td class="lc-check-matrix-note">${esc(r.note || '—')}</td>
+                                    </tr>`;
+                                }).join('')}
+                            </tbody>
+                        </table>
                     </div>`;
 
             } catch (err) {
-                resultsEl.innerHTML = `<div class="lc-card-check-summary lc-card-check-summary--fail">✗ ${esc(err.message)}</div>`;
+                resultsEl.innerHTML = `
+                    <div class="lc-check-matrix-bar lc-check-matrix-bar--fail">
+                        <span class="lc-check-matrix-tally">✗ ${esc(err.message)}</span>
+                        ${archiveLabel ? `<span class="lc-doc-version-badge lc-doc-version-badge--${isDraft ? 'draft' : 'final'}">${esc(archiveLabel)}</span>` : ''}
+                    </div>`;
             }
         }
     }
@@ -1243,8 +1277,12 @@ const LC = (() => {
                 listEl.innerHTML = '<span class="lc-archive-empty">No archived documents yet — use the upload button (↑) on each document card to check and archive.</span>';
                 return;
             }
-            listEl.innerHTML = json.docs.map(d => `
-                <div class="lc-archive-row">
+            listEl.innerHTML = json.docs.map(d => {
+                const versionCls  = d.superseded ? 'superseded' : d.draft ? 'draft' : 'final';
+                const versionLabel = d.superseded ? 'Superseded' : d.draft ? 'Draft' : 'Final';
+                return `
+                <div class="lc-archive-row${d.superseded ? ' lc-archive-row--superseded' : ''}">
+                    <span class="lc-doc-version-badge lc-doc-version-badge--${versionCls}">${versionLabel}</span>
                     <span class="lc-archive-type">${esc(d.docTitle || d.docType)}</span>
                     <span class="lc-archive-name">${esc(d.filename)}</span>
                     <span class="lc-archive-date">${esc(fmtDate((d.uploadedAt || '').slice(0, 10)))}</span>

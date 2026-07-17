@@ -105,11 +105,12 @@ export async function onRequestGet({ env, request }) {
 }
 
 // POST /api/lc-docs — archive PDF to KV and optionally upload to Drive
-// body: { lcId, docType, docTitle, filename, data: base64, driveFolderUrl? }
+// body: { lcId, docType, docTitle, filename, data: base64, driveFolderUrl?, draft?: bool }
 export async function onRequestPost({ env, request }) {
     try {
         const body = await request.json();
         const { lcId, docType, docTitle, filename, data, driveFolderUrl } = body;
+        const isDraft = body.draft === true;
         if (!lcId || !data) return errResponse('lcId and data required', 400);
 
         const key = `${lcId}-${docType}-${Date.now()}`;
@@ -138,6 +139,7 @@ export async function onRequestPost({ env, request }) {
             docTitle:     docTitle || docType,
             filename:     filename || 'document.pdf',
             uploadedAt:   new Date().toISOString(),
+            draft:        isDraft,
             driveFileId,
             driveViewLink,
             driveError,
@@ -145,10 +147,22 @@ export async function onRequestPost({ env, request }) {
 
         const raw  = await env.ORDERS_KV.get('lc-doc-meta:' + lcId);
         const docs = raw ? JSON.parse(raw) : [];
+
+        // When saving a Final, supersede any earlier Finals for the same docType.
+        let superseded = 0;
+        if (!isDraft) {
+            docs.forEach(d => {
+                if (d.docType === docType && !d.draft && !d.superseded) {
+                    d.superseded = true;
+                    superseded++;
+                }
+            });
+        }
+
         docs.unshift(meta);
         await env.ORDERS_KV.put('lc-doc-meta:' + lcId, JSON.stringify(docs));
 
-        return jsonResponse({ ok: true, key, meta }, 201);
+        return jsonResponse({ ok: true, key, meta, superseded }, 201);
     } catch (e) {
         return errResponse(e.message);
     }
