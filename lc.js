@@ -715,7 +715,7 @@ const LC = (() => {
 
         const checkItems = doc.checks.map(c => {
             const isChecked = !!checks[c.id];
-            const citeLink  = c.cite ? '<a class="lc-cite-link" href="#' + c.cite + '" title="View in LC reference">§</a>' : '';
+            const citeLink  = '<a class="lc-cite-link" href="#' + (c.cite || 'lc-raw-section') + '" title="View in LC reference">§</a>';
             return '<div class="lc-check-item' + (isChecked ? ' lc-check-item--done' : '') + '">'
                 + '<input type="checkbox" id="chk-' + c.id + '" data-check="' + c.id + '"' + (isChecked ? ' checked' : '') + '>'
                 + '<label for="chk-' + c.id + '">' + esc(c.text) + citeLink + '</label>'
@@ -772,6 +772,7 @@ const LC = (() => {
                 <button class="lc-doc-checklist-toggle" data-toggle-checklist="${doc.id}" type="button">Show requirements</button>
             </div>
             <div class="lc-card-check-results" id="lccheck-${doc.id}" hidden></div>
+            <div class="lc-doc-history" id="lc-doc-history-${doc.id}" hidden></div>
         </div>`;
     }
 
@@ -976,20 +977,36 @@ const LC = (() => {
             + '</div>';
 
         if (lc.rawMt700) {
-            // Verbatim raw text — split on :TAG: markers and inject anchors
+            // Verbatim raw text — split on :TAG: markers and inject anchors.
+            // cleanRawSeg strips SWIFT printout noise (indentation, separator
+            // dot-lines, #dupe# amount markers, page footers) without touching wording.
+            function cleanRawSeg(t) {
+                let lines = t.replace(/\r/g, '').split('\n').map(l => l.replace(/\s+$/, ''));
+                const indents = lines.filter(l => l.trim()).map(l => (l.match(/^ */) || [''])[0].length);
+                const minInd  = indents.length ? Math.min.apply(null, indents) : 0;
+                const out = [];
+                lines.forEach(function(l) {
+                    l = l.slice(minInd);
+                    const bare = l.trim();
+                    if (/^\.+$/.test(bare)) { out.push(''); return; }                 // SWIFT "." separator lines
+                    if (/^page\s+\d+\s+of\s+\d+$/i.test(bare)) return;                // report page footers
+                    l = l.replace(/\s*#[0-9.,]+#/g, '');                              // duplicate #amount# markers
+                    l = l.replace(/[ \t]{2,}/g, '  ');                                // collapse runaway space runs
+                    out.push(l);
+                });
+                return out.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+            }
+
             const raw    = lc.rawMt700;
             const parts  = raw.split(/\n(?=:[0-9A-Z]{2,3}:)/);
-
-            // Also need F47A condition anchors — count occurrences as we go
             const f47aAll = lc.f47aConditions || [];
-            let f47aIdx = 0;
 
             lcRawHtml += '<div class="lc-raw-verbatim">';
             parts.forEach(function(part) {
                 const tagMatch = part.match(/^:([0-9A-Z]{2,3}):/);
                 const tag      = tagMatch ? tagMatch[1].toUpperCase() : null;
                 const anchorId = tag ? (TAG_ANCHORS[tag] || ('lc-f-' + tag.toLowerCase())) : null;
-                const content  = part.replace(/^:[0-9A-Z]{2,3}:\n?/, '');
+                const content  = cleanRawSeg(part.replace(/^:[0-9A-Z]{2,3}:\n?/, ''));
 
                 if (tag === '47A') {
                     // For F47A, also emit per-condition anchors so §47A.N links work
@@ -1000,9 +1017,11 @@ const LC = (() => {
                     const condParts = content.split(/\n(?=\d+[.)]\s)/);
                     condParts.forEach(function(cp, ci) {
                         const condAnchor = f47aAll[ci] ? 'lc-f47a-' + ci : '';
+                        const condText = cleanRawSeg(cp);
+                        if (!condText) return;
                         lcRawHtml += '<span class="lc-raw-verbatim-cond"'
                             + (condAnchor ? ' id="' + condAnchor + '"' : '') + '>'
-                            + esc(cp.trim())
+                            + esc(condText)
                             + '</span>';
                     });
                     lcRawHtml += '</div>';
@@ -1021,9 +1040,9 @@ const LC = (() => {
                         + '<span class="lc-raw-verbatim-tag">:' + tag + ':</span>'
                         + '<span class="lc-raw-verbatim-body">' + esc(content) + '</span>'
                         + '</div>';
-                } else if (part.trim()) {
+                } else if (cleanRawSeg(part)) {
                     lcRawHtml += '<div class="lc-raw-verbatim-field">'
-                        + '<span class="lc-raw-verbatim-body">' + esc(part) + '</span>'
+                        + '<span class="lc-raw-verbatim-body">' + esc(cleanRawSeg(part)) + '</span>'
                         + '</div>';
                 }
             });
@@ -1173,7 +1192,7 @@ const LC = (() => {
 
                     <div class="lc-archive-section">
                         <div class="lc-archive-hd">
-                            <div class="lc-section-label" style="margin:0">Archived Documents</div>
+                            <div class="lc-section-label" style="margin:0">Google Drive</div>
                             <div class="lc-drive-folder-wrap" id="lc-drive-folder-wrap">
                                 ${lc.driveFolderUrl
                                     ? `<a href="${esc(lc.driveFolderUrl)}" target="_blank" class="lc-drive-folder-link">
@@ -1197,9 +1216,6 @@ const LC = (() => {
                                 <button id="lc-drive-cancel-btn" type="button" class="lc-doc-link-cancel">Cancel</button>
                                 ${lc.driveFolderUrl ? `<button id="lc-drive-remove-btn" type="button" class="lc-doc-link-clear">Remove</button>` : ''}
                             </div>
-                        </div>
-                        <div class="lc-archive-list" id="lc-archive-list">
-                            <span class="lc-archive-empty">Loading…</span>
                         </div>
                     </div>
                     ${lcRawHtml}
@@ -1779,10 +1795,11 @@ const LC = (() => {
             if (input) input.value = url;
         }
 
-        // Archive list delete handler
-        container.querySelector('#lc-archive-list').addEventListener('click', async e => {
+        // Upload history delete handler (rows live beneath each doc card)
+        container.querySelector('#lc-doc-list').addEventListener('click', async e => {
             const btn = e.target.closest('[data-del-key]');
             if (!btn) return;
+            e.stopPropagation();
             if (!confirm('Remove this archived document?')) return;
             const key = btn.dataset.delKey;
             try {
@@ -2055,7 +2072,7 @@ const LC = (() => {
                         const cls       = r.result === 'flag' ? 'flag' : 'fail';
                         const icon      = r.result === 'flag' ? '⚠' : '✗';
                         const noteAttr  = r.note ? ' data-ai-note="' + esc(r.note) + '"' : '';
-                        const citeLink  = c.cite ? '<a class="lc-cite-link" href="#' + c.cite + '" title="View in LC reference">§</a>' : '';
+                        const citeLink  = '<a class="lc-cite-link" href="#' + (c.cite || 'lc-raw-section') + '" title="View in LC reference">§</a>';
                         return '<div class="lc-check-item lc-check-item--ai lc-check-item--ai-' + cls + (isChecked ? ' lc-check-item--done' : '') + '">'
                             + '<input type="checkbox" id="chk-' + c.id + '" data-check="' + c.id + '"' + (isChecked ? ' checked' : '') + '>'
                             + '<div class="lc-check-item-body">'
@@ -2103,21 +2120,16 @@ const LC = (() => {
     }
 
     async function loadArchivedDocs(container, lcId) {
-        const listEl = container.querySelector('#lc-archive-list');
-        if (!listEl) return;
-        try {
-            const json = await apiFetch('/api/lc-docs?lcId=' + lcId);
-            if (!json.docs?.length) {
-                listEl.innerHTML = '<span class="lc-archive-empty">No archived documents yet — use the upload button (↑) on each document card to check and archive.</span>';
-                return;
-            }
-            listEl.innerHTML = json.docs.map(d => {
-                const versionCls  = d.superseded ? 'superseded' : d.draft ? 'draft' : 'final';
-                const versionLabel = d.superseded ? 'Superseded' : d.draft ? 'Draft' : 'Final';
-                return `
+        // Per-document upload history — rows distributed beneath each doc card
+        const historyEls = container.querySelectorAll('.lc-doc-history');
+        if (!historyEls.length) return;
+
+        const rowHtml = d => {
+            const versionCls   = d.superseded ? 'superseded' : d.draft ? 'draft' : 'final';
+            const versionLabel = d.superseded ? 'Superseded' : d.draft ? 'Draft' : 'Final';
+            return `
                 <div class="lc-archive-row${d.superseded ? ' lc-archive-row--superseded' : ''}">
                     <span class="lc-doc-version-badge lc-doc-version-badge--${versionCls}">${versionLabel}</span>
-                    <span class="lc-archive-type">${esc(d.docTitle || d.docType)}</span>
                     <span class="lc-archive-name">${esc(d.filename)}</span>
                     <span class="lc-archive-date">${esc(fmtDate((d.uploadedAt || '').slice(0, 10)))}</span>
                     <a class="lc-archive-view" href="/api/lc-doc-file?key=${encodeURIComponent(d.key)}&filename=${encodeURIComponent(d.filename)}" target="_blank">View PDF</a>
@@ -2131,12 +2143,23 @@ const LC = (() => {
                             : ''
                     }
                     <button class="lc-archive-del" data-del-key="${esc(d.key)}" type="button" title="Delete">✕</button>
-                </div>
-            `;
-            }).join('');
-        } catch {
-            listEl.innerHTML = '<span class="lc-archive-empty">Could not load archived documents</span>';
-        }
+                </div>`;
+        };
+
+        try {
+            const json = await apiFetch('/api/lc-docs?lcId=' + lcId);
+            const byType = {};
+            (json.docs || []).forEach(d => {
+                (byType[d.docType] = byType[d.docType] || []).push(d);
+            });
+            historyEls.forEach(el => {
+                const docId = el.id.replace('lc-doc-history-', '');
+                const rows  = byType[docId] || [];
+                if (!rows.length) { el.hidden = true; el.innerHTML = ''; return; }
+                el.innerHTML = '<div class="lc-doc-history-label">Upload history</div>' + rows.map(rowHtml).join('');
+                el.hidden = false;
+            });
+        } catch { /* leave history blocks hidden */ }
     }
 
     async function loadKnownIssues(container) {

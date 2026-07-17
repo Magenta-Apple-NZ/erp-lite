@@ -6225,13 +6225,21 @@ a.db-row:hover { background: #f8fafc; border-color: #e2e8f0; }
 .lc-drive-change-btn:hover { color: #475569; }
 .lc-drive-folder-form { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 0.6rem 0.75rem; margin-bottom: 0.5rem; }
 .lc-drive-form-btns { display: flex; gap: 0.4rem; }
-.lc-archive-list { display: flex; flex-direction: column; gap: 0.25rem; }
-.lc-archive-empty { font-size: 0.8rem; color: #94a3b8; padding: 0.4rem 0; display: block; }
+/* Per-document upload history — sits beneath each doc card */
+.lc-doc-history {
+    border-top: 1px dashed #e2e8f0; background: #fafbfc;
+    padding: 0.5rem 0.9rem 0.65rem;
+    display: flex; flex-direction: column; gap: 0.25rem;
+}
+.lc-doc-history[hidden] { display: none; }
+.lc-doc-history-label {
+    font-size: 0.66rem; font-weight: 700; color: #94a3b8;
+    text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.1rem;
+}
 .lc-archive-row {
-    display: flex; align-items: center; gap: 0.75rem; padding: 0.5rem 0.75rem;
+    display: flex; align-items: center; gap: 0.75rem; padding: 0.4rem 0.6rem;
     background: white; border: 1px solid #e2e8f0; border-radius: 6px; font-size: 0.8rem;
 }
-.lc-archive-type { font-weight: 600; color: #334155; flex-shrink: 0; }
 .lc-archive-name { color: #64748b; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
 .lc-archive-date { color: #94a3b8; flex-shrink: 0; font-size: 0.75rem; }
 .lc-archive-view { color: #3b82f6; text-decoration: none; flex-shrink: 0; font-size: 0.78rem; }
@@ -6512,7 +6520,7 @@ a.db-row:hover { background: #f8fafc; border-color: #e2e8f0; }
 
 /* ── Superseded archive row ── */
 .lc-archive-row--superseded { opacity: 0.45; }
-.lc-archive-row--superseded .lc-archive-type { text-decoration: line-through; }
+.lc-archive-row--superseded .lc-archive-name { text-decoration: line-through; }
 
 /* ── Check matrix ── */
 .lc-check-matrix-bar {
@@ -6725,15 +6733,15 @@ a.db-row:hover { background: #f8fafc; border-color: #e2e8f0; }
 .lc-doc-cite { font-size: 0.72rem; color: #94a3b8; text-decoration: none; margin-left: 0.35rem; font-weight: 400; vertical-align: super; }
 .lc-doc-cite:hover { color: #2563eb; }
 
-/* ── Per-check cite link (§ inline with label) ── */
+/* ── Per-check cite link (§ inline with label) — always visible ── */
 .lc-cite-link {
     font-size: 0.68rem; color: #94a3b8; text-decoration: none;
     margin-left: 0.3rem; font-weight: 400; vertical-align: super;
-    opacity: 0; transition: opacity 0.12s;
+    opacity: 0.55; transition: opacity 0.12s, color 0.12s;
 }
 .lc-check-item:hover .lc-cite-link,
 .lc-check-item--ai:hover .lc-cite-link { opacity: 1; }
-.lc-cite-link:hover { color: #2563eb; }
+.lc-cite-link:hover { color: #2563eb; opacity: 1; }
 
 /* ── Order detail tabs ── */
 .order-detail-tabs {

@@ -55,7 +55,7 @@ Rules:
 - Return null for any field not clearly present. Do not guess.
 - For f47aConditions: extract EVERY numbered condition from field :47A: verbatim. Do NOT categorise, merge, or omit any. Each condition gets its printed number (e.g. "01", "02") and the COMPLETE verbatim text of that condition exactly as it appears in the document — no paraphrasing, no summarising. If :47A: is absent return [].
 - Return ONLY the JSON object, no other text.
-- Also include a "rawText" field: the complete verbatim content of the LC, field by field, exactly as printed in the document. Format each field as ":TAG:\n[verbatim content]" with a blank line between fields. Do not paraphrase, summarise, or reformat — copy the exact wording, spacing, numbering, and punctuation from the document.`;
+- Also include a "rawText" field: the complete verbatim content of the LC message text, field by field. Format each field as ":TAG:\n[verbatim content]" with a blank line between fields. Copy the exact wording, numbering, and punctuation — do not paraphrase or summarise. However, EXCLUDE report/printout artifacts that are not LC content: page headers and footers ("Page x of y"), transmission/interception metadata, duplicated machine renderings such as "#22129,72#" after an amount, and excess indentation. Keep every word of the actual LC terms.`;
 
 export async function onRequestPost({ env, request }) {
     let step = 'init';
