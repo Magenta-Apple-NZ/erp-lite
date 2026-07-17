@@ -2284,7 +2284,7 @@ const Warehouse = (() => {
                 var unlinked = lcs.filter(function(l) { return !l.linkedShipmentId && !l.linkedOrderId; });
 
                 if (linked) {
-                    panel.innerHTML = lcCard(linked);
+                    location.hash = 'lc/' + linked.id;
                     return;
                 }
 

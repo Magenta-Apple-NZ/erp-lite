@@ -1011,11 +1011,19 @@ const LC = (() => {
             grpDocs.forEach(function(d) { docListHtml += renderDocCard(d, lc); });
         });
 
+        const backHref  = lc.linkedShipmentId ? '#imports/ship/' + encodeURIComponent(lc.linkedShipmentId) : '#lc';
+        const backLabel = lc.linkedShipmentId ? '← ' + esc(lc.shipmentRef || 'Shipment') : '← Letters of Credit';
+        const h1Label   = lc.shipmentRef || esc(lc.lcNumber);
+
         container.innerHTML = `
         <div class="orders-view-inner">
             <div class="lc-detail-hd">
-                <a class="lc-back" href="#lc">← Letters of Credit</a>
+                <a class="lc-back" href="${backHref}">${backLabel}</a>
                 <span class="lc-save-status" id="lc-save-status"></span>
+            </div>
+            <div class="ship-detail-hdr" style="margin-bottom:0.25rem">
+                <h1 class="ship-detail-title">${esc(h1Label)}</h1>
+                <p class="ship-detail-meta">Letter of Credit · ${esc(lc.lcNumber)}</p>
             </div>
 
             <div class="lc-checker-identity">
