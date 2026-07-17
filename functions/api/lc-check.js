@@ -101,6 +101,7 @@ ${checkList}
 - "fail"  — missing entirely, clearly wrong value, or a material discrepancy that would cause bank rejection
 - Never give "pass" when you cannot find and quote the relevant text in the document
 - Never give "pass" on a numerical check without confirming the exact figure
+- For any value that could appear in multiple places (weight, quantity, amount, date): scan the ENTIRE document — headers, line items, summary tables, footers, certification clauses — and report every instance. If two sections show different figures, that is a fail regardless of which figure matches the LC.
 - Return one object per check — every check in the list must appear in the output`;
 
         step = 'anthropic-fetch';
