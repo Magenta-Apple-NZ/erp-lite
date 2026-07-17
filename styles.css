@@ -6567,16 +6567,16 @@ a.db-row:hover { background: #f8fafc; border-color: #e2e8f0; }
 .lc-tl2-track { position: relative; height: 96px; margin: 0.5rem 2rem 0; }
 .lc-tl2-rail { position: absolute; bottom: 16px; left: 0; right: 0; height: 2px; background: #e2e8f0; }
 
-/* Today = thin black line spanning full track height */
+/* Today = thin black line spanning full track height — no z-index, DOM order puts it below labels */
 .lc-tl2-today-line {
     position: absolute; top: 0; bottom: 0; width: 2px;
-    background: #1e293b; transform: translateX(-50%); z-index: 4; pointer-events: none;
+    background: #1e293b; transform: translateX(-50%); pointer-events: none;
 }
 
-/* All marks sit at the rail (bottom 16px from bottom of track) */
+/* Marks contain only the dot; labels are separate siblings rendered after in DOM */
 .lc-tl2-mark {
     position: absolute; bottom: 16px; transform: translateX(-50%);
-    display: flex; flex-direction: column-reverse; align-items: center; z-index: 5;
+    display: flex; align-items: center; justify-content: center;
 }
 .lc-tl2-mark--btn { cursor: pointer; }
 .lc-tl2-mark--btn:hover .lc-tl2-dot { filter: brightness(1.15); transform: scale(1.2); }
@@ -6594,13 +6594,13 @@ a.db-row:hover { background: #f8fafc; border-color: #e2e8f0; }
 .lc-tl2-dot--pres      { background: #7c3aed; box-shadow: 0 0 0 1.5px #7c3aed; }
 .lc-tl2-dot--expiry    { background: #ef4444; box-shadow: 0 0 0 1.5px #ef4444; }
 
-/* Labels always above — sit between dot and top of track */
+/* Labels are track-level siblings, rendered last so DOM order guarantees they're above today line */
 .lc-tl2-info {
-    position: absolute; bottom: calc(100% + 6px); white-space: nowrap;
+    position: absolute; bottom: 34px; transform: translateX(-50%); white-space: nowrap;
     text-align: center; font-size: 0.7rem; line-height: 1.3; pointer-events: none;
-    background: rgba(255,255,255,0.20); border-radius: 3px; padding: 1px 4px;
+    background: rgba(255,255,255,0.82); border-radius: 3px; padding: 1px 4px;
 }
-.lc-tl2-info--above { bottom: calc(100% + 6px); }
+.lc-tl2-info--above { bottom: 34px; }
 .lc-tl2-name { font-weight: 600; color: #334155; }
 .lc-tl2-date { color: #64748b; font-size: 0.68rem; }
 .lc-tl2-delta { font-size: 0.67rem; font-weight: 600; }
@@ -6637,32 +6637,41 @@ a.db-row:hover { background: #f8fafc; border-color: #e2e8f0; }
 .lc-raw-verbatim {
     font-family: 'ui-monospace', 'Menlo', 'Consolas', monospace;
     font-size: 0.8rem; line-height: 1.65; color: #1e293b;
-    display: flex; flex-direction: column; gap: 0;
     border: 1px solid #e2e8f0; border-radius: 6px; overflow: hidden;
 }
 .lc-raw-verbatim-field {
-    display: flex; flex-direction: column;
-    padding: 0.55rem 0.85rem;
+    display: grid;
+    grid-template-columns: 3.75rem 1fr;
+    column-gap: 1rem;
+    align-items: start;
+    padding: 0.6rem 1rem;
     border-bottom: 1px solid #f1f5f9;
     scroll-margin-top: 80px;
 }
+.lc-raw-verbatim-field:nth-child(odd) { background: #fafbfc; }
 .lc-raw-verbatim-field:last-child { border-bottom: none; }
 .lc-raw-verbatim-field:target {
-    background: #eff6ff;
+    background: #eff6ff !important;
     box-shadow: inset 3px 0 0 #2563eb;
 }
 .lc-raw-verbatim-tag {
-    font-weight: 700; color: #2563eb; font-size: 0.72rem;
-    letter-spacing: 0.06em; margin-bottom: 0.2rem; display: block;
+    grid-column: 1; grid-row: 1 / -1;
+    font-weight: 700; color: #2563eb; font-size: 0.71rem;
+    letter-spacing: 0.05em; padding-top: 2px; align-self: start;
 }
-.lc-raw-verbatim-body { white-space: pre-wrap; color: #1e293b; }
+.lc-raw-verbatim-body {
+    grid-column: 2; white-space: pre-wrap; color: #1e293b; line-height: 1.6;
+}
 .lc-raw-verbatim-cond {
-    display: block; white-space: pre-wrap; padding: 0.3rem 0;
-    border-bottom: 1px solid #f8fafc; scroll-margin-top: 80px;
+    grid-column: 2; display: block; white-space: pre-wrap;
+    padding: 0.25rem 0 0.25rem 0.65rem;
+    border-left: 2px solid #e2e8f0;
+    margin-bottom: 0.3rem; color: #334155;
+    scroll-margin-top: 80px;
 }
-.lc-raw-verbatim-cond:last-child { border-bottom: none; }
-.lc-raw-verbatim-cond:target { background: #eff6ff; border-radius: 3px; }
-.lc-raw-verbatim-doc-anchor { display: block; height: 0; scroll-margin-top: 80px; }
+.lc-raw-verbatim-cond:last-child { margin-bottom: 0; }
+.lc-raw-verbatim-cond:target { background: #eff6ff; border-left-color: #2563eb; border-radius: 0 3px 3px 0; }
+.lc-raw-verbatim-doc-anchor { grid-column: 2; display: block; height: 0; scroll-margin-top: 80px; }
 
 .lc-raw-field {
     padding: 0.6rem 0.75rem;

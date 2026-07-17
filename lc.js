@@ -861,88 +861,71 @@ const LC = (() => {
             const estShipPct    = tlPct(lc.estimatedShipDate);
             const shipIsToday   = shipDate && shipDate === todayIso;
 
-            // Past dots are coloured; future dots are grey.
             const dotCls = (dateIso, colourCls) =>
                 (todayIso && dateIso && dateIso > todayIso) ? 'lc-tl2-dot--grey' : colourCls;
 
-            let html = '<div class="lc-tl2-rail"></div>';
+            function label(pct, nameHtml, dateHtml, deltaHtml2) {
+                return '<div class="lc-tl2-info" style="left:' + pct + '%">'
+                    + '<div class="lc-tl2-name">' + nameHtml + '</div>'
+                    + '<div class="lc-tl2-date">' + dateHtml + '</div>'
+                    + (deltaHtml2 ? '<div class="lc-tl2-delta">' + deltaHtml2 + '</div>' : '')
+                    + '</div>';
+            }
 
-            // Today = simple black vertical line, no dot, no label
+            // Rail and today line first (behind everything)
+            let html     = '<div class="lc-tl2-rail"></div>';
+            let labelsHtml = '';
+
             if (todayPct !== null) {
                 html += '<div class="lc-tl2-today-line" style="left:' + todayPct + '%"></div>';
             }
 
-            // LC Issued -- left anchor, label above
+            // Dots only inside marks; labels emitted separately at end so DOM order puts them on top
             html += '<div class="lc-tl2-mark" style="left:0%">'
-                + '<div class="lc-tl2-info lc-tl2-info--above">'
-                + '<div class="lc-tl2-name">LC Issued</div>'
-                + '<div class="lc-tl2-date">' + esc(fmtDate(lc.issuedDate)) + '</div>'
-                + '</div>'
                 + '<div class="lc-tl2-dot ' + dotCls(lc.issuedDate, '') + '"></div>'
                 + '</div>';
+            labelsHtml += label('0', 'LC Issued', esc(fmtDate(lc.issuedDate)), '');
 
-            // Est. Ship -- interactive, label above (only if field set)
             if (lc.estimatedShipDate && estShipPct !== null) {
                 const estDays = daysUntil(lc.estimatedShipDate);
                 html += '<div class="lc-tl2-mark lc-tl2-mark--btn" data-setship title="Click to record actual shipment date" style="left:' + estShipPct + '%">'
-                    + '<div class="lc-tl2-info lc-tl2-info--above">'
-                    + '<div class="lc-tl2-name">Est. Ship</div>'
-                    + '<div class="lc-tl2-date">' + esc(fmtDate(lc.estimatedShipDate)) + '</div>'
-                    + (estDays !== null ? '<div class="lc-tl2-delta">' + deltaHtml(estDays) + '</div>' : '')
-                    + '</div>'
                     + '<div class="lc-tl2-dot ' + dotCls(lc.estimatedShipDate, 'lc-tl2-dot--estship') + '"></div>'
                     + '</div>';
+                labelsHtml += label(estShipPct, 'Est. Ship', esc(fmtDate(lc.estimatedShipDate)), estDays !== null ? deltaHtml(estDays) : '');
             }
 
-            // Latest Ship -- LC deadline, label above
             if (latestShipPct !== null) {
                 const lsDays = daysUntil(lc.latestShipDate);
                 html += '<div class="lc-tl2-mark" style="left:' + latestShipPct + '%">'
-                    + '<div class="lc-tl2-info lc-tl2-info--above">'
-                    + '<div class="lc-tl2-name">Latest Ship</div>'
-                    + '<div class="lc-tl2-date">' + esc(fmtDate(lc.latestShipDate)) + '</div>'
-                    + (lsDays !== null ? '<div class="lc-tl2-delta">' + deltaHtml(lsDays) + '</div>' : '')
-                    + '</div>'
                     + '<div class="lc-tl2-dot ' + dotCls(lc.latestShipDate, 'lc-tl2-dot--latestship') + '"></div>'
                     + '</div>';
+                labelsHtml += label(latestShipPct, 'Latest Ship', esc(fmtDate(lc.latestShipDate)), lsDays !== null ? deltaHtml(lsDays) : '');
             }
 
-            // Present by -- label above (only if shipDate set)
             if (presIso && presPct !== null) {
                 const presDays = daysUntil(presIso);
                 html += '<div class="lc-tl2-mark" style="left:' + presPct + '%">'
-                    + '<div class="lc-tl2-info lc-tl2-info--above">'
-                    + '<div class="lc-tl2-name">Present by</div>'
-                    + '<div class="lc-tl2-date">' + esc(fmtDate(presIso)) + '</div>'
-                    + (presDays !== null ? '<div class="lc-tl2-delta">' + deltaHtml(presDays) + '</div>' : '')
-                    + '</div>'
                     + '<div class="lc-tl2-dot ' + dotCls(presIso, 'lc-tl2-dot--pres') + '"></div>'
                     + '</div>';
+                labelsHtml += label(presPct, 'Present by', esc(fmtDate(presIso)), presDays !== null ? deltaHtml(presDays) : '');
             }
 
-            // Actual Ship -- clickable to edit, label above
             if (shipDate && shipPct !== null) {
-                const label = shipIsToday ? 'Shipped · Today' : 'Shipped';
+                const shipLabel = shipIsToday ? 'Shipped · Today' : 'Shipped';
                 html += '<div class="lc-tl2-mark lc-tl2-mark--btn" data-setship title="Click to edit shipment date" style="left:' + shipPct + '%">'
-                    + '<div class="lc-tl2-info lc-tl2-info--above">'
-                    + '<div class="lc-tl2-name">' + label + '</div>'
-                    + '<div class="lc-tl2-date">' + esc(fmtDate(shipDate)) + '</div>'
-                    + '</div>'
                     + '<div class="lc-tl2-dot ' + dotCls(shipDate, 'lc-tl2-dot--shipped') + '"></div>'
                     + '</div>';
+                labelsHtml += label(shipPct, shipLabel, esc(fmtDate(shipDate)), '');
             }
 
-            // LC Expiry -- right anchor, label above
             const expDays = daysUntil(lc.expiryDate);
             html += '<div class="lc-tl2-mark" style="left:100%">'
-                + '<div class="lc-tl2-info lc-tl2-info--above">'
-                + '<div class="lc-tl2-name">LC Expiry</div>'
-                + '<div class="lc-tl2-date">' + esc(fmtDate(lc.expiryDate)) + '</div>'
-                + (expDays !== null ? '<div class="lc-tl2-delta">' + deltaHtml(expDays) + '</div>' : '')
-                + '</div>'
                 + '<div class="lc-tl2-dot ' + dotCls(lc.expiryDate, 'lc-tl2-dot--expiry') + '"></div>'
                 + '</div>';
-            return html;
+            labelsHtml += label('100', 'LC Expiry', esc(fmtDate(lc.expiryDate)), expDays !== null ? deltaHtml(expDays) : '');
+
+            // Labels last in DOM → always above rail, today line, and dots by DOM order
+            return html + labelsHtml;
         }
 
         const tlWrap = '<div class="lc-tl2" id="lc-tl2">'
