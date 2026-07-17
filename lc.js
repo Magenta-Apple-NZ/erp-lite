@@ -61,7 +61,7 @@ const LC = (() => {
 
         const f47aChecks = (docId) => (lc.f47aConditions || [])
             .map((c, gi) => ({ c, gi }))
-            .filter(({ c }) => c.docId === docId)
+            .filter(({ c }) => !c.docId || c.docId === 'general' || c.docId === docId)
             .map(({ c, gi }, i) => ({ id: `f47a-${docId}-${i}`, text: c.text, cite: `lc-f47a-${gi}` }));
 
         return [
@@ -1330,10 +1330,11 @@ const LC = (() => {
 
         const condRows = extractedConds.map((c, i) => {
             const alreadyHave = currentConds.some(x => x.text.trim() === c.text.trim());
+            const label = c.num ? ('Cond. ' + c.num) : (c.docId && c.docId !== 'general' ? c.docId : 'General');
             return '<div class="lc-er-row lc-er-row--cond' + (alreadyHave ? ' lc-er-row--dupe' : '') + '">'
                 + '<label class="lc-er-check-wrap">'
                 + '<input type="checkbox" class="lc-er-cond-cb" data-cond-idx="' + i + '"' + (alreadyHave ? '' : ' checked') + '>'
-                + '<span class="lc-er-label">' + esc(c.docId && c.docId !== 'general' ? c.docId : 'General') + '</span>'
+                + '<span class="lc-er-label">' + esc(label) + '</span>'
                 + '</label>'
                 + '<span class="lc-er-cond-text">' + esc(c.text) + (alreadyHave ? ' <em>(already stored)</em>' : '') + '</span>'
                 + '</div>';
@@ -1381,7 +1382,7 @@ const LC = (() => {
             modal.querySelectorAll('.lc-er-cond-cb:checked').forEach(cb => {
                 const c = extractedConds[Number(cb.dataset.condIdx)];
                 if (c && !newConds.some(x => x.text.trim() === c.text.trim())) {
-                    newConds.push({ text: c.text, docId: c.docId === 'general' ? null : c.docId });
+                    newConds.push({ text: c.text, docId: c.docId && c.docId !== 'general' ? c.docId : null });
                 }
             });
             if (modal.querySelectorAll('.lc-er-cond-cb:checked').length) {

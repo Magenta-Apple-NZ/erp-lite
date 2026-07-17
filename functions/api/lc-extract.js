@@ -44,9 +44,8 @@ Return ONLY a valid JSON object with these exact fields (use null for any field 
   "portFinal": "place of final destination from :44B:",
   "governedBy": "applicable rules, e.g. UCP 600",
   "f47aConditions": [
-    {"docId": "commercialInvoice", "text": "exact condition text from :47A:"},
-    {"docId": "billOfLading", "text": "..."},
-    {"docId": "general", "text": "..."}
+    {"num": "01", "text": "verbatim text of condition 01 exactly as printed"},
+    {"num": "02", "text": "verbatim text of condition 02 exactly as printed"}
   ]
 }
 
@@ -54,7 +53,7 @@ Rules:
 - Convert all SWIFT-format dates (YYMMDD or YYYYMMDD) to YYYY-MM-DD. If year 2-digit and >= 70 prefix 19, else prefix 20.
 - Strip currency symbols, commas, and units from numeric fields.
 - Return null for any field not clearly present. Do not guess.
-- Extract ALL conditions from field :47A: as f47aConditions. Assign each to the most relevant docId from: draft, commercialInvoice, billOfLading, certificateOfOrigin, insuranceNotification, beneficiaryCertificate, inspectionCertificate, general. Use "general" for conditions that apply to all documents. Return an empty array [] if :47A: is absent.
+- For f47aConditions: extract EVERY numbered condition from field :47A: verbatim. Do NOT categorise, merge, or omit any. Each condition gets its printed number (e.g. "01", "02") and the COMPLETE verbatim text of that condition exactly as it appears in the document — no paraphrasing, no summarising. If :47A: is absent return [].
 - Return ONLY the JSON object, no other text.
 - Also include a "rawText" field: the complete verbatim content of the LC, field by field, exactly as printed in the document. Format each field as ":TAG:\n[verbatim content]" with a blank line between fields. Do not paraphrase, summarise, or reformat — copy the exact wording, spacing, numbering, and punctuation from the document.`;
 
