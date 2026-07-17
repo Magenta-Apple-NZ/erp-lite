@@ -2266,17 +2266,38 @@ const Warehouse = (() => {
                     var seqLabel = s.seq ? '#' + s.seq : s.id;
                     panel.innerHTML =
                         '<div class="ship-lc-empty">'
-                        + '<p>No Letter of Credit linked to this shipment.</p>'
-                        + '<a class="btn-primary" href="#lc/new" id="ship-reg-lc-btn">Register LC for Shipment ' + escHtml(seqLabel) + '</a>'
+                        + '<p>No Letter of Credit is linked to this shipment yet.</p>'
+                        + '<form class="ship-lc-quick-form" id="ship-lc-quick-form">'
+                        + '<input class="imp-url-input ship-lc-num-input" id="ship-lc-num-input" name="lcNumber" type="text" placeholder="LC number e.g. 320126011494" required autocomplete="off">'
+                        + '<button class="btn-primary btn-sm" type="submit">Register LC</button>'
+                        + '</form>'
+                        + '<p class="ship-lc-hint">The remaining LC fields can be filled in after creation.</p>'
                         + '</div>';
-                    var regBtn = panel.querySelector('#ship-reg-lc-btn');
-                    if (regBtn) {
-                        regBtn.addEventListener('click', function(e) {
+                    var form = panel.querySelector('#ship-lc-quick-form');
+                    if (form) {
+                        form.addEventListener('submit', async function(e) {
                             e.preventDefault();
-                            if (typeof LC !== 'undefined' && LC.setPendingShipId) {
-                                LC.setPendingShipId(s.id, s.seq || s.id);
+                            var lcNumber = panel.querySelector('#ship-lc-num-input').value.trim();
+                            if (!lcNumber) return;
+                            var btn = form.querySelector('button[type=submit]');
+                            btn.disabled = true; btn.textContent = 'Creating…';
+                            try {
+                                var res = await fetch('/api/lc', {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({
+                                        lcNumber: lcNumber,
+                                        linkedShipmentId: s.id,
+                                        shipmentRef: 'Shipment ' + seqLabel,
+                                    }),
+                                });
+                                var created = await res.json();
+                                if (!res.ok) throw new Error(created.error || 'Create failed');
+                                location.hash = 'lc/' + created.id;
+                            } catch (err) {
+                                btn.disabled = false; btn.textContent = 'Register LC';
+                                panel.querySelector('.ship-lc-hint').textContent = '✗ ' + err.message;
                             }
-                            location.hash = 'lc/new';
                         });
                     }
                 }

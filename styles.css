@@ -6523,3 +6523,7 @@ a.db-row:hover { background: #f8fafc; border-color: #e2e8f0; }
 .ship-lc-val { font-size: 0.82rem; color: #334155; }
 
 .lc-ship-hint { font-size: 0.78rem; color: #94a3b8; font-style: italic; }
+
+.ship-lc-quick-form { display: flex; gap: 0.5rem; align-items: center; margin-bottom: 0.5rem; }
+.ship-lc-num-input { font-family: 'ui-monospace', monospace; font-size: 0.85rem; min-width: 240px; }
+.ship-lc-hint { font-size: 0.75rem; color: #94a3b8; margin: 0; }

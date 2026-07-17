@@ -676,10 +676,6 @@ async function handleRoute() {
         setActiveNav('nav-imports');
         document.getElementById('imports-container').style.display = '';
         document.getElementById('lc-container').style.display = 'none';
-        document.getElementById('imports-tab-ships')?.classList.add('active');
-        document.getElementById('imports-tab-lc')?.classList.remove('active');
-        // Deep-link target: a calendar event (or any other entry point) can
-        // ask Imports to open straight onto a specific shipment's detail.
         if (shipMatch && typeof Warehouse !== 'undefined') {
             Warehouse._pendingShipId = decodeURIComponent(shipMatch[1]);
         }
@@ -692,8 +688,6 @@ async function handleRoute() {
         setActiveNav('nav-imports');
         document.getElementById('imports-container').style.display = 'none';
         document.getElementById('lc-container').style.display = '';
-        document.getElementById('imports-tab-ships')?.classList.remove('active');
-        document.getElementById('imports-tab-lc')?.classList.add('active');
         const subpath = hash.startsWith('lc/') ? hash.slice(3) : '';
         await LC.render(document.getElementById('lc-container'), subpath);
         return;
