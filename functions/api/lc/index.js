@@ -26,7 +26,7 @@ export async function onRequestPost({ env, request }) {
         const id = 'lc-' + lcNumber.replace(/[^a-zA-Z0-9]/g, '');
 
         const existing = await env.ORDERS_KV.get('lc:' + id);
-        if (existing) return errResponse('LC with this number already exists', 409);
+        if (existing) return jsonResponse({ error: 'LC with this number already exists', id }, 409);
 
         const now = new Date().toISOString();
         const lc = {

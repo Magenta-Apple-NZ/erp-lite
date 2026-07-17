@@ -2243,64 +2243,113 @@ const Warehouse = (() => {
         }
 
         async function loadShipLcPanel(panel, s) {
+            var seqLabel = s.seq ? '#' + s.seq : s.id;
+            var shipRef  = 'Shipment ' + seqLabel;
+
+            function lcCard(lc) {
+                return '<div class="ship-lc-card">'
+                    + '<div class="ship-lc-card-hd">'
+                    + '<span class="ship-lc-ref">#' + escHtml(lc.lcNumber) + '</span>'
+                    + '<a class="ship-lc-open" href="#lc/' + escHtml(lc.id) + '">Open LC →</a>'
+                    + '</div>'
+                    + '<div class="ship-lc-meta">'
+                    + '<span class="ship-lc-label">Beneficiary</span><span class="ship-lc-val">' + escHtml(lc.beneficiary || '—') + '</span>'
+                    + '<span class="ship-lc-label">Applicant</span><span class="ship-lc-val">' + escHtml((lc.applicant && lc.applicant.name) || '—') + '</span>'
+                    + '<span class="ship-lc-label">Amount</span><span class="ship-lc-val">' + escHtml((lc.currency || '') + ' ' + (lc.amount ? Number(lc.amount).toLocaleString('en-NZ') : '—')) + '</span>'
+                    + '<span class="ship-lc-label">Expires</span><span class="ship-lc-val">' + escHtml(lc.expiryDate || '—') + '</span>'
+                    + '</div>'
+                    + '</div>';
+            }
+
+            async function linkLc(lcId) {
+                await fetch('/api/lc/' + lcId, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ linkedShipmentId: s.id, shipmentRef: shipRef }),
+                });
+                loadShipLcPanel(panel, s);
+            }
+
+            async function deleteLc(lcId) {
+                if (!confirm('Delete this LC? This cannot be undone.')) return;
+                await fetch('/api/lc/' + lcId, { method: 'DELETE' });
+                loadShipLcPanel(panel, s);
+            }
+
             try {
+                panel.innerHTML = '<div class="ship-lc-loading">Loading…</div>';
                 var data = await fetch('/api/lc').then(function(r) { return r.json(); });
-                var lcs  = (data && data.lcs) ? data.lcs : [];
-                var linked = lcs.find(function(l) { return l.linkedShipmentId === s.id; });
+                var lcs     = (data && data.lcs) ? data.lcs : [];
+                var linked  = lcs.find(function(l) { return l.linkedShipmentId === s.id; });
+                var unlinked = lcs.filter(function(l) { return !l.linkedShipmentId && !l.linkedOrderId; });
+
                 if (linked) {
-                    panel.innerHTML =
-                        '<div class="ship-lc-card">'
-                        + '<div class="ship-lc-card-hd">'
-                        + '<span class="ship-lc-ref">#' + escHtml(linked.lcNumber) + '</span>'
-                        + '<a class="ship-lc-open" href="#lc/' + escHtml(linked.id) + '">Open LC →</a>'
-                        + '</div>'
-                        + '<div class="ship-lc-meta">'
-                        + '<span class="ship-lc-label">Beneficiary</span><span class="ship-lc-val">' + escHtml(linked.beneficiary || '—') + '</span>'
-                        + '<span class="ship-lc-label">Applicant</span><span class="ship-lc-val">' + escHtml((linked.applicant && linked.applicant.name) || '—') + '</span>'
-                        + '<span class="ship-lc-label">Amount</span><span class="ship-lc-val">' + escHtml((linked.currency || '') + ' ' + (linked.amount ? Number(linked.amount).toLocaleString('en-NZ') : '—')) + '</span>'
-                        + '<span class="ship-lc-label">Expires</span><span class="ship-lc-val">' + escHtml(linked.expiryDate || '—') + '</span>'
-                        + '<span class="ship-lc-label">Latest Ship</span><span class="ship-lc-val">' + escHtml(linked.latestShipDate || '—') + '</span>'
-                        + '</div>'
-                        + '</div>';
-                } else {
-                    var seqLabel = s.seq ? '#' + s.seq : s.id;
-                    panel.innerHTML =
-                        '<div class="ship-lc-empty">'
-                        + '<p>No Letter of Credit is linked to this shipment yet.</p>'
-                        + '<form class="ship-lc-quick-form" id="ship-lc-quick-form">'
-                        + '<input class="imp-url-input ship-lc-num-input" id="ship-lc-num-input" name="lcNumber" type="text" placeholder="LC number e.g. 320126011494" required autocomplete="off">'
-                        + '<button class="btn-primary btn-sm" type="submit">Register LC</button>'
-                        + '</form>'
-                        + '<p class="ship-lc-hint">The remaining LC fields can be filled in after creation.</p>'
-                        + '</div>';
-                    var form = panel.querySelector('#ship-lc-quick-form');
-                    if (form) {
-                        form.addEventListener('submit', async function(e) {
-                            e.preventDefault();
-                            var lcNumber = panel.querySelector('#ship-lc-num-input').value.trim();
-                            if (!lcNumber) return;
-                            var btn = form.querySelector('button[type=submit]');
-                            btn.disabled = true; btn.textContent = 'Creating…';
-                            try {
-                                var res = await fetch('/api/lc', {
-                                    method: 'POST',
-                                    headers: { 'Content-Type': 'application/json' },
-                                    body: JSON.stringify({
-                                        lcNumber: lcNumber,
-                                        linkedShipmentId: s.id,
-                                        shipmentRef: 'Shipment ' + seqLabel,
-                                    }),
-                                });
-                                var created = await res.json();
-                                if (!res.ok) throw new Error(created.error || 'Create failed');
-                                location.hash = 'lc/' + created.id;
-                            } catch (err) {
-                                btn.disabled = false; btn.textContent = 'Register LC';
-                                panel.querySelector('.ship-lc-hint').textContent = '✗ ' + err.message;
-                            }
-                        });
-                    }
+                    panel.innerHTML = lcCard(linked);
+                    return;
                 }
+
+                // ── Empty state: register form + unlinked LC list ──────────────
+                var unlinkedRows = unlinked.map(function(lc) {
+                    return '<div class="ship-lc-unlinked-row" data-lc-id="' + escHtml(lc.id) + '">'
+                        + '<span class="ship-lc-unlinked-ref">#' + escHtml(lc.lcNumber) + '</span>'
+                        + '<span class="ship-lc-unlinked-who">' + escHtml((lc.applicant && lc.applicant.name) || lc.beneficiary || '') + '</span>'
+                        + '<button class="btn-secondary btn-sm ship-lc-link-btn" data-lc-id="' + escHtml(lc.id) + '">Link</button>'
+                        + '<button class="btn-link ship-lc-del-btn" data-lc-id="' + escHtml(lc.id) + '" title="Delete LC">✕</button>'
+                        + '</div>';
+                }).join('');
+
+                panel.innerHTML =
+                    '<div class="ship-lc-empty">'
+                    + '<p>No Letter of Credit is linked to this shipment yet.</p>'
+                    + '<form class="ship-lc-quick-form" id="ship-lc-quick-form">'
+                    + '<input class="imp-url-input ship-lc-num-input" id="ship-lc-num-input" type="text" placeholder="LC number e.g. 320126011494" autocomplete="off">'
+                    + '<button class="btn-primary btn-sm" type="submit">Create &amp; Link</button>'
+                    + '</form>'
+                    + '<p class="ship-lc-hint">Remaining LC details can be filled in after creation. To link an existing LC, use the list below.</p>'
+                    + '</div>'
+                    + (unlinked.length
+                        ? '<div class="ship-lc-unlinked-section">'
+                          + '<div class="ship-lc-unlinked-hd">Unlinked Letters of Credit</div>'
+                          + unlinkedRows
+                          + '</div>'
+                        : '');
+
+                panel.querySelector('#ship-lc-quick-form').addEventListener('submit', async function(e) {
+                    e.preventDefault();
+                    var lcNumber = panel.querySelector('#ship-lc-num-input').value.trim();
+                    if (!lcNumber) return;
+                    var btn = e.target.querySelector('button[type=submit]');
+                    btn.disabled = true; btn.textContent = 'Creating…';
+                    var hintEl = panel.querySelector('.ship-lc-hint');
+                    try {
+                        var res = await fetch('/api/lc', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ lcNumber: lcNumber, linkedShipmentId: s.id, shipmentRef: shipRef }),
+                        });
+                        var created = await res.json();
+                        if (res.status === 409) {
+                            // Already exists — offer to link it
+                            hintEl.innerHTML = 'An LC with that number already exists. '
+                                + '<button class="btn-link ship-lc-link-existing" data-lc-id="' + escHtml(created.id || 'lc-' + lcNumber.replace(/[^a-zA-Z0-9]/g,'')) + '">Link it to this shipment →</button>';
+                            btn.disabled = false; btn.textContent = 'Create & Link';
+                            return;
+                        }
+                        if (!res.ok) throw new Error(created.error || 'Create failed');
+                        location.hash = 'lc/' + created.id;
+                    } catch (err) {
+                        hintEl.textContent = '✗ ' + err.message;
+                        btn.disabled = false; btn.textContent = 'Create & Link';
+                    }
+                });
+
+                panel.addEventListener('click', async function(e) {
+                    var linkBtn = e.target.closest('.ship-lc-link-btn, .ship-lc-link-existing');
+                    if (linkBtn) { e.preventDefault(); await linkLc(linkBtn.dataset.lcId); return; }
+                    var delBtn = e.target.closest('.ship-lc-del-btn');
+                    if (delBtn) { e.preventDefault(); await deleteLc(delBtn.dataset.lcId); }
+                });
+
             } catch (err) {
                 panel.innerHTML = '<p class="ship-lc-err">Could not load LC data.</p>';
             }
