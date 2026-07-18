@@ -701,7 +701,6 @@ const LC = (() => {
         const status  = (lc.docStatus || {})[doc.id] || 'todo';
         const link    = (lc.docLinks  || {})[doc.id] || '';
         const checks  = lc.docChecks || {};
-        const checked = doc.checks.filter(c => checks[c.id]).length;
         const ICONS = {
             draft:                  `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 1h6l3 3v10a1 1 0 01-1 1H4a1 1 0 01-1-1V2a1 1 0 011-1z"/><polyline points="9,1 9,4 12,4"/><line x1="5" y1="9" x2="11" y2="9"/></svg>`,
             commercialInvoice:      `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="1" width="12" height="14" rx="1"/><line x1="5" y1="5" x2="11" y2="5"/><line x1="5" y1="8" x2="11" y2="8"/><line x1="5" y1="11" x2="8" y2="11"/></svg>`,
@@ -728,16 +727,18 @@ const LC = (() => {
                 <div class="lc-doc-icon">${ICONS[doc.id] || ''}</div>
                 <div class="lc-doc-meta">
                     <div class="lc-doc-title">${esc(doc.title)}<a class="lc-doc-cite" href="#lcref-46a-${doc.id}" title="Jump to LC reference">§</a></div>
-                    <div class="lc-doc-copies">${esc(doc.copies)} &nbsp;·&nbsp; ${esc(doc.desc)}</div>
-                    <div class="lc-doc-link-wrap" id="lc-link-wrap-${doc.id}">
-                        ${link
-                            ? `<div class="lc-doc-link-pill"><a href="${esc(link)}" target="_blank" rel="noopener" class="lc-doc-extlink">${docLinkIcon(link)} Open →</a><button class="lc-doc-link-edit-btn" data-link-doc="${doc.id}" type="button" title="Edit link">✎</button></div>`
-                            : `<button class="lc-doc-link-add-btn" data-link-doc="${doc.id}" type="button">+ add link</button>`
-                        }
+                    <div class="lc-doc-copies">${esc(doc.copies)}</div>
+                    <div class="lc-doc-toolrow">
+                        <span class="lc-doc-link-wrap" id="lc-link-wrap-${doc.id}">
+                            ${link
+                                ? `<span class="lc-doc-link-pill"><a href="${esc(link)}" target="_blank" rel="noopener" class="lc-doc-extlink">${docLinkIcon(link)} Open template →</a><button class="lc-doc-link-edit-btn" data-link-doc="${doc.id}" type="button" title="Edit link">✎</button></span>`
+                                : `<button class="lc-doc-link-add-btn" data-link-doc="${doc.id}" type="button">+ template link</button>`
+                            }
+                        </span>
+                        <button class="lc-doc-reqs-btn" data-view-reqs="${doc.id}" type="button">Requirements (${doc.checks.length})</button>
                     </div>
                 </div>
                 <div class="lc-doc-right">
-                    <span class="lc-doc-prog">${checked}/${doc.checks.length}</span>
                     ${doc.id === 'insuranceNotification' ? `
                     <button class="lc-ins-compose-btn" data-compose-insurance type="button">
                         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><polyline points="2,4 12,13 22,4"/></svg>
@@ -752,7 +753,6 @@ const LC = (() => {
                         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
                         Upload PDF
                     </button>
-                    <button class="lc-chip lc-chip--${status}" data-status-doc="${doc.id}" type="button">${STATUS_LABELS[status]}</button>
                     <svg class="lc-doc-chevron" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><polyline points="3,6 8,11 13,6"/></svg>
                 </div>
             </div>
@@ -769,7 +769,6 @@ const LC = (() => {
                     </div>
                 </div>
                 <div class="lc-doc-checklist" hidden>${checkItems}</div>
-                <button class="lc-doc-checklist-toggle" data-toggle-checklist="${doc.id}" type="button">Show requirements</button>
             </div>
             <div class="lc-card-check-results" id="lccheck-${doc.id}" hidden></div>
             <div class="lc-doc-history" id="lc-doc-history-${doc.id}" hidden></div>
@@ -796,10 +795,6 @@ const LC = (() => {
         ).filter(c => c && c.text);
 
         const docs = generateDocuments(lc);
-        const ready = readyCount(lc);
-        const DOC_TOTAL = 8;
-        const isCleared = ready === DOC_TOTAL;
-        const pct = Math.round((ready / DOC_TOTAL) * 100);
 
         const shipDays   = daysUntil(lc.latestShipDate);
         const expiryDays = daysUntil(lc.expiryDate);
@@ -1195,15 +1190,6 @@ const LC = (() => {
                 </div>
             </div>
 
-            <div class="lc-progress-wrap">
-                <div class="lc-progress-track"><div class="lc-progress-fill" id="lc-pfill" style="width:${pct}%"></div></div>
-                <span class="lc-progress-label" id="lc-plabel">${ready} of ${DOC_TOTAL} documents ready</span>
-                <span class="lc-clearance-chip ${isCleared ? 'lc-clearance--ok' : 'lc-clearance--no'}"
-                      id="lc-clearance">
-                    ${isCleared ? 'Cleared to present' : 'Not cleared to present'}
-                </span>
-            </div>
-
             ${tlWrap}
 
             <div class="lc-checker-body">
@@ -1477,17 +1463,39 @@ const LC = (() => {
             card.classList.toggle('lc-doc-card--open');
         });
 
-        // Checklist toggle
+        // Requirements pop-up — full list of checks for a document
         container.querySelector('#lc-doc-list').addEventListener('click', e => {
-            const btn = e.target.closest('[data-toggle-checklist]');
+            const btn = e.target.closest('[data-view-reqs]');
             if (!btn) return;
-            const docId   = btn.dataset.toggleChecklist;
-            const card    = container.querySelector('#lcdoc-' + docId);
-            const listEl  = card?.querySelector('.lc-doc-checklist');
-            if (!listEl) return;
-            const open = listEl.hidden;
-            listEl.hidden = !open;
-            btn.textContent = open ? 'Hide requirements' : 'Show requirements';
+            e.stopPropagation();
+            const docDef = docs.find(d => d.id === btn.dataset.viewReqs);
+            if (!docDef) return;
+
+            document.querySelector('.lc-reqs-modal')?.remove();
+            const rows = docDef.checks.map((c, i) =>
+                '<div class="lc-reqs-row">'
+                + '<span class="lc-reqs-num">' + String(i + 1).padStart(2, '0') + '</span>'
+                + '<span class="lc-reqs-text">' + esc(c.text)
+                + ' <a class="lc-cite-link" style="opacity:0.55" href="#' + (c.cite || 'lc-raw-section') + '" title="View in LC reference">§</a></span>'
+                + '</div>'
+            ).join('');
+
+            const modal = document.createElement('div');
+            modal.className = 'lc-extract-modal lc-reqs-modal';
+            modal.innerHTML = '<div class="lc-extract-modal-box">'
+                + '<div class="lc-extract-modal-hd">'
+                + '<span class="lc-extract-modal-title">' + esc(docDef.title) + ' — Requirements</span>'
+                + '<span class="lc-extract-modal-sub">' + esc(docDef.copies) + ' · every requirement is checked by AI on upload · § jumps to the LC clause</span>'
+                + '<button class="lc-email-modal-close" data-reqs-close type="button">✕</button>'
+                + '</div>'
+                + '<div class="lc-extract-modal-body">' + rows + '</div>'
+                + '</div>';
+            document.body.appendChild(modal);
+            modal.addEventListener('click', ev => {
+                if (ev.target === modal || ev.target.closest('[data-reqs-close]')) modal.remove();
+                const cite = ev.target.closest('.lc-cite-link');
+                if (cite) modal.remove(); // let the anchor jump happen with modal out of the way
+            });
         });
 
         // Document link: show/edit form
@@ -2226,9 +2234,9 @@ const LC = (() => {
                 const docId = el.id.replace('lc-doc-history-', '');
                 const rows  = byType[docId] || [];
                 if (!rows.length) { el.hidden = true; el.innerHTML = ''; return; }
-                // Show the latest upload + at most 1 previous; older files go in a drawer
-                const visible = rows.slice(0, 2);
-                const older   = rows.slice(2);
+                // Show only the latest upload; everything older goes in the drawer
+                const visible = rows.slice(0, 1);
+                const older   = rows.slice(1);
                 el.innerHTML = '<div class="lc-doc-history-label">Upload history</div>'
                     + visible.map(rowHtml).join('')
                     + (older.length

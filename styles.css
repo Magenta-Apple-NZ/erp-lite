@@ -5733,40 +5733,6 @@ a.db-row:hover { background: #f8fafc; border-color: #e2e8f0; }
 }
 .lc-ship-unlink-btn:hover { color: #ef4444; border-color: #fca5a5; }
 
-.lc-clearance-chip {
-    font-size: 0.72rem;
-    font-weight: 700;
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
-    padding: 0.3rem 0.7rem;
-    border-radius: 4px;
-    white-space: nowrap;
-}
-.lc-clearance--ok { background: #f0fdf4; color: #16a34a; }
-.lc-clearance--no { background: #fef2f2; color: #dc2626; }
-
-/* ── Progress bar ── */
-.lc-progress-wrap {
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-    margin-bottom: 0.75rem;
-}
-.lc-progress-track {
-    flex: 1;
-    height: 5px;
-    background: #e2e8f0;
-    border-radius: 99px;
-    overflow: hidden;
-}
-.lc-progress-fill {
-    height: 100%;
-    background: #4f46e5;
-    border-radius: 99px;
-    transition: width 0.3s ease;
-}
-.lc-progress-label { font-size: 0.78rem; color: #64748b; white-space: nowrap; }
-
 /* ── Timeline ── */
 .lc-checker-timeline {
     display: grid;
@@ -5796,7 +5762,7 @@ a.db-row:hover { background: #f8fafc; border-color: #e2e8f0; }
 /* ── Checker body layout ── */
 .lc-checker-body {
     display: grid;
-    grid-template-columns: 1fr 220px;
+    grid-template-columns: 1fr 300px;
     gap: 1rem;
     align-items: start;
 }
@@ -5843,7 +5809,14 @@ a.db-row:hover { background: #f8fafc; border-color: #e2e8f0; }
     margin-bottom: 0.1rem;
 }
 
-.lc-doc-list { display: flex; flex-direction: column; gap: 5px; }
+/* Grid of document cards — open cards span the full row for results/history */
+.lc-doc-list {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    align-items: start;
+}
+@media (max-width: 1100px) { .lc-doc-list { grid-template-columns: 1fr; } }
 
 .lc-doc-card {
     background: white;
@@ -5852,6 +5825,7 @@ a.db-row:hover { background: #f8fafc; border-color: #e2e8f0; }
     border-radius: 0 7px 7px 0;
     overflow: hidden;
 }
+.lc-doc-card--open { grid-column: 1 / -1; }
 .lc-doc-card--todo  { border-left-color: #94a3b8; }
 .lc-doc-card--prep  { border-left-color: #9333ea; }
 .lc-doc-card--ready { border-left-color: #16a34a; }
@@ -5869,23 +5843,41 @@ a.db-row:hover { background: #f8fafc; border-color: #e2e8f0; }
 .lc-doc-hd:hover { background: #fafafa; }
 
 .lc-doc-icon {
-    width: 26px;
-    height: 26px;
-    background: #f1f5f9;
-    border-radius: 4px;
+    width: 42px;
+    height: 42px;
+    background: #eef2ff;
+    border: 1px solid #e0e7ff;
+    border-radius: 9px;
     display: flex;
     align-items: center;
     justify-content: center;
     flex-shrink: 0;
 }
-.lc-doc-icon svg { width: 13px; height: 13px; stroke: #64748b; }
+.lc-doc-icon svg { width: 22px; height: 22px; stroke: #4f46e5; }
 
 .lc-doc-meta { flex: 1; min-width: 0; }
-.lc-doc-title { font-size: 0.875rem; font-weight: 600; color: #1e293b; }
-.lc-doc-copies { font-size: 0.75rem; color: #94a3b8; margin-top: 1px; }
+.lc-doc-title { font-size: 0.92rem; font-weight: 700; color: #1e293b; }
+.lc-doc-copies { font-size: 0.74rem; font-weight: 600; color: #64748b; margin-top: 1px; }
+
+.lc-doc-toolrow { display: flex; align-items: center; gap: 0.5rem; margin-top: 0.35rem; flex-wrap: wrap; }
+.lc-doc-reqs-btn {
+    font-size: 0.72rem; font-weight: 600; color: #64748b;
+    background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 5px;
+    padding: 0.2rem 0.55rem; cursor: pointer;
+    transition: background 0.12s, color 0.12s, border-color 0.12s;
+}
+.lc-doc-reqs-btn:hover { background: #eef2ff; color: #4f46e5; border-color: #c7d2fe; }
 
 .lc-doc-right { display: flex; align-items: center; gap: 0.5rem; flex-shrink: 0; }
-.lc-doc-prog  { font-size: 0.72rem; color: #94a3b8; font-variant-numeric: tabular-nums; }
+
+/* Requirements pop-up rows */
+.lc-reqs-row {
+    display: flex; gap: 0.6rem; align-items: baseline;
+    padding: 0.45rem 0; border-bottom: 1px solid #f8fafc;
+}
+.lc-reqs-row:last-child { border-bottom: none; }
+.lc-reqs-num  { font-size: 0.7rem; font-weight: 700; color: #cbd5e1; font-variant-numeric: tabular-nums; flex-shrink: 0; }
+.lc-reqs-text { font-size: 0.82rem; color: #334155; line-height: 1.5; }
 
 .lc-chip {
     font-size: 0.65rem;
@@ -5926,12 +5918,6 @@ a.db-row:hover { background: #f8fafc; border-color: #e2e8f0; }
 
 .lc-doc-checklist { display: flex; flex-direction: column; gap: 1px; }
 .lc-doc-checklist[hidden] { display: none; }
-.lc-doc-checklist-toggle {
-    background: none; border: none; padding: 0.3rem 0; cursor: pointer;
-    font-size: 0.73rem; color: #94a3b8; text-align: left;
-    margin-top: 0.15rem;
-}
-.lc-doc-checklist-toggle:hover { color: #64748b; }
 
 .lc-check-item {
     display: flex;
