@@ -26,7 +26,7 @@ async function getGdriveToken(saJson) {
     const header  = toB64url(new TextEncoder().encode(JSON.stringify({ alg: 'RS256', typ: 'JWT' })));
     const payload = toB64url(new TextEncoder().encode(JSON.stringify({
         iss:   sa.client_email,
-        scope: 'https://www.googleapis.com/auth/drive.file',
+        scope: 'https://www.googleapis.com/auth/drive',
         aud:   'https://oauth2.googleapis.com/token',
         iat:   now,
         exp:   now + 3600,
@@ -91,6 +91,47 @@ async function uploadToGdrive(token, folderId, filename, base64Data) {
     return await res.json(); // { id, name, webViewLink }
 }
 
+const FOLDER_MIME = 'application/vnd.google-apps.folder';
+const DOCS_FOLDER = '2. LC Documentation';
+const ARCH_FOLDER = 'z. Archived';
+
+// Find a child folder by name under parentId, creating it if absent. Returns folder id.
+async function findOrCreateFolder(token, parentId, name) {
+    const q = encodeURIComponent(
+        `name = '${name.replace(/'/g, "\\'")}' and '${parentId}' in parents and mimeType = '${FOLDER_MIME}' and trashed = false`
+    );
+    const listRes = await fetch(
+        `https://www.googleapis.com/drive/v3/files?q=${q}&fields=files(id)&pageSize=1&supportsAllDrives=true&includeItemsFromAllDrives=true`,
+        { headers: { Authorization: `Bearer ${token}` } }
+    );
+    if (!listRes.ok) throw new Error(`Drive folder lookup ${listRes.status}: ${(await listRes.text()).slice(0, 200)}`);
+    const list = await listRes.json();
+    if (list.files?.length) return list.files[0].id;
+
+    const createRes = await fetch('https://www.googleapis.com/drive/v3/files?fields=id&supportsAllDrives=true', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, mimeType: FOLDER_MIME, parents: [parentId] }),
+    });
+    if (!createRes.ok) throw new Error(`Drive folder create ${createRes.status}: ${(await createRes.text()).slice(0, 200)}`);
+    return (await createRes.json()).id;
+}
+
+// Move a Drive file to a new parent folder (removing its current parents).
+async function moveDriveFile(token, fileId, toParentId) {
+    const getRes = await fetch(
+        `https://www.googleapis.com/drive/v3/files/${fileId}?fields=parents&supportsAllDrives=true`,
+        { headers: { Authorization: `Bearer ${token}` } }
+    );
+    if (!getRes.ok) throw new Error(`Drive get parents ${getRes.status}`);
+    const parents = ((await getRes.json()).parents || []).join(',');
+    const res = await fetch(
+        `https://www.googleapis.com/drive/v3/files/${fileId}?addParents=${toParentId}${parents ? '&removeParents=' + parents : ''}&fields=id&supportsAllDrives=true`,
+        { method: 'PATCH', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, body: '{}' }
+    );
+    if (!res.ok) throw new Error(`Drive move ${res.status}: ${(await res.text()).slice(0, 200)}`);
+}
+
 // GET /api/lc-docs?lcId=xxx  — list archived docs
 export async function onRequestGet({ env, request }) {
     try {
@@ -116,18 +157,23 @@ export async function onRequestPost({ env, request }) {
         const key = `${lcId}-${docType}-${Date.now()}`;
         await env.ORDERS_KV.put('lc-doc:' + key, data);
 
-        // Google Drive upload — non-blocking: failure is recorded but doesn't fail the request
+        // Google Drive upload — non-blocking: failure is recorded but doesn't fail the request.
+        // Layout inside the linked folder: "2. LC Documentation" holds current files;
+        // superseded versions are moved to "2. LC Documentation/z. Archived".
         let driveFileId   = null;
         let driveViewLink = null;
         let driveError    = null;
+        let driveToken    = null;
+        let docsFolderId  = null;
 
         if (driveFolderUrl && env.GDRIVE_SA_KEY) {
             try {
-                const folderId = extractFolderId(driveFolderUrl);
-                const token    = await getGdriveToken(env.GDRIVE_SA_KEY);
-                const file     = await uploadToGdrive(token, folderId, filename || 'document.pdf', data);
-                driveFileId    = file.id;
-                driveViewLink  = file.webViewLink;
+                const rootId  = extractFolderId(driveFolderUrl);
+                driveToken    = await getGdriveToken(env.GDRIVE_SA_KEY);
+                docsFolderId  = await findOrCreateFolder(driveToken, rootId, DOCS_FOLDER);
+                const file    = await uploadToGdrive(driveToken, docsFolderId, filename || 'document.pdf', data);
+                driveFileId   = file.id;
+                driveViewLink = file.webViewLink;
             } catch (e) {
                 driveError = e.message;
             }
@@ -150,13 +196,25 @@ export async function onRequestPost({ env, request }) {
 
         // When saving a Final, supersede any earlier Finals for the same docType.
         let superseded = 0;
+        const supersededDriveIds = [];
         if (!isDraft) {
             docs.forEach(d => {
                 if (d.docType === docType && !d.draft && !d.superseded) {
                     d.superseded = true;
                     superseded++;
+                    if (d.driveFileId) supersededDriveIds.push(d.driveFileId);
                 }
             });
+        }
+
+        // Move superseded files on Drive into z. Archived — non-fatal if it fails
+        if (supersededDriveIds.length && driveToken && docsFolderId) {
+            try {
+                const archId = await findOrCreateFolder(driveToken, docsFolderId, ARCH_FOLDER);
+                for (const fid of supersededDriveIds) {
+                    await moveDriveFile(driveToken, fid, archId).catch(() => {});
+                }
+            } catch (_) { /* archive move is best-effort */ }
         }
 
         docs.unshift(meta);
@@ -180,19 +238,22 @@ export async function onRequestPut({ env, request }) {
         const raw  = await env.ORDERS_KV.get('lc-doc-meta:' + lcId);
         const docs = raw ? JSON.parse(raw) : [];
 
-        // Sync current documents only — superseded versions stay in KV but are not mirrored
-        const pending = docs.filter(d => !d.driveFileId && !d.superseded);
-        if (!pending.length) return jsonResponse({ ok: true, synced: 0, failed: 0 });
+        // Current docs without a Drive copy get uploaded to "2. LC Documentation";
+        // superseded docs already on Drive get tidied into "z. Archived".
+        const pending  = docs.filter(d => !d.driveFileId && !d.superseded);
+        const toArchive = docs.filter(d => d.driveFileId && d.superseded);
+        if (!pending.length && !toArchive.length) return jsonResponse({ ok: true, synced: 0, failed: 0 });
 
-        const folderId = extractFolderId(driveFolderUrl);
-        const token    = await getGdriveToken(env.GDRIVE_SA_KEY);
+        const rootId       = extractFolderId(driveFolderUrl);
+        const token        = await getGdriveToken(env.GDRIVE_SA_KEY);
+        const docsFolderId = await findOrCreateFolder(token, rootId, DOCS_FOLDER);
 
         let synced = 0, failed = 0;
         for (const d of pending) {
             try {
                 const data = await env.ORDERS_KV.get('lc-doc:' + d.key);
                 if (!data) { d.driveError = 'File missing from KV'; failed++; continue; }
-                const file = await uploadToGdrive(token, folderId, d.filename || 'document.pdf', data);
+                const file = await uploadToGdrive(token, docsFolderId, d.filename || 'document.pdf', data);
                 d.driveFileId   = file.id;
                 d.driveViewLink = file.webViewLink;
                 d.driveError    = null;
@@ -201,6 +262,15 @@ export async function onRequestPut({ env, request }) {
                 d.driveError = e.message;
                 failed++;
             }
+        }
+
+        if (toArchive.length) {
+            try {
+                const archId = await findOrCreateFolder(token, docsFolderId, ARCH_FOLDER);
+                for (const d of toArchive) {
+                    await moveDriveFile(token, d.driveFileId, archId).catch(() => {});
+                }
+            } catch (_) { /* archive tidy-up is best-effort */ }
         }
 
         await env.ORDERS_KV.put('lc-doc-meta:' + lcId, JSON.stringify(docs));
