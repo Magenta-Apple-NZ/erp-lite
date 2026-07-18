@@ -1795,6 +1795,19 @@ const LC = (() => {
             if (input) input.value = url;
         }
 
+        // Upload history: show/hide older files drawer
+        container.querySelector('#lc-doc-list').addEventListener('click', e => {
+            const btn = e.target.closest('[data-history-toggle]');
+            if (!btn) return;
+            e.stopPropagation();
+            const drawer = btn.parentElement.querySelector('.lc-doc-history-more');
+            if (!drawer) return;
+            if (!btn.dataset.showLabel) btn.dataset.showLabel = btn.textContent;
+            const open = drawer.hidden;
+            drawer.hidden = !open;
+            btn.textContent = open ? 'Hide older files' : btn.dataset.showLabel;
+        });
+
         // Upload history delete handler (rows live beneath each doc card)
         container.querySelector('#lc-doc-list').addEventListener('click', async e => {
             const btn = e.target.closest('[data-del-key]');
@@ -2156,7 +2169,16 @@ const LC = (() => {
                 const docId = el.id.replace('lc-doc-history-', '');
                 const rows  = byType[docId] || [];
                 if (!rows.length) { el.hidden = true; el.innerHTML = ''; return; }
-                el.innerHTML = '<div class="lc-doc-history-label">Upload history</div>' + rows.map(rowHtml).join('');
+                // Show the latest upload + at most 1 previous; older files go in a drawer
+                const visible = rows.slice(0, 2);
+                const older   = rows.slice(2);
+                el.innerHTML = '<div class="lc-doc-history-label">Upload history</div>'
+                    + visible.map(rowHtml).join('')
+                    + (older.length
+                        ? '<div class="lc-doc-history-more" hidden>' + older.map(rowHtml).join('') + '</div>'
+                          + '<button class="lc-doc-history-toggle" type="button" data-history-toggle>'
+                          + 'Show all files (' + rows.length + ')</button>'
+                        : '');
                 el.hidden = false;
             });
         } catch { /* leave history blocks hidden */ }
