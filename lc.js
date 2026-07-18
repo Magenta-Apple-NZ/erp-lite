@@ -2040,6 +2040,7 @@ const LC = (() => {
             resultsEl.innerHTML = '<div class="lc-card-check-loading">⏳ Reading document…</div>';
 
             let archiveLabel = '';
+            let archiveErrDetail = '';
             try {
                 const base64 = await new Promise((resolve, reject) => {
                     const reader = new FileReader();
@@ -2062,14 +2063,18 @@ const LC = (() => {
                     if (aj.ok) {
                         const driveOk  = aj.meta?.driveViewLink;
                         const driveErr = aj.meta?.driveError;
-                        archiveLabel   = isDraft
-                            ? 'Draft saved'
+                        if (driveErr) {
+                            archiveErrDetail = driveErr;
+                            console.error('[LC Drive] upload failed for', file.name, '—', driveErr);
+                        }
+                        archiveLabel = isDraft
+                            ? (driveErr ? 'Draft saved · Drive error' : 'Draft saved')
                             : driveErr  ? `Final saved · Drive error`
                             : driveOk   ? 'Final saved + Drive ↗'
                             : 'Final saved';
                         loadArchivedDocs(container, id);
                     }
-                } catch (_) { archiveLabel = 'Save failed'; }
+                } catch (e) { archiveLabel = 'Save failed'; archiveErrDetail = e.message; console.error('[LC Drive] archive request failed:', e); }
 
                 // Step 2 — Check against LC requirements
                 if (loadEl()) loadEl().textContent = '⏳ Checking against LC requirements…';
@@ -2119,7 +2124,8 @@ const LC = (() => {
 
                 const summaryBar = '<div class="lc-check-matrix-bar lc-check-matrix-bar--' + sumCls + ' lc-check-ai-bar">'
                     + '<span class="lc-check-matrix-tally">' + sumIcon + ' ' + sumParts.join(' · ') + '</span>'
-                    + (archiveLabel ? '<span class="lc-doc-version-badge lc-doc-version-badge--' + archiveCls + '">' + esc(archiveLabel) + '</span>' : '')
+                    + (archiveLabel ? '<span class="lc-doc-version-badge lc-doc-version-badge--' + archiveCls + '"'
+                        + (archiveErrDetail ? ' title="' + esc(archiveErrDetail) + '" style="cursor:help"' : '') + '>' + esc(archiveLabel) + '</span>' : '')
                     + '</div>';
 
                 // Only render flag/fail items individually; passes collapse to a single summary row
@@ -2170,7 +2176,8 @@ const LC = (() => {
                 const checksEl2 = container.querySelector('#lcdoc-' + docId + ' .lc-doc-checks');
                 const errBar = '<div class="lc-check-matrix-bar lc-check-matrix-bar--fail lc-check-ai-bar">'
                     + '<span class="lc-check-matrix-tally">✗ ' + esc(err.message) + '</span>'
-                    + (archiveLabel ? '<span class="lc-doc-version-badge lc-doc-version-badge--' + (isDraft ? 'draft' : 'final') + '">' + esc(archiveLabel) + '</span>' : '')
+                    + (archiveLabel ? '<span class="lc-doc-version-badge lc-doc-version-badge--' + (isDraft ? 'draft' : 'final') + '"'
+                        + (archiveErrDetail ? ' title="' + esc(archiveErrDetail) + '" style="cursor:help"' : '') + '>' + esc(archiveLabel) + '</span>' : '')
                     + '</div>';
                 if (checksEl2) {
                     const existingBar = checksEl2.querySelector('.lc-check-ai-bar');

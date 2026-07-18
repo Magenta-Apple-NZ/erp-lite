@@ -176,6 +176,7 @@ export async function onRequestPost({ env, request }) {
                 driveViewLink = file.webViewLink;
             } catch (e) {
                 driveError = e.message;
+                console.error(`[lc-docs POST] Drive upload failed — lcId=${lcId} docType=${docType} file=${filename}: ${e.message}`);
             }
         }
 
@@ -212,9 +213,12 @@ export async function onRequestPost({ env, request }) {
             try {
                 const archId = await findOrCreateFolder(driveToken, docsFolderId, ARCH_FOLDER);
                 for (const fid of supersededDriveIds) {
-                    await moveDriveFile(driveToken, fid, archId).catch(() => {});
+                    await moveDriveFile(driveToken, fid, archId).catch(e =>
+                        console.error(`[lc-docs POST] archive move failed — fileId=${fid}: ${e.message}`));
                 }
-            } catch (_) { /* archive move is best-effort */ }
+            } catch (e) {
+                console.error(`[lc-docs POST] z. Archived folder unavailable — lcId=${lcId}: ${e.message}`);
+            }
         }
 
         docs.unshift(meta);
@@ -261,6 +265,7 @@ export async function onRequestPut({ env, request }) {
             } catch (e) {
                 d.driveError = e.message;
                 failed++;
+                console.error(`[lc-docs PUT] sync upload failed — lcId=${lcId} file=${d.filename}: ${e.message}`);
             }
         }
 
@@ -268,9 +273,12 @@ export async function onRequestPut({ env, request }) {
             try {
                 const archId = await findOrCreateFolder(token, docsFolderId, ARCH_FOLDER);
                 for (const d of toArchive) {
-                    await moveDriveFile(token, d.driveFileId, archId).catch(() => {});
+                    await moveDriveFile(token, d.driveFileId, archId).catch(e =>
+                        console.error(`[lc-docs PUT] archive move failed — file=${d.filename}: ${e.message}`));
                 }
-            } catch (_) { /* archive tidy-up is best-effort */ }
+            } catch (e) {
+                console.error(`[lc-docs PUT] z. Archived folder unavailable — lcId=${lcId}: ${e.message}`);
+            }
         }
 
         await env.ORDERS_KV.put('lc-doc-meta:' + lcId, JSON.stringify(docs));
