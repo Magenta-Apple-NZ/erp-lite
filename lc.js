@@ -1761,13 +1761,32 @@ const LC = (() => {
             container.querySelector('#lc-drive-folder-input')?.focus();
         });
 
-        // Drive folder: save
+        // Drive folder: save, then backfill-sync any archived files not yet on Drive
         container.querySelector('#lc-drive-save-btn')?.addEventListener('click', async () => {
             const url = container.querySelector('#lc-drive-folder-input').value.trim();
             container.querySelector('#lc-drive-folder-form').hidden = true;
             _driveFolderUrl = url;
             updateDriveFolderDisplay(container, url);
             await apiFetch('/api/lc/' + id, { method: 'PATCH', body: JSON.stringify({ driveFolderUrl: url }) }).catch(() => {});
+            if (!url) return;
+            const statusEl = document.getElementById('lc-save-status');
+            if (statusEl) statusEl.textContent = 'Syncing files to Drive…';
+            try {
+                const res = await apiFetch('/api/lc-docs', {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ lcId: id, driveFolderUrl: url }),
+                });
+                if (statusEl) {
+                    statusEl.textContent = res.failed
+                        ? `Drive sync: ${res.synced} uploaded, ${res.failed} failed`
+                        : (res.synced ? `${res.synced} file${res.synced === 1 ? '' : 's'} synced to Drive` : '');
+                    setTimeout(() => { if (statusEl) statusEl.textContent = ''; }, 4000);
+                }
+            } catch (e) {
+                if (statusEl) statusEl.textContent = 'Drive sync failed: ' + e.message;
+            }
+            loadArchivedDocs(container, id);
         });
 
         // Drive folder: cancel

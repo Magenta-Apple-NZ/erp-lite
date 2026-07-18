@@ -168,6 +168,48 @@ export async function onRequestPost({ env, request }) {
     }
 }
 
+// PUT /api/lc-docs — backfill: push archived docs not yet on Drive to the linked folder
+// body: { lcId, driveFolderUrl }
+export async function onRequestPut({ env, request }) {
+    try {
+        const { lcId, driveFolderUrl } = await request.json();
+        if (!lcId) return errResponse('lcId required', 400);
+        if (!driveFolderUrl) return errResponse('driveFolderUrl required', 400);
+        if (!env.GDRIVE_SA_KEY) return errResponse('GDRIVE_SA_KEY not configured', 500);
+
+        const raw  = await env.ORDERS_KV.get('lc-doc-meta:' + lcId);
+        const docs = raw ? JSON.parse(raw) : [];
+
+        // Sync current documents only — superseded versions stay in KV but are not mirrored
+        const pending = docs.filter(d => !d.driveFileId && !d.superseded);
+        if (!pending.length) return jsonResponse({ ok: true, synced: 0, failed: 0 });
+
+        const folderId = extractFolderId(driveFolderUrl);
+        const token    = await getGdriveToken(env.GDRIVE_SA_KEY);
+
+        let synced = 0, failed = 0;
+        for (const d of pending) {
+            try {
+                const data = await env.ORDERS_KV.get('lc-doc:' + d.key);
+                if (!data) { d.driveError = 'File missing from KV'; failed++; continue; }
+                const file = await uploadToGdrive(token, folderId, d.filename || 'document.pdf', data);
+                d.driveFileId   = file.id;
+                d.driveViewLink = file.webViewLink;
+                d.driveError    = null;
+                synced++;
+            } catch (e) {
+                d.driveError = e.message;
+                failed++;
+            }
+        }
+
+        await env.ORDERS_KV.put('lc-doc-meta:' + lcId, JSON.stringify(docs));
+        return jsonResponse({ ok: true, synced, failed });
+    } catch (e) {
+        return errResponse(e.message);
+    }
+}
+
 // DELETE /api/lc-docs?key=xxx&lcId=xxx
 export async function onRequestDelete({ env, request }) {
     try {
