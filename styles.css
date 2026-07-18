@@ -5671,45 +5671,55 @@ a.db-row:hover { background: #f8fafc; border-color: #e2e8f0; }
     gap: 0.65rem;
     margin-bottom: 0.5rem;
 }
-.lc-identity-row1 { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 0.75rem; }
-.lc-identity-left { display: flex; align-items: center; flex-wrap: wrap; gap: 0.6rem; }
-.lc-identity-ref  { font-size: 0.92rem; font-weight: 700; color: #4f46e5; background: #eef2ff; padding: 0.2rem 0.6rem; border-radius: 4px; }
-.lc-identity-parties { font-size: 0.875rem; color: #334155; }
-.lc-identity-ship { font-size: 0.78rem; color: #64748b; background: #f1f5f9; padding: 0.15rem 0.5rem; border-radius: 4px; }
-.lc-identity-right { display: flex; align-items: center; gap: 0.75rem; flex-shrink: 0; }
-.lc-identity-amt { font-size: 1rem; font-weight: 700; color: #1e293b; }
-
-/* Copy LC number button */
-.lc-copy-btn {
-    display: inline-flex; align-items: center; justify-content: center;
-    width: 22px; height: 22px; padding: 0;
-    background: transparent; border: 1px solid #c7d2fe; border-radius: 4px;
-    color: #6366f1; cursor: pointer; transition: background 0.15s, color 0.15s;
-    vertical-align: middle;
+/* ── Prioritised identity bar: shipment · LC number · actions · amount ── */
+.lc-idbar {
+    display: flex; align-items: center; gap: 1.25rem; flex-wrap: wrap;
 }
-.lc-copy-btn:hover { background: #eef2ff; color: #4f46e5; }
+.lc-idbar-cell { display: flex; flex-direction: column; gap: 0.2rem; }
+.lc-idbar-label {
+    font-size: 0.66rem; font-weight: 700; color: #94a3b8;
+    text-transform: uppercase; letter-spacing: 0.05em;
+}
+.lc-idbar-lcnum {
+    display: inline-flex; align-items: center; gap: 0.4rem;
+    font-size: 0.92rem; font-weight: 700; color: #4f46e5;
+    background: #eef2ff; border: 1px solid #c7d2fe; border-radius: 6px;
+    padding: 0.32rem 0.65rem; cursor: pointer;
+    transition: background 0.15s, border-color 0.15s;
+}
+.lc-idbar-lcnum:hover { background: #e0e7ff; }
+.lc-idbar-lcnum svg { opacity: 0.6; }
+.lc-idbar-spacer { flex: 1; }
+.lc-idbar-amt { font-size: 1.15rem; font-weight: 700; color: #1e293b; white-space: nowrap; }
+
+/* Prominent header action buttons */
+.lc-hd-btn {
+    display: inline-flex; align-items: center; gap: 0.45rem;
+    font-size: 0.84rem; font-weight: 600;
+    padding: 0.45rem 0.9rem; border-radius: 7px; cursor: pointer;
+    text-decoration: none; transition: background 0.15s, border-color 0.15s;
+    white-space: nowrap;
+}
+.lc-hd-btn--primary {
+    background: #2563eb; color: #fff; border: 1px solid #2563eb;
+}
+.lc-hd-btn--primary:hover { background: #1d4ed8; }
+.lc-hd-btn--primary:disabled { opacity: 0.6; cursor: default; }
+.lc-hd-btn--drive {
+    background: #fff; color: #334155; border: 1px solid #cbd5e1;
+}
+.lc-hd-btn--drive:hover { background: #f8fafc; border-color: #94a3b8; }
+.lc-hd-btn--ghost {
+    background: #f8fafc; color: #4f46e5; border: 1px dashed #c7d2fe;
+    font-weight: 600;
+}
+.lc-hd-btn--ghost:hover { background: #eef2ff; border-color: #818cf8; }
+
 .lc-copy-btn--ok { background: #dcfce7 !important; border-color: #86efac !important; color: #16a34a !important; }
 
-/* Shipment link row in identity section */
-.lc-identity-row2 {
-    display: flex; align-items: center; gap: 0.6rem;
-    padding-top: 0.5rem; border-top: 1px solid #f1f5f9;
-    font-size: 0.8rem;
-}
-.lc-identity-ship-label { font-size: 0.72rem; font-weight: 600; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.04em; white-space: nowrap; }
-.lc-ship-select {
-    flex: 1; min-width: 0; max-width: 280px;
-    font-size: 0.82rem; padding: 0.25rem 0.5rem;
-    border: 1px solid #e2e8f0; border-radius: 5px; color: #334155;
-    background: #f8fafc; cursor: pointer;
-}
-.lc-ship-select:focus { outline: none; border-color: #818cf8; }
-.lc-ship-link-btn {
-    padding: 0.25rem 0.65rem; font-size: 0.78rem; font-weight: 600;
-    color: #fff; background: #4f46e5; border: none; border-radius: 5px;
-    cursor: pointer; transition: background 0.15s;
-}
-.lc-ship-link-btn:hover { background: #4338ca; }
+.lc-ship-link-form { margin-top: 0.6rem; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 0.6rem 0.75rem; }
+.lc-ship-link-form[hidden] { display: none; }
+
 .lc-ship-linked {
     display: flex; align-items: center; gap: 0.5rem;
     font-size: 0.82rem; color: #334155;
@@ -6217,10 +6227,6 @@ a.db-row:hover { background: #f8fafc; border-color: #e2e8f0; }
 .lc-archive-section { margin-top: 1rem; }
 .lc-archive-hd { display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.5rem; }
 .lc-drive-folder-wrap { display: flex; align-items: center; gap: 0.5rem; }
-.lc-drive-folder-link { display: inline-flex; align-items: center; gap: 0.3rem; font-size: 0.78rem; color: #334155; text-decoration: none; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 5px; padding: 0.2rem 0.6rem; }
-.lc-drive-folder-link:hover { background: #f1f5f9; }
-.lc-drive-add-btn { font-size: 0.75rem; color: #3b82f6; background: none; border: none; padding: 0; cursor: pointer; }
-.lc-drive-add-btn:hover { text-decoration: underline; }
 .lc-drive-change-btn { font-size: 0.72rem; color: #94a3b8; background: none; border: none; padding: 0; cursor: pointer; }
 .lc-drive-change-btn:hover { color: #475569; }
 .lc-drive-folder-form { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 0.6rem 0.75rem; margin-bottom: 0.5rem; }
@@ -6384,16 +6390,6 @@ a.db-row:hover { background: #f8fafc; border-color: #e2e8f0; }
     display: flex; align-items: center; gap: 0.3rem;
     color: #64748b; cursor: pointer; flex-shrink: 0;
 }
-/* ── Upload LC PDF button (detail page) ── */
-.lc-extract-btn {
-    display: inline-flex; align-items: center; gap: 0.35rem;
-    font-size: 0.75rem; font-weight: 500; padding: 0.28rem 0.65rem;
-    background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 5px;
-    color: #475569; cursor: pointer; transition: background 0.12s, border-color 0.12s;
-}
-.lc-extract-btn:hover { background: #f1f5f9; border-color: #94a3b8; }
-.lc-extract-btn:disabled { opacity: 0.6; cursor: default; }
-
 /* ── Extract review modal ── */
 .lc-extract-modal {
     position: fixed; inset: 0; background: rgba(15,23,42,0.5);
@@ -6822,7 +6818,6 @@ a.db-row:hover { background: #f8fafc; border-color: #e2e8f0; }
 .ship-lc-label { font-size: 0.72rem; font-weight: 600; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.04em; }
 .ship-lc-val { font-size: 0.82rem; color: #334155; }
 
-.lc-ship-hint { font-size: 0.78rem; color: #94a3b8; font-style: italic; }
 
 .ship-lc-quick-form { display: flex; gap: 0.5rem; align-items: center; margin-bottom: 0.5rem; }
 .ship-lc-num-input { font-family: 'ui-monospace', monospace; font-size: 0.85rem; min-width: 240px; }

@@ -1134,42 +1134,74 @@ const LC = (() => {
             </div>
 
             <div class="lc-checker-identity">
-                <div class="lc-identity-row1">
-                    <div class="lc-identity-left">
-                        <span class="lc-mono lc-identity-ref">#${esc(lc.lcNumber)}</span>
-                        <button class="lc-copy-btn" data-copy="${esc(lc.lcNumber)}" type="button" title="Copy LC number">
-                            <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="5" width="9" height="9" rx="1.5"/><path d="M3 11V3a1 1 0 011-1h8"/></svg>
-                        </button>
-                        <span class="lc-identity-parties">${esc(lc.beneficiary || 'Enviroware Ltd')} → ${esc(ap.name || '—')}</span>
+                <div class="lc-idbar">
+                    <div class="lc-idbar-cell">
+                        <span class="lc-idbar-label">Shipment</span>
+                        ${lc.linkedShipmentId
+                            ? '<div class="lc-ship-linked">'
+                                + '<a href="#imports/ship/' + encodeURIComponent(lc.linkedShipmentId) + '" class="lc-ship-linked-id">' + esc(lc.shipmentRef || lc.linkedShipmentId) + ' ↗</a>'
+                                + '<button class="lc-ship-unlink-btn" id="lc-ship-unlink-btn" type="button">Unlink</button>'
+                              + '</div>'
+                            : '<button class="lc-hd-btn lc-hd-btn--ghost" id="lc-ship-link-btn" type="button">+ Link to Shipment</button>'
+                        }
                     </div>
-                    <div class="lc-identity-right">
-                        <div class="lc-identity-amt lc-mono">${esc(fmtAmt(lc.currency, lc.amount))}</div>
-                        <span class="lc-clearance-chip ${isCleared ? 'lc-clearance--ok' : 'lc-clearance--no'}"
-                              id="lc-clearance">
-                            ${isCleared ? 'Cleared to present' : 'Not cleared to present'}
-                        </span>
-                        <button class="lc-extract-btn" id="lc-extract-btn" type="button" title="Upload LC PDF to re-extract all fields with AI">
-                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-                            Upload LC PDF
+                    <div class="lc-idbar-cell">
+                        <span class="lc-idbar-label">LC Number</span>
+                        <button class="lc-idbar-lcnum lc-mono" data-copy="${esc(lc.lcNumber)}" type="button" title="Copy LC number">
+                            #${esc(lc.lcNumber)}
+                            <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="5" width="9" height="9" rx="1.5"/><path d="M3 11V3a1 1 0 011-1h8"/></svg>
                         </button>
-                        <input type="file" id="lc-extract-file-input" accept=".pdf,application/pdf" hidden>
+                    </div>
+                    <div class="lc-idbar-spacer"></div>
+                    <button class="lc-hd-btn lc-hd-btn--primary" id="lc-extract-btn" type="button" title="Upload LC PDF to re-extract all fields with AI">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                        Upload LC PDF
+                    </button>
+                    <input type="file" id="lc-extract-file-input" accept=".pdf,application/pdf" hidden>
+                    <div class="lc-drive-folder-wrap" id="lc-drive-folder-wrap">
+                        ${lc.driveFolderUrl
+                            ? `<a href="${esc(lc.driveFolderUrl)}" target="_blank" class="lc-hd-btn lc-hd-btn--drive">
+                                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><polygon points="7.5,3 16.5,3 22,13 13,13" fill="#fbbc04"/><polygon points="2,13 7.5,3 11.5,13 6,23" fill="#34a853"/><polygon points="12,13 6,23 18,23 24,13" fill="#4285f4"/></svg>
+                                   Drive folder ↗
+                               </a>
+                               <button class="lc-drive-change-btn" id="lc-drive-change-btn" type="button">Change</button>`
+                            : `<button class="lc-hd-btn lc-hd-btn--drive" id="lc-drive-add-btn" type="button">
+                                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><polygon points="7.5,3 16.5,3 22,13 13,13" fill="#fbbc04"/><polygon points="2,13 7.5,3 11.5,13 6,23" fill="#34a853"/><polygon points="12,13 6,23 18,23 24,13" fill="#4285f4"/></polygon></svg>
+                                   Link Google Drive
+                               </button>`
+                        }
+                    </div>
+                    <div class="lc-idbar-amt lc-mono">${esc(fmtAmt(lc.currency, lc.amount))}</div>
+                </div>
+                <div class="lc-ship-link-form" id="lc-ship-link-form" hidden>
+                    <select class="lc-input" id="lc-ship-link-select" style="font-size:0.8rem;padding:0.35rem 0.5rem;">
+                        <option value="">Loading shipments…</option>
+                    </select>
+                    <div class="lc-drive-form-btns" style="margin-top:0.4rem">
+                        <button id="lc-ship-link-save" type="button" class="lc-doc-link-save">Link</button>
+                        <button id="lc-ship-link-cancel" type="button" class="lc-doc-link-cancel">Cancel</button>
                     </div>
                 </div>
-                <div class="lc-identity-row2" id="lc-ship-link-row">
-                    <span class="lc-identity-ship-label">Shipment</span>
-                    ${lc.linkedShipmentId
-                        ? '<div class="lc-ship-linked">'
-                            + '<a href="#imports" class="lc-ship-linked-id">' + esc(lc.shipmentRef || lc.linkedShipmentId) + ' ↗</a>'
-                            + '<button class="lc-ship-unlink-btn" id="lc-ship-unlink-btn" type="button">Unlink</button>'
-                          + '</div>'
-                        : '<span class="lc-ship-hint">Link from the shipment\'s Letter of Credit tab</span>'
-                    }
+                <div class="lc-drive-folder-form" id="lc-drive-folder-form" hidden>
+                    <input type="url" id="lc-drive-folder-input" class="lc-input"
+                           placeholder="Paste Google Drive folder URL (e.g. the shipment folder under 2. Importation)…"
+                           value="${esc(lc.driveFolderUrl || '')}"
+                           style="width:100%;font-size:0.8rem;padding:0.35rem 0.5rem;margin-bottom:0.4rem;">
+                    <div class="lc-drive-form-btns">
+                        <button id="lc-drive-save-btn" type="button" class="lc-doc-link-save">Save</button>
+                        <button id="lc-drive-cancel-btn" type="button" class="lc-doc-link-cancel">Cancel</button>
+                        ${lc.driveFolderUrl ? `<button id="lc-drive-remove-btn" type="button" class="lc-doc-link-clear">Remove</button>` : ''}
+                    </div>
                 </div>
             </div>
 
             <div class="lc-progress-wrap">
                 <div class="lc-progress-track"><div class="lc-progress-fill" id="lc-pfill" style="width:${pct}%"></div></div>
                 <span class="lc-progress-label" id="lc-plabel">${ready} of ${DOC_TOTAL} documents ready</span>
+                <span class="lc-clearance-chip ${isCleared ? 'lc-clearance--ok' : 'lc-clearance--no'}"
+                      id="lc-clearance">
+                    ${isCleared ? 'Cleared to present' : 'Not cleared to present'}
+                </span>
             </div>
 
             ${tlWrap}
@@ -1190,34 +1222,6 @@ const LC = (() => {
 
                     <input type="file" id="lc-card-file-input" accept=".pdf,application/pdf" hidden>
 
-                    <div class="lc-archive-section">
-                        <div class="lc-archive-hd">
-                            <div class="lc-section-label" style="margin:0">Google Drive</div>
-                            <div class="lc-drive-folder-wrap" id="lc-drive-folder-wrap">
-                                ${lc.driveFolderUrl
-                                    ? `<a href="${esc(lc.driveFolderUrl)}" target="_blank" class="lc-drive-folder-link">
-                                           <svg width="13" height="13" viewBox="0 0 24 24" fill="none"><polygon points="7.5,3 16.5,3 22,13 13,13" fill="#fbbc04"/><polygon points="2,13 7.5,3 11.5,13 6,23" fill="#34a853"/><polygon points="12,13 6,23 18,23 24,13" fill="#4285f4"/></svg>
-                                           Drive folder ↗
-                                       </a>
-                                       <button class="lc-drive-change-btn" id="lc-drive-change-btn" type="button">Change</button>`
-                                    : `<button class="lc-drive-add-btn" id="lc-drive-add-btn" type="button">
-                                           + Link Drive folder
-                                       </button>`
-                                }
-                            </div>
-                        </div>
-                        <div class="lc-drive-folder-form" id="lc-drive-folder-form" hidden>
-                            <input type="url" id="lc-drive-folder-input" class="lc-input"
-                                   placeholder="Paste Google Drive folder URL…"
-                                   value="${esc(lc.driveFolderUrl || '')}"
-                                   style="width:100%;font-size:0.8rem;padding:0.35rem 0.5rem;margin-bottom:0.4rem;">
-                            <div class="lc-drive-form-btns">
-                                <button id="lc-drive-save-btn" type="button" class="lc-doc-link-save">Save</button>
-                                <button id="lc-drive-cancel-btn" type="button" class="lc-doc-link-cancel">Cancel</button>
-                                ${lc.driveFolderUrl ? `<button id="lc-drive-remove-btn" type="button" class="lc-doc-link-clear">Remove</button>` : ''}
-                            </div>
-                        </div>
-                    </div>
                     ${lcRawHtml}
                 </main>
 
@@ -1782,18 +1786,45 @@ const LC = (() => {
         function updateDriveFolderDisplay(container, url) {
             const wrap = container.querySelector('#lc-drive-folder-wrap');
             if (!wrap) return;
+            const driveSvg = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none"><polygon points="7.5,3 16.5,3 22,13 13,13" fill="#fbbc04"/><polygon points="2,13 7.5,3 11.5,13 6,23" fill="#34a853"/><polygon points="12,13 6,23 18,23 24,13" fill="#4285f4"/></svg>';
             if (url) {
-                wrap.innerHTML = `<a href="${esc(url)}" target="_blank" class="lc-drive-folder-link">
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none"><polygon points="7.5,3 16.5,3 22,13 13,13" fill="#fbbc04"/><polygon points="2,13 7.5,3 11.5,13 6,23" fill="#34a853"/><polygon points="12,13 6,23 18,23 24,13" fill="#4285f4"/></svg>
-                    Drive folder ↗
-                </a>
+                wrap.innerHTML = `<a href="${esc(url)}" target="_blank" class="lc-hd-btn lc-hd-btn--drive">${driveSvg} Drive folder ↗</a>
                 <button class="lc-drive-change-btn" id="lc-drive-change-btn" type="button">Change</button>`;
             } else {
-                wrap.innerHTML = `<button class="lc-drive-add-btn" id="lc-drive-add-btn" type="button">+ Link Drive folder</button>`;
+                wrap.innerHTML = `<button class="lc-hd-btn lc-hd-btn--drive" id="lc-drive-add-btn" type="button">${driveSvg} Link Google Drive</button>`;
             }
             const input = container.querySelector('#lc-drive-folder-input');
             if (input) input.value = url;
         }
+
+        // Link to Shipment — picker populated from import forecast shipments
+        container.querySelector('#lc-ship-link-btn')?.addEventListener('click', async () => {
+            const form = container.querySelector('#lc-ship-link-form');
+            const sel  = container.querySelector('#lc-ship-link-select');
+            form.hidden = false;
+            try {
+                const fc = await apiFetch('/api/import/forecast');
+                const ships = (fc.shipments || []).slice().reverse();
+                sel.innerHTML = '<option value="">Select a shipment…</option>'
+                    + ships.map(s => '<option value="' + esc(s.id) + '" data-ref="' + esc(s.note || s.id) + '">'
+                        + esc(s.note || s.id) + (s.ym ? ' · ' + esc(s.ym) : '') + '</option>').join('');
+            } catch {
+                sel.innerHTML = '<option value="">Could not load shipments</option>';
+            }
+        });
+        container.querySelector('#lc-ship-link-cancel')?.addEventListener('click', () => {
+            container.querySelector('#lc-ship-link-form').hidden = true;
+        });
+        container.querySelector('#lc-ship-link-save')?.addEventListener('click', async () => {
+            const sel = container.querySelector('#lc-ship-link-select');
+            const opt = sel.options[sel.selectedIndex];
+            if (!sel.value) return;
+            await apiFetch('/api/lc/' + id, {
+                method: 'PATCH',
+                body: JSON.stringify({ linkedShipmentId: sel.value, shipmentRef: opt.dataset.ref || sel.value }),
+            }).catch(() => {});
+            renderDetail(container, id);
+        });
 
         // Upload history: show/hide older files drawer
         container.querySelector('#lc-doc-list').addEventListener('click', e => {
@@ -1961,7 +1992,7 @@ const LC = (() => {
                     alert('Extraction failed: ' + err.message);
                 } finally {
                     extractBtn.disabled = false;
-                    extractBtn.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg> Upload LC PDF';
+                    extractBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg> Upload LC PDF';
                 }
             });
         }
