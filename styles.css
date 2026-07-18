@@ -6295,11 +6295,12 @@ a.db-row:hover { background: #f8fafc; border-color: #e2e8f0; }
 .lc-srow-link:hover { text-decoration: underline; }
 
 /* ── Insurance Notification compose button ── */
-/* ── Document group headers ── */
+/* ── Document group headers — span the full grid row ── */
 .lc-doc-group-hd {
+    grid-column: 1 / -1;
     font-size: 0.7rem; font-weight: 700; letter-spacing: 0.06em;
     text-transform: uppercase; color: #94a3b8;
-    padding: 0.9rem 0 0.35rem; margin-top: 0.25rem;
+    padding: 0.9rem 0 0.1rem; margin-top: 0.25rem;
     border-top: 1px solid #f1f5f9;
 }
 .lc-doc-group-hd:first-child { border-top: none; padding-top: 0; }
