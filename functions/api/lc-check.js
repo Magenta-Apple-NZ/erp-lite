@@ -98,7 +98,7 @@ These are real issues found on previous presentations — be especially alert fo
 ${patternBlock}
 
 ## LC Ground Truth
-The following values come directly from the Letter of Credit and are the authoritative reference. Any deviation in the document — even minor wording, number, date, or spelling differences — is a discrepancy.
+The following values come directly from the Letter of Credit and are the authoritative reference. Deviations in numbers, dates, amounts, references, and substantive wording are discrepancies; pure spacing/punctuation/case differences are not.
 
 \`\`\`
 ${lcBlock}
@@ -107,35 +107,33 @@ ${lcBlock}
 ## Your task
 Check each numbered requirement below against the uploaded document. For every check:
 - Extract the actual value/text from the document
-- Compare it EXACTLY against the LC ground truth above
+- Compare it against the LC ground truth above
 - Numerical amounts: verify to the cent — USD 22,129.72 ≠ USD 22,130.00
-- Dates: verify exact format and value
-- Names/addresses: verify character-for-character — abbreviation, different punctuation, or reordering is a discrepancy
-- If information is ABSENT from the document, result is "fail"
-- If information is PRESENT but differs in any way, result is "flag" (minor) or "fail" (material)
-- Only "pass" if the document text exactly and unambiguously satisfies the requirement
+- Dates: verify exact value
+- If information the requirement demands is ABSENT from the document, result is "fail"
 
 Return ONLY a JSON array, no other text:
 [
   {"checkId": "id-from-list", "result": "pass|flag|fail", "note": "..."}
 ]
 
-Note format rules:
-- pass: quote only the key value or phrase found in the document (e.g. "18,754 kg net" or "CFR Auckland, New Zealand"). Keep it to one short phrase — no commentary.
-- flag: one sentence. State what the document shows and why it is questionable (e.g. "Shows 'C&F' — LC requires full Incoterms 2020 wording").
-- fail: one sentence. State what the document shows (or that it is absent) vs what the LC requires (e.g. "Document shows 18,749 kg in weight summary; LC quantity is 18,754 kg").
+Note format — telegraphic, not conversational. Hard rules:
+- pass: quote only the key value found (e.g. "18,754 kg net"). No commentary.
+- flag/fail: "<Field>: <doc value> instead of <LC value>" — e.g. "Applicant TIN: 358887309531 instead of 358887309351" or "Port of discharge: 'CHATTOGRAM' instead of 'CHATTOGRAM SEA PORT, BANGLADESH'". For absent items: "<Field>: missing".
+- If one check bundles several sub-items (TIN, BIN, IRC, HS code…), report ONLY the sub-items with problems. Never mention the ones that match.
+- Aim for under 15 words per note. No full sentences, no explanations of why it matters, never restate the requirement text.
 
 ## Checks to perform
 ${checkList}
 
 ## Grading rules
-- "pass"  — exact match, no discrepancy whatsoever
-- "flag"  — present but minor issue: near-match amount, slight wording variation, ambiguity, format difference. When uncertain between pass and flag, choose flag.
-- "fail"  — missing entirely, clearly wrong value, or a material discrepancy that would cause bank rejection
+- "pass" — requirement satisfied. Tolerance: differences ONLY in spacing, punctuation, capitalisation, or line-breaks that leave the identity/meaning unambiguous are NOT discrepancies — "J.P.S. ENTERPRISE" vs "J.P.S.ENTERPRISE" is a pass. Same for reordered address lines with identical content.
+- "flag" (soft fail) — present but imperfect wording: abbreviated or partial port/place names, incoterm variant differing from the LC (e.g. CFR shown where LC says CPT), condensed clause wording, format differences. A human should review, but it may be acceptable.
+- "fail" (hard fail) — missing entirely; wrong or transposed digits in any number, amount, date, quantity, or reference (TIN, BIN, IRC, proforma no., LC no.); wrong currency; contradicting figures within the document; a required certification/clause absent.
 - Never give "pass" when you cannot find and quote the relevant text in the document
 - Never give "pass" on a numerical check without confirming the exact figure
-- Exception — some checks are LC special conditions that do not concern this document type at all (e.g. a bill-of-lading free-time clause when checking an invoice, bank charge clauses, container size, import policy references). If a condition genuinely cannot apply to this document, grade it "pass" with note "N/A for this document" — do NOT fail a document for not containing a condition that was never meant to appear on it. Conditions like "all documents must bear the LC number" DO apply to every document and must be checked normally.
-- For any value that could appear in multiple places (weight, quantity, amount, date): scan the ENTIRE document — headers, line items, summary tables, footers, certification clauses — and report every instance. If two sections show different figures, that is a fail regardless of which figure matches the LC.
+- Exception — some checks are LC special conditions that do not concern this document type at all (e.g. a bill-of-lading free-time clause when checking an invoice, bank charge clauses, container size, import policy references). If a condition genuinely cannot apply to this document, grade it "pass" with note "N/A" — do NOT fail a document for not containing a condition that was never meant to appear on it. Conditions like "all documents must bear the LC number" DO apply to every document and must be checked normally.
+- For any value that could appear in multiple places (weight, quantity, amount, date): scan the ENTIRE document — headers, line items, summary tables, footers, certification clauses. If two sections show different figures, that is a fail regardless of which figure matches the LC.
 - Return one object per check — every check in the list must appear in the output`;
 
         step = 'anthropic-fetch';
