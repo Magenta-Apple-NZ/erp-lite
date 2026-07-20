@@ -2199,6 +2199,16 @@ const LC = (() => {
             const sub  = [saved.filename, saved.draft ? 'Draft' : 'Final', when ? 'checked ' + when : '']
                 .filter(Boolean).join(' · ');
 
+            const nPass = results.filter(r => r.result === 'pass').length;
+            const nFlag = results.filter(r => r.result === 'flag').length;
+            const nFail = results.filter(r => r.result === 'fail').length;
+            const filtersHtml = '<div class="lc-res-filters">'
+                + '<button class="lc-res-filter lc-res-filter--on" data-res-filter="all" type="button">All (' + results.length + ')</button>'
+                + '<button class="lc-res-filter lc-res-filter--green" data-res-filter="pass" type="button">✓ ' + nPass + '</button>'
+                + '<button class="lc-res-filter lc-res-filter--amber" data-res-filter="flag" type="button">⚠ ' + nFlag + '</button>'
+                + '<button class="lc-res-filter lc-res-filter--red" data-res-filter="fail" type="button">✗ ' + nFail + '</button>'
+                + '</div>';
+
             document.querySelector('.lc-results-modal')?.remove();
             const modal = document.createElement('div');
             modal.className = 'lc-extract-modal lc-results-modal';
@@ -2206,13 +2216,32 @@ const LC = (() => {
                 + '<div class="lc-extract-modal-hd">'
                 + '<span class="lc-extract-modal-title">' + esc(docDef.title) + ' — Check Results</span>'
                 + '<span class="lc-extract-modal-sub">' + esc(sub) + '</span>'
+                + filtersHtml
                 + '<button class="lc-email-modal-close" data-res-close type="button">✕</button>'
                 + '</div>'
                 + '<div class="lc-extract-modal-body">' + bodyHtml + '</div>'
                 + '</div>';
             document.body.appendChild(modal);
 
+            function applyFilter(f) {
+                modal.querySelectorAll('.lc-res-row').forEach(row => {
+                    row.hidden = f !== 'all' && !row.classList.contains('lc-res-row--' + f);
+                });
+                modal.querySelectorAll('.lc-res-sec-hd').forEach(hd => {
+                    let el = hd.nextElementSibling, any = false;
+                    while (el && !el.classList.contains('lc-res-sec-hd')) {
+                        if (el.classList.contains('lc-res-row') && !el.hidden) any = true;
+                        el = el.nextElementSibling;
+                    }
+                    hd.hidden = !any;
+                });
+                modal.querySelectorAll('.lc-res-filter').forEach(b =>
+                    b.classList.toggle('lc-res-filter--on', b.dataset.resFilter === f));
+            }
+
             modal.addEventListener('click', ev => {
+                const filterBtn = ev.target.closest('[data-res-filter]');
+                if (filterBtn) { applyFilter(filterBtn.dataset.resFilter); return; }
                 if (ev.target === modal || ev.target.closest('[data-res-close]')) { modal.remove(); return; }
                 if (ev.target.closest('.lc-cite-link')) { modal.remove(); return; }
                 handleFlagClick(ev);

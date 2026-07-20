@@ -5809,14 +5809,15 @@ a.db-row:hover { background: #f8fafc; border-color: #e2e8f0; }
     margin-bottom: 0.1rem;
 }
 
-/* Grid of document cards — open cards span the full row for results/history */
+/* Grid of document cards — 3-up squarish cards; results live in the pop-over */
 .lc-doc-list {
     display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 8px;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 10px;
     align-items: start;
 }
-@media (max-width: 1100px) { .lc-doc-list { grid-template-columns: 1fr; } }
+@media (max-width: 1400px) { .lc-doc-list { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 950px)  { .lc-doc-list { grid-template-columns: 1fr; } }
 
 .lc-doc-card {
     background: white;
@@ -5825,7 +5826,6 @@ a.db-row:hover { background: #f8fafc; border-color: #e2e8f0; }
     border-radius: 0 7px 7px 0;
     overflow: hidden;
 }
-.lc-doc-card--open { grid-column: 1 / -1; }
 .lc-doc-card--todo  { border-left-color: #94a3b8; }
 .lc-doc-card--prep  { border-left-color: #9333ea; }
 .lc-doc-card--ready { border-left-color: #16a34a; }
@@ -5833,14 +5833,21 @@ a.db-row:hover { background: #f8fafc; border-color: #e2e8f0; }
 
 .lc-doc-hd {
     display: flex;
-    align-items: center;
+    align-items: flex-start;
+    flex-wrap: wrap;
     gap: 0.6rem;
-    padding: 0.65rem 0.9rem;
+    padding: 0.75rem 0.9rem;
     cursor: pointer;
     user-select: none;
     -webkit-user-select: none;
 }
 .lc-doc-hd:hover { background: #fafafa; }
+/* Actions drop to their own full-width row so cards stay compact/squarish */
+.lc-doc-hd .lc-doc-right {
+    width: 100%; justify-content: flex-start;
+    padding-top: 0.5rem; border-top: 1px solid #f8fafc;
+}
+.lc-doc-hd .lc-doc-chevron { margin-left: auto; }
 
 .lc-doc-icon {
     width: 42px;
@@ -6364,11 +6371,12 @@ a.db-row:hover { background: #f8fafc; border-color: #e2e8f0; }
 
 /* ── Upload confirm bar ── */
 .lc-upload-confirm {
-    display: flex; align-items: center; gap: 0.6rem;
+    display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap;
     padding: 0.55rem 0.75rem; background: #f8fafc;
     border: 1px solid #e2e8f0; border-radius: 6px;
     font-size: 0.82rem;
 }
+.lc-upload-confirm .lc-upload-confirm-fname { flex-basis: 100%; }
 .lc-upload-confirm-fname {
     flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis;
     white-space: nowrap; color: #334155; font-weight: 500;
@@ -6533,6 +6541,19 @@ a.db-row:hover { background: #f8fafc; border-color: #e2e8f0; }
 }
 .lc-check-summary-btn:hover { filter: brightness(0.97); }
 .lc-check-summary-open { font-size: 0.75rem; font-weight: 600; opacity: 0.75; white-space: nowrap; }
+
+/* Result filters (green / amber / red) */
+.lc-res-filters { display: flex; gap: 0.4rem; margin-top: 0.5rem; }
+.lc-res-filter {
+    font-size: 0.74rem; font-weight: 600; padding: 0.25rem 0.65rem;
+    border-radius: 99px; border: 1px solid #e2e8f0; background: #fff;
+    color: #64748b; cursor: pointer; transition: background 0.12s, border-color 0.12s;
+}
+.lc-res-filter--on { background: #eef2ff; border-color: #c7d2fe; color: #4f46e5; }
+.lc-res-filter--green.lc-res-filter--on { background: #f0fdf4; border-color: #bbf7d0; color: #15803d; }
+.lc-res-filter--amber.lc-res-filter--on { background: #fffbeb; border-color: #fde68a; color: #b45309; }
+.lc-res-filter--red.lc-res-filter--on   { background: #fef2f2; border-color: #fecaca; color: #b91c1c; }
+.lc-res-filter:hover { border-color: #94a3b8; }
 
 /* Grouped results pop-over */
 .lc-res-sec-hd {
