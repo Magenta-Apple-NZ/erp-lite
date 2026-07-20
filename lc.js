@@ -767,9 +767,7 @@ const LC = (() => {
     }
 
     function renderDocCard(doc, lc) {
-        const status  = (lc.docStatus || {})[doc.id] || 'todo';
-        const link    = (lc.docLinks  || {})[doc.id] || '';
-        const checks  = lc.docChecks || {};
+        const status = (lc.docStatus || {})[doc.id] || 'todo';
         const ICONS = {
             draft:                  `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 1h6l3 3v10a1 1 0 01-1 1H4a1 1 0 01-1-1V2a1 1 0 011-1z"/><polyline points="9,1 9,4 12,4"/><line x1="5" y1="9" x2="11" y2="9"/></svg>`,
             commercialInvoice:      `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="1" width="12" height="14" rx="1"/><line x1="5" y1="5" x2="11" y2="5"/><line x1="5" y1="8" x2="11" y2="8"/><line x1="5" y1="11" x2="8" y2="11"/></svg>`,
@@ -781,33 +779,18 @@ const LC = (() => {
             inspectionCertificate:  `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="6.5" cy="6.5" r="4"/><path d="M9.5 9.5l4 4"/></svg>`,
         };
 
-        const checkItems = doc.checks.map(c => {
-            const isChecked = !!checks[c.id];
-            const citeLink  = '<a class="lc-cite-link" href="#' + (c.cite || 'lc-raw-section') + '" title="View in LC reference">§</a>';
-            return '<div class="lc-check-item' + (isChecked ? ' lc-check-item--done' : '') + '">'
-                + '<input type="checkbox" id="chk-' + c.id + '" data-check="' + c.id + '"' + (isChecked ? ' checked' : '') + '>'
-                + '<label for="chk-' + c.id + '">' + esc(c.text) + citeLink + '</label>'
-                + '</div>';
-        }).join('');
-
         return `
         <div class="lc-doc-card lc-doc-card--${status}" id="lcdoc-${doc.id}" data-doc="${doc.id}">
-            <div class="lc-doc-hd">
+            <div class="lc-doc-hd" data-open-doc="${doc.id}" role="button" tabindex="0">
                 <div class="lc-doc-icon">${ICONS[doc.id] || ''}</div>
                 <div class="lc-doc-meta">
-                    <div class="lc-doc-title">${esc(doc.title)}<a class="lc-doc-cite" href="#lcref-46a-${doc.id}" title="Jump to LC reference">§</a></div>
+                    <div class="lc-doc-title">${esc(doc.title)}</div>
                     <div class="lc-doc-copies">${esc(doc.copies)}</div>
-                    <div class="lc-doc-toolrow">
-                        <span class="lc-doc-link-wrap" id="lc-link-wrap-${doc.id}">
-                            ${link
-                                ? `<span class="lc-doc-link-pill"><a href="${esc(link)}" target="_blank" rel="noopener" class="lc-doc-extlink">${docLinkIcon(link)} Open template →</a><button class="lc-doc-link-edit-btn" data-link-doc="${doc.id}" type="button" title="Edit link">✎</button></span>`
-                                : `<button class="lc-doc-link-add-btn" data-link-doc="${doc.id}" type="button">+ template link</button>`
-                            }
-                        </span>
-                        <button class="lc-doc-reqs-btn" data-view-reqs="${doc.id}" type="button">Requirements (${doc.checks.length})</button>
-                    </div>
                 </div>
-                <div class="lc-doc-right">
+            </div>
+            <div class="lc-doc-files-line" data-open-doc="${doc.id}" hidden></div>
+            <div class="lc-card-check-results" id="lccheck-${doc.id}" hidden></div>
+            <div class="lc-doc-actions">
                     ${doc.id === 'insuranceNotification' ? `
                     <button class="lc-ins-compose-btn" data-compose-insurance type="button">
                         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><polyline points="2,4 12,13 22,4"/></svg>
@@ -822,25 +805,7 @@ const LC = (() => {
                         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
                         Upload PDF
                     </button>
-                    <svg class="lc-doc-chevron" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><polyline points="3,6 8,11 13,6"/></svg>
-                </div>
             </div>
-            <div class="lc-doc-checks">
-                <div class="lc-doc-link-form" id="lc-link-form-${doc.id}" hidden>
-                    <input type="url" class="lc-doc-link-input lc-input"
-                           placeholder="Paste Google Drive, Docs, or Sheets URL…"
-                           value="${esc(link)}"
-                           style="width:100%;font-size:0.8rem;padding:0.35rem 0.5rem;">
-                    <div class="lc-doc-link-form-btns">
-                        <button class="lc-doc-link-save" data-save-link="${doc.id}" type="button">Save</button>
-                        <button class="lc-doc-link-cancel" data-cancel-link="${doc.id}" type="button">Cancel</button>
-                        <button class="lc-doc-link-clear" data-clear-link="${doc.id}" type="button">Remove</button>
-                    </div>
-                </div>
-                <div class="lc-doc-checklist" hidden>${checkItems}</div>
-            </div>
-            <div class="lc-card-check-results" id="lccheck-${doc.id}" hidden></div>
-            <div class="lc-doc-history" id="lc-doc-history-${doc.id}" hidden></div>
         </div>`;
     }
 
@@ -1520,117 +1485,21 @@ const LC = (() => {
     }
 
     function bindDetailEvents(container, id, docs, lc, buildTlTrack) {
-        // Doc card expand/collapse — exclude interactive elements
+        // Card click → document pop-over (Results · Requirements · Files)
         container.querySelector('#lc-doc-list').addEventListener('click', e => {
-            const hd = e.target.closest('.lc-doc-hd');
+            const trigger = e.target.closest('[data-open-doc]');
+            if (!trigger) return;
+            if (e.target.closest('[data-upload-doc]') || e.target.closest('.lc-doc-extlink') ||
+                e.target.closest('[data-compose-insurance]') || e.target.closest('[data-compose-applicant]')) return;
+            showDocModal(trigger.dataset.openDoc, trigger.classList.contains('lc-doc-files-line') ? 'files' : null);
+        });
+        container.querySelector('#lc-doc-list').addEventListener('keydown', e => {
+            if (e.key !== 'Enter' && e.key !== ' ') return;
+            const hd = e.target.closest('.lc-doc-hd[data-open-doc]');
             if (!hd) return;
-            if (e.target.closest('.lc-chip') || e.target.closest('[data-upload-doc]') ||
-                e.target.closest('[data-link-doc]') || e.target.closest('.lc-doc-extlink') ||
-                e.target.closest('[data-compose-insurance]') || e.target.closest('[data-compose-applicant]') ||
-                e.target.closest('[data-toggle-checklist]')) return;
-            const card = hd.closest('.lc-doc-card');
-            card.classList.toggle('lc-doc-card--open');
+            e.preventDefault();
+            showDocModal(hd.dataset.openDoc, null);
         });
-
-        // Requirements pop-up — full list of checks for a document
-        container.querySelector('#lc-doc-list').addEventListener('click', e => {
-            const btn = e.target.closest('[data-view-reqs]');
-            if (!btn) return;
-            e.stopPropagation();
-            const docDef = docs.find(d => d.id === btn.dataset.viewReqs);
-            if (!docDef) return;
-
-            document.querySelector('.lc-reqs-modal')?.remove();
-            const rows = docDef.checks.map((c, i) =>
-                '<div class="lc-reqs-row">'
-                + '<span class="lc-reqs-num">' + String(i + 1).padStart(2, '0') + '</span>'
-                + '<span class="lc-reqs-text">' + esc(c.text)
-                + ' <a class="lc-cite-link" style="opacity:0.55" href="#' + (c.cite || 'lc-raw-section') + '" title="View in LC reference">§</a></span>'
-                + '</div>'
-            ).join('');
-
-            const modal = document.createElement('div');
-            modal.className = 'lc-extract-modal lc-reqs-modal';
-            modal.innerHTML = '<div class="lc-extract-modal-box">'
-                + '<div class="lc-extract-modal-hd">'
-                + '<span class="lc-extract-modal-title">' + esc(docDef.title) + ' — Requirements</span>'
-                + '<span class="lc-extract-modal-sub">' + esc(docDef.copies) + ' · every requirement is checked by AI on upload · § jumps to the LC clause</span>'
-                + '<button class="lc-email-modal-close" data-reqs-close type="button">✕</button>'
-                + '</div>'
-                + '<div class="lc-extract-modal-body">' + rows + '</div>'
-                + '</div>';
-            document.body.appendChild(modal);
-            modal.addEventListener('click', ev => {
-                if (ev.target === modal || ev.target.closest('[data-reqs-close]')) modal.remove();
-                const cite = ev.target.closest('.lc-cite-link');
-                if (cite) modal.remove(); // let the anchor jump happen with modal out of the way
-            });
-        });
-
-        // Document link: show/edit form
-        container.querySelector('#lc-doc-list').addEventListener('click', e => {
-            const btn = e.target.closest('[data-link-doc]');
-            if (!btn) return;
-            const docId = btn.dataset.linkDoc;
-            const card  = container.querySelector('#lcdoc-' + docId);
-            if (card) card.classList.add('lc-doc-card--open');
-            const form = container.querySelector('#lc-link-form-' + docId);
-            if (form) {
-                form.hidden = !form.hidden;
-                if (!form.hidden) form.querySelector('.lc-doc-link-input')?.focus();
-            }
-        });
-
-        // Document link: save / cancel / clear
-        container.querySelector('#lc-doc-list').addEventListener('click', async e => {
-            const saveBtn = e.target.closest('[data-save-link]');
-            if (saveBtn) {
-                const docId = saveBtn.dataset.saveLink;
-                const url   = container.querySelector('#lc-link-form-' + docId)?.querySelector('.lc-doc-link-input')?.value.trim() || '';
-                container.querySelector('#lc-link-form-' + docId).hidden = true;
-                updateDocLink(container, docId, url);
-                await apiFetch('/api/lc/' + id, { method: 'PATCH', body: JSON.stringify({ docLinks: { [docId]: url } }) }).catch(() => {});
-                return;
-            }
-            const cancelBtn = e.target.closest('[data-cancel-link]');
-            if (cancelBtn) {
-                container.querySelector('#lc-link-form-' + cancelBtn.dataset.cancelLink).hidden = true;
-                return;
-            }
-            const clearBtn = e.target.closest('[data-clear-link]');
-            if (clearBtn) {
-                const docId = clearBtn.dataset.clearLink;
-                container.querySelector('#lc-link-form-' + docId).hidden = true;
-                updateDocLink(container, docId, '');
-                await apiFetch('/api/lc/' + id, { method: 'PATCH', body: JSON.stringify({ docLinks: { [docId]: '' } }) }).catch(() => {});
-            }
-        });
-
-        // Enter key in link input
-        container.querySelector('#lc-doc-list').addEventListener('keydown', async e => {
-            if (e.key !== 'Enter') return;
-            const input = e.target.closest('.lc-doc-link-input');
-            if (!input) return;
-            const form  = input.closest('.lc-doc-link-form');
-            const docId = form?.querySelector('[data-save-link]')?.dataset.saveLink;
-            if (!docId) return;
-            form.hidden = true;
-            const url = input.value.trim();
-            updateDocLink(container, docId, url);
-            await apiFetch('/api/lc/' + id, { method: 'PATCH', body: JSON.stringify({ docLinks: { [docId]: url } }) }).catch(() => {});
-        });
-
-        function updateDocLink(container, docId, url) {
-            const wrap = container.querySelector('#lc-link-wrap-' + docId);
-            if (!wrap) return;
-            if (url) {
-                wrap.innerHTML = `<div class="lc-doc-link-pill"><a href="${esc(url)}" target="_blank" rel="noopener" class="lc-doc-extlink">${docLinkIcon(url)} Open →</a><button class="lc-doc-link-edit-btn" data-link-doc="${docId}" type="button" title="Edit link">✎</button></div>`;
-            } else {
-                wrap.innerHTML = `<button class="lc-doc-link-add-btn" data-link-doc="${docId}" type="button">+ add link</button>`;
-            }
-            const input = container.querySelector('#lc-link-form-' + docId)?.querySelector('.lc-doc-link-input');
-            if (input) input.value = url;
-        }
 
         // Status chip: cycle and save immediately
         container.querySelector('#lc-doc-list').addEventListener('click', async e => {
@@ -1720,14 +1589,6 @@ const LC = (() => {
                 }
             });
         }
-
-        // Open the grouped results pop-over
-        container.querySelector('#lc-doc-list').addEventListener('click', e => {
-            const btn = e.target.closest('[data-view-results]');
-            if (!btn) return;
-            e.stopPropagation();
-            showResultsModal(btn.dataset.viewResults);
-        });
 
         // Condition checkboxes
         container.querySelector('#lc-cond-grid').addEventListener('change', e => {
@@ -1931,31 +1792,20 @@ const LC = (() => {
             renderDetail(container, id);
         });
 
-        // Upload history: show/hide older files drawer
-        container.querySelector('#lc-doc-list').addEventListener('click', e => {
-            const btn = e.target.closest('[data-history-toggle]');
-            if (!btn) return;
-            e.stopPropagation();
-            const drawer = btn.parentElement.querySelector('.lc-doc-history-more');
-            if (!drawer) return;
-            if (!btn.dataset.showLabel) btn.dataset.showLabel = btn.textContent;
-            const open = drawer.hidden;
-            drawer.hidden = !open;
-            btn.textContent = open ? 'Hide older files' : btn.dataset.showLabel;
-        });
-
-        // Upload history delete handler (rows live beneath each doc card)
-        container.querySelector('#lc-doc-list').addEventListener('click', async e => {
+        // Delete an archived file (rows live in the doc pop-over's Files tab)
+        async function handleArchiveDelete(e, afterDelete) {
             const btn = e.target.closest('[data-del-key]');
             if (!btn) return;
             e.stopPropagation();
             if (!confirm('Remove this archived document?')) return;
-            const key = btn.dataset.delKey;
             try {
-                await fetch(`/api/lc-docs?key=${encodeURIComponent(key)}&lcId=${encodeURIComponent(id)}`, { method: 'DELETE' });
-                loadArchivedDocs(container, id);
-            } catch {}
-        });
+                await fetch(`/api/lc-docs?key=${encodeURIComponent(btn.dataset.delKey)}&lcId=${encodeURIComponent(id)}`, { method: 'DELETE' });
+                await loadArchivedDocs(container, id);
+                if (afterDelete) afterDelete();
+            } catch (err) {
+                alert('Could not delete: ' + err.message);
+            }
+        }
 
         // Insurance notification — send email (preview strip then open mail client)
         container.querySelector('#lc-doc-list').addEventListener('click', async e => {
@@ -2130,11 +1980,9 @@ const LC = (() => {
             if (flagged) sumParts.push(`${flagged} flag`);
             if (failed)  sumParts.push(`${failed} fail`);
 
-            resultsEl.innerHTML = '<button class="lc-check-matrix-bar lc-check-matrix-bar--' + sumCls + ' lc-check-summary-btn" type="button" data-view-results="' + esc(docId) + '">'
+            resultsEl.innerHTML = '<button class="lc-check-matrix-bar lc-check-matrix-bar--' + sumCls + ' lc-check-summary-btn" type="button" data-open-doc="' + esc(docId) + '"'
+                + (badge.errDetail ? ' title="' + esc(badge.errDetail) + '"' : '') + '>'
                 + '<span class="lc-check-matrix-tally">' + sumIcon + ' ' + sumParts.join(' · ') + '</span>'
-                + (badge.label ? '<span class="lc-doc-version-badge lc-doc-version-badge--' + badge.cls + '"'
-                    + (badge.errDetail ? ' title="' + esc(badge.errDetail) + '" style="cursor:help"' : '') + '>' + esc(badge.label) + '</span>' : '')
-                + '<span class="lc-check-summary-open">View results →</span>'
                 + '</button>';
             resultsEl.hidden = false;
 
@@ -2145,11 +1993,109 @@ const LC = (() => {
             }
         }
 
-        // Grouped results pop-over: sections → individual named checks
-        function showResultsModal(docId) {
+        // Document pop-over — tabs: Results · Requirements · Files
+        function showDocModal(docId, tab) {
             const docDef = docs.find(d => d.id === docId);
-            const saved  = (lc.aiChecks || {})[docId];
-            if (!docDef || !saved || !Array.isArray(saved.results)) return;
+            if (!docDef) return;
+            const saved   = (lc.aiChecks || {})[docId];
+            const hasRes  = saved && Array.isArray(saved.results) && saved.results.length;
+            const active  = tab || (hasRes ? 'results' : 'reqs');
+
+            document.querySelector('.lc-results-modal')?.remove();
+            const modal = document.createElement('div');
+            modal.className = 'lc-extract-modal lc-results-modal';
+            modal.innerHTML = '<div class="lc-extract-modal-box">'
+                + '<div class="lc-extract-modal-hd">'
+                + '<span class="lc-extract-modal-title">' + esc(docDef.title) + '</span>'
+                + '<span class="lc-extract-modal-sub">' + esc(docDef.copies) + ' · ' + esc(docDef.desc) + '</span>'
+                + '<div class="lc-doc-tabs">'
+                + '<button class="lc-doc-tab' + (active === 'results' ? ' lc-doc-tab--on' : '') + '" data-doc-tab="results" type="button">Check results</button>'
+                + '<button class="lc-doc-tab' + (active === 'reqs' ? ' lc-doc-tab--on' : '') + '" data-doc-tab="reqs" type="button">Requirements (' + docDef.checks.length + ')</button>'
+                + '<button class="lc-doc-tab' + (active === 'files' ? ' lc-doc-tab--on' : '') + '" data-doc-tab="files" type="button">Files</button>'
+                + '<a class="lc-doc-tab-cite" href="#lcref-46a-' + esc(docDef.id) + '" title="Jump to LC reference">§ LC clause</a>'
+                + '</div>'
+                + '<button class="lc-email-modal-close" data-res-close type="button">✕</button>'
+                + '</div>'
+                + '<div class="lc-extract-modal-body" id="lc-doc-modal-body"></div>'
+                + '</div>';
+            document.body.appendChild(modal);
+
+            const bodyEl = modal.querySelector('#lc-doc-modal-body');
+
+            function renderTab(which) {
+                modal.querySelectorAll('.lc-doc-tab').forEach(b =>
+                    b.classList.toggle('lc-doc-tab--on', b.dataset.docTab === which));
+                bodyEl.innerHTML = which === 'results' ? resultsTabHtml()
+                                 : which === 'reqs'    ? reqsTabHtml()
+                                 : filesTabHtml();
+            }
+
+            function reqsTabHtml() {
+                return docDef.checks.map((c, i) =>
+                    '<div class="lc-reqs-row">'
+                    + '<span class="lc-reqs-num">' + String(i + 1).padStart(2, '0') + '</span>'
+                    + '<span class="lc-reqs-text">' + esc(c.text)
+                    + ' <a class="lc-cite-link" style="opacity:0.55" href="#' + (c.cite || 'lc-raw-section') + '" title="View in LC reference">§</a></span>'
+                    + '</div>'
+                ).join('');
+            }
+
+            function filesTabHtml() {
+                const link = (lc.docLinks || {})[docId] || '';
+                let html = '<div class="lc-res-sec-hd"><span>Template</span></div>'
+                    + '<div class="lc-files-template">'
+                    + (link
+                        ? '<a href="' + esc(link) + '" target="_blank" rel="noopener" class="lc-doc-extlink">' + docLinkIcon(link) + ' Open template →</a>'
+                        : '<span class="lc-archive-empty" style="padding:0">No template linked.</span>')
+                    + '<button class="lc-doc-reqs-btn" data-edit-link="' + esc(docId) + '" type="button">'
+                    + (link ? 'Change link' : '+ Add link') + '</button>'
+                    + '</div>'
+                    + '<div class="lc-res-sec-hd"><span>Upload history</span></div>';
+                const rows = (_archivedByType[docId] || []);
+                html += rows.length
+                    ? rows.map(archiveRowHtml).join('')
+                    : '<span class="lc-archive-empty">No files uploaded yet.</span>';
+                return html;
+            }
+
+            function resultsTabHtml() {
+                if (!hasRes) return '<span class="lc-archive-empty">No check run yet — upload a PDF to check this document against the LC.</span>';
+                return resultsBodyHtml(docDef, saved);
+            }
+
+            renderTab(active);
+
+            modal.addEventListener('click', ev => {
+                const tabBtn = ev.target.closest('[data-doc-tab]');
+                if (tabBtn) { renderTab(tabBtn.dataset.docTab); return; }
+
+                const filterBtn = ev.target.closest('[data-res-filter]');
+                if (filterBtn) { applyResFilter(modal, filterBtn.dataset.resFilter); return; }
+
+                const editLink = ev.target.closest('[data-edit-link]');
+                if (editLink) {
+                    const cur = (lc.docLinks || {})[docId] || '';
+                    const url = prompt('Template link (Google Drive, Docs, or Sheets URL):', cur);
+                    if (url === null) return;
+                    lc.docLinks = { ...(lc.docLinks || {}), [docId]: url.trim() };
+                    apiFetch('/api/lc/' + id, {
+                        method: 'PATCH',
+                        body: JSON.stringify({ docLinks: { [docId]: url.trim() } }),
+                    }).catch(e => alert('Could not save link: ' + e.message));
+                    renderTab('files');
+                    return;
+                }
+
+                if (ev.target.closest('[data-del-key]')) { handleArchiveDelete(ev, () => renderTab('files')); return; }
+                if (ev.target === modal || ev.target.closest('[data-res-close]')) { modal.remove(); return; }
+                if (ev.target.closest('.lc-cite-link') || ev.target.closest('.lc-doc-tab-cite')) { modal.remove(); return; }
+                handleFlagClick(ev);
+            });
+        }
+
+        // Grouped results body (sections → named checks) + filter pills
+        function resultsBodyHtml(docDef, saved) {
+            const docId   = docDef.id;
             const results = saved.results;
 
             const byId = {};
@@ -2196,56 +2142,37 @@ const LC = (() => {
             });
 
             const when = saved.checkedAt ? fmtDate(saved.checkedAt.slice(0, 10)) : '';
-            const sub  = [saved.filename, saved.draft ? 'Draft' : 'Final', when ? 'checked ' + when : '']
+            const meta = [saved.filename, saved.draft ? 'Draft' : 'Final', when ? 'checked ' + when : '']
                 .filter(Boolean).join(' · ');
 
             const nPass = results.filter(r => r.result === 'pass').length;
             const nFlag = results.filter(r => r.result === 'flag').length;
             const nFail = results.filter(r => r.result === 'fail').length;
-            const filtersHtml = '<div class="lc-res-filters">'
+
+            return '<div class="lc-res-meta">' + esc(meta) + '</div>'
+                + '<div class="lc-res-filters">'
                 + '<button class="lc-res-filter lc-res-filter--on" data-res-filter="all" type="button">All (' + results.length + ')</button>'
                 + '<button class="lc-res-filter lc-res-filter--green" data-res-filter="pass" type="button">✓ ' + nPass + '</button>'
                 + '<button class="lc-res-filter lc-res-filter--amber" data-res-filter="flag" type="button">⚠ ' + nFlag + '</button>'
                 + '<button class="lc-res-filter lc-res-filter--red" data-res-filter="fail" type="button">✗ ' + nFail + '</button>'
-                + '</div>';
-
-            document.querySelector('.lc-results-modal')?.remove();
-            const modal = document.createElement('div');
-            modal.className = 'lc-extract-modal lc-results-modal';
-            modal.innerHTML = '<div class="lc-extract-modal-box">'
-                + '<div class="lc-extract-modal-hd">'
-                + '<span class="lc-extract-modal-title">' + esc(docDef.title) + ' — Check Results</span>'
-                + '<span class="lc-extract-modal-sub">' + esc(sub) + '</span>'
-                + filtersHtml
-                + '<button class="lc-email-modal-close" data-res-close type="button">✕</button>'
                 + '</div>'
-                + '<div class="lc-extract-modal-body">' + bodyHtml + '</div>'
-                + '</div>';
-            document.body.appendChild(modal);
+                + bodyHtml;
+        }
 
-            function applyFilter(f) {
-                modal.querySelectorAll('.lc-res-row').forEach(row => {
-                    row.hidden = f !== 'all' && !row.classList.contains('lc-res-row--' + f);
-                });
-                modal.querySelectorAll('.lc-res-sec-hd').forEach(hd => {
-                    let el = hd.nextElementSibling, any = false;
-                    while (el && !el.classList.contains('lc-res-sec-hd')) {
-                        if (el.classList.contains('lc-res-row') && !el.hidden) any = true;
-                        el = el.nextElementSibling;
-                    }
-                    hd.hidden = !any;
-                });
-                modal.querySelectorAll('.lc-res-filter').forEach(b =>
-                    b.classList.toggle('lc-res-filter--on', b.dataset.resFilter === f));
-            }
-
-            modal.addEventListener('click', ev => {
-                const filterBtn = ev.target.closest('[data-res-filter]');
-                if (filterBtn) { applyFilter(filterBtn.dataset.resFilter); return; }
-                if (ev.target === modal || ev.target.closest('[data-res-close]')) { modal.remove(); return; }
-                if (ev.target.closest('.lc-cite-link')) { modal.remove(); return; }
-                handleFlagClick(ev);
+        function applyResFilter(modal, f) {
+            modal.querySelectorAll('.lc-res-row').forEach(row => {
+                row.hidden = f !== 'all' && !row.classList.contains('lc-res-row--' + f);
             });
+            modal.querySelectorAll('.lc-res-sec-hd').forEach(hd => {
+                let el = hd.nextElementSibling, any = false;
+                while (el && !el.classList.contains('lc-res-sec-hd')) {
+                    if (el.classList.contains('lc-res-row') && !el.hidden) any = true;
+                    el = el.nextElementSibling;
+                }
+                hd.hidden = !any;
+            });
+            modal.querySelectorAll('.lc-res-filter').forEach(b =>
+                b.classList.toggle('lc-res-filter--on', b.dataset.resFilter === f));
         }
 
         // Restore stored AI check results so navigating away doesn't lose them
@@ -2364,56 +2291,52 @@ const LC = (() => {
         }
     }
 
+    // Archived documents for the open LC, grouped by docType — read by the doc pop-over
+    let _archivedByType = {};
+
+    function archiveRowHtml(d) {
+        const versionCls   = d.superseded ? 'superseded' : d.draft ? 'draft' : 'final';
+        const versionLabel = d.superseded ? 'Superseded' : d.draft ? 'Draft' : 'Final';
+        return `
+            <div class="lc-archive-row${d.superseded ? ' lc-archive-row--superseded' : ''}">
+                <span class="lc-doc-version-badge lc-doc-version-badge--${versionCls}">${versionLabel}</span>
+                <span class="lc-archive-name">${esc(d.filename)}</span>
+                <span class="lc-archive-date">${esc(fmtDate((d.uploadedAt || '').slice(0, 10)))}</span>
+                <a class="lc-archive-view" href="/api/lc-doc-file?key=${encodeURIComponent(d.key)}&filename=${encodeURIComponent(d.filename)}" target="_blank">View PDF</a>
+                ${d.driveViewLink
+                    ? `<a class="lc-archive-drive-link" href="${esc(d.driveViewLink)}" target="_blank" title="View in Google Drive">
+                           <svg width="12" height="12" viewBox="0 0 24 24" fill="none"><polygon points="7.5,3 16.5,3 22,13 13,13" fill="#fbbc04"/><polygon points="2,13 7.5,3 11.5,13 6,23" fill="#34a853"/><polygon points="12,13 6,23 18,23 24,13" fill="#4285f4"/></svg>
+                           Drive
+                       </a>`
+                    : d.driveError
+                        ? `<span class="lc-archive-drive-err" title="${esc(d.driveError)}">Drive ✗</span>`
+                        : ''
+                }
+                <button class="lc-archive-del" data-del-key="${esc(d.key)}" type="button" title="Delete">✕</button>
+            </div>`;
+    }
+
     async function loadArchivedDocs(container, lcId) {
-        // Per-document upload history — rows distributed beneath each doc card
-        const historyEls = container.querySelectorAll('.lc-doc-history');
-        if (!historyEls.length) return;
-
-        const rowHtml = d => {
-            const versionCls   = d.superseded ? 'superseded' : d.draft ? 'draft' : 'final';
-            const versionLabel = d.superseded ? 'Superseded' : d.draft ? 'Draft' : 'Final';
-            return `
-                <div class="lc-archive-row${d.superseded ? ' lc-archive-row--superseded' : ''}">
-                    <span class="lc-doc-version-badge lc-doc-version-badge--${versionCls}">${versionLabel}</span>
-                    <span class="lc-archive-name">${esc(d.filename)}</span>
-                    <span class="lc-archive-date">${esc(fmtDate((d.uploadedAt || '').slice(0, 10)))}</span>
-                    <a class="lc-archive-view" href="/api/lc-doc-file?key=${encodeURIComponent(d.key)}&filename=${encodeURIComponent(d.filename)}" target="_blank">View PDF</a>
-                    ${d.driveViewLink
-                        ? `<a class="lc-archive-drive-link" href="${esc(d.driveViewLink)}" target="_blank" title="View in Google Drive">
-                               <svg width="12" height="12" viewBox="0 0 24 24" fill="none"><polygon points="7.5,3 16.5,3 22,13 13,13" fill="#fbbc04"/><polygon points="2,13 7.5,3 11.5,13 6,23" fill="#34a853"/><polygon points="12,13 6,23 18,23 24,13" fill="#4285f4"/></svg>
-                               Drive
-                           </a>`
-                        : d.driveError
-                            ? `<span class="lc-archive-drive-err" title="${esc(d.driveError)}">Drive ✗</span>`
-                            : ''
-                    }
-                    <button class="lc-archive-del" data-del-key="${esc(d.key)}" type="button" title="Delete">✕</button>
-                </div>`;
-        };
-
         try {
             const json = await apiFetch('/api/lc-docs?lcId=' + lcId);
             const byType = {};
             (json.docs || []).forEach(d => {
                 (byType[d.docType] = byType[d.docType] || []).push(d);
             });
-            historyEls.forEach(el => {
-                const docId = el.id.replace('lc-doc-history-', '');
+            _archivedByType = byType;
+
+            // Card foot line: latest file name + count, opens the Files tab
+            container.querySelectorAll('.lc-doc-card').forEach(card => {
+                const docId = card.dataset.doc;
                 const rows  = byType[docId] || [];
+                const el    = card.querySelector('.lc-doc-files-line');
+                if (!el) return;
                 if (!rows.length) { el.hidden = true; el.innerHTML = ''; return; }
-                // Show only the latest upload; everything older goes in the drawer
-                const visible = rows.slice(0, 1);
-                const older   = rows.slice(1);
-                el.innerHTML = '<div class="lc-doc-history-label">Upload history</div>'
-                    + visible.map(rowHtml).join('')
-                    + (older.length
-                        ? '<div class="lc-doc-history-more" hidden>' + older.map(rowHtml).join('') + '</div>'
-                          + '<button class="lc-doc-history-toggle" type="button" data-history-toggle>'
-                          + 'Show all files (' + rows.length + ')</button>'
-                        : '');
+                el.innerHTML = '<span class="lc-doc-files-name">' + esc(rows[0].filename) + '</span>'
+                    + '<span class="lc-doc-files-count">' + rows.length + ' file' + (rows.length === 1 ? '' : 's') + '</span>';
                 el.hidden = false;
             });
-        } catch { /* leave history blocks hidden */ }
+        } catch { /* leave file lines hidden */ }
     }
 
     async function loadKnownIssues(container) {

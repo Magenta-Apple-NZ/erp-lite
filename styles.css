@@ -5833,21 +5833,53 @@ a.db-row:hover { background: #f8fafc; border-color: #e2e8f0; }
 
 .lc-doc-hd {
     display: flex;
-    align-items: flex-start;
-    flex-wrap: wrap;
-    gap: 0.6rem;
-    padding: 0.75rem 0.9rem;
+    align-items: center;
+    gap: 0.65rem;
+    padding: 0.85rem 0.9rem 0.7rem;
     cursor: pointer;
     user-select: none;
     -webkit-user-select: none;
 }
 .lc-doc-hd:hover { background: #fafafa; }
-/* Actions drop to their own full-width row so cards stay compact/squarish */
-.lc-doc-hd .lc-doc-right {
-    width: 100%; justify-content: flex-start;
-    padding-top: 0.5rem; border-top: 1px solid #f8fafc;
+.lc-doc-hd:focus-visible { outline: 2px solid #4f46e5; outline-offset: -2px; }
+
+/* Latest file line — muted, opens the Files tab */
+.lc-doc-files-line {
+    display: flex; align-items: baseline; gap: 0.5rem;
+    padding: 0 0.9rem 0.5rem; cursor: pointer;
+    font-size: 0.74rem; color: #94a3b8;
 }
-.lc-doc-hd .lc-doc-chevron { margin-left: auto; }
+.lc-doc-files-line[hidden] { display: none; }
+.lc-doc-files-line:hover .lc-doc-files-name { color: #4f46e5; }
+.lc-doc-files-name {
+    flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.lc-doc-files-count { flex-shrink: 0; }
+
+.lc-doc-actions {
+    display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap;
+    padding: 0.6rem 0.9rem; border-top: 1px solid #f8fafc; background: #fcfcfd;
+}
+
+/* Pop-over tabs */
+.lc-doc-tabs { display: flex; align-items: center; gap: 0.35rem; margin-top: 0.6rem; }
+.lc-doc-tab {
+    font-size: 0.78rem; font-weight: 600; padding: 0.3rem 0.7rem;
+    border: 1px solid transparent; border-radius: 6px; background: none;
+    color: #64748b; cursor: pointer; transition: background 0.12s, color 0.12s;
+}
+.lc-doc-tab:hover { background: #f1f5f9; color: #334155; }
+.lc-doc-tab--on { background: #eef2ff; border-color: #c7d2fe; color: #4f46e5; }
+.lc-doc-tab-cite {
+    margin-left: auto; font-size: 0.74rem; color: #94a3b8; text-decoration: none;
+}
+.lc-doc-tab-cite:hover { color: #4f46e5; }
+
+.lc-res-meta { font-size: 0.75rem; color: #94a3b8; margin-bottom: 0.2rem; }
+.lc-files-template {
+    display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap;
+    padding: 0.25rem 0 0.5rem;
+}
 
 .lc-doc-icon {
     width: 42px;
@@ -5866,7 +5898,6 @@ a.db-row:hover { background: #f8fafc; border-color: #e2e8f0; }
 .lc-doc-title { font-size: 0.92rem; font-weight: 700; color: #1e293b; }
 .lc-doc-copies { font-size: 0.74rem; font-weight: 600; color: #64748b; margin-top: 1px; }
 
-.lc-doc-toolrow { display: flex; align-items: center; gap: 0.5rem; margin-top: 0.35rem; flex-wrap: wrap; }
 .lc-doc-reqs-btn {
     font-size: 0.72rem; font-weight: 600; color: #64748b;
     background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 5px;
@@ -5874,8 +5905,6 @@ a.db-row:hover { background: #f8fafc; border-color: #e2e8f0; }
     transition: background 0.12s, color 0.12s, border-color 0.12s;
 }
 .lc-doc-reqs-btn:hover { background: #eef2ff; color: #4f46e5; border-color: #c7d2fe; }
-
-.lc-doc-right { display: flex; align-items: center; gap: 0.5rem; flex-shrink: 0; }
 
 /* Requirements pop-up rows */
 .lc-reqs-row {
@@ -5904,27 +5933,6 @@ a.db-row:hover { background: #f8fafc; border-color: #e2e8f0; }
 .lc-chip--prep  { background: #faf5ff; color: #9333ea; }
 .lc-chip--ready { background: #f0fdf4; color: #16a34a; }
 .lc-chip--disc  { background: #fef2f2; color: #dc2626; }
-
-.lc-doc-chevron {
-    width: 14px;
-    height: 14px;
-    color: #cbd5e1;
-    transition: transform 0.15s;
-    flex-shrink: 0;
-}
-.lc-doc-card--open .lc-doc-chevron { transform: rotate(180deg); }
-
-.lc-doc-checks {
-    display: none;
-    flex-direction: column;
-    padding: 0 0.9rem 0.75rem 3.15rem;
-    gap: 1px;
-    border-top: 1px solid #f8fafc;
-}
-.lc-doc-card--open .lc-doc-checks { display: flex; }
-
-.lc-doc-checklist { display: flex; flex-direction: column; gap: 1px; }
-.lc-doc-checklist[hidden] { display: none; }
 
 .lc-check-item {
     display: flex;
@@ -6224,27 +6232,9 @@ a.db-row:hover { background: #f8fafc; border-color: #e2e8f0; }
 .lc-drive-change-btn:hover { color: #475569; }
 .lc-drive-folder-form { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 0.6rem 0.75rem; margin-bottom: 0.5rem; }
 .lc-drive-form-btns { display: flex; gap: 0.4rem; }
-/* Per-document upload history — sits beneath each doc card */
-.lc-doc-history {
-    border-top: 1px dashed #e2e8f0; background: #fafbfc;
-    padding: 0.5rem 0.9rem 0.65rem;
-    display: flex; flex-direction: column; gap: 0.25rem;
-}
-.lc-doc-history[hidden] { display: none; }
-.lc-doc-history-label {
-    font-size: 0.66rem; font-weight: 700; color: #94a3b8;
-    text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.1rem;
-}
-.lc-doc-history-more { display: flex; flex-direction: column; gap: 0.25rem; }
-.lc-doc-history-more[hidden] { display: none; }
-.lc-doc-history-toggle {
-    align-self: flex-start; font-size: 0.72rem; color: #64748b;
-    background: none; border: none; padding: 0.15rem 0; cursor: pointer;
-    text-decoration: underline; text-underline-offset: 2px;
-}
-.lc-doc-history-toggle:hover { color: #334155; }
 .lc-archive-row {
     display: flex; align-items: center; gap: 0.75rem; padding: 0.4rem 0.6rem;
+    margin-bottom: 0.25rem;
     background: white; border: 1px solid #e2e8f0; border-radius: 6px; font-size: 0.8rem;
 }
 .lc-archive-name { color: #64748b; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
@@ -6533,14 +6523,13 @@ a.db-row:hover { background: #f8fafc; border-color: #e2e8f0; }
 .lc-check-matrix-bar--fail { background: #fef2f2; border-color: #fecaca; color: #b91c1c; }
 .lc-check-matrix-tally { flex: 1; min-width: 0; text-align: left; }
 
-/* Summary bar as pop-over trigger */
+/* Compact check summary strip — clicking opens the doc pop-over */
 .lc-check-summary-btn {
     width: 100%; cursor: pointer; font-family: inherit;
-    border: none; border-radius: 0;
-    transition: filter 0.12s;
+    border: none; border-radius: 0; padding: 0.4rem 0.9rem;
+    font-size: 0.78rem; transition: filter 0.12s;
 }
 .lc-check-summary-btn:hover { filter: brightness(0.97); }
-.lc-check-summary-open { font-size: 0.75rem; font-weight: 600; opacity: 0.75; white-space: nowrap; }
 
 /* Result filters (green / amber / red) */
 .lc-res-filters { display: flex; gap: 0.4rem; margin-top: 0.5rem; }
@@ -6774,8 +6763,6 @@ a.db-row:hover { background: #f8fafc; border-color: #e2e8f0; }
 .lc-raw-cond-text { flex: 1; }
 
 /* ── Doc card citation link (§ on title) ── */
-.lc-doc-cite { font-size: 0.72rem; color: #94a3b8; text-decoration: none; margin-left: 0.35rem; font-weight: 400; vertical-align: super; }
-.lc-doc-cite:hover { color: #2563eb; }
 
 /* ── Per-check cite link (§ inline with label) — always visible ── */
 .lc-cite-link {
