@@ -6523,7 +6523,39 @@ a.db-row:hover { background: #f8fafc; border-color: #e2e8f0; }
 .lc-check-matrix-bar--pass { background: #f0fdf4; border-color: #bbf7d0; color: #15803d; }
 .lc-check-matrix-bar--flag { background: #fffbeb; border-color: #fde68a; color: #b45309; }
 .lc-check-matrix-bar--fail { background: #fef2f2; border-color: #fecaca; color: #b91c1c; }
-.lc-check-matrix-tally { flex: 1; min-width: 0; }
+.lc-check-matrix-tally { flex: 1; min-width: 0; text-align: left; }
+
+/* Summary bar as pop-over trigger */
+.lc-check-summary-btn {
+    width: 100%; cursor: pointer; font-family: inherit;
+    border: none; border-radius: 0;
+    transition: filter 0.12s;
+}
+.lc-check-summary-btn:hover { filter: brightness(0.97); }
+.lc-check-summary-open { font-size: 0.75rem; font-weight: 600; opacity: 0.75; white-space: nowrap; }
+
+/* Grouped results pop-over */
+.lc-res-sec-hd {
+    display: flex; justify-content: space-between; align-items: baseline;
+    font-size: 0.68rem; font-weight: 700; color: #94a3b8;
+    text-transform: uppercase; letter-spacing: 0.06em;
+    padding: 0.8rem 0 0.3rem; border-bottom: 1px solid #f1f5f9; margin-bottom: 0.25rem;
+}
+.lc-res-sec-hd:first-child { padding-top: 0.2rem; }
+.lc-res-sec-tally { font-size: 0.7rem; font-weight: 600; text-transform: none; letter-spacing: 0; }
+.lc-res-row {
+    display: flex; align-items: flex-start; gap: 0.55rem;
+    padding: 0.3rem 0.25rem; border-radius: 5px;
+}
+.lc-res-row--flag { background: #fffdf5; }
+.lc-res-row--fail { background: #fffafa; }
+.lc-res-row-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 0.1rem; }
+.lc-res-name { font-size: 0.82rem; font-weight: 600; color: #334155; }
+.lc-res-row--pass .lc-res-name { font-weight: 500; color: #64748b; }
+.lc-res-note { font-size: 0.78rem; color: #b45309; line-height: 1.45; }
+.lc-res-row--fail .lc-res-note { color: #b91c1c; }
+.lc-res-row .lc-flag-issue-btn { opacity: 0.5; }
+.lc-res-row:hover .lc-flag-issue-btn { opacity: 1; }
 
 .lc-check-matrix-wrap {
     overflow-x: auto; border: 1px solid #e2e8f0; border-radius: 0 0 5px 5px;

@@ -227,6 +227,75 @@ const LC = (() => {
     const STATUS_CYCLE  = ['todo', 'prep', 'ready', 'disc'];
     const STATUS_LABELS = { todo: 'Not started', prep: 'In preparation', ready: 'Ready', disc: 'Discrepancy' };
 
+    // Section + short name per check id, for the grouped results pop-over.
+    // F47A condition checks (f47a-*) are derived, not listed here.
+    const RESULT_SECTIONS = ['References & dates', 'Parties & banks', 'Amounts & goods', 'Shipment details', 'Compliance & wording', 'LC special conditions'];
+    const CHECK_META = {
+        'draft-bank':       ['Parties & banks',      'Drawee bank'],
+        'draft-drawee':     ['Parties & banks',      'Drawee name'],
+        'draft-drawer':     ['Parties & banks',      'Drawer'],
+        'draft-amount':     ['Amounts & goods',      'Amount'],
+        'draft-lcref':      ['References & dates',   'LC number & date'],
+        'draft-date':       ['References & dates',   'Draft date'],
+        'draft-signed':     ['Compliance & wording', 'Signatures (2 originals)'],
+        'ci-invoicedate':   ['References & dates',   'Invoice date'],
+        'ci-total':         ['Amounts & goods',      'Total / FOB / freight'],
+        'ci-unitprice':     ['Amounts & goods',      'Unit price'],
+        'ci-wtinternal':    ['Amounts & goods',      'Net weight consistency'],
+        'ci-goods':         ['Amounts & goods',      'Goods & packages'],
+        'ci-incoterms':     ['Shipment details',     'Incoterms'],
+        'ci-portloading':   ['Shipment details',     'Port of loading'],
+        'ci-proforma':      ['References & dates',   'Proforma reference'],
+        'ci-importer':      ['Parties & banks',      'Importer name & address'],
+        'ci-regs':          ['Compliance & wording', 'BIN / TIN / IRC / HS code'],
+        'bl-sob':           ['Shipment details',     'Shipped-on-board notation'],
+        'bl-shipdate':      ['References & dates',   'On-board date'],
+        'bl-consignee':     ['Parties & banks',      'Consignee'],
+        'bl-notify':        ['Parties & banks',      'Notify party 1 (applicant)'],
+        'bl-banknotify':    ['Parties & banks',      'Notify party 2 (bank)'],
+        'bl-loading':       ['Shipment details',     'Port of loading'],
+        'bl-discharge':     ['Shipment details',     'Port of discharge'],
+        'bl-freight':       ['Shipment details',     'Freight prepaid'],
+        'bl-container':     ['Amounts & goods',      'Container number'],
+        'bl-weights':       ['Amounts & goods',      'Weights & packages'],
+        'bl-freetime':      ['Shipment details',     'Free time (14 days)'],
+        'bl-banktax':       ['Compliance & wording', 'Bank TIN / VAT'],
+        'bl-clean':         ['Compliance & wording', 'Clean B/L'],
+        'co-origin':        ['Amounts & goods',      'Country of origin'],
+        'co-body':          ['Parties & banks',      'Issuing body'],
+        'co-desc':          ['Amounts & goods',      'Goods description'],
+        'co-hs':            ['Compliance & wording', 'HS code'],
+        'co-shipper':       ['Parties & banks',      'Shipper / exporter'],
+        'co-qty':           ['Amounts & goods',      'Quantity'],
+        'ins-note':         ['Compliance & wording', 'Applicant-covered insurance'],
+        'ins-21days':       ['References & dates',   '21-day notification'],
+        'ins-covernote':    ['References & dates',   'Cover note number'],
+        'ins-addressed':    ['Parties & banks',      'Addressees'],
+        'ins-copy':         ['Compliance & wording', 'Copy with documents'],
+        'bc-ref':           ['References & dates',   'Proforma reference'],
+        'bc-quantity':      ['Amounts & goods',      'Quantity'],
+        'bc-freight':       ['Shipment details',     'Trade terms'],
+        'bc-origin':        ['Compliance & wording', 'Origin marking'],
+        'bc-packingclause': ['Compliance & wording', 'Packing clause'],
+        'pi-date':          ['References & dates',   'Issue date'],
+        'pi-container':     ['Amounts & goods',      'Container number'],
+        'pi-qty':           ['Amounts & goods',      'Quantity'],
+        'pi-lcref':         ['References & dates',   'LC reference'],
+        'pi-signed':        ['Parties & banks',      'Signatory'],
+        'apemail-21days':   ['References & dates',   '21-day deadline'],
+        'apemail-fullset':  ['Compliance & wording', 'Full document set'],
+        'apemail-address':  ['Parties & banks',      'Addressed to applicant'],
+        'apemail-copy':     ['Compliance & wording', 'Copy with documents'],
+    };
+    function checkMeta(c) {
+        if (CHECK_META[c.id]) return { section: CHECK_META[c.id][0], name: CHECK_META[c.id][1] };
+        if (c.id.startsWith('f47a-')) {
+            const m = (c.cite || '').match(/lc-f47a-(\d+)/);
+            return { section: 'LC special conditions', name: 'Condition ' + (m ? String(Number(m[1]) + 1).padStart(2, '0') : '—') };
+        }
+        return { section: 'Compliance & wording', name: (c.text || '').split(':')[0].slice(0, 40) };
+    }
+
     // ── List view ─────────────────────────────────────────────────────────────
 
     async function renderList(container) {
@@ -1603,8 +1672,9 @@ const LC = (() => {
             scheduleChecksave(id);
         });
 
-        // Flag issue as recurring pattern
-        container.querySelector('#lc-doc-list').addEventListener('click', async e => {
+        // Flag issue as recurring pattern (bound on doc list + results modal)
+        container.querySelector('#lc-doc-list').addEventListener('click', handleFlagClick);
+        async function handleFlagClick(e) {
             const btn = e.target.closest('.lc-flag-issue-btn');
             if (!btn) return;
             if (btn.classList.contains('lc-flag-issue-btn--saving')) return;
@@ -1649,6 +1719,14 @@ const LC = (() => {
                     btn.classList.remove('lc-flag-issue-btn--saving');
                 }
             });
+        }
+
+        // Open the grouped results pop-over
+        container.querySelector('#lc-doc-list').addEventListener('click', e => {
+            const btn = e.target.closest('[data-view-results]');
+            if (!btn) return;
+            e.stopPropagation();
+            showResultsModal(btn.dataset.viewResults);
         });
 
         // Condition checkboxes
@@ -2034,14 +2112,14 @@ const LC = (() => {
         loadArchivedDocs(container, id);
         loadKnownIssues(container);
 
-        // Render AI check results into a doc card. Used for live checks and for
-        // restoring stored results when the page is revisited.
+        // Render the AI check summary bar into a doc card (always visible, opens
+        // the results pop-over). Used for live checks and for restoring stored
+        // results when the page is revisited.
         // badge: { label, cls: 'draft'|'final', errDetail? }
         function renderCheckResults(docId, results, badge) {
-            const docDef = docs.find(d => d.id === docId);
-            const checksEl = container.querySelector('#lcdoc-' + docId + ' .lc-doc-checks');
-            const card     = container.querySelector('#lcdoc-' + docId);
-            if (!docDef || !checksEl) return;
+            const resultsEl = container.querySelector('#lccheck-' + docId);
+            const card      = container.querySelector('#lcdoc-' + docId);
+            if (!resultsEl) return;
 
             const passed  = results.filter(r => r.result === 'pass').length;
             const flagged = results.filter(r => r.result === 'flag').length;
@@ -2052,55 +2130,93 @@ const LC = (() => {
             if (flagged) sumParts.push(`${flagged} flag`);
             if (failed)  sumParts.push(`${failed} fail`);
 
-            const linkFormEl = checksEl.querySelector('.lc-doc-link-form');
-            const summaryBar = '<div class="lc-check-matrix-bar lc-check-matrix-bar--' + sumCls + ' lc-check-ai-bar">'
+            resultsEl.innerHTML = '<button class="lc-check-matrix-bar lc-check-matrix-bar--' + sumCls + ' lc-check-summary-btn" type="button" data-view-results="' + esc(docId) + '">'
                 + '<span class="lc-check-matrix-tally">' + sumIcon + ' ' + sumParts.join(' · ') + '</span>'
                 + (badge.label ? '<span class="lc-doc-version-badge lc-doc-version-badge--' + badge.cls + '"'
                     + (badge.errDetail ? ' title="' + esc(badge.errDetail) + '" style="cursor:help"' : '') + '>' + esc(badge.label) + '</span>' : '')
-                + '</div>';
-
-            const passItems  = results.filter(r => r.result === 'pass');
-            const issueItems = results.filter(r => r.result !== 'pass');
-
-            const issueRows = docDef.checks
-                .filter(c => issueItems.some(r => r.checkId === c.id))
-                .map(c => {
-                    const r         = issueItems.find(r => r.checkId === c.id);
-                    const chkEl     = container.querySelector('#chk-' + c.id);
-                    const isChecked = chkEl ? chkEl.checked : !!(lc.docChecks && lc.docChecks[c.id]);
-                    const cls       = r.result === 'flag' ? 'flag' : 'fail';
-                    const icon      = r.result === 'flag' ? '⚠' : '✗';
-                    const noteAttr  = r.note ? ' data-ai-note="' + esc(r.note) + '"' : '';
-                    const citeLink  = '<a class="lc-cite-link" href="#' + (c.cite || 'lc-raw-section') + '" title="View in LC reference">§</a>';
-                    return '<div class="lc-check-item lc-check-item--ai lc-check-item--ai-' + cls + (isChecked ? ' lc-check-item--done' : '') + '">'
-                        + '<input type="checkbox" id="chk-' + c.id + '" data-check="' + c.id + '"' + (isChecked ? ' checked' : '') + '>'
-                        + '<div class="lc-check-item-body">'
-                        + '<label for="chk-' + c.id + '">' + esc(c.text) + citeLink + '</label>'
-                        + (r.note ? '<span class="lc-check-ai-note">' + esc(r.note) + '</span>' : '')
-                        + '</div>'
-                        + '<span class="lc-check-ai-badge lc-check-ai-badge--' + cls + '">' + icon + '</span>'
-                        + '<button class="lc-flag-issue-btn" type="button" title="Flag as recurring issue"'
-                        + ' data-flag-doc="' + esc(docId) + '" data-flag-check="' + esc(c.id) + '" data-flag-text="' + esc(c.text) + '"' + noteAttr + '>⚑</button>'
-                        + '</div>';
-                }).join('');
-
-            const passRow = passItems.length
-                ? '<div class="lc-check-pass-summary">✓ ' + passItems.length + ' item' + (passItems.length === 1 ? '' : 's') + ' passed</div>'
-                : '';
-
-            checksEl.innerHTML = (linkFormEl ? linkFormEl.outerHTML : '')
-                + summaryBar
-                + issueRows + passRow;
-            const newLinkForm = checksEl.querySelector('.lc-doc-link-form');
-            if (newLinkForm) {
-                newLinkForm.querySelector('[data-cancel-link]')?.addEventListener('click', () => { newLinkForm.hidden = true; });
-            }
+                + '<span class="lc-check-summary-open">View results →</span>'
+                + '</button>';
+            resultsEl.hidden = false;
 
             // Colour the card's edge by outcome: green all-pass, purple flags, red fails
             if (card) {
                 card.classList.remove('lc-doc-card--todo', 'lc-doc-card--prep', 'lc-doc-card--ready', 'lc-doc-card--disc');
                 card.classList.add(sumCls === 'pass' ? 'lc-doc-card--ready' : sumCls === 'flag' ? 'lc-doc-card--prep' : 'lc-doc-card--disc');
             }
+        }
+
+        // Grouped results pop-over: sections → individual named checks
+        function showResultsModal(docId) {
+            const docDef = docs.find(d => d.id === docId);
+            const saved  = (lc.aiChecks || {})[docId];
+            if (!docDef || !saved || !Array.isArray(saved.results)) return;
+            const results = saved.results;
+
+            const byId = {};
+            results.forEach(r => { byId[r.checkId] = r; });
+
+            // Group checks (that have a result) by section, in fixed order
+            const groups = {};
+            docDef.checks.forEach(c => {
+                const r = byId[c.id];
+                if (!r) return;
+                const meta = checkMeta(c);
+                (groups[meta.section] = groups[meta.section] || []).push({ c, r, name: meta.name });
+            });
+
+            let bodyHtml = '';
+            RESULT_SECTIONS.filter(s => groups[s]).forEach(section => {
+                const rows = groups[section];
+                const secFail = rows.filter(x => x.r.result === 'fail').length;
+                const secFlag = rows.filter(x => x.r.result === 'flag').length;
+                const secTally = (rows.length - secFail - secFlag) + ' ✓'
+                    + (secFlag ? ' · ' + secFlag + ' ⚠' : '')
+                    + (secFail ? ' · ' + secFail + ' ✗' : '');
+
+                bodyHtml += '<div class="lc-res-sec-hd"><span>' + esc(section) + '</span><span class="lc-res-sec-tally">' + secTally + '</span></div>';
+                // Issues first within each section, passes after
+                rows.sort((a, b) => (a.r.result === 'pass') - (b.r.result === 'pass'));
+                rows.forEach(({ c, r, name }) => {
+                    const cls  = r.result === 'pass' ? 'pass' : r.result === 'flag' ? 'flag' : 'fail';
+                    const icon = r.result === 'pass' ? '✓' : r.result === 'flag' ? '⚠' : '✗';
+                    const citeLink = '<a class="lc-cite-link" style="opacity:0.55" href="#' + (c.cite || 'lc-raw-section') + '" title="View in LC reference">§</a>';
+                    const noteAttr = r.note ? ' data-ai-note="' + esc(r.note) + '"' : '';
+                    bodyHtml += '<div class="lc-res-row lc-res-row--' + cls + '">'
+                        + '<span class="lc-check-ai-badge lc-check-ai-badge--' + cls + '">' + icon + '</span>'
+                        + '<div class="lc-res-row-body">'
+                        + '<span class="lc-res-name">' + esc(name) + citeLink + '</span>'
+                        + (r.result !== 'pass' && r.note ? '<span class="lc-res-note">' + esc(r.note) + '</span>' : '')
+                        + '</div>'
+                        + (r.result !== 'pass'
+                            ? '<button class="lc-flag-issue-btn" type="button" title="Flag as recurring issue"'
+                              + ' data-flag-doc="' + esc(docId) + '" data-flag-check="' + esc(c.id) + '" data-flag-text="' + esc(c.text) + '"' + noteAttr + '>⚑</button>'
+                            : '')
+                        + '</div>';
+                });
+            });
+
+            const when = saved.checkedAt ? fmtDate(saved.checkedAt.slice(0, 10)) : '';
+            const sub  = [saved.filename, saved.draft ? 'Draft' : 'Final', when ? 'checked ' + when : '']
+                .filter(Boolean).join(' · ');
+
+            document.querySelector('.lc-results-modal')?.remove();
+            const modal = document.createElement('div');
+            modal.className = 'lc-extract-modal lc-results-modal';
+            modal.innerHTML = '<div class="lc-extract-modal-box">'
+                + '<div class="lc-extract-modal-hd">'
+                + '<span class="lc-extract-modal-title">' + esc(docDef.title) + ' — Check Results</span>'
+                + '<span class="lc-extract-modal-sub">' + esc(sub) + '</span>'
+                + '<button class="lc-email-modal-close" data-res-close type="button">✕</button>'
+                + '</div>'
+                + '<div class="lc-extract-modal-body">' + bodyHtml + '</div>'
+                + '</div>';
+            document.body.appendChild(modal);
+
+            modal.addEventListener('click', ev => {
+                if (ev.target === modal || ev.target.closest('[data-res-close]')) { modal.remove(); return; }
+                if (ev.target.closest('.lc-cite-link')) { modal.remove(); return; }
+                handleFlagClick(ev);
+            });
         }
 
         // Restore stored AI check results so navigating away doesn't lose them
@@ -2199,7 +2315,6 @@ const LC = (() => {
                     cls: isDraft ? 'draft' : 'final',
                     errDetail: archiveErrDetail,
                 });
-                resultsEl.hidden = true;
 
                 // Persist so the evaluation survives navigation
                 const stored = { results, checkedAt: new Date().toISOString(), filename: file.name, draft: isDraft };
@@ -2210,18 +2325,12 @@ const LC = (() => {
                 }).catch(e => console.error('[LC check] failed to persist results:', e));
 
             } catch (err) {
-                const checksEl2 = container.querySelector('#lcdoc-' + docId + ' .lc-doc-checks');
-                const errBar = '<div class="lc-check-matrix-bar lc-check-matrix-bar--fail lc-check-ai-bar">'
+                resultsEl.innerHTML = '<div class="lc-check-matrix-bar lc-check-matrix-bar--fail lc-check-ai-bar">'
                     + '<span class="lc-check-matrix-tally">✗ ' + esc(err.message) + '</span>'
                     + (archiveLabel ? '<span class="lc-doc-version-badge lc-doc-version-badge--' + (isDraft ? 'draft' : 'final') + '"'
                         + (archiveErrDetail ? ' title="' + esc(archiveErrDetail) + '" style="cursor:help"' : '') + '>' + esc(archiveLabel) + '</span>' : '')
                     + '</div>';
-                if (checksEl2) {
-                    const existingBar = checksEl2.querySelector('.lc-check-ai-bar');
-                    if (existingBar) existingBar.outerHTML = errBar;
-                    else checksEl2.insertAdjacentHTML('afterbegin', errBar);
-                }
-                resultsEl.hidden = true;
+                resultsEl.hidden = false;
             }
         }
     }
