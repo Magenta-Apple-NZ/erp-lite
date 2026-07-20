@@ -2034,6 +2034,85 @@ const LC = (() => {
         loadArchivedDocs(container, id);
         loadKnownIssues(container);
 
+        // Render AI check results into a doc card. Used for live checks and for
+        // restoring stored results when the page is revisited.
+        // badge: { label, cls: 'draft'|'final', errDetail? }
+        function renderCheckResults(docId, results, badge) {
+            const docDef = docs.find(d => d.id === docId);
+            const checksEl = container.querySelector('#lcdoc-' + docId + ' .lc-doc-checks');
+            const card     = container.querySelector('#lcdoc-' + docId);
+            if (!docDef || !checksEl) return;
+
+            const passed  = results.filter(r => r.result === 'pass').length;
+            const flagged = results.filter(r => r.result === 'flag').length;
+            const failed  = results.filter(r => r.result === 'fail').length;
+            const sumCls  = failed > 0 ? 'fail' : flagged > 0 ? 'flag' : 'pass';
+            const sumIcon = failed > 0 ? '✗' : flagged > 0 ? '⚠' : '✓';
+            const sumParts = [`${passed} pass`];
+            if (flagged) sumParts.push(`${flagged} flag`);
+            if (failed)  sumParts.push(`${failed} fail`);
+
+            const linkFormEl = checksEl.querySelector('.lc-doc-link-form');
+            const summaryBar = '<div class="lc-check-matrix-bar lc-check-matrix-bar--' + sumCls + ' lc-check-ai-bar">'
+                + '<span class="lc-check-matrix-tally">' + sumIcon + ' ' + sumParts.join(' · ') + '</span>'
+                + (badge.label ? '<span class="lc-doc-version-badge lc-doc-version-badge--' + badge.cls + '"'
+                    + (badge.errDetail ? ' title="' + esc(badge.errDetail) + '" style="cursor:help"' : '') + '>' + esc(badge.label) + '</span>' : '')
+                + '</div>';
+
+            const passItems  = results.filter(r => r.result === 'pass');
+            const issueItems = results.filter(r => r.result !== 'pass');
+
+            const issueRows = docDef.checks
+                .filter(c => issueItems.some(r => r.checkId === c.id))
+                .map(c => {
+                    const r         = issueItems.find(r => r.checkId === c.id);
+                    const chkEl     = container.querySelector('#chk-' + c.id);
+                    const isChecked = chkEl ? chkEl.checked : !!(lc.docChecks && lc.docChecks[c.id]);
+                    const cls       = r.result === 'flag' ? 'flag' : 'fail';
+                    const icon      = r.result === 'flag' ? '⚠' : '✗';
+                    const noteAttr  = r.note ? ' data-ai-note="' + esc(r.note) + '"' : '';
+                    const citeLink  = '<a class="lc-cite-link" href="#' + (c.cite || 'lc-raw-section') + '" title="View in LC reference">§</a>';
+                    return '<div class="lc-check-item lc-check-item--ai lc-check-item--ai-' + cls + (isChecked ? ' lc-check-item--done' : '') + '">'
+                        + '<input type="checkbox" id="chk-' + c.id + '" data-check="' + c.id + '"' + (isChecked ? ' checked' : '') + '>'
+                        + '<div class="lc-check-item-body">'
+                        + '<label for="chk-' + c.id + '">' + esc(c.text) + citeLink + '</label>'
+                        + (r.note ? '<span class="lc-check-ai-note">' + esc(r.note) + '</span>' : '')
+                        + '</div>'
+                        + '<span class="lc-check-ai-badge lc-check-ai-badge--' + cls + '">' + icon + '</span>'
+                        + '<button class="lc-flag-issue-btn" type="button" title="Flag as recurring issue"'
+                        + ' data-flag-doc="' + esc(docId) + '" data-flag-check="' + esc(c.id) + '" data-flag-text="' + esc(c.text) + '"' + noteAttr + '>⚑</button>'
+                        + '</div>';
+                }).join('');
+
+            const passRow = passItems.length
+                ? '<div class="lc-check-pass-summary">✓ ' + passItems.length + ' item' + (passItems.length === 1 ? '' : 's') + ' passed</div>'
+                : '';
+
+            checksEl.innerHTML = (linkFormEl ? linkFormEl.outerHTML : '')
+                + summaryBar
+                + issueRows + passRow;
+            const newLinkForm = checksEl.querySelector('.lc-doc-link-form');
+            if (newLinkForm) {
+                newLinkForm.querySelector('[data-cancel-link]')?.addEventListener('click', () => { newLinkForm.hidden = true; });
+            }
+
+            // Colour the card's edge by outcome: green all-pass, purple flags, red fails
+            if (card) {
+                card.classList.remove('lc-doc-card--todo', 'lc-doc-card--prep', 'lc-doc-card--ready', 'lc-doc-card--disc');
+                card.classList.add(sumCls === 'pass' ? 'lc-doc-card--ready' : sumCls === 'flag' ? 'lc-doc-card--prep' : 'lc-doc-card--disc');
+            }
+        }
+
+        // Restore stored AI check results so navigating away doesn't lose them
+        Object.entries(lc.aiChecks || {}).forEach(([docId, saved]) => {
+            if (!saved || !Array.isArray(saved.results)) return;
+            const when = saved.checkedAt ? fmtDate(saved.checkedAt.slice(0, 10)) : '';
+            renderCheckResults(docId, saved.results, {
+                label: (saved.draft ? 'Draft' : 'Final') + (when ? ' · checked ' + when : ''),
+                cls:   saved.draft ? 'draft' : 'final',
+            });
+        });
+
         async function handleDocCheck(file, docId, isDraft = false) {
             const docDef = docs.find(d => d.id === docId);
             if (!docDef) return;
@@ -2115,70 +2194,20 @@ const LC = (() => {
                 if (!json.ok) throw new Error(json.error || 'Check failed');
 
                 const results = json.results;
-                const passed  = results.filter(r => r.result === 'pass').length;
-                const flagged = results.filter(r => r.result === 'flag').length;
-                const failed  = results.filter(r => r.result === 'fail').length;
-
-                const sumCls  = failed > 0 ? 'fail' : flagged > 0 ? 'flag' : 'pass';
-                const sumIcon = failed > 0 ? '✗' : flagged > 0 ? '⚠' : '✓';
-                const sumParts = [`${passed} pass`];
-                if (flagged) sumParts.push(`${flagged} flag`);
-                if (failed)  sumParts.push(`${failed} fail`);
-                const archiveCls = isDraft ? 'draft' : 'final';
-
-                // Step 3 — Merge AI results into the checklist (replace separate matrix)
-                const checksEl = container.querySelector('#lcdoc-' + docId + ' .lc-doc-checks');
-                const linkFormEl = checksEl ? checksEl.querySelector('.lc-doc-link-form') : null;
-
-                const summaryBar = '<div class="lc-check-matrix-bar lc-check-matrix-bar--' + sumCls + ' lc-check-ai-bar">'
-                    + '<span class="lc-check-matrix-tally">' + sumIcon + ' ' + sumParts.join(' · ') + '</span>'
-                    + (archiveLabel ? '<span class="lc-doc-version-badge lc-doc-version-badge--' + archiveCls + '"'
-                        + (archiveErrDetail ? ' title="' + esc(archiveErrDetail) + '" style="cursor:help"' : '') + '>' + esc(archiveLabel) + '</span>' : '')
-                    + '</div>';
-
-                // Only render flag/fail items individually; passes collapse to a single summary row
-                const passItems  = results.filter(r => r.result === 'pass');
-                const issueItems = results.filter(r => r.result !== 'pass');
-
-                const issueRows = docDef.checks
-                    .filter(c => issueItems.some(r => r.checkId === c.id))
-                    .map(c => {
-                        const r         = issueItems.find(r => r.checkId === c.id);
-                        const chkEl     = container.querySelector('#chk-' + c.id);
-                        const isChecked = chkEl ? chkEl.checked : !!(lc.docChecks && lc.docChecks[c.id]);
-                        const cls       = r.result === 'flag' ? 'flag' : 'fail';
-                        const icon      = r.result === 'flag' ? '⚠' : '✗';
-                        const noteAttr  = r.note ? ' data-ai-note="' + esc(r.note) + '"' : '';
-                        const citeLink  = '<a class="lc-cite-link" href="#' + (c.cite || 'lc-raw-section') + '" title="View in LC reference">§</a>';
-                        return '<div class="lc-check-item lc-check-item--ai lc-check-item--ai-' + cls + (isChecked ? ' lc-check-item--done' : '') + '">'
-                            + '<input type="checkbox" id="chk-' + c.id + '" data-check="' + c.id + '"' + (isChecked ? ' checked' : '') + '>'
-                            + '<div class="lc-check-item-body">'
-                            + '<label for="chk-' + c.id + '">' + esc(c.text) + citeLink + '</label>'
-                            + (r.note ? '<span class="lc-check-ai-note">' + esc(r.note) + '</span>' : '')
-                            + '</div>'
-                            + '<span class="lc-check-ai-badge lc-check-ai-badge--' + cls + '">' + icon + '</span>'
-                            + '<button class="lc-flag-issue-btn" type="button" title="Flag as recurring issue"'
-                            + ' data-flag-doc="' + esc(docId) + '" data-flag-check="' + esc(c.id) + '" data-flag-text="' + esc(c.text) + '"' + noteAttr + '>⚑</button>'
-                            + '</div>';
-                    }).join('');
-
-                const passRow = passItems.length
-                    ? '<div class="lc-check-pass-summary">✓ ' + passItems.length + ' item' + (passItems.length === 1 ? '' : 's') + ' passed</div>'
-                    : '';
-
-                const enrichedItems = issueRows + passRow;
-
-                if (checksEl) {
-                    checksEl.innerHTML = (linkFormEl ? linkFormEl.outerHTML : '')
-                        + summaryBar
-                        + enrichedItems;
-                    // Re-bind the link form cancel button (outerHTML clone loses listeners)
-                    const newLinkForm = checksEl.querySelector('.lc-doc-link-form');
-                    if (newLinkForm) {
-                        newLinkForm.querySelector('[data-cancel-link]')?.addEventListener('click', () => { newLinkForm.hidden = true; });
-                    }
-                }
+                renderCheckResults(docId, results, {
+                    label: archiveLabel,
+                    cls: isDraft ? 'draft' : 'final',
+                    errDetail: archiveErrDetail,
+                });
                 resultsEl.hidden = true;
+
+                // Persist so the evaluation survives navigation
+                const stored = { results, checkedAt: new Date().toISOString(), filename: file.name, draft: isDraft };
+                lc.aiChecks = { ...(lc.aiChecks || {}), [docId]: stored };
+                apiFetch('/api/lc/' + id, {
+                    method: 'PATCH',
+                    body: JSON.stringify({ aiChecks: { [docId]: stored } }),
+                }).catch(e => console.error('[LC check] failed to persist results:', e));
 
             } catch (err) {
                 const checksEl2 = container.querySelector('#lcdoc-' + docId + ' .lc-doc-checks');
