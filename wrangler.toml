@@ -11,6 +11,12 @@
 #    XERO_CLIENT_SECRET   = (from developer.xero.com)
 #    XERO_REDIRECT_URI    = https://hub.primetie.co.nz/api/xero/callback
 #    PRINTNODE_API_KEY    = (from app.printnode.com → API Keys)
+#    GSS_ACCESS_KEY       = (GoSweetSpot → Admin → Preferences → Advanced Settings)
+#    GSS_SITE_ID          = (GoSweetSpot site id for the account)
+#    GSS_SUPPORT_EMAIL    = (developer contact email — required GSS header)
+#    COURIER_TEST_MODE    = "true" while testing (mocks GSS; no live/billable
+#                           consignments). Remove or set "false" to go live.
+#                           Mock is also forced whenever GSS creds are absent.
 # Printer mappings are stored in config.json under "printers" (each entry has
 # id, label, and a list of supported document types). Discover printer IDs in
 # the Hub: Catalogue → Printers tab. PRINTNODE_PRINTER_ID is no longer needed.

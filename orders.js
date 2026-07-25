@@ -8,6 +8,7 @@ const Orders = (() => {
     let customersCache = null;
     let storesCache = null;
     let currentUser = null;
+    let courierStatus = null; // { configured, mock, carrier } from /api/courier/status
 
     // label = display name, xeroName = exact Xero contact name, xeroCode = Xero account number for lookup
     // isExport = true means: zero-rated tax, freetext customer name, create Xero contact on push
@@ -119,6 +120,25 @@ const Orders = (() => {
         } catch {
             xeroConnected = false;
         }
+    }
+
+    async function checkCourierStatus() {
+        if (courierStatus) return courierStatus;
+        try {
+            courierStatus = await api('/api/courier/status');
+        } catch {
+            courierStatus = { configured: false, mock: true, carrier: 'Post Haste' };
+        }
+        return courierStatus;
+    }
+
+    // Total shipping weight from line items (kgPerUnit × quantity), min 0.1kg.
+    function orderTotalKg(order) {
+        const kg = (order.lines || []).reduce((sum, l) => {
+            const per = Number(l.kgPerUnit);
+            return sum + (isNaN(per) ? 0 : per * (Number(l.quantity) || 0));
+        }, 0);
+        return Math.round(Math.max(kg, 0.1) * 100) / 100;
     }
 
     async function loadCustomers(bust = false) {
@@ -1217,6 +1237,20 @@ const Orders = (() => {
             .join('');
     }
 
+    // Courier label control — a "Create Courier label" button before a label
+    // exists, or a tracking chip (with reprint) once one does.
+    function courierAction(order) {
+        const c = order.courier;
+        if (c && c.connote) {
+            const track = c.trackingUrl
+                ? `<a href="${escHtml(c.trackingUrl)}" target="_blank" rel="noopener" class="courier-chip-link">${escHtml(c.connote)} ↗</a>`
+                : escHtml(c.connote);
+            const testTag = c.mock ? '<span class="courier-chip-test">TEST</span>' : '';
+            return `<span class="courier-chip" title="${escHtml(c.carrier)} · created ${escHtml(fmtDateTime(c.createdAt))}">📦 ${track}${testTag}<button class="courier-reprint-btn" id="courier-reprint-btn" title="Reprint label">🖨</button></span>`;
+        }
+        return `<button id="create-courier-btn" class="btn-secondary">📦 Create Courier label</button>`;
+    }
+
     // ── Action bar buttons — driven by order status ──
     function actionButtons(order, xeroConnected) {
         // Admin now lives on the edit view (which has the form), so there's
@@ -1246,13 +1280,13 @@ const Orders = (() => {
             const printedTag = order.printedAt
                 ? `<span class="status-printed-tag" title="Slip auto-printed at ${escHtml(order.printedTo || 'depot')} on ${escHtml(new Date(order.printedAt).toLocaleString('en-NZ'))}">🖨 Printed at ${escHtml(order.printedTo || 'depot')}</span>`
                 : '';
-            primaryAction = `${printedTag}${picker}<button id="dispatch-btn" class="btn-primary">Mark Complete</button>`;
+            primaryAction = `${printedTag}${courierAction(order)}${picker}<button id="dispatch-btn" class="btn-primary">Mark Complete</button>`;
             if (order.xeroInvoiceId) {
                 const url = `https://go.xero.com/AccountsReceivable/Edit.aspx?InvoiceID=${encodeURIComponent(order.xeroInvoiceId)}`;
                 xeroMenuItem = `<a href="${url}" target="_blank" rel="noopener" class="overflow-item xero-only">✓ ${escHtml(order.xeroInvoiceNumber)} — View in Xero ↗</a>`;
             }
         } else {
-            primaryAction = `<span class="status-dispatched-tag">✓ Complete</span>`;
+            primaryAction = `${courierAction(order)}<span class="status-dispatched-tag">✓ Complete</span>`;
             if (order.xeroInvoiceId) {
                 const url = `https://go.xero.com/AccountsReceivable/Edit.aspx?InvoiceID=${encodeURIComponent(order.xeroInvoiceId)}`;
                 xeroMenuItem = `<a href="${url}" target="_blank" rel="noopener" class="overflow-item xero-only">✓ ${escHtml(order.xeroInvoiceNumber)} — View in Xero ↗</a>`;
@@ -1323,6 +1357,7 @@ const Orders = (() => {
         }
 
         await checkXeroStatus();
+        checkCourierStatus(); // non-blocking — only used for modal hints
 
         const body = document.getElementById('order-detail-body');
 
@@ -1652,6 +1687,206 @@ const Orders = (() => {
         });
     }
 
+    // Courier label confirm modal. Pre-fills from the order; the operator
+    // completes the fields orders don't store (suburb / postcode / phone /
+    // package dims) then confirms. Resolves the GSS payload or null on cancel.
+    function openCourierModal(order) {
+        return new Promise(resolve => {
+            const mock = courierStatus ? courierStatus.mock : true;
+            const name = (order.customer && order.customer.name) || order.shipTo?.branch || order.id;
+            const addr = order.shipTo?.address || '';
+            const kg   = orderTotalKg(order);
+            const ref  = order.poNumber || order.id;
+
+            const overlay = document.createElement('div');
+            overlay.className = 'modal-overlay';
+            overlay.innerHTML = `
+                <div class="modal-box modal-box--wide">
+                    <h3 class="modal-title">Create Courier Label${mock ? ' <span class="courier-chip-test">TEST MODE</span>' : ''}</h3>
+                    <p class="modal-hint" style="margin:-0.35rem 0 0.85rem">
+                        ${mock
+                            ? 'Test mode — no live consignment is created and no charge is incurred.'
+                            : '⚠ Live — this creates a real, billable Post Haste consignment.'}
+                    </p>
+                    <div class="courier-modal-grid">
+                        <div class="modal-field cm-span2">
+                            <label>Recipient name</label>
+                            <input type="text" id="cm-name" value="${escHtml(name)}">
+                        </div>
+                        <div class="modal-field">
+                            <label>Contact person <span class="modal-hint">optional</span></label>
+                            <input type="text" id="cm-contact" value="${escHtml(order.shipTo?.branch || '')}">
+                        </div>
+                        <div class="modal-field">
+                            <label>Phone <span class="modal-hint">optional</span></label>
+                            <input type="text" id="cm-phone" placeholder="021 …">
+                        </div>
+                        <div class="modal-field cm-span2">
+                            <label>Street address</label>
+                            <input type="text" id="cm-street" value="${escHtml(addr)}">
+                        </div>
+                        <div class="modal-field">
+                            <label>Suburb <span class="modal-hint">optional</span></label>
+                            <input type="text" id="cm-suburb">
+                        </div>
+                        <div class="modal-field">
+                            <label>City</label>
+                            <input type="text" id="cm-city">
+                        </div>
+                        <div class="modal-field">
+                            <label>Postcode</label>
+                            <input type="text" id="cm-postcode">
+                        </div>
+                        <div class="modal-field">
+                            <label>Country</label>
+                            <input type="text" id="cm-country" value="NZ">
+                        </div>
+                        <div class="modal-field cm-span2">
+                            <label>Delivery instructions <span class="modal-hint">optional</span></label>
+                            <input type="text" id="cm-instructions" value="${escHtml(order.packingNotes || '')}">
+                        </div>
+                        <div class="modal-field">
+                            <label>Boxes</label>
+                            <input type="number" id="cm-boxes" value="1" min="1" step="1">
+                        </div>
+                        <div class="modal-field">
+                            <label>Total weight (kg)</label>
+                            <input type="number" id="cm-kg" value="${kg}" min="0.1" step="0.1">
+                        </div>
+                        <div class="modal-field">
+                            <label>Box L×W×H (cm)</label>
+                            <div class="cm-dims">
+                                <input type="number" id="cm-l" value="40" min="1" step="1">
+                                <input type="number" id="cm-w" value="30" min="1" step="1">
+                                <input type="number" id="cm-h" value="30" min="1" step="1">
+                            </div>
+                        </div>
+                        <div class="modal-field">
+                            <label>Reference</label>
+                            <input type="text" id="cm-ref" value="${escHtml(ref)}" maxlength="50">
+                        </div>
+                        <div class="modal-field cm-span2 cm-checks">
+                            <label class="cm-check"><input type="checkbox" id="cm-sig" checked> Signature required</label>
+                            <label class="cm-check"><input type="checkbox" id="cm-sat"> Saturday delivery</label>
+                            <label class="cm-check"><input type="checkbox" id="cm-rural"> Rural delivery</label>
+                        </div>
+                    </div>
+                    <div id="cm-error" style="display:none;color:#dc2626;font-size:0.9em;margin:0.4rem 0"></div>
+                    <div class="modal-actions">
+                        <button class="btn-primary" id="cm-save">${mock ? 'Create test label' : 'Create label'}</button>
+                        <button class="btn-secondary" id="cm-cancel">Cancel</button>
+                    </div>
+                </div>`;
+            document.body.appendChild(overlay);
+
+            const $ = sel => overlay.querySelector(sel);
+            const errEl = $('#cm-error');
+            const close = value => { document.removeEventListener('keydown', onKey); overlay.remove(); resolve(value); };
+            const onKey = e => { if (e.key === 'Escape') close(null); };
+
+            $('#cm-save').addEventListener('click', () => {
+                const street = $('#cm-street').value.trim();
+                const city = $('#cm-city').value.trim();
+                const postcode = $('#cm-postcode').value.trim();
+                if (!street || !city || !postcode) {
+                    errEl.textContent = 'Street, city, and postcode are required for a courier label.';
+                    errEl.style.display = '';
+                    return;
+                }
+                const boxes = Math.max(1, parseInt($('#cm-boxes').value, 10) || 1);
+                const totalKg = Math.max(0.1, parseFloat($('#cm-kg').value) || 0.1);
+                const perBoxKg = Math.round((totalKg / boxes) * 100) / 100;
+                const L = Number($('#cm-l').value) || 40, W = Number($('#cm-w').value) || 30, H = Number($('#cm-h').value) || 30;
+                const packages = Array.from({ length: boxes }, (_, i) => ({
+                    name: `${order.id} box ${i + 1}/${boxes}`, length: L, width: W, height: H, kg: perBoxKg,
+                }));
+                close({
+                    orderId: order.id,
+                    destination: {
+                        name: $('#cm-name').value.trim(),
+                        contactPerson: $('#cm-contact').value.trim(),
+                        phone: $('#cm-phone').value.trim(),
+                        street, suburb: $('#cm-suburb').value.trim(), city, postcode,
+                        countryCode: $('#cm-country').value.trim() || 'NZ',
+                        isRural: $('#cm-rural').checked,
+                        instructions: $('#cm-instructions').value.trim(),
+                    },
+                    packages,
+                    reference: $('#cm-ref').value.trim(),
+                    signatureRequired: $('#cm-sig').checked,
+                    saturday: $('#cm-sat').checked,
+                    carrier: 'Post Haste',
+                });
+            });
+            $('#cm-cancel').addEventListener('click', () => close(null));
+            overlay.addEventListener('click', e => { if (e.target === overlay) close(null); });
+            document.addEventListener('keydown', onKey);
+            setTimeout(() => $('#cm-city').focus(), 0);
+        });
+    }
+
+    // Print a courier label PDF (base64) to a PrintNode 'label' printer, or fall
+    // back to opening it in a new tab for manual printing.
+    async function printCourierLabel(order, labelBase64) {
+        if (!labelBase64) {
+            showToast('No printable label in test mode — go live to fetch the real PDF.');
+            return;
+        }
+        const labelPrinter = getPrinters().find(p => Array.isArray(p.documents) && p.documents.includes('label'));
+        if (labelPrinter) {
+            try {
+                const result = await sendToPrintNode({ order, document: 'label', pdfBase64: labelBase64, printerId: labelPrinter.id });
+                if (result.success) {
+                    showToast(`Label printed at ${labelPrinter.label}`);
+                    logEvent(order.id, 'Printed courier label', `${labelPrinter.label} · ${order.courier?.connote || ''}`);
+                    return;
+                }
+                showErrorBanner(`Label print not confirmed at ${labelPrinter.label} — opening PDF instead.`);
+            } catch (e) {
+                showErrorBanner('Label print failed: ' + e.message + ' — opening PDF instead.');
+            }
+        }
+        // Fallback: open the PDF in a new tab
+        const win = window.open('', '_blank');
+        if (win) win.document.write(`<iframe src="data:application/pdf;base64,${labelBase64}" style="width:100%;height:100%;border:0"></iframe>`);
+    }
+
+    async function runCreateCourier(order, btn) {
+        const payload = await openCourierModal(order);
+        if (!payload) return;
+        if (btn) { btn.disabled = true; btn.textContent = 'Creating label…'; }
+        clearErrorBanner();
+        try {
+            const result = await api('/api/courier/label', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload),
+            });
+            order.courier = {
+                carrier: result.carrier, connote: result.connote, trackingUrl: result.trackingUrl,
+                consignmentId: result.consignmentId, cost: result.cost, mock: result.mock,
+                createdAt: result.createdAt || new Date().toISOString(),
+            };
+            refreshActionBar(order);
+            showToast(`Label created: ${result.carrier} ${result.connote}${result.mock ? ' (TEST)' : ''}`);
+            logEvent(order.id, 'Created courier label', `${result.carrier} ${result.connote}`);
+            await printCourierLabel(order, result.labelBase64);
+        } catch (e) {
+            showErrorBanner('Courier label failed: ' + e.message);
+            if (btn) { btn.disabled = false; btn.textContent = '📦 Create Courier label'; }
+        }
+    }
+
+    // Reprint an existing label — refetches the PDF via GET (no new consignment).
+    async function runReprintCourier(order) {
+        try {
+            const result = await api('/api/courier/label?orderId=' + encodeURIComponent(order.id));
+            await printCourierLabel(order, result.labelBase64);
+        } catch (e) {
+            showErrorBanner('Reprint failed: ' + e.message);
+        }
+    }
+
     function printAddressPopup(order) {
         const ref = order.xeroInvoiceNumber || order.id;
         const win = window.open('', '_blank', 'width=1100,height=780');
@@ -1925,6 +2160,10 @@ const Orders = (() => {
         document.getElementById('print-address-btn')?.addEventListener('click', () => {
             printAddressPopup(order);
         });
+
+        // Courier label — create / reprint
+        document.getElementById('create-courier-btn')?.addEventListener('click', e => runCreateCourier(order, e.currentTarget));
+        document.getElementById('courier-reprint-btn')?.addEventListener('click', () => runReprintCourier(order));
 
         // Download packing slip as PDF
         document.getElementById('download-slip-btn')?.addEventListener('click', e => {
