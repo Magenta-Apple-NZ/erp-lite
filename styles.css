@@ -684,6 +684,18 @@ li.drag-over { background: #eff6ff; }
     font-size: 0.6rem; font-weight: 700; letter-spacing: 0.05em;
     background: #fde68a; color: #92400e; padding: 0.1rem 0.35rem; border-radius: 3px;
 }
+.courier-chip-warn {
+    font-size: 0.62rem; font-weight: 700; letter-spacing: 0.03em;
+    background: #fee2e2; color: #b91c1c; padding: 0.1rem 0.35rem; border-radius: 3px; cursor: help;
+}
+
+/* Courier modal label reconciliation banner */
+.cm-recon {
+    font-size: 0.82rem; font-weight: 600; padding: 0.5rem 0.7rem;
+    border-radius: 6px; margin: 0.5rem 0;
+}
+.cm-recon--ok   { background: #f0fdf4; border: 1px solid #bbf7d0; color: #15803d; }
+.cm-recon--warn { background: #fef2f2; border: 1px solid #fecaca; color: #b91c1c; }
 .courier-reprint-btn {
     background: none; border: none; cursor: pointer; padding: 0 0.1rem;
     font-size: 0.9rem; line-height: 1; opacity: 0.7;

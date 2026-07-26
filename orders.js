@@ -1286,7 +1286,10 @@ const Orders = (() => {
                 ? `<a href="${escHtml(c.trackingUrl)}" target="_blank" rel="noopener" class="courier-chip-link">${escHtml(c.connote)} ↗</a>`
                 : escHtml(c.connote);
             const testTag = c.mock ? '<span class="courier-chip-test">TEST</span>' : '';
-            return `<span class="courier-chip" title="${escHtml(c.carrier)} · created ${escHtml(fmtDateTime(c.createdAt))}">📦 ${track}${testTag}<button class="courier-reprint-btn" id="courier-reprint-btn" title="Reprint label">🖨</button></span>`;
+            const mismatchTag = c.labelMismatch
+                ? `<span class="courier-chip-warn" title="${escHtml(String(c.boxesOrdered))} label(s) ordered via Post Haste but ${escHtml(String(c.invoicedLabels))} invoiced">⚠ ${escHtml(String(c.boxesOrdered))}≠${escHtml(String(c.invoicedLabels))}</span>`
+                : '';
+            return `<span class="courier-chip" title="${escHtml(c.carrier)} · created ${escHtml(fmtDateTime(c.createdAt))}">📦 ${track}${testTag}${mismatchTag}<button class="courier-reprint-btn" id="courier-reprint-btn" title="Reprint label">🖨</button></span>`;
         }
         return `<button id="create-courier-btn" class="btn-secondary">📦 Create Courier label</button>`;
     }
@@ -1737,6 +1740,14 @@ const Orders = (() => {
         return /COURIER|FREIGHT|CARTAGE|LABEL/.test(sku) || /courier|freight|cartage|\blabel/.test(desc);
     }
 
+    // Number of courier labels invoiced on the order (sum of courier-line qty).
+    // null when the order carries no courier/freight line to reconcile against.
+    function invoicedLabelCount(order) {
+        const lines = (order.lines || []).filter(isCourierLine);
+        if (!lines.length) return null;
+        return lines.reduce((s, l) => s + (Number(l.quantity) || 0), 0);
+    }
+
     // Derive courier packages from an order.
     //  1. If the order carries a courier/freight line, its quantity IS the box
     //     count (you invoice one courier label per box) — product weight is
@@ -1804,6 +1815,7 @@ const Orders = (() => {
             const contact = st.branch || [store.customer, store.branch].filter(Boolean).join(' - ');
             const ref  = order.poNumber || order.id;
             const derived = derivePackages(order);
+            const invoiced = invoicedLabelCount(order); // null if no courier line
 
             const overlay = document.createElement('div');
             overlay.className = 'modal-overlay';
@@ -1853,7 +1865,7 @@ const Orders = (() => {
                             <input type="text" id="cm-instructions" value="${escHtml(order.packingNotes || '')}">
                         </div>
                         <div class="modal-field">
-                            <label>Boxes <span class="modal-hint">auto</span></label>
+                            <label>Boxes <span class="modal-hint">${invoiced != null ? 'invoiced: ' + invoiced : 'auto'}</span></label>
                             <input type="number" id="cm-boxes" value="${derived.boxes}" min="1" step="1">
                         </div>
                         <div class="modal-field">
@@ -1878,6 +1890,7 @@ const Orders = (() => {
                             <label class="cm-check"><input type="checkbox" id="cm-rural"> Rural delivery</label>
                         </div>
                     </div>
+                    <div id="cm-recon" class="cm-recon" style="display:none"></div>
                     <div id="cm-error" style="display:none;color:#dc2626;font-size:0.9em;margin:0.4rem 0"></div>
                     <div class="modal-actions">
                         <button class="btn-primary" id="cm-save">${mock ? 'Create test label' : 'Create label'}</button>
@@ -1890,6 +1903,23 @@ const Orders = (() => {
             const errEl = $('#cm-error');
             const close = value => { document.removeEventListener('keydown', onKey); overlay.remove(); resolve(value); };
             const onKey = e => { if (e.key === 'Escape') close(null); };
+
+            // Reconcile labels-to-order against labels-invoiced, live as boxes change.
+            const reconEl = $('#cm-recon');
+            function updateRecon() {
+                if (invoiced == null) { reconEl.style.display = 'none'; return; }
+                const boxes = Math.max(1, parseInt($('#cm-boxes').value, 10) || 1);
+                if (boxes === invoiced) {
+                    reconEl.className = 'cm-recon cm-recon--ok';
+                    reconEl.textContent = `✓ ${boxes} label${boxes === 1 ? '' : 's'} — matches ${invoiced} invoiced`;
+                } else {
+                    reconEl.className = 'cm-recon cm-recon--warn';
+                    reconEl.textContent = `⚠ Ordering ${boxes} label${boxes === 1 ? '' : 's'} but ${invoiced} invoiced on this order — they don't match.`;
+                }
+                reconEl.style.display = '';
+            }
+            $('#cm-boxes').addEventListener('input', updateRecon);
+            updateRecon();
 
             $('#cm-save').addEventListener('click', () => {
                 const street = $('#cm-street').value.trim();
@@ -1925,6 +1955,7 @@ const Orders = (() => {
                         instructions: $('#cm-instructions').value.trim(),
                     },
                     packages,
+                    invoicedLabels: invoiced, // null if no courier line to reconcile against
                     reference: $('#cm-ref').value.trim(),
                     signatureRequired: $('#cm-sig').checked,
                     saturday: $('#cm-sat').checked,
@@ -1999,11 +2030,18 @@ const Orders = (() => {
             order.courier = {
                 carrier: result.carrier, connote: result.connote, trackingUrl: result.trackingUrl,
                 consignmentId: result.consignmentId, cost: result.cost, mock: result.mock,
+                boxesOrdered: result.boxesOrdered, invoicedLabels: result.invoicedLabels,
+                labelMismatch: result.labelMismatch,
                 createdAt: result.createdAt || new Date().toISOString(),
             };
             refreshActionBar(order);
             showToast(`Label created: ${result.carrier} ${result.connote}${result.mock ? ' (TEST)' : ''}`);
-            logEvent(order.id, 'Created courier label', `${result.carrier} ${result.connote}`);
+            logEvent(order.id, 'Created courier label',
+                `${result.carrier} ${result.connote} · ${result.boxesOrdered} ordered`
+                + (result.invoicedLabels != null ? `, ${result.invoicedLabels} invoiced` : ''));
+            if (result.labelMismatch) {
+                showErrorBanner(`⚠ Label count mismatch: ${result.boxesOrdered} ordered via Post Haste but ${result.invoicedLabels} invoiced on this order.`);
+            }
             await printCourierLabel(order, result.labelBase64);
         } catch (e) {
             showErrorBanner('Courier label failed: ' + e.message);

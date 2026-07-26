@@ -43,7 +43,7 @@ export async function onRequestPost({ env, request }) {
     try {
         step = 'parse';
         const body = await request.json();
-        const { orderId, destination = {}, packages = [], carrier, reference } = body;
+        const { orderId, destination = {}, packages = [], carrier, reference, invoicedLabels } = body;
         if (!orderId) return errResponse('orderId required', 400);
         if (!destination.street || !destination.city || !destination.postcode) {
             return errResponse('Destination street, city, and postcode are required', 400);
@@ -101,24 +101,34 @@ export async function onRequestPost({ env, request }) {
         }
 
         step = 'persist';
+        // Reconcile labels ordered via the API against labels invoiced.
+        const boxesOrdered = gssBody.Packages.length;
+        const invoiced = (invoicedLabels === 0 || invoicedLabels > 0) ? invoicedLabels : null;
+        const labelMismatch = invoiced != null && invoiced !== boxesOrdered;
+
         const courier = {
-            carrier:       shipment.carrier,
-            connote:       shipment.connote,
-            trackingUrl:   shipment.trackingUrl,
-            consignmentId: shipment.consignmentId,
-            cost:          shipment.cost,
-            mock:          !!shipment.mock,
-            reference:     gssBody.DeliveryReference,
-            packages:      gssBody.Packages,
-            createdAt:     new Date().toISOString(),
-            labelError:    shipment.labelError || null,
+            carrier:        shipment.carrier,
+            connote:        shipment.connote,
+            trackingUrl:    shipment.trackingUrl,
+            consignmentId:  shipment.consignmentId,
+            cost:           shipment.cost,
+            mock:           !!shipment.mock,
+            reference:      gssBody.DeliveryReference,
+            packages:       gssBody.Packages,
+            boxesOrdered,                 // labels created via the GSS API
+            invoicedLabels: invoiced,     // labels charged on the order (null if none)
+            labelMismatch,                // true when the two disagree
+            createdAt:      new Date().toISOString(),
+            labelError:     shipment.labelError || null,
         };
         order.courier = courier;
         order.updatedAt = new Date().toISOString();
         order.events = order.events || [];
         order.events.unshift({
             ts: order.updatedAt,
-            msg: `Courier label created — ${courier.carrier} ${courier.connote}${courier.mock ? ' (TEST)' : ''}`,
+            msg: `Courier label created — ${courier.carrier} ${courier.connote}${courier.mock ? ' (TEST)' : ''}`
+                + `; ${boxesOrdered} label(s) ordered`
+                + (invoiced != null ? `, ${invoiced} invoiced${labelMismatch ? ' — MISMATCH' : ''}` : ''),
         });
         await env.ORDERS_KV.put('order:' + orderId, JSON.stringify(order));
 
