@@ -78,6 +78,7 @@ export async function onRequestPost({ env, request }) {
                 return line;
             }),
             packingNotes: packingNotes || '',
+            fulfilmentMethod: body.fulfilmentMethod || 'courier',
             xeroInvoiceId: null,
             xeroInvoiceNumber: null,
             xeroSourced: body.xeroSourced === true,

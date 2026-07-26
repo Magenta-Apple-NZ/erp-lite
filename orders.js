@@ -715,6 +715,23 @@ const Orders = (() => {
                         <textarea id="ship-address" rows="3" placeholder="Street address…">${escHtml(defaults.shipTo?.address || '')}</textarea>
                     </div>
                 </div>
+                <div class="form-row">
+                    <div class="form-field" style="flex:1">
+                        <label>Fulfilment method</label>
+                        <select id="fulfilment-method">
+                            ${[['courier','Courier — Post Haste'],['pickup','Customer pickup'],['own','Own delivery'],['export','Export freight']]
+                                .map(([v,l]) => `<option value="${v}"${(defaults.fulfilmentMethod || 'courier') === v ? ' selected' : ''}>${l}</option>`).join('')}
+                        </select>
+                        <span class="form-hint">Only Courier orders get a "Create Courier label" action.</span>
+                    </div>
+                    <div class="form-field" style="flex:1">
+                        <label>Delivery phone <span class="form-hint">for courier</span></label>
+                        <input type="text" id="ship-phone" placeholder="021 …" value="${escHtml(defaults.shipTo?.phone || '')}">
+                    </div>
+                </div>
+                <input type="hidden" id="ship-storeid" value="${escHtml(defaults.shipTo?.storeId || '')}">
+                <input type="hidden" id="ship-city" value="${escHtml(defaults.shipTo?.city || '')}">
+                <input type="hidden" id="ship-postcode" value="${escHtml(defaults.shipTo?.postcode || '')}">
             </section>
 
             <!-- Reference -->
@@ -889,7 +906,12 @@ const Orders = (() => {
                     data-name="${escHtml(displayName)}"
                     data-addr="${escHtml(addr)}"
                     data-customer="${escHtml(s.customer || '')}"
-                    data-accountid="${escHtml(s.accountId || '')}">
+                    data-accountid="${escHtml(s.accountId || '')}"
+                    data-storeid="${escHtml(s.id || '')}"
+                    data-street="${escHtml(s.address || '')}"
+                    data-city="${escHtml(s.city || '')}"
+                    data-postcode="${escHtml(s.postcode || '')}"
+                    data-phone="${escHtml(s.phone || '')}">
                     ${escHtml(label)}<span class="store-city">${escHtml(s.city)}</span>
                 </div>`;
             }).join('');
@@ -901,6 +923,12 @@ const Orders = (() => {
             if (!opt) return;
             input.value = opt.dataset.name;
             document.getElementById('ship-address').value = opt.dataset.addr;
+            // Capture structured store fields so courier labels need no re-keying
+            const setVal = (id, v) => { const el = document.getElementById(id); if (el) el.value = v || ''; };
+            setVal('ship-storeid', opt.dataset.storeid);
+            setVal('ship-city', opt.dataset.city);
+            setVal('ship-postcode', opt.dataset.postcode);
+            if (opt.dataset.phone) setVal('ship-phone', opt.dataset.phone);
             const storeCustName = opt.dataset.customer || '';
             if (storeCustName) {
                 // Try to match a preset radio button first
@@ -1130,6 +1158,18 @@ const Orders = (() => {
         el.style.display = msg ? '' : 'none';
     }
 
+    // Assemble the ship-to from the form, keeping the structured fields
+    // (storeId/city/postcode/phone) courier labels need, not just branch+address.
+    function shipToFromForm() {
+        const val = id => (document.getElementById(id)?.value || '').trim();
+        const shipTo = { branch: val('ship-branch'), address: val('ship-address') };
+        if (val('ship-storeid'))  shipTo.storeId  = val('ship-storeid');
+        if (val('ship-city'))     shipTo.city     = val('ship-city');
+        if (val('ship-postcode')) shipTo.postcode = val('ship-postcode');
+        if (val('ship-phone'))    shipTo.phone    = val('ship-phone');
+        return shipTo;
+    }
+
     async function submitNewOrder() {
         showFormError('');
         const customer = getCustomerFromForm();
@@ -1148,10 +1188,8 @@ const Orders = (() => {
                     customer,
                     orderNumber: document.getElementById('order-number')?.value.trim() || '',
                     poNumber: document.getElementById('po-number').value.trim(),
-                    shipTo: {
-                        branch: document.getElementById('ship-branch').value.trim(),
-                        address: document.getElementById('ship-address').value.trim(),
-                    },
+                    shipTo: shipToFromForm(),
+                    fulfilmentMethod: document.getElementById('fulfilment-method')?.value || 'courier',
                     lines,
                     packingNotes: document.getElementById('packing-notes').value.trim(),
                     xeroSourced: document.getElementById('xero-sourced')?.checked === true,
@@ -1182,10 +1220,8 @@ const Orders = (() => {
                 body: JSON.stringify({
                     customer,
                     poNumber: document.getElementById('po-number').value.trim(),
-                    shipTo: {
-                        branch: document.getElementById('ship-branch').value.trim(),
-                        address: document.getElementById('ship-address').value.trim(),
-                    },
+                    shipTo: shipToFromForm(),
+                    fulfilmentMethod: document.getElementById('fulfilment-method')?.value || 'courier',
                     lines,
                     packingNotes: document.getElementById('packing-notes').value.trim(),
                     xeroSourced: document.getElementById('xero-sourced')?.checked === true,
@@ -1240,7 +1276,11 @@ const Orders = (() => {
     // Courier label control — a "Create Courier label" button before a label
     // exists, or a tracking chip (with reprint) once one does.
     function courierAction(order) {
+        // Legacy orders (created before the field) default to courier.
+        const method = order.fulfilmentMethod || 'courier';
         const c = order.courier;
+        // Non-courier orders show nothing — unless a label already exists.
+        if (method !== 'courier' && !(c && c.connote)) return '';
         if (c && c.connote) {
             const track = c.trackingUrl
                 ? `<a href="${escHtml(c.trackingUrl)}" target="_blank" rel="noopener" class="courier-chip-link">${escHtml(c.connote)} ↗</a>`
@@ -1690,13 +1730,46 @@ const Orders = (() => {
     // Courier label confirm modal. Pre-fills from the order; the operator
     // completes the fields orders don't store (suburb / postcode / phone /
     // package dims) then confirms. Resolves the GSS payload or null on cancel.
+    // Derive courier packages from line items. Bundles (kgPerUnit ≥ 5) ship one
+    // box per unit; smaller items (1kg bags) ship 10 per box. Each box is the
+    // standard 44×44×34 cm carton. Returns { boxes, totalKg, packages }.
+    function derivePackages(order) {
+        const BOX = { length: 44, width: 44, height: 34 }; // cm
+        const TARE = 1.3; // packaging weight per box (kg)
+        const BAGS_PER_BOX = 10;
+        const packages = [];
+        (order.lines || []).forEach(l => {
+            const qty = Number(l.quantity) || 0;
+            const per = Number(l.kgPerUnit);
+            if (!qty) return;
+            if (isNaN(per) || per >= 5) {
+                // Bundle / main product — one carton per unit
+                for (let i = 0; i < qty; i++) {
+                    packages.push({ ...BOX, kg: Math.round(((isNaN(per) ? 10 : per) + TARE) * 100) / 100 });
+                }
+            } else {
+                // Small bags — group 10 to a carton
+                let remaining = qty;
+                while (remaining > 0) {
+                    const inBox = Math.min(BAGS_PER_BOX, remaining);
+                    packages.push({ ...BOX, kg: Math.round((inBox * per + 0.5) * 100) / 100 });
+                    remaining -= inBox;
+                }
+            }
+        });
+        if (!packages.length) packages.push({ ...BOX, kg: Math.max(orderTotalKg(order), 0.1) });
+        const totalKg = Math.round(packages.reduce((s, p) => s + p.kg, 0) * 100) / 100;
+        return { boxes: packages.length, totalKg, packages };
+    }
+
     function openCourierModal(order) {
         return new Promise(resolve => {
             const mock = courierStatus ? courierStatus.mock : true;
-            const name = (order.customer && order.customer.name) || order.shipTo?.branch || order.id;
-            const addr = order.shipTo?.address || '';
-            const kg   = orderTotalKg(order);
+            const st   = order.shipTo || {};
+            const name = (order.customer && order.customer.name) || st.branch || order.id;
+            const addr = st.address || '';
             const ref  = order.poNumber || order.id;
+            const derived = derivePackages(order);
 
             const overlay = document.createElement('div');
             overlay.className = 'modal-overlay';
@@ -1715,15 +1788,15 @@ const Orders = (() => {
                         </div>
                         <div class="modal-field">
                             <label>Contact person <span class="modal-hint">optional</span></label>
-                            <input type="text" id="cm-contact" value="${escHtml(order.shipTo?.branch || '')}">
+                            <input type="text" id="cm-contact" value="${escHtml(st.branch || '')}">
                         </div>
                         <div class="modal-field">
                             <label>Phone <span class="modal-hint">optional</span></label>
-                            <input type="text" id="cm-phone" placeholder="021 …">
+                            <input type="text" id="cm-phone" value="${escHtml(st.phone || '')}" placeholder="021 …">
                         </div>
                         <div class="modal-field cm-span2">
                             <label>Street address</label>
-                            <input type="text" id="cm-street" value="${escHtml(addr)}">
+                            <input type="text" id="cm-street" value="${escHtml((addr.split('\n')[0] || addr).trim())}">
                         </div>
                         <div class="modal-field">
                             <label>Suburb <span class="modal-hint">optional</span></label>
@@ -1731,11 +1804,11 @@ const Orders = (() => {
                         </div>
                         <div class="modal-field">
                             <label>City</label>
-                            <input type="text" id="cm-city">
+                            <input type="text" id="cm-city" value="${escHtml(st.city || '')}">
                         </div>
                         <div class="modal-field">
                             <label>Postcode</label>
-                            <input type="text" id="cm-postcode">
+                            <input type="text" id="cm-postcode" value="${escHtml(st.postcode || '')}">
                         </div>
                         <div class="modal-field">
                             <label>Country</label>
@@ -1746,19 +1819,19 @@ const Orders = (() => {
                             <input type="text" id="cm-instructions" value="${escHtml(order.packingNotes || '')}">
                         </div>
                         <div class="modal-field">
-                            <label>Boxes</label>
-                            <input type="number" id="cm-boxes" value="1" min="1" step="1">
+                            <label>Boxes <span class="modal-hint">auto</span></label>
+                            <input type="number" id="cm-boxes" value="${derived.boxes}" min="1" step="1">
                         </div>
                         <div class="modal-field">
-                            <label>Total weight (kg)</label>
-                            <input type="number" id="cm-kg" value="${kg}" min="0.1" step="0.1">
+                            <label>Total weight (kg) <span class="modal-hint">auto</span></label>
+                            <input type="number" id="cm-kg" value="${derived.totalKg}" min="0.1" step="0.1">
                         </div>
                         <div class="modal-field">
                             <label>Box L×W×H (cm)</label>
                             <div class="cm-dims">
-                                <input type="number" id="cm-l" value="40" min="1" step="1">
-                                <input type="number" id="cm-w" value="30" min="1" step="1">
-                                <input type="number" id="cm-h" value="30" min="1" step="1">
+                                <input type="number" id="cm-l" value="44" min="1" step="1">
+                                <input type="number" id="cm-w" value="44" min="1" step="1">
+                                <input type="number" id="cm-h" value="34" min="1" step="1">
                             </div>
                         </div>
                         <div class="modal-field">
@@ -1795,10 +1868,16 @@ const Orders = (() => {
                 }
                 const boxes = Math.max(1, parseInt($('#cm-boxes').value, 10) || 1);
                 const totalKg = Math.max(0.1, parseFloat($('#cm-kg').value) || 0.1);
-                const perBoxKg = Math.round((totalKg / boxes) * 100) / 100;
-                const L = Number($('#cm-l').value) || 40, W = Number($('#cm-w').value) || 30, H = Number($('#cm-h').value) || 30;
-                const packages = Array.from({ length: boxes }, (_, i) => ({
-                    name: `${order.id} box ${i + 1}/${boxes}`, length: L, width: W, height: H, kg: perBoxKg,
+                const L = Number($('#cm-l').value) || 44, W = Number($('#cm-w').value) || 44, H = Number($('#cm-h').value) || 34;
+                // Untouched box count + weight → use the accurate per-box weights
+                // from the line-item derivation; otherwise split the total evenly.
+                const untouched = boxes === derived.boxes && Math.abs(totalKg - derived.totalKg) < 0.01;
+                const packages = (untouched ? derived.packages : Array.from({ length: boxes }, () => ({
+                    length: L, width: W, height: H, kg: Math.round((totalKg / boxes) * 100) / 100,
+                }))).map((p, i) => ({
+                    name: `${order.id} box ${i + 1}/${boxes}`,
+                    length: untouched ? p.length : L, width: untouched ? p.width : W, height: untouched ? p.height : H,
+                    kg: p.kg,
                 }));
                 close({
                     orderId: order.id,
