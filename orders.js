@@ -1762,12 +1762,19 @@ const Orders = (() => {
         return { boxes: packages.length, totalKg, packages };
     }
 
-    function openCourierModal(order) {
+    function openCourierModal(order, store) {
         return new Promise(resolve => {
             const mock = courierStatus ? courierStatus.mock : true;
             const st   = order.shipTo || {};
-            const name = (order.customer && order.customer.name) || st.branch || order.id;
-            const addr = st.address || '';
+            store = store || {};
+            // Prefer the order's own structured fields (captured at creation for
+            // new orders), then fall back to the resolved store catalogue row.
+            const street   = (st.street || store.address || (st.address || '').split('\n')[0] || '').trim();
+            const city     = st.city     || store.city     || '';
+            const postcode = st.postcode || store.postcode || '';
+            const phone    = st.phone    || store.phone    || '';
+            const name = (order.customer && order.customer.name) || store.customer || st.branch || order.id;
+            const contact = st.branch || [store.customer, store.branch].filter(Boolean).join(' - ');
             const ref  = order.poNumber || order.id;
             const derived = derivePackages(order);
 
@@ -1788,15 +1795,15 @@ const Orders = (() => {
                         </div>
                         <div class="modal-field">
                             <label>Contact person <span class="modal-hint">optional</span></label>
-                            <input type="text" id="cm-contact" value="${escHtml(st.branch || '')}">
+                            <input type="text" id="cm-contact" value="${escHtml(contact)}">
                         </div>
                         <div class="modal-field">
                             <label>Phone <span class="modal-hint">optional</span></label>
-                            <input type="text" id="cm-phone" value="${escHtml(st.phone || '')}" placeholder="021 …">
+                            <input type="text" id="cm-phone" value="${escHtml(phone)}" placeholder="021 …">
                         </div>
                         <div class="modal-field cm-span2">
                             <label>Street address</label>
-                            <input type="text" id="cm-street" value="${escHtml((addr.split('\n')[0] || addr).trim())}">
+                            <input type="text" id="cm-street" value="${escHtml(street)}">
                         </div>
                         <div class="modal-field">
                             <label>Suburb <span class="modal-hint">optional</span></label>
@@ -1804,11 +1811,11 @@ const Orders = (() => {
                         </div>
                         <div class="modal-field">
                             <label>City</label>
-                            <input type="text" id="cm-city" value="${escHtml(st.city || '')}">
+                            <input type="text" id="cm-city" value="${escHtml(city)}">
                         </div>
                         <div class="modal-field">
                             <label>Postcode</label>
-                            <input type="text" id="cm-postcode" value="${escHtml(st.postcode || '')}">
+                            <input type="text" id="cm-postcode" value="${escHtml(postcode)}">
                         </div>
                         <div class="modal-field">
                             <label>Country</label>
@@ -1930,8 +1937,29 @@ const Orders = (() => {
         if (win) win.document.write(`<iframe src="data:application/pdf;base64,${labelBase64}" style="width:100%;height:100%;border:0"></iframe>`);
     }
 
+    // Resolve an order back to its store catalogue row — by stored storeId
+    // (new orders), else by matching the branch/customer text (legacy orders).
+    function resolveStore(order, stores) {
+        if (!Array.isArray(stores) || !stores.length) return null;
+        const st = order.shipTo || {};
+        if (st.storeId) {
+            const byId = stores.find(s => s.id === st.storeId);
+            if (byId) return byId;
+        }
+        const norm = v => (v || '').toLowerCase().replace(/\s*[-—]\s*/g, ' ').replace(/\s+/g, ' ').trim();
+        const branch = norm(st.branch);
+        if (!branch) return null;
+        // st.branch is usually "Customer - Branch"; match on the joined display name first.
+        return stores.find(s => norm([s.customer, s.branch].join(' ')) === branch)
+            || stores.find(s => branch && norm(s.branch) && branch.includes(norm(s.branch))
+                                 && norm(s.customer) && branch.includes(norm(s.customer)))
+            || null;
+    }
+
     async function runCreateCourier(order, btn) {
-        const payload = await openCourierModal(order);
+        const stores = await loadCatalogStores().catch(() => []);
+        const store  = resolveStore(order, stores);
+        const payload = await openCourierModal(order, store);
         if (!payload) return;
         if (btn) { btn.disabled = true; btn.textContent = 'Creating label…'; }
         clearErrorBanner();
