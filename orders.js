@@ -715,20 +715,10 @@ const Orders = (() => {
                         <textarea id="ship-address" rows="3" placeholder="Street address…">${escHtml(defaults.shipTo?.address || '')}</textarea>
                     </div>
                 </div>
-                <div class="form-row">
-                    <div class="form-field" style="flex:1">
-                        <label>Fulfilment method</label>
-                        <select id="fulfilment-method">
-                            ${[['courier','Courier — Post Haste'],['pickup','Customer pickup'],['own','Own delivery'],['export','Export freight']]
-                                .map(([v,l]) => `<option value="${v}"${(defaults.fulfilmentMethod || 'courier') === v ? ' selected' : ''}>${l}</option>`).join('')}
-                        </select>
-                        <span class="form-hint">Only Courier orders get a "Create Courier label" action.</span>
-                    </div>
-                    <div class="form-field" style="flex:1">
-                        <label>Delivery phone <span class="form-hint">for courier</span></label>
-                        <input type="text" id="ship-phone" placeholder="021 …" value="${escHtml(defaults.shipTo?.phone || '')}">
-                    </div>
-                </div>
+                <!-- Structured ship-to captured silently for the (currently hidden)
+                     courier integration; no visible courier UI. -->
+                <input type="hidden" id="fulfilment-method" value="${escHtml(defaults.fulfilmentMethod || 'courier')}">
+                <input type="hidden" id="ship-phone" value="${escHtml(defaults.shipTo?.phone || '')}">
                 <input type="hidden" id="ship-storeid" value="${escHtml(defaults.shipTo?.storeId || '')}">
                 <input type="hidden" id="ship-city" value="${escHtml(defaults.shipTo?.city || '')}">
                 <input type="hidden" id="ship-postcode" value="${escHtml(defaults.shipTo?.postcode || '')}">
@@ -1275,7 +1265,13 @@ const Orders = (() => {
 
     // Courier label control — a "Create Courier label" button before a label
     // exists, or a tracking chip (with reprint) once one does.
+    // Courier label UI is built but not in use yet. Flip to true to surface the
+    // "Create Courier label" button + tracking chip; all backend/modal code
+    // stays wired regardless.
+    const COURIER_UI_ENABLED = false;
+
     function courierAction(order) {
+        if (!COURIER_UI_ENABLED) return '';
         // Legacy orders (created before the field) default to courier.
         const method = order.fulfilmentMethod || 'courier';
         const c = order.courier;
@@ -1400,7 +1396,7 @@ const Orders = (() => {
         }
 
         await checkXeroStatus();
-        checkCourierStatus(); // non-blocking — only used for modal hints
+        if (COURIER_UI_ENABLED) checkCourierStatus(); // non-blocking — only used for modal hints
 
         const body = document.getElementById('order-detail-body');
 
