@@ -1730,10 +1730,11 @@ const Orders = (() => {
     // completes the fields orders don't store (suburb / postcode / phone /
     // package dims) then confirms. Resolves the GSS payload or null on cancel.
     // A line that represents courier boxes/labels rather than product.
+    // Prime Ties freight SKUs are FR-01..FR-04 ("Courier - <Zone>").
     function isCourierLine(l) {
         const sku  = String(l?.sku || '').toUpperCase();
         const desc = String(l?.description || '').toLowerCase();
-        return /COURIER|FREIGHT|CARTAGE|LABEL/.test(sku) || /courier|freight|cartage|\blabel/.test(desc);
+        return /^FR-\d|COURIER|FREIGHT|CARTAGE|LABEL/.test(sku) || /courier|freight|cartage|\blabel/.test(desc);
     }
 
     // Number of courier labels invoiced on the order (sum of courier-line qty).
