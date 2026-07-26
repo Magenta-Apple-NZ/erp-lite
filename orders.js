@@ -1730,25 +1730,52 @@ const Orders = (() => {
     // Courier label confirm modal. Pre-fills from the order; the operator
     // completes the fields orders don't store (suburb / postcode / phone /
     // package dims) then confirms. Resolves the GSS payload or null on cancel.
-    // Derive courier packages from line items. Bundles (kgPerUnit ≥ 5) ship one
-    // box per unit; smaller items (1kg bags) ship 10 per box. Each box is the
-    // standard 44×44×34 cm carton. Returns { boxes, totalKg, packages }.
+    // A line that represents courier boxes/labels rather than product.
+    function isCourierLine(l) {
+        const sku  = String(l?.sku || '').toUpperCase();
+        const desc = String(l?.description || '').toLowerCase();
+        return /COURIER|FREIGHT|CARTAGE|LABEL/.test(sku) || /courier|freight|cartage|\blabel/.test(desc);
+    }
+
+    // Derive courier packages from an order.
+    //  1. If the order carries a courier/freight line, its quantity IS the box
+    //     count (you invoice one courier label per box) — product weight is
+    //     spread evenly across those boxes.
+    //  2. Otherwise fall back to line weights: bundles (kgPerUnit ≥ 5) = 1 box
+    //     per unit; 1kg bags = 1 box per 10.
+    // Each box is the standard 44×44×34 cm carton. Returns { boxes, totalKg, packages }.
     function derivePackages(order) {
         const BOX = { length: 44, width: 44, height: 34 }; // cm
         const TARE = 1.3; // packaging weight per box (kg)
         const BAGS_PER_BOX = 10;
+        const lines = order.lines || [];
+
+        const productKg = lines
+            .filter(l => !isCourierLine(l))
+            .reduce((s, l) => s + (Number(l.quantity) || 0) * (Number(l.kgPerUnit) || 0), 0);
+
+        // (1) Box count from the courier/freight line, if present.
+        const courierBoxes = lines
+            .filter(isCourierLine)
+            .reduce((s, l) => s + (Number(l.quantity) || 0), 0);
+        if (courierBoxes > 0) {
+            const perBox = Math.round(((productKg / courierBoxes) || 0.1) * 100) / 100;
+            const packages = Array.from({ length: courierBoxes }, () => ({ ...BOX, kg: Math.max(perBox, 0.1) }));
+            const totalKg = Math.round(packages.reduce((s, p) => s + p.kg, 0) * 100) / 100;
+            return { boxes: courierBoxes, totalKg, packages, source: 'courier-line' };
+        }
+
+        // (2) Fall back to per-product packaging rules.
         const packages = [];
-        (order.lines || []).forEach(l => {
+        lines.filter(l => !isCourierLine(l)).forEach(l => {
             const qty = Number(l.quantity) || 0;
             const per = Number(l.kgPerUnit);
             if (!qty) return;
             if (isNaN(per) || per >= 5) {
-                // Bundle / main product — one carton per unit
                 for (let i = 0; i < qty; i++) {
                     packages.push({ ...BOX, kg: Math.round(((isNaN(per) ? 10 : per) + TARE) * 100) / 100 });
                 }
             } else {
-                // Small bags — group 10 to a carton
                 let remaining = qty;
                 while (remaining > 0) {
                     const inBox = Math.min(BAGS_PER_BOX, remaining);
@@ -1759,7 +1786,7 @@ const Orders = (() => {
         });
         if (!packages.length) packages.push({ ...BOX, kg: Math.max(orderTotalKg(order), 0.1) });
         const totalKg = Math.round(packages.reduce((s, p) => s + p.kg, 0) * 100) / 100;
-        return { boxes: packages.length, totalKg, packages };
+        return { boxes: packages.length, totalKg, packages, source: 'derived' };
     }
 
     function openCourierModal(order, store) {
