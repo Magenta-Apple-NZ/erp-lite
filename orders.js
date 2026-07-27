@@ -722,7 +722,8 @@ const Orders = (() => {
                 <input type="hidden" id="ship-storeid" value="${escHtml(defaults.shipTo?.storeId || '')}">
                 <input type="hidden" id="ship-city" value="${escHtml(defaults.shipTo?.city || '')}">
                 <input type="hidden" id="ship-postcode" value="${escHtml(defaults.shipTo?.postcode || '')}">
-                <input type="hidden" id="ship-zone" value="${escHtml(defaults.shipTo?.zone || '')}">
+                <input type="hidden" id="ship-zone-courier" value="${escHtml(defaults.shipTo?.zoneCourier || '')}">
+                <input type="hidden" id="ship-zone-freight" value="${escHtml(defaults.shipTo?.zoneFreight || '')}">
             </section>
 
             <!-- Reference -->
@@ -904,7 +905,8 @@ const Orders = (() => {
                     data-city="${escHtml(s.city || '')}"
                     data-postcode="${escHtml(s.postcode || '')}"
                     data-phone="${escHtml(s.phone || '')}"
-                    data-zone="${escHtml(s.zone || '')}">
+                    data-zone-courier="${escHtml(s.zoneCourier || '')}"
+                    data-zone-freight="${escHtml(s.zoneFreight || '')}">
                     ${escHtml(label)}<span class="store-city">${escHtml(s.city)}</span>
                 </div>`;
             }).join('');
@@ -921,7 +923,8 @@ const Orders = (() => {
             setVal('ship-storeid', opt.dataset.storeid);
             setVal('ship-city', opt.dataset.city);
             setVal('ship-postcode', opt.dataset.postcode);
-            setVal('ship-zone', opt.dataset.zone);
+            setVal('ship-zone-courier', opt.dataset.zoneCourier);
+            setVal('ship-zone-freight', opt.dataset.zoneFreight);
             if (opt.dataset.phone) setVal('ship-phone', opt.dataset.phone);
             recalcFreight(); // store zone changed → refresh the freight line
             const storeCustName = opt.dataset.customer || '';
@@ -1152,7 +1155,10 @@ const Orders = (() => {
     // pricing catalogue rate, and computed box count. No-op without a zone or a
     // matching freight item, or if the operator has manually taken over the line.
     function recalcFreight() {
-        const zone = (document.getElementById('ship-zone')?.value || '').trim();
+        // Small orders default to the courier method (fixed FR-01..04 rate).
+        // Freight (single variable-priced product) stays an operator judgement
+        // call, so the auto line is courier only.
+        const zone = (document.getElementById('ship-zone-courier')?.value || '').trim();
         const tbody = document.getElementById('line-items-body');
         if (!tbody) return;
         const rows = [...tbody.querySelectorAll('.line-item-row')];
@@ -1245,7 +1251,8 @@ const Orders = (() => {
         if (val('ship-city'))     shipTo.city     = val('ship-city');
         if (val('ship-postcode')) shipTo.postcode = val('ship-postcode');
         if (val('ship-phone'))    shipTo.phone    = val('ship-phone');
-        if (val('ship-zone'))     shipTo.zone     = val('ship-zone');
+        if (val('ship-zone-courier')) shipTo.zoneCourier = val('ship-zone-courier');
+        if (val('ship-zone-freight')) shipTo.zoneFreight = val('ship-zone-freight');
         return shipTo;
     }
 

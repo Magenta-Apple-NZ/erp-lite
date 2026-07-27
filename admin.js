@@ -43,8 +43,8 @@ const Admin = (() => {
             });
     }
 
-    const STORE_HEADERS = ['Customer Code', 'Customer', 'Branch', 'City', 'Street Address', 'Postcode', 'Phone', 'Zone'];
-    const STORE_EXAMPLE = ['FF-Te-Puke', 'Fruitfed', 'Fruitfed - Te Puke', 'Te Puke', '1 Jellicoe Street', '3119', '07 533 1234', 'Inner Island'];
+    const STORE_HEADERS = ['Customer Code', 'Customer', 'Branch', 'City', 'Street Address', 'Postcode', 'Phone', 'Zone_courier', 'Zone_freight'];
+    const STORE_EXAMPLE = ['FF-Te-Puke', 'Fruitfed', 'Fruitfed - Te Puke', 'Te Puke', '1 Jellicoe Street', '3119', '07 533 1234', 'Inner Island', 'Inner Island'];
 
     function downloadCsv(csv, filename) {
         const a = document.createElement('a');
@@ -70,10 +70,11 @@ const Admin = (() => {
     }
 
     function storesToCsv(stores) {
-        const headers = ['Customer Code', 'Customer', 'Branch', 'City', 'Street Address', 'Postcode', 'Phone', 'Zone'];
+        const headers = ['Customer Code', 'Customer', 'Branch', 'City', 'Street Address', 'Postcode', 'Phone', 'Zone_courier', 'Zone_freight'];
         const rows = stores.map(s => [
             s.customerCode || '', s.customer || '', s.branch || '',
-            s.city || '', s.streetAddress || '', s.postcode || '', s.phone || '', s.zone || '',
+            s.city || '', s.streetAddress || '', s.postcode || '', s.phone || '',
+            s.zoneCourier || '', s.zoneFreight || '',
         ].map(quoteField).join(','));
         return [headers.join(','), ...rows].join('\n');
     }
@@ -184,7 +185,8 @@ const Admin = (() => {
             { key: 'city',         label: 'City',     width: '110px' },
             { key: 'postcode',     label: 'Postcode', width: '80px' },
             { key: 'phone',        label: 'Phone',    width: '110px' },
-            { key: 'zone',         label: 'Zone',     width: '120px' },
+            { key: 'zoneCourier',  label: 'Zone (courier)', width: '120px' },
+            { key: 'zoneFreight',  label: 'Zone (freight)', width: '120px' },
         ];
 
         function rowHtml(s) {

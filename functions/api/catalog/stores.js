@@ -44,7 +44,42 @@ function csvEscape(v) {
     return /[",\n\r]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
 }
 
-const EDITABLE_FIELDS = ['customerCode', 'customer', 'branch', 'city', 'address', 'postcode', 'phone', 'zone'];
+const EDITABLE_FIELDS = ['customerCode', 'customer', 'branch', 'city', 'address', 'postcode', 'phone', 'zoneCourier', 'zoneFreight'];
+
+// Stable identity for a store, used to merge sheet re-seeds without clobbering
+// Hub edits or shuffling ids. Prefer the customer code; fall back to
+// customer+branch. Independent of the row-order `store-NNNN` id.
+function storeKey(s) {
+    const code = (s.customerCode || '').trim().toLowerCase();
+    if (code) return 'code:' + code;
+    return 'cb:' + ((s.customer || '') + '|' + (s.branch || '')).toLowerCase().replace(/\s+/g, ' ').trim();
+}
+
+// Non-destructive merge of parsed sheet rows into the existing KV list:
+// update matched rows' fields (non-blank wins), add new rows with fresh ids,
+// keep unmatched Hub rows, never delete. Returns { merged, added, updated }.
+function mergeSeed(existing, incoming) {
+    const byKey = new Map(existing.map(s => [storeKey(s), s]));
+    const now = new Date().toISOString();
+    let seq = nextSeq(existing), added = 0, updated = 0;
+    for (const row of incoming) {
+        const k = storeKey(row);
+        const prev = byKey.get(k);
+        if (prev) {
+            const next = { ...prev };
+            for (const f of EDITABLE_FIELDS) {
+                if (row[f] != null && String(row[f]).trim() !== '') next[f] = row[f];
+            }
+            next.updatedAt = now;
+            byKey.set(k, next);
+            updated++;
+        } else {
+            byKey.set(k, { ...row, id: 'store-' + String(seq++).padStart(4, '0'), createdAt: now, updatedAt: now, source: 'sheet' });
+            added++;
+        }
+    }
+    return { merged: [...byKey.values()], added, updated };
+}
 
 // Parse the legacy Google-Sheet shape: "Customer Code, Customer, Branch,
 // City, Street Address, Postcode, Phone". Used for the bootstrap seed
@@ -68,7 +103,9 @@ function parseSheetCsv(csv, startSeq = 1) {
     const addrCol   = col('street address');
     const postCol   = col('postcode');
     const phoneCol  = col('phone');
-    const zoneCol   = col('zone'); // optional courier freight zone
+    // Optional courier/freight zone columns (either casing).
+    const zcCol     = [col('zone_courier'), col('zone courier')].find(i => i >= 0) ?? -1;
+    const zfCol     = [col('zone_freight'), col('zone freight')].find(i => i >= 0) ?? -1;
 
     let seq = startSeq;
     const out = [];
@@ -84,7 +121,8 @@ function parseSheetCsv(csv, startSeq = 1) {
             address:      addrCol   >= 0 ? (r[addrCol]   || '').trim() : '',
             postcode:     postCol   >= 0 ? (r[postCol]   || '').trim() : '',
             phone:        phoneCol  >= 0 ? (r[phoneCol]  || '').trim() : '',
-            zone:         zoneCol   >= 0 ? (r[zoneCol]   || '').trim() : '',
+            zoneCourier:  zcCol     >= 0 ? (r[zcCol]     || '').trim() : '',
+            zoneFreight:  zfCol     >= 0 ? (r[zfCol]     || '').trim() : '',
             archived:     false,
             source:       'sheet',
             createdAt:    new Date().toISOString(),
@@ -114,7 +152,8 @@ function parseRoundTripCsv(csv) {
     const addrCol     = col('address');
     const postCol     = col('postcode');
     const phoneCol    = col('phone');
-    const zoneCol     = col('zone');
+    const zcCol       = [col('zonecourier'), col('zone_courier')].find(i => i >= 0) ?? -1;
+    const zfCol       = [col('zonefreight'), col('zone_freight')].find(i => i >= 0) ?? -1;
     const archivedCol = col('archived');
     const sourceCol   = col('source');
 
@@ -133,7 +172,8 @@ function parseRoundTripCsv(csv) {
             address:      addrCol   >= 0 ? (r[addrCol]   || '').trim() : '',
             postcode:     postCol   >= 0 ? (r[postCol]   || '').trim() : '',
             phone:        phoneCol  >= 0 ? (r[phoneCol]  || '').trim() : '',
-            zone:         zoneCol   >= 0 ? (r[zoneCol]   || '').trim() : '',
+            zoneCourier:  zcCol     >= 0 ? (r[zcCol]     || '').trim() : '',
+            zoneFreight:  zfCol     >= 0 ? (r[zfCol]     || '').trim() : '',
             archived:     archivedCol >= 0 ? /^(true|1|yes)$/i.test((r[archivedCol] || '').trim()) : false,
             source:       sourceCol >= 0 ? ((r[sourceCol] || '').trim().toLowerCase() || 'sheet') : 'sheet',
         });
@@ -142,12 +182,13 @@ function parseRoundTripCsv(csv) {
 }
 
 function storesToCsv(stores) {
-    const headers = ['Id','CustomerCode','Customer','Branch','City','Address','Postcode','Phone','Zone','Archived','Source'];
+    const headers = ['Id','CustomerCode','Customer','Branch','City','Address','Postcode','Phone','ZoneCourier','ZoneFreight','Archived','Source'];
     const lines = [headers.join(',')];
     for (const s of stores) {
         lines.push([
             s.id, s.customerCode, s.customer, s.branch, s.city, s.address,
-            s.postcode, s.phone, s.zone || '', s.archived ? 'true' : 'false', s.source || 'sheet',
+            s.postcode, s.phone, s.zoneCourier || '', s.zoneFreight || '',
+            s.archived ? 'true' : 'false', s.source || 'sheet',
         ].map(csvEscape).join(','));
     }
     return lines.join('\n') + '\n';
@@ -220,16 +261,22 @@ export async function onRequestPost({ env, request }) {
             const body = await request.json();
             const existing = (await loadStores(env)) || [];
 
-            // Re-seed from the published Google Sheet (admin reset).
+            // Re-seed from the published Google Sheet — non-destructive merge
+            // keyed on customerCode/customer+branch. Sheet values update matched
+            // stores, new rows are added, Hub-only stores are preserved.
             if (body.action === 'reseed-from-sheet') {
                 const csv = await fetchSheetCsv(env);
                 const seeded = parseSheetCsv(csv);
                 const backupTs = new Date().toISOString().replace(/[:.]/g, '-');
                 await env.ORDERS_KV.put(`backup:stores:${backupTs}`, JSON.stringify(existing));
-                await saveStores(env, seeded);
+                const { merged, added, updated } = mergeSeed(existing, seeded);
+                await saveStores(env, merged);
                 return jsonResponse({
                     action: 'reseed-from-sheet',
                     seeded: seeded.length,
+                    added, updated,
+                    preserved: merged.length - added,
+                    totalRowsAfter: merged.length,
                     backupTs,
                 });
             }
@@ -247,6 +294,8 @@ export async function onRequestPost({ env, request }) {
                     address:      (s.address      || '').trim(),
                     postcode:     (s.postcode     || '').trim(),
                     phone:        (s.phone        || '').trim(),
+                    zoneCourier:  (s.zoneCourier  || '').trim(),
+                    zoneFreight:  (s.zoneFreight  || '').trim(),
                     archived:     false,
                     source:       'hub',
                     createdAt:    now,
@@ -301,23 +350,24 @@ export async function onRequestPost({ env, request }) {
             return jsonResponse({ mode: 'apply', summary: { ...summary, backupTs, totalRowsAfter: merged.length } });
         }
 
-        // Seed mode — sheet CSV shape (no Id column). Replace all sheet-
-        // sourced rows; preserve any hub-added stores.
-        const seeded = parseSheetCsv(csv, nextSeq(existing.filter(s => s.source === 'hub')));
+        // Seed mode — sheet CSV shape (no Id column). Non-destructive merge on
+        // the stable key: update matched stores, add new rows, keep the rest.
+        const seeded = parseSheetCsv(csv);
+        const preview = mergeSeed(existing, seeded);
         const summary = {
             mode: 'seed',
             csvRowsParsed: seeded.length,
+            adds: preview.added,
+            updates: preview.updated,
         };
         if (!apply) return jsonResponse({ mode: 'dry-run', summary });
 
         const backupTs = new Date().toISOString().replace(/[:.]/g, '-');
         await env.ORDERS_KV.put(`backup:stores:${backupTs}`, JSON.stringify(existing));
-        const hubRows = existing.filter(s => s.source === 'hub');
-        const merged = [...seeded, ...hubRows];
-        await saveStores(env, merged);
+        await saveStores(env, preview.merged);
         return jsonResponse({
             mode: 'apply',
-            summary: { ...summary, backupTs, hubRowsPreserved: hubRows.length, totalRowsAfter: merged.length },
+            summary: { ...summary, backupTs, totalRowsAfter: preview.merged.length },
         });
     } catch (e) {
         return errResponse(e.message);
