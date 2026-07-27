@@ -44,7 +44,7 @@ function csvEscape(v) {
     return /[",\n\r]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
 }
 
-const EDITABLE_FIELDS = ['customerCode', 'customer', 'branch', 'city', 'address', 'postcode', 'phone'];
+const EDITABLE_FIELDS = ['customerCode', 'customer', 'branch', 'city', 'address', 'postcode', 'phone', 'zone'];
 
 // Parse the legacy Google-Sheet shape: "Customer Code, Customer, Branch,
 // City, Street Address, Postcode, Phone". Used for the bootstrap seed
@@ -68,6 +68,7 @@ function parseSheetCsv(csv, startSeq = 1) {
     const addrCol   = col('street address');
     const postCol   = col('postcode');
     const phoneCol  = col('phone');
+    const zoneCol   = col('zone'); // optional courier freight zone
 
     let seq = startSeq;
     const out = [];
@@ -83,6 +84,7 @@ function parseSheetCsv(csv, startSeq = 1) {
             address:      addrCol   >= 0 ? (r[addrCol]   || '').trim() : '',
             postcode:     postCol   >= 0 ? (r[postCol]   || '').trim() : '',
             phone:        phoneCol  >= 0 ? (r[phoneCol]  || '').trim() : '',
+            zone:         zoneCol   >= 0 ? (r[zoneCol]   || '').trim() : '',
             archived:     false,
             source:       'sheet',
             createdAt:    new Date().toISOString(),
@@ -112,6 +114,7 @@ function parseRoundTripCsv(csv) {
     const addrCol     = col('address');
     const postCol     = col('postcode');
     const phoneCol    = col('phone');
+    const zoneCol     = col('zone');
     const archivedCol = col('archived');
     const sourceCol   = col('source');
 
@@ -130,6 +133,7 @@ function parseRoundTripCsv(csv) {
             address:      addrCol   >= 0 ? (r[addrCol]   || '').trim() : '',
             postcode:     postCol   >= 0 ? (r[postCol]   || '').trim() : '',
             phone:        phoneCol  >= 0 ? (r[phoneCol]  || '').trim() : '',
+            zone:         zoneCol   >= 0 ? (r[zoneCol]   || '').trim() : '',
             archived:     archivedCol >= 0 ? /^(true|1|yes)$/i.test((r[archivedCol] || '').trim()) : false,
             source:       sourceCol >= 0 ? ((r[sourceCol] || '').trim().toLowerCase() || 'sheet') : 'sheet',
         });
@@ -138,12 +142,12 @@ function parseRoundTripCsv(csv) {
 }
 
 function storesToCsv(stores) {
-    const headers = ['Id','CustomerCode','Customer','Branch','City','Address','Postcode','Phone','Archived','Source'];
+    const headers = ['Id','CustomerCode','Customer','Branch','City','Address','Postcode','Phone','Zone','Archived','Source'];
     const lines = [headers.join(',')];
     for (const s of stores) {
         lines.push([
             s.id, s.customerCode, s.customer, s.branch, s.city, s.address,
-            s.postcode, s.phone, s.archived ? 'true' : 'false', s.source || 'sheet',
+            s.postcode, s.phone, s.zone || '', s.archived ? 'true' : 'false', s.source || 'sheet',
         ].map(csvEscape).join(','));
     }
     return lines.join('\n') + '\n';

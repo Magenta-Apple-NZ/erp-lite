@@ -69,6 +69,9 @@ export async function onRequestGet({ env, request }) {
         const t1Col    = col('150+ kg');
         const t2Col    = col('500+ kg');
         const t3Col    = col('2000+ kg');
+        // Optional packaging column for courier freight: units packed per box.
+        // Accepts a few header spellings; absent → undefined (feature dormant).
+        const uxbCol   = [col('units per box'), col('per box'), col('unitsperbox'), col('box qty')].find(i => i >= 0) ?? -1;
 
         const items = rows.slice(1)
             .filter(r => r.length && ((idCol >= 0 && r[idCol]) || (nameCol >= 0 && r[nameCol])))
@@ -80,6 +83,8 @@ export async function onRequestGet({ env, request }) {
                 };
                 const kg = kgCol >= 0 ? num(r[kgCol]) : null;
                 if (kg != null) item.kgPerUnit = kg;
+                const uxb = uxbCol >= 0 ? num(r[uxbCol]) : null;
+                if (uxb != null && uxb > 0) item.unitsPerBox = uxb;
                 const t1 = t1Col >= 0 ? num(r[t1Col]) : null;
                 const t2 = t2Col >= 0 ? num(r[t2Col]) : null;
                 const t3 = t3Col >= 0 ? num(r[t3Col]) : null;

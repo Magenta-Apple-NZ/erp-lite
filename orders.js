@@ -722,6 +722,7 @@ const Orders = (() => {
                 <input type="hidden" id="ship-storeid" value="${escHtml(defaults.shipTo?.storeId || '')}">
                 <input type="hidden" id="ship-city" value="${escHtml(defaults.shipTo?.city || '')}">
                 <input type="hidden" id="ship-postcode" value="${escHtml(defaults.shipTo?.postcode || '')}">
+                <input type="hidden" id="ship-zone" value="${escHtml(defaults.shipTo?.zone || '')}">
             </section>
 
             <!-- Reference -->
@@ -803,6 +804,7 @@ const Orders = (() => {
     // ── Wire form interactions (shared by new + edit) ──
     function wireOrderForm({ customers, catalogStores, catalogItems, defaults = {} }) {
         wireCustomerSection(customers);
+        _formCatalogItems = catalogItems || [];
         if (catalogStores.length) wireStoreSearch(catalogStores);
 
         // Live preview: ORD-1021 → INV-1021
@@ -901,7 +903,8 @@ const Orders = (() => {
                     data-street="${escHtml(s.address || '')}"
                     data-city="${escHtml(s.city || '')}"
                     data-postcode="${escHtml(s.postcode || '')}"
-                    data-phone="${escHtml(s.phone || '')}">
+                    data-phone="${escHtml(s.phone || '')}"
+                    data-zone="${escHtml(s.zone || '')}">
                     ${escHtml(label)}<span class="store-city">${escHtml(s.city)}</span>
                 </div>`;
             }).join('');
@@ -918,7 +921,9 @@ const Orders = (() => {
             setVal('ship-storeid', opt.dataset.storeid);
             setVal('ship-city', opt.dataset.city);
             setVal('ship-postcode', opt.dataset.postcode);
+            setVal('ship-zone', opt.dataset.zone);
             if (opt.dataset.phone) setVal('ship-phone', opt.dataset.phone);
+            recalcFreight(); // store zone changed → refresh the freight line
             const storeCustName = opt.dataset.customer || '';
             if (storeCustName) {
                 // Try to match a preset radio button first
@@ -950,6 +955,7 @@ const Orders = (() => {
     }
 
     let lineCount = 0;
+    let _formCatalogItems = []; // items catalogue for the open order form (freight lookup)
 
     function getPriceForQty(item, qty) {
         // Use || (not ??) so a stored 0 falls through to the next field rather than returning 0
@@ -1011,15 +1017,21 @@ const Orders = (() => {
             updateFormTotal();
         }
 
-        qtyEl.addEventListener('input', updateRow);
+        // A manual edit to a freight row hands control back to the operator.
+        const dropAutoIfFreight = () => { if (tr._autoFreight) tr._autoFreight = false; };
+
+        qtyEl.addEventListener('input', () => { dropAutoIfFreight(); updateRow(); if (!isCourierRow(tr)) recalcFreight(); });
         priceEl.addEventListener('input', () => {
+            dropAutoIfFreight();
             tr._catalogItem = null;
             const qty = parseFloat(qtyEl.value) || 0;
             const price = parseFloat(priceEl.value) || 0;
             totalEl.textContent = '$' + fmt(qty * price);
             updateFormTotal();
         });
-        tr.querySelector('.line-remove-btn').addEventListener('click', () => { tr.remove(); updateFormTotal(); });
+        skuEl.addEventListener('input', dropAutoIfFreight);
+        descEl.addEventListener('input', dropAutoIfFreight);
+        tr.querySelector('.line-remove-btn').addEventListener('click', () => { tr.remove(); updateFormTotal(); recalcFreight(); });
 
         // Item autocomplete from catalog (shared pick logic)
         if (catalogItems.length) {
@@ -1038,6 +1050,7 @@ const Orders = (() => {
                 const qty = parseFloat(qtyEl.value) || 1;
                 priceEl.value = (getPriceForQty(item, qty) ?? 0).toFixed(2);
                 updateRow();
+                if (!isCourierRow(tr)) recalcFreight();
             };
 
             // SKU field autocomplete
@@ -1096,6 +1109,81 @@ const Orders = (() => {
             });
             descEl.addEventListener('blur', () => setTimeout(() => { itemDropdown.style.display = 'none'; }, 150));
         }
+        return tr;
+    }
+
+    // ── Auto-calculated freight ─────────────────────────────────────────────
+    // A row currently holding a courier/freight product.
+    function isCourierRow(tr) {
+        return isCourierLine({
+            sku: tr.querySelector('.line-sku')?.value,
+            description: tr.querySelector('.line-desc')?.value,
+        });
+    }
+
+    // Find the freight catalogue item for a zone, e.g. zone "Inner Island" →
+    // the item named "Courier - Inner Island" (FR-02). Returns the item or null.
+    function freightItemForZone(zone) {
+        const z = (zone || '').toLowerCase().replace(/\s+/g, ' ').trim();
+        if (!z) return null;
+        return _formCatalogItems.find(i =>
+            isCourierLine({ sku: i.id, description: i.name }) &&
+            (i.name || '').toLowerCase().replace(/\s+/g, ' ').replace(/^courier\s*-\s*/, '').trim() === z
+        ) || null;
+    }
+
+    // Boxes for the order = Σ ceil(qty ÷ unitsPerBox) over product (non-freight)
+    // rows, using the pricing catalogue's units-per-box (default 1 if unset).
+    function boxCountFromForm() {
+        let boxes = 0;
+        document.querySelectorAll('.line-item-row').forEach(tr => {
+            if (isCourierRow(tr)) return;
+            const qty = parseFloat(tr.querySelector('.line-qty')?.value) || 0;
+            if (qty <= 0) return;
+            const sku = (tr.querySelector('.line-sku')?.value || '').trim().toLowerCase();
+            const item = _formCatalogItems.find(i => (i.id || '').toLowerCase() === sku);
+            const per = item && item.unitsPerBox > 0 ? item.unitsPerBox : 1;
+            boxes += Math.ceil(qty / per);
+        });
+        return boxes;
+    }
+
+    // Insert or refresh the auto-managed freight line from the store zone,
+    // pricing catalogue rate, and computed box count. No-op without a zone or a
+    // matching freight item, or if the operator has manually taken over the line.
+    function recalcFreight() {
+        const zone = (document.getElementById('ship-zone')?.value || '').trim();
+        const tbody = document.getElementById('line-items-body');
+        if (!tbody) return;
+        const rows = [...tbody.querySelectorAll('.line-item-row')];
+        const existingFreight = rows.filter(isCourierRow);
+        // Respect a manually-entered freight line — don't fight the operator.
+        const manual = existingFreight.some(tr => !tr._autoFreight);
+        if (manual) return;
+
+        const item = zone ? freightItemForZone(zone) : null;
+        const boxes = boxCountFromForm();
+
+        if (!item || boxes <= 0) {
+            // Nothing to bill — remove any auto row we previously added.
+            existingFreight.forEach(tr => { if (tr._autoFreight) { tr.remove(); updateFormTotal(); } });
+            return;
+        }
+
+        const price = item.defaultPrice != null ? item.defaultPrice : 0;
+        let tr = existingFreight.find(t => t._autoFreight);
+        if (!tr) {
+            tr = addLineItem(_formCatalogItems, { sku: item.id, description: item.name, quantity: boxes, unitPrice: price });
+            tr._autoFreight = true;
+        } else {
+            tr.querySelector('.line-sku').value   = item.id;
+            tr.querySelector('.line-desc').value  = item.name;
+            tr.querySelector('.line-qty').value   = boxes;
+            tr.querySelector('.line-price').value = Number(price).toFixed(2);
+        }
+        const total = tr.querySelector('.line-total');
+        if (total) total.textContent = '$' + fmt(boxes * price);
+        updateFormTotal();
     }
 
     function updateFormTotal() {
@@ -1157,6 +1245,7 @@ const Orders = (() => {
         if (val('ship-city'))     shipTo.city     = val('ship-city');
         if (val('ship-postcode')) shipTo.postcode = val('ship-postcode');
         if (val('ship-phone'))    shipTo.phone    = val('ship-phone');
+        if (val('ship-zone'))     shipTo.zone     = val('ship-zone');
         return shipTo;
     }
 
