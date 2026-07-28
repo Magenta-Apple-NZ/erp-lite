@@ -1012,6 +1012,20 @@ const Orders = (() => {
             updateFormTotal();
         }
 
+        // Flag a line red when its SKU/name doesn't correspond to the pricing
+        // sheet — surfaces mismatched imports (e.g. Farmlands) to fix or alias.
+        function validateRow() {
+            if (!_formCatalogItems.length) { tr.classList.remove('line-unmatched'); return; }
+            const s = skuEl.value.trim().toLowerCase();
+            const d = descEl.value.trim().toLowerCase();
+            if (!s && !d) { tr.classList.remove('line-unmatched'); return; }
+            const matched = (s && _formCatalogItems.some(i => (i.id || '').toLowerCase() === s))
+                         || (d && _formCatalogItems.some(i => (i.name || '').toLowerCase() === d));
+            tr.classList.toggle('line-unmatched', !matched);
+            const tip = matched ? '' : 'Not found in the pricing sheet — check the SKU/name or add a find/replace rule';
+            skuEl.title = tip; descEl.title = tip;
+        }
+
         // Initialise total for pre-filled rows
         if (prefill) {
             const qty = parseFloat(qtyEl.value) || 0;
@@ -1019,6 +1033,7 @@ const Orders = (() => {
             totalEl.textContent = '$' + fmt(qty * price);
             updateFormTotal();
         }
+        validateRow();
 
         // A manual edit to a freight row hands control back to the operator.
         const dropAutoIfFreight = () => { if (tr._autoFreight) tr._autoFreight = false; };
@@ -1032,8 +1047,9 @@ const Orders = (() => {
             totalEl.textContent = '$' + fmt(qty * price);
             updateFormTotal();
         });
-        skuEl.addEventListener('input', dropAutoIfFreight);
-        descEl.addEventListener('input', dropAutoIfFreight);
+        skuEl.addEventListener('input', () => { dropAutoIfFreight(); validateRow(); });
+        descEl.addEventListener('input', () => { dropAutoIfFreight(); validateRow(); });
+        tr._validateRow = validateRow;
         tr.querySelector('.line-remove-btn').addEventListener('click', () => { tr.remove(); updateFormTotal(); recalcFreight(); });
 
         // Item autocomplete from catalog (shared pick logic)
@@ -1053,6 +1069,7 @@ const Orders = (() => {
                 const qty = parseFloat(qtyEl.value) || 1;
                 priceEl.value = (getPriceForQty(item, qty) ?? 0).toFixed(2);
                 updateRow();
+                validateRow();
                 if (!isCourierRow(tr)) recalcFreight();
             };
 
