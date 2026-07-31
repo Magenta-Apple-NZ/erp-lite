@@ -129,7 +129,18 @@ async function findOrCreateFolder(token, parentId, name) {
         headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({ name, mimeType: FOLDER_MIME, parents: [parentId] }),
     });
-    if (!createRes.ok) throw new Error(`Drive folder create ${createRes.status}: ${(await createRes.text()).slice(0, 200)}`);
+    if (!createRes.ok) {
+        const raw = await createRes.text();
+        if (createRes.status === 404) {
+            const isSharedDriveRoot = /^0A/.test(parentId);
+            throw new Error(
+                `Drive 404 — the linked folder (${parentId}) isn't visible to the service account. `
+                + (isSharedDriveRoot
+                    ? 'That ID is a Shared Drive root; link a folder INSIDE the Shared Drive (id starts with "1") and ensure the service account is a member.'
+                    : 'Check the folder URL is correct and shared with the service account.'));
+        }
+        throw new Error(`Drive folder create ${createRes.status}: ${raw.slice(0, 200)}`);
+    }
     return (await createRes.json()).id;
 }
 
