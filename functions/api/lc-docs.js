@@ -132,10 +132,31 @@ async function moveDriveFile(token, fileId, toParentId) {
     if (!res.ok) throw new Error(`Drive move ${res.status}: ${(await res.text()).slice(0, 200)}`);
 }
 
-// GET /api/lc-docs?lcId=xxx  — list archived docs
+// GET /api/lc-docs?lcId=xxx     — list archived docs
+// GET /api/lc-docs?status=1     — Drive integration health (is the key set,
+//                                 and which service-account email to share the
+//                                 target folder with)
 export async function onRequestGet({ env, request }) {
     try {
-        const url  = new URL(request.url);
+        const url = new URL(request.url);
+
+        if (url.searchParams.get('status') === '1') {
+            let email = null, keyError = null;
+            if (env.GDRIVE_SA_KEY) {
+                try {
+                    const sa = typeof env.GDRIVE_SA_KEY === 'string' ? JSON.parse(env.GDRIVE_SA_KEY) : env.GDRIVE_SA_KEY;
+                    email = sa.client_email || null;
+                } catch (e) { keyError = 'GDRIVE_SA_KEY is set but not valid JSON'; }
+            }
+            return jsonResponse({
+                configured: !!env.GDRIVE_SA_KEY,
+                serviceAccountEmail: email,   // share the Drive folder with this address (Editor)
+                keyError,
+                docsFolder: DOCS_FOLDER,       // files land in this subfolder of the linked folder
+                archiveFolder: `${DOCS_FOLDER}/${ARCH_FOLDER}`,
+            });
+        }
+
         const lcId = url.searchParams.get('lcId');
         if (!lcId) return errResponse('lcId required', 400);
         const raw  = await env.ORDERS_KV.get('lc-doc-meta:' + lcId);
