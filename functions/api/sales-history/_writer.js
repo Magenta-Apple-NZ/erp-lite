@@ -52,6 +52,19 @@ function lineKg(l) {
     return (Number(l?.quantity) || 0) * inferKgPerUnit(l);
 }
 
+// Product SIZE (independent of type) from the item name — "10kg" / "1kg".
+// Name wins (a SKU suffix like PT-b-10 can mislead); falls back to the
+// catalog/derived per-unit weight. Returns 'tenKg' | 'oneKg' | null.
+function inferSizeBucket(l) {
+    const text = String(l?.description || l?.name || '');
+    if (/\b10\s*kg\b/i.test(text)) return 'tenKg';
+    if (/\b1\s*kg\b/i.test(text))  return 'oneKg';
+    const k = inferKgPerUnit(l);
+    if (k === 10) return 'tenKg';
+    if (k === 1)  return 'oneKg';
+    return null;
+}
+
 function fyLabel(year, month) {
     const endY = month >= 4 ? year + 1 : year;
     const startY = endY - 1;
@@ -63,11 +76,16 @@ function fyLabel(year, month) {
 export function rowFromOrder(order) {
     if (!order || !Array.isArray(order.lines)) return null;
     const buckets = { bundles: 0, loose: 0, ecoTies: 0 };
+    const sizes   = { oneKg: 0, tenKg: 0 };
     for (const l of order.lines) {
         const cat = classifyLine(l);
         if (cat === 'other') continue;
         const kg = lineKg(l);
-        if (kg !== 0) buckets[cat] += kg;
+        if (kg !== 0) {
+            buckets[cat] += kg;
+            const sz = inferSizeBucket(l);
+            if (sz) sizes[sz] += kg;
+        }
     }
     if (buckets.bundles === 0 && buckets.loose === 0 && buckets.ecoTies === 0) {
         return null;
@@ -88,6 +106,8 @@ export function rowFromOrder(order) {
         bundlesKg: buckets.bundles,
         looseKg:   buckets.loose,
         ecoTiesKg: buckets.ecoTies,
+        oneKg:     sizes.oneKg,
+        tenKg:     sizes.tenKg,
     };
 }
 
