@@ -734,6 +734,29 @@ const LC = (() => {
     let _driveFolderUrl = '';       // current LC's linked Drive folder URL
     const _checkBase64  = new Map(); // docId → base64 from most recent check
 
+    // Drive foldering + filename convention. Files go into a per-shipment folder
+    // inside the linked Drive folder, named e.g. "Shipment 42", with structured
+    // filenames like "42_CertificateOfOrigin_310726.pdf".
+    function lcShipmentFolder(lc) {
+        const ref = (lc.shipmentRef || '').trim();
+        if (ref) return ref;                                  // "Shipment 42"
+        return lc.lcNumber ? 'LC ' + lc.lcNumber : 'LC ' + lc.id;
+    }
+    function lcShipNum(lc) {
+        const m = (lc.shipmentRef || '').match(/(\d+)/);
+        return m ? m[1] : (lc.lcNumber || lc.id);
+    }
+    function lcStructuredFilename(lc, docId, origName) {
+        const doc = String(docId || 'Document');
+        const pascal = doc.charAt(0).toUpperCase() + doc.slice(1);
+        const d = new Date();
+        const ddmmyy = String(d.getDate()).padStart(2, '0')
+            + String(d.getMonth() + 1).padStart(2, '0')
+            + String(d.getFullYear()).slice(-2);
+        const extM = String(origName || '').match(/\.[A-Za-z0-9]+$/);
+        return `${lcShipNum(lc)}_${pascal}_${ddmmyy}${extM ? extM[0] : '.pdf'}`;
+    }
+
     function scheduleChecksave(id) {
         clearTimeout(_saveTimer);
         _saveTimer = setTimeout(async () => {
@@ -1722,7 +1745,7 @@ const LC = (() => {
                 const res = await apiFetch('/api/lc-docs', {
                     method: 'PUT',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ lcId: id, driveFolderUrl: url }),
+                    body: JSON.stringify({ lcId: id, driveFolderUrl: url, subfolder: lcShipmentFolder(lc) }),
                 });
                 if (statusEl) {
                     statusEl.textContent = res.failed
@@ -2216,7 +2239,12 @@ const LC = (() => {
                     const ar = await fetch('/api/lc-docs', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ lcId: id, docType: docId, docTitle: docDef.title, filename: file.name, data: base64, driveFolderUrl: _driveFolderUrl, draft: isDraft }),
+                        body: JSON.stringify({
+                            lcId: id, docType: docId, docTitle: docDef.title,
+                            filename: lcStructuredFilename(lc, docId, file.name),
+                            data: base64, driveFolderUrl: _driveFolderUrl,
+                            subfolder: lcShipmentFolder(lc), draft: isDraft,
+                        }),
                     });
                     const aj = await ar.json();
                     if (aj.ok) {

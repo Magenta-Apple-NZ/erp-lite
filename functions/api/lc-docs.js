@@ -168,8 +168,9 @@ export async function onRequestGet({ env, request }) {
                 configured: !!env.GDRIVE_SA_KEY,
                 serviceAccountEmail: email,   // share the Drive folder with this address (Editor)
                 keyError,
-                docsFolder: DOCS_FOLDER,       // files land in this subfolder of the linked folder
-                archiveFolder: `${DOCS_FOLDER}/${ARCH_FOLDER}`,
+                folderScheme: 'linkedFolder / <shipment name> / <file>',
+                defaultFolder: DOCS_FOLDER,    // fallback when the LC has no shipment
+                archiveFolder: ARCH_FOLDER,    // superseded files, inside the shipment folder
             });
         }
 
@@ -183,11 +184,15 @@ export async function onRequestGet({ env, request }) {
 }
 
 // POST /api/lc-docs — archive PDF to KV and optionally upload to Drive
-// body: { lcId, docType, docTitle, filename, data: base64, driveFolderUrl?, draft?: bool }
+// body: { lcId, docType, docTitle, filename, data: base64, driveFolderUrl?,
+//         subfolder?, draft?: bool }
+// subfolder: Drive folder (inside the linked folder) to file into — the
+// shipment name, e.g. "Shipment 42". Defaults to "2. LC Documentation".
 export async function onRequestPost({ env, request }) {
     try {
         const body = await request.json();
         const { lcId, docType, docTitle, filename, data, driveFolderUrl } = body;
+        const subfolder = (body.subfolder && String(body.subfolder).trim()) || DOCS_FOLDER;
         const isDraft = body.draft === true;
         if (!lcId || !data) return errResponse('lcId and data required', 400);
 
@@ -207,7 +212,7 @@ export async function onRequestPost({ env, request }) {
             try {
                 const rootId  = extractFolderId(driveFolderUrl);
                 driveToken    = await getGdriveToken(env.GDRIVE_SA_KEY);
-                docsFolderId  = await findOrCreateFolder(driveToken, rootId, DOCS_FOLDER);
+                docsFolderId  = await findOrCreateFolder(driveToken, rootId, subfolder);
                 const file    = await uploadToGdrive(driveToken, docsFolderId, filename || 'document.pdf', data);
                 driveFileId   = file.id;
                 driveViewLink = file.webViewLink;
@@ -268,10 +273,12 @@ export async function onRequestPost({ env, request }) {
 }
 
 // PUT /api/lc-docs — backfill: push archived docs not yet on Drive to the linked folder
-// body: { lcId, driveFolderUrl }
+// body: { lcId, driveFolderUrl, subfolder? }
 export async function onRequestPut({ env, request }) {
     try {
-        const { lcId, driveFolderUrl } = await request.json();
+        const body = await request.json();
+        const { lcId, driveFolderUrl } = body;
+        const subfolder = (body.subfolder && String(body.subfolder).trim()) || DOCS_FOLDER;
         if (!lcId) return errResponse('lcId required', 400);
         if (!driveFolderUrl) return errResponse('driveFolderUrl required', 400);
         if (!env.GDRIVE_SA_KEY) return errResponse('GDRIVE_SA_KEY not configured', 500);
@@ -279,7 +286,7 @@ export async function onRequestPut({ env, request }) {
         const raw  = await env.ORDERS_KV.get('lc-doc-meta:' + lcId);
         const docs = raw ? JSON.parse(raw) : [];
 
-        // Current docs without a Drive copy get uploaded to "2. LC Documentation";
+        // Current docs without a Drive copy get uploaded to the shipment folder;
         // superseded docs already on Drive get tidied into "z. Archived".
         const pending  = docs.filter(d => !d.driveFileId && !d.superseded);
         const toArchive = docs.filter(d => d.driveFileId && d.superseded);
@@ -287,7 +294,7 @@ export async function onRequestPut({ env, request }) {
 
         const rootId       = extractFolderId(driveFolderUrl);
         const token        = await getGdriveToken(env.GDRIVE_SA_KEY);
-        const docsFolderId = await findOrCreateFolder(token, rootId, DOCS_FOLDER);
+        const docsFolderId = await findOrCreateFolder(token, rootId, subfolder);
 
         let synced = 0, failed = 0;
         for (const d of pending) {
