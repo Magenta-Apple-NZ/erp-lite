@@ -28,7 +28,19 @@ export async function getValidToken(env) {
 
     if (!resp.ok) {
         const body = await resp.text();
-        throw new XeroAuthError('Token refresh failed: ' + body);
+        // Xero rotates the refresh token on every use. If two requests refresh
+        // at once, the loser's token is already "consumed" — but the winner has
+        // just saved a fresh one. Re-read KV and use it rather than failing.
+        const latest = await env.XERO_KV.get(TOKEN_KEY, { type: 'json' });
+        if (latest && latest.refreshToken && latest.refreshToken !== stored.refreshToken) {
+            if (Date.now() < latest.expiresAt - 60_000) return latest;
+            return getValidToken(env); // fresh token still expired — refresh that one
+        }
+        throw new XeroAuthError(
+            /invalid_grant|consumed|expired/i.test(body)
+                ? 'Xero session expired — reconnect Xero at /api/xero/auth'
+                : 'Token refresh failed: ' + body
+        );
     }
 
     const data = await resp.json();

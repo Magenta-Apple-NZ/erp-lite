@@ -2606,7 +2606,12 @@ const Orders = (() => {
             const actionsEl = document.querySelector('.order-actions');
             if (actionsEl) actionsEl.insertAdjacentElement('beforebegin', banner);
         }
-        banner.innerHTML = `<span>${escHtml(msg)}</span><button onclick="document.getElementById('order-error-banner').remove()">✕</button>`;
+        // A stale/consumed Xero token needs a reconnect — offer it inline.
+        const needsReconnect = /reconnect xero|session expired|invalid_grant|refresh token/i.test(msg);
+        const reconnectLink = needsReconnect
+            ? ` <a href="/api/xero/auth" class="order-error-reconnect">Reconnect Xero →</a>`
+            : '';
+        banner.innerHTML = `<span>${escHtml(msg)}${reconnectLink}</span><button onclick="document.getElementById('order-error-banner').remove()">✕</button>`;
     }
 
     function clearErrorBanner() {
