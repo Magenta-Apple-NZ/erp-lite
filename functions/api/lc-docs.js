@@ -74,7 +74,7 @@ async function uploadToGdrive(token, folderId, filename, base64Data) {
     body.set(part2, part1.length + fileBytes.length);
 
     const res = await fetch(
-        'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name,webViewLink',
+        'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&supportsAllDrives=true&fields=id,name,webViewLink',
         {
             method: 'POST',
             headers: {
@@ -85,8 +85,24 @@ async function uploadToGdrive(token, folderId, filename, base64Data) {
         }
     );
     if (!res.ok) {
-        const err = await res.text();
-        throw new Error(`Drive upload ${res.status}: ${err.slice(0, 300)}`);
+        const raw = await res.text();
+        let reason = '', message = '';
+        try {
+            const j = JSON.parse(raw);
+            reason  = j.error?.errors?.[0]?.reason || '';
+            message = j.error?.message || '';
+        } catch (_) { message = raw.slice(0, 200); }
+        // Service accounts have no Drive storage of their own, so they can't own
+        // files uploaded into an ordinary My Drive folder — Google returns 403
+        // storageQuotaExceeded. The fix is a Shared Drive (files owned by the
+        // drive, not the account).
+        if (res.status === 403 && /storageQuota|quota/i.test(reason + message)) {
+            throw new Error('Drive 403 storageQuotaExceeded — a service account can’t store files in a personal My Drive folder. Move the LC folder into a Shared Drive and share that with the service account.');
+        }
+        if (res.status === 403 && /permission/i.test(reason + message)) {
+            throw new Error('Drive 403 insufficientPermissions — share the folder with the service account as Editor (Content Manager on a Shared Drive).');
+        }
+        throw new Error(`Drive upload ${res.status}${reason ? ' ' + reason : ''}: ${message}`.slice(0, 300));
     }
     return await res.json(); // { id, name, webViewLink }
 }
