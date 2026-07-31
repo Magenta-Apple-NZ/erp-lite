@@ -3550,8 +3550,27 @@ a.xero-inv-linked:hover { background: #d1fae5; border-color: #6ee7b7; }
     color: #1e293b;
     box-shadow: 0 1px 2px rgba(0,0,0,0.08);
 }
+/* Store grouping toggle — same look, distinct class to avoid the cumulative
+   toggle's event handler. */
+.sales-grp-btn {
+    background: transparent; border: 0;
+    padding: 0.25rem 0.65rem; font-size: 0.78rem; font-weight: 500;
+    color: #64748b; cursor: pointer; border-radius: 4px; line-height: 1.4;
+}
+.sales-grp-btn:hover { color: #1e293b; }
+.sales-grp-btn.active { background: white; color: #1e293b; box-shadow: 0 1px 2px rgba(0,0,0,0.08); }
+
+/* Top Stores controls (date range + grouping) */
+.sales-store-controls { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; }
+.sales-store-dates { font-size: 0.72rem; color: #64748b; display: inline-flex; align-items: center; gap: 0.3rem; }
+.sales-store-dates input {
+    font-size: 0.78rem; padding: 0.2rem 0.4rem;
+    border: 1px solid #e2e8f0; border-radius: 5px; color: #334155; font-family: inherit;
+}
+
 @media (max-width: 900px) {
     .sales-charts-row { grid-template-columns: 1fr; }
+    .sales-store-controls { width: 100%; }
 }
 
 /* ── Sales: LY% badge ── */

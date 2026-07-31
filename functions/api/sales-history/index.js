@@ -123,6 +123,9 @@ function parseHistoricalCsv(csv) {
         const l = h.toLowerCase();
         return /eco\s*ties?/.test(l) && l.includes('volume');
     });
+    // Optional product-size columns (independent of type). Absent → dormant.
+    const oneKgCol = findCol(h => /^\s*1\s*kg\b/i.test(h) || /\b1kg\b.*volume/i.test(h));
+    const tenKgCol = findCol(h => /^\s*10\s*kg\b/i.test(h) || /\b10kg\b.*volume/i.test(h));
 
     if (dateCol < 0 || customerCol < 0) {
         throw new Error('CSV missing required Date / Customer columns. Found: ' + header.join(', '));
@@ -165,6 +168,8 @@ function parseHistoricalCsv(csv) {
             bundlesKg: bundleKg,
             looseKg,
             ecoTiesKg: ecoKg,
+            oneKg: oneKgCol >= 0 ? parseNum(r[oneKgCol]) : 0,
+            tenKg: tenKgCol >= 0 ? parseNum(r[tenKgCol]) : 0,
         });
     }
 
@@ -212,13 +217,14 @@ function rowsToCsv(rows) {
     const sorted = rows.slice().sort((a, b) => (a.date || '').localeCompare(b.date || ''));
     const out = [
         ['Date','Month','Year','Financial Year','Customer','Branch','PO#','Invoice',
-         'Prime Tie Bundles kg','Prime Tie Loose kg','eco Ties kg','Source','Id'].join(',')
+         'Prime Tie Bundles kg','Prime Tie Loose kg','eco Ties kg','1kg','10kg','Source','Id'].join(',')
     ];
     for (const r of sorted) {
         out.push([
             r.date, r.month, r.year, r.fy,
             r.customer, r.branch, r.poNumber, r.invoice,
             r.bundlesKg, r.looseKg, r.ecoTiesKg,
+            r.oneKg || 0, r.tenKg || 0,
             r.source, r.id,
         ].map(csvEscape).join(','));
     }
@@ -299,6 +305,8 @@ function parseRoundTripExport(csv) {
         const l = h.toLowerCase();
         return /eco\s*ti/.test(l) && (l.includes('kg') || l.includes('volume'));
     });
+    const oneKgCol = header.findIndex(h => /^\s*1\s*kg\b/i.test(h) || /\b1kg\b.*(kg|volume)/i.test(h));
+    const tenKgCol = header.findIndex(h => /^\s*10\s*kg\b/i.test(h) || /\b10kg\b.*(kg|volume)/i.test(h));
 
     const rows = [];
     const skipped = { blank: 0, noId: 0, noDate: 0 };
@@ -363,6 +371,8 @@ function parseRoundTripExport(csv) {
             bundlesKg: bundleCol >= 0 ? parseNum(r[bundleCol]) : 0,
             looseKg:   looseCol  >= 0 ? parseNum(r[looseCol])  : 0,
             ecoTiesKg: ecoCol    >= 0 ? parseNum(r[ecoCol])    : 0,
+            oneKg:     oneKgCol  >= 0 ? parseNum(r[oneKgCol])  : 0,
+            tenKg:     tenKgCol  >= 0 ? parseNum(r[tenKgCol])  : 0,
         });
     }
     return { rows, skipped };

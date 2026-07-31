@@ -148,6 +148,89 @@ const SalesView = (() => {
         return `<div style="position:relative;height:210px;width:100%"><canvas data-chart-id="${id}"></canvas></div>`;
     }
 
+    const TYPE_SERIES = [
+        { key: 'bundles', label: 'Prime Tie Bundles', color: '#3b82f6' },
+        { key: 'loose',   label: 'Prime Tie Loose',   color: '#10b981' },
+        { key: 'eco',     label: 'eco Ties',          color: '#f59e0b' },
+    ];
+
+    // Stacked area — sales by product type across one year's months.
+    function buildProductTypeChart(td, year) {
+        const any = TYPE_SERIES.some(s => (td[s.key] || []).some(v => v > 0));
+        if (!any) return `<p style="color:#94a3b8;font-size:0.875rem;padding:1rem 0">No sales for ${escHtml(String(year))}.</p>`;
+        const id = 'product-type-chart';
+        window._chartQ[id] = {
+            type: 'line',
+            data: {
+                labels: MO_NAMES,
+                datasets: TYPE_SERIES.map(s => ({
+                    label: s.label,
+                    data: (td[s.key] || new Array(12).fill(0)).map(v => Math.round(v)),
+                    backgroundColor: s.color + '55',
+                    borderColor: s.color,
+                    borderWidth: 1.5,
+                    fill: true,
+                    tension: 0.3,
+                    pointRadius: 0,
+                })),
+            },
+            options: {
+                animation: false, responsive: true, maintainAspectRatio: false,
+                interaction: { mode: 'index', intersect: false },
+                plugins: {
+                    legend: { display: true, position: 'bottom', labels: { font: { size: 11 }, boxWidth: 10, padding: 8 } },
+                    tooltip: { callbacks: { label: ctx => ` ${ctx.dataset.label}: ${Math.round(ctx.parsed.y).toLocaleString('en-NZ')} kg` } },
+                },
+                scales: {
+                    x: { grid: { display: false }, ticks: { font: { size: 10 }, color: '#64748b' } },
+                    y: { stacked: true, grid: { color: '#f1f5f9' }, ticks: { font: { size: 10 }, color: '#94a3b8', callback: v => Math.abs(v) >= 1000 ? (v / 1000).toFixed(0) + 'k' : v } },
+                },
+            },
+        };
+        return `<div style="position:relative;height:210px;width:100%"><canvas data-chart-id="${id}"></canvas></div>`;
+    }
+
+    // Grouped bars — sales by product size (1kg vs 10kg) across one year's months.
+    // Dormant until the seed data carries the size split.
+    function buildProductSizeChart(sd, year) {
+        if (!sd.hasData) {
+            return `<p style="color:#94a3b8;font-size:0.85rem;padding:1rem 0;line-height:1.5">
+                No size data yet. Add <strong>1kg</strong> and <strong>10kg</strong> volume columns to the
+                sales-history seed (see <a href="#admin">Catalogue → Sales History</a>) and re-seed, and this
+                chart will populate.</p>`;
+        }
+        const id = 'product-size-chart';
+        const SIZE_SERIES = [
+            { key: 'tenKg', label: '10kg', color: '#6366f1' },
+            { key: 'oneKg', label: '1kg',  color: '#f59e0b' },
+        ];
+        window._chartQ[id] = {
+            type: 'bar',
+            data: {
+                labels: MO_NAMES,
+                datasets: SIZE_SERIES.map(s => ({
+                    label: s.label,
+                    data: (sd[s.key] || new Array(12).fill(0)).map(v => Math.round(v)),
+                    backgroundColor: s.color,
+                    borderRadius: 2, borderSkipped: false,
+                })),
+            },
+            options: {
+                animation: false, responsive: true, maintainAspectRatio: false,
+                interaction: { mode: 'index', intersect: false },
+                plugins: {
+                    legend: { display: true, position: 'bottom', labels: { font: { size: 11 }, boxWidth: 10, padding: 8 } },
+                    tooltip: { callbacks: { label: ctx => ` ${ctx.dataset.label}: ${Math.round(ctx.parsed.y).toLocaleString('en-NZ')} kg` } },
+                },
+                scales: {
+                    x: { grid: { display: false }, ticks: { font: { size: 10 }, color: '#64748b' } },
+                    y: { grid: { color: '#f1f5f9' }, ticks: { font: { size: 10 }, color: '#94a3b8', callback: v => Math.abs(v) >= 1000 ? (v / 1000).toFixed(0) + 'k' : v } },
+                },
+            },
+        };
+        return `<div style="position:relative;height:210px;width:100%"><canvas data-chart-id="${id}"></canvas></div>`;
+    }
+
     function buildDataTable(data) {
         const years = Object.keys(data).sort();
         if (!years.length) return '';
@@ -241,6 +324,14 @@ const SalesView = (() => {
         let filterCustomer = '', filterBranch = '', filterProduct = '';
         let selectedYears = new Set(defaultYears);
         let cumMode = localStorage.getItem('sales-cum-mode') === 'fy' ? 'fy' : 'cal';
+        // Single-year scope for the type/size breakdown charts (default current
+        // calendar year, else the latest year with data).
+        const nowYr = new Date().getFullYear().toString();
+        let chartYear = allAvailableYears.includes(nowYr) ? nowYr : (allAvailableYears[allAvailableYears.length - 1] || nowYr);
+        // Top Stores: date range (default this calendar year) + grouping.
+        let storeFrom  = nowYr + '-01-01';
+        let storeTo    = new Date().toISOString().slice(0, 10);
+        let storeGroup = localStorage.getItem('sales-store-group') || 'branch'; // 'customer' | 'customerBranch' | 'branch'
 
         // ── Apply filters → returns filtered rows ──
         function getFilteredRows() {
@@ -272,32 +363,55 @@ const SalesView = (() => {
             return data;
         }
 
-        // ── Top Stores (always all-time, unfiltered) + LY YTD comparison ──
-        const today = new Date();
-        const curYr  = today.getFullYear().toString();
-        const prevYr = (today.getFullYear() - 1).toString();
-        const todayMd = (today.getMonth() + 1).toString().padStart(2, '0') + '-' + today.getDate().toString().padStart(2, '0');
-        const cutCur  = curYr  + '-' + todayMd;
-        const cutPrev = prevYr + '-' + todayMd;
-
-        const byStore = {};
-        for (const r of rows) {
-            const store = r.branch || r.customer || '—';
-            const kg = (Number(r.bundlesKg) || 0)
-                     + (Number(r.looseKg)   || 0)
-                     + (Number(r.ecoTiesKg) || 0);
-            if (!byStore[store]) byStore[store] = { kg: 0, orders: 0, lastOrder: '', curYtd: 0, prevYtd: 0 };
-            const s = byStore[store];
-            s.kg += kg;
-            s.orders++;
-            if (r.date > s.lastOrder) s.lastOrder = r.date;
-            if (r.date.startsWith(curYr)  && r.date <= cutCur)  s.curYtd  += kg;
-            if (r.date.startsWith(prevYr) && r.date <= cutPrev) s.prevYtd += kg;
+        // Customer/branch-filtered rows (ignores the product filter — the
+        // type/size charts break down by product themselves).
+        function getCustBranchRows() {
+            return rows.filter(r =>
+                (!filterCustomer || r.customer === filterCustomer) &&
+                (!filterBranch   || r.branch   === filterBranch));
         }
-        const storeActuals = Object.entries(byStore)
-            .map(([name, d]) => ({ name, ...d }))
-            .sort((a, b) => b.kg - a.kg)
-            .slice(0, 10);
+
+        // Monthly type + size breakdown for the selected chart year.
+        function computeTypeSize() {
+            const t = { bundles: new Array(12).fill(0), loose: new Array(12).fill(0), eco: new Array(12).fill(0) };
+            const s = { oneKg: new Array(12).fill(0), tenKg: new Array(12).fill(0), hasData: false };
+            for (const r of getCustBranchRows()) {
+                if (String(r.year) !== String(chartYear)) continue;
+                const mo = r.month - 1;
+                if (mo < 0 || mo > 11) continue;
+                t.bundles[mo] += Number(r.bundlesKg) || 0;
+                t.loose[mo]   += Number(r.looseKg)   || 0;
+                t.eco[mo]     += Number(r.ecoTiesKg) || 0;
+                const one = Number(r.oneKg) || 0, ten = Number(r.tenKg) || 0;
+                s.oneKg[mo] += one; s.tenKg[mo] += ten;
+                if (one || ten) s.hasData = true;
+            }
+            return { t, s };
+        }
+
+        // Top Stores for the selected date range + grouping, with same-range
+        // last-year comparison for the LY% column.
+        function shiftYr(iso, d) { const p = iso.split('-'); return (Number(p[0]) + d) + '-' + p[1] + '-' + p[2]; }
+        function computeStores() {
+            const pf = shiftYr(storeFrom, -1), pt = shiftYr(storeTo, -1);
+            const keyOf = r => storeGroup === 'customer' ? (r.customer || '—')
+                : storeGroup === 'customerBranch' ? ((r.customer || '—') + '|||' + (r.branch || ''))
+                : (r.branch || r.customer || '—');
+            const map = {};
+            for (const r of rows) {
+                const d = (r.date || '').slice(0, 10);
+                const inCur = d >= storeFrom && d <= storeTo;
+                const inPrev = d >= pf && d <= pt;
+                if (!inCur && !inPrev) continue;
+                const k = keyOf(r);
+                if (!map[k]) map[k] = { customer: r.customer || '', branch: r.branch || '', kg: 0, orders: 0, lastOrder: '', cur: 0, prev: 0 };
+                const m = map[k];
+                const kg = (Number(r.bundlesKg) || 0) + (Number(r.looseKg) || 0) + (Number(r.ecoTiesKg) || 0);
+                if (inCur)  { m.kg += kg; m.orders++; if (d > m.lastOrder) m.lastOrder = d; m.cur += kg; }
+                if (inPrev) m.prev += kg;
+            }
+            return Object.values(map).filter(m => m.orders > 0).sort((a, b) => b.kg - a.kg).slice(0, 10);
+        }
 
         function rebuildCharts() {
             const data = computeChartData();
@@ -316,6 +430,83 @@ const SalesView = (() => {
 
             const tableArea = document.getElementById('sales-data-table');
             if (tableArea) tableArea.innerHTML = buildDataTable(data);
+
+            rebuildTypeSize();
+        }
+
+        // Redraw the type (area) + size (bar) charts for the current chart year.
+        function rebuildTypeSize() {
+            const { t, s } = computeTypeSize();
+            const typeArea = document.getElementById('sales-chart-area-type');
+            if (typeArea) {
+                typeArea.innerHTML = buildProductTypeChart(t, chartYear);
+                if (typeof initCharts === 'function') initCharts(typeArea);
+            }
+            const sizeArea = document.getElementById('sales-chart-area-size');
+            if (sizeArea) {
+                sizeArea.innerHTML = buildProductSizeChart(s, chartYear);
+                if (typeof initCharts === 'function') initCharts(sizeArea);
+            }
+        }
+
+        // ── Top Stores table (date-ranged + grouped) ──
+        function renderTopStores() {
+            const el = document.getElementById('top-stores-area');
+            if (!el) return;
+            const list = computeStores();
+            const showCust   = storeGroup === 'customer' || storeGroup === 'customerBranch';
+            const showBranch = storeGroup === 'branch'   || storeGroup === 'customerBranch';
+            const idCols = (storeGroup === 'customer' ? '<th>Customer</th>'
+                : storeGroup === 'branch' ? '<th>Branch</th>'
+                : '<th>Customer</th><th>Branch</th>');
+            const bodyRows = list.length ? list.map((s, i) => {
+                const pct = s.prev > 0 ? Math.round((s.cur / s.prev - 1) * 100) : null;
+                const pctBadge = pct !== null
+                    ? `<span class="sales-ytd-pct ${pct >= 0 ? 'sales-ytd-up' : 'sales-ytd-dn'}">${pct >= 0 ? '+' : ''}${pct}%</span>`
+                    : `<span style="color:#e2e8f0">—</span>`;
+                const idCells = (showCust ? `<td>${escHtml(s.customer || '—')}</td>` : '')
+                              + (showBranch ? `<td>${escHtml(s.branch || (storeGroup === 'branch' ? s.customer : '') || '—')}</td>` : '');
+                return `<tr>
+                    <td style="color:#94a3b8;font-size:0.78rem">${i + 1}</td>
+                    ${idCells}
+                    <td style="text-align:right;font-weight:600">${Math.round(s.kg).toLocaleString('en-NZ')}</td>
+                    <td style="text-align:right;color:#64748b">${s.orders}</td>
+                    <td style="text-align:right">${pctBadge}</td>
+                    <td style="text-align:right;color:#94a3b8;font-size:0.8rem">${s.lastOrder ? s.lastOrder.slice(0, 10) : '—'}</td>
+                </tr>`;
+            }).join('') : `<tr><td colspan="${3 + (showCust ? 1 : 0) + (showBranch ? 1 : 0) + 1}" style="text-align:center;color:#94a3b8;padding:1rem">No sales in this date range.</td></tr>`;
+
+            el.innerHTML = `
+            <div class="cat-section-head">
+                <div>
+                    <h2 class="cat-title">Top Stores</h2>
+                    <p class="cat-sub">By kg ordered in the selected range. LY% = this range vs the same range last year.</p>
+                </div>
+                <div class="sales-store-controls">
+                    <label class="sales-store-dates">From <input type="date" id="ts-from" value="${escHtml(storeFrom)}"></label>
+                    <label class="sales-store-dates">To <input type="date" id="ts-to" value="${escHtml(storeTo)}"></label>
+                    <div class="sales-mode-toggle" role="tablist" aria-label="Group stores by">
+                        <button class="sales-grp-btn${storeGroup === 'customer' ? ' active' : ''}" data-group="customer" role="tab">Customer</button>
+                        <button class="sales-grp-btn${storeGroup === 'customerBranch' ? ' active' : ''}" data-group="customerBranch" role="tab">Customer › Branch</button>
+                        <button class="sales-grp-btn${storeGroup === 'branch' ? ' active' : ''}" data-group="branch" role="tab">Branch</button>
+                    </div>
+                </div>
+            </div>
+            <div class="sales-table-wrap" style="margin-top:0.5rem">
+                <table class="sales-table">
+                    <thead><tr><th>#</th>${idCols}<th style="text-align:right">kg</th><th style="text-align:right">Orders</th><th style="text-align:right">LY%</th><th style="text-align:right">Last Order</th></tr></thead>
+                    <tbody>${bodyRows}</tbody>
+                </table>
+            </div>`;
+
+            // Wire the controls (re-render on change)
+            el.querySelector('#ts-from')?.addEventListener('change', e => { storeFrom = e.target.value || storeFrom; renderTopStores(); });
+            el.querySelector('#ts-to')?.addEventListener('change',   e => { storeTo   = e.target.value || storeTo;   renderTopStores(); });
+            el.querySelectorAll('[data-group]').forEach(btn => btn.addEventListener('click', () => {
+                storeGroup = btn.dataset.group;
+                localStorage.setItem('sales-store-group', storeGroup);
+                renderTopStores();
+            }));
         }
 
         // ── Filter bar HTML ──
@@ -371,38 +562,36 @@ const SalesView = (() => {
             </div>
         </div>
         <div id="sales-data-table">${buildDataTable(initData)}</div>
-        ${storeActuals.length ? `
-        <div class="cat-section" style="margin-bottom:1.5rem">
-            <div class="cat-section-head">
-                <div>
-                    <h2 class="cat-title">Top Stores</h2>
-                    <p class="cat-sub">By kg ordered, all time. LY% = current year vs same period last year.</p>
+        <div class="sales-charts-row">
+            <div class="cat-section sales-chart-block">
+                <div class="sales-chart-head">
+                    <div>
+                        <h2 class="cat-title" style="margin-bottom:0.4rem">Sales by Product Type</h2>
+                        <p class="cat-sub" style="margin-bottom:0">kg by type per month · one year.</p>
+                    </div>
+                    <select class="sales-filter-sel" id="sf-chart-year" title="Year for the type and size charts">
+                        ${allAvailableYears.map(yr => `<option value="${escHtml(yr)}"${yr === chartYear ? ' selected' : ''}>${escHtml(yr)}</option>`).join('')}
+                    </select>
                 </div>
+                <div id="sales-chart-area-type"></div>
             </div>
-            <div class="sales-table-wrap" style="margin-top:0.5rem">
-                <table class="sales-table">
-                    <thead><tr><th>#</th><th>Store / Branch</th><th style="text-align:right">kg</th><th style="text-align:right">Orders</th><th style="text-align:right">LY%</th><th style="text-align:right">Last Order</th></tr></thead>
-                    <tbody>
-                        ${storeActuals.map((s, i) => {
-                            const pct = s.prevYtd > 0 ? Math.round((s.curYtd / s.prevYtd - 1) * 100) : null;
-                            const pctBadge = pct !== null
-                                ? `<span class="sales-ytd-pct ${pct >= 0 ? 'sales-ytd-up' : 'sales-ytd-dn'}">${pct >= 0 ? '+' : ''}${pct}%</span>`
-                                : `<span style="color:#e2e8f0">—</span>`;
-                            return `<tr>
-                                <td style="color:#94a3b8;font-size:0.78rem">${i + 1}</td>
-                                <td>${escHtml(s.name)}</td>
-                                <td style="text-align:right;font-weight:600">${Math.round(s.kg).toLocaleString('en-NZ')}</td>
-                                <td style="text-align:right;color:#64748b">${s.orders}</td>
-                                <td style="text-align:right">${pctBadge}</td>
-                                <td style="text-align:right;color:#94a3b8;font-size:0.8rem">${s.lastOrder ? s.lastOrder.slice(0, 10) : '—'}</td>
-                            </tr>`;
-                        }).join('')}
-                    </tbody>
-                </table>
+            <div class="cat-section sales-chart-block">
+                <h2 class="cat-title" style="margin-bottom:0.4rem">Sales by Product Size
+                    <span class="chart-info" title="1kg vs 10kg volumes per month for the selected year. Needs 1kg/10kg columns in the sales-history seed data.">&#9432;</span>
+                </h2>
+                <p class="cat-sub" style="margin-bottom:0.75rem">1kg vs 10kg per month · one year.</p>
+                <div id="sales-chart-area-size"></div>
             </div>
-        </div>` : ''}`;
+        </div>
+        <div class="cat-section" style="margin-bottom:1.5rem" id="top-stores-area"></div>`;
 
         if (typeof initCharts === 'function') initCharts(bodyEl);
+        rebuildTypeSize();
+        renderTopStores();
+
+        document.getElementById('sf-chart-year')?.addEventListener('change', e => {
+            chartYear = e.target.value; rebuildTypeSize();
+        });
 
         // ── Cumulative chart Cal/FY toggle ──
         bodyEl.querySelectorAll('.sales-mode-btn').forEach(btn => {
