@@ -51,6 +51,26 @@ const LC = (() => {
 
     // ── Checklist generation (the 5% substituted into fixed structure) ────────
 
+    // Requirement strictness for the grouped Requirements view. Anything not
+    // listed (and not an f47a-* general condition) is treated as "Must State".
+    // Soft = wording/format/consistency tolerant (the "flag" tier).
+    const SOFT_CHECK_IDS = new Set([
+        'ci-incoterms', 'ci-portloading', 'ci-goods', 'ci-importer',
+        'bl-notify', 'bl-banknotify', 'bl-loading', 'bl-discharge', 'bl-container', 'bl-weights', 'bl-freetime', 'bl-banktax',
+        'co-desc', 'co-qty', 'co-shipper',
+        'ins-note', 'ins-21days', 'ins-covernote', 'ins-addressed', 'ins-copy',
+        'bc-quantity', 'bc-origin', 'bc-packingclause',
+        'pi-container', 'pi-qty', 'pi-signed',
+        'apemail-21days', 'apemail-fullset', 'apemail-address', 'apemail-copy',
+    ]);
+    function checkTier(c) {
+        if (/^f47a-/.test(c.id)) return 'general';
+        return SOFT_CHECK_IDS.has(c.id) ? 'soft' : 'must';
+    }
+    // Third-party / external documents whose issuance we don't control — these
+    // get a "Manual accept" override that supersedes the AI check.
+    const MANUAL_ACCEPT_DOCS = new Set(['billOfLading', 'certificateOfOrigin', 'insuranceNotification', 'applicantEmail']);
+
     function generateDocuments(lc) {
         const g  = lc.goods        || {};
         const p  = lc.ports        || {};
@@ -64,7 +84,7 @@ const LC = (() => {
             .filter(({ c }) => !c.docId || c.docId === 'general' || c.docId === docId)
             .map(({ c, gi }, i) => ({ id: `f47a-${docId}-${i}`, text: c.text, cite: `lc-f47a-${gi}` }));
 
-        return [
+        const _docs = [
             {
                 id: 'draft', title: 'Draft at Sight', copies: '2 originals', group: 'admin',
                 desc: `Bill of exchange drawn on ${ab.name || '—'}`,
@@ -197,6 +217,8 @@ const LC = (() => {
                 ]
             },
         ];
+        _docs.forEach(d => d.checks.forEach(c => { c.tier = checkTier(c); }));
+        return _docs;
     }
 
     const STANDARD_CONDITIONS = [
@@ -2072,6 +2094,7 @@ const LC = (() => {
                 + '</div>'
                 + '<button class="lc-email-modal-close" data-res-close type="button">✕</button>'
                 + '</div>'
+                + manualAcceptBanner(docId)
                 + '<div class="lc-extract-modal-body" id="lc-doc-modal-body"></div>'
                 + '</div>';
             document.body.appendChild(modal);
@@ -2093,15 +2116,22 @@ const LC = (() => {
                     + '<span class="lc-reqs-text">' + esc(c.text)
                     + ' <a class="lc-cite-link" style="opacity:0.55" data-cite="' + (c.cite || 'lc-raw-section') + '" role="button" tabindex="0" title="View in LC reference">§</a></span>'
                     + '</div>';
-                // Document-specific requirements in full; the universal F47A
-                // conditions (repeated on every document) collapse into one group.
-                // Both are still checked by the AI — this is display only.
-                const specific = docDef.checks.filter(c => !/^f47a-/.test(c.id));
-                const general  = docDef.checks.filter(c =>  /^f47a-/.test(c.id));
-                let html = specific.map(rowHtml).join('');
+                // Grouped by strictness: Must State (exact) · Soft Match (wording
+                // tolerated) · General Requirements (universal F47A, collapsed).
+                // All tiers are still checked — this is display grouping only.
+                const byTier = t => docDef.checks.filter(c => (c.tier || 'must') === t);
+                let html = '';
+                [['must', 'Must State', 'specific phrasing & values this document must show'],
+                 ['soft', 'Soft Match', 'should match — minor wording / format differences tolerated']].forEach(([tier, label, hint]) => {
+                    const rows = byTier(tier);
+                    if (!rows.length) return;
+                    html += '<div class="lc-reqs-grouphd">' + label + ' <span class="lc-reqs-grouphint">' + hint + '</span></div>'
+                        + rows.map(rowHtml).join('');
+                });
+                const general = byTier('general');
                 if (general.length) {
                     html += '<details class="lc-reqs-general">'
-                        + '<summary>' + general.length + ' general LC conditions — apply to all documents <span class="lc-reqs-general-hint">(still checked)</span></summary>'
+                        + '<summary>General Requirements — ' + general.length + ' conditions apply to all documents <span class="lc-reqs-general-hint">(still checked)</span></summary>'
                         + general.map(rowHtml).join('')
                         + '</details>';
                 }
@@ -2154,12 +2184,58 @@ const LC = (() => {
                     return;
                 }
 
+                if (ev.target.closest('[data-manual-accept]')) { toggleManualAccept(docId, modal); return; }
                 if (ev.target.closest('[data-del-key]')) { handleArchiveDelete(ev, () => renderTab('files')); return; }
                 if (ev.target === modal || ev.target.closest('[data-res-close]')) { modal.remove(); return; }
                 const citeEl = ev.target.closest('.lc-cite-link') || ev.target.closest('.lc-doc-tab-cite');
                 if (citeEl) { ev.preventDefault(); modal.remove(); scrollToClause(citeEl.dataset.cite); return; }
                 handleFlagClick(ev);
             });
+        }
+
+        // Manual-accept override — banner in the pop-over for external documents.
+        function manualAcceptBanner(docId) {
+            if (!MANUAL_ACCEPT_DOCS.has(docId)) return '';
+            const ma = (lc.manualAccepts || {})[docId];
+            const on = !!ma;
+            const when = on && ma.at ? ' · ' + fmtDate(ma.at.slice(0, 10)) : '';
+            return '<div class="lc-manual-accept' + (on ? ' lc-manual-accept--on' : '') + '">'
+                + '<span class="lc-manual-accept-txt">' + (on ? '✓ Manually accepted' + esc(when) : 'Third-party document — accept manually if the AI check can’t confirm it') + '</span>'
+                + '<button class="lc-manual-accept-btn" data-manual-accept type="button">' + (on ? 'Undo' : 'Manual accept') + '</button>'
+                + '</div>';
+        }
+
+        async function toggleManualAccept(docId, modal) {
+            const on = !!(lc.manualAccepts || {})[docId];
+            const next = on ? null : { at: new Date().toISOString() };
+            lc.manualAccepts = { ...(lc.manualAccepts || {}), [docId]: next };
+            // Refresh the banner in place
+            const banner = modal.querySelector('.lc-manual-accept');
+            if (banner) banner.outerHTML = manualAcceptBanner(docId);
+            reflectManualAccept(docId);
+            apiFetch('/api/lc/' + id, {
+                method: 'PATCH',
+                body: JSON.stringify({ manualAccepts: { [docId]: next } }),
+            }).catch(e => console.error('manual accept save failed', e));
+        }
+
+        // Reflect a doc's manual-accept state on its card (green edge + strip).
+        function reflectManualAccept(docId) {
+            const card = container.querySelector('#lcdoc-' + docId);
+            if (!card) return;
+            const on = !!(lc.manualAccepts || {})[docId];
+            card.classList.toggle('lc-doc-card--accepted', on);
+            const resultsEl = container.querySelector('#lccheck-' + docId);
+            if (!resultsEl) return;
+            const hasAi = (lc.aiChecks || {})[docId];
+            if (on && !hasAi) {
+                resultsEl.innerHTML = '<button class="lc-check-matrix-bar lc-check-matrix-bar--pass lc-check-summary-btn" type="button" data-open-doc="' + esc(docId) + '">'
+                    + '<span class="lc-check-matrix-tally">✓ Manually accepted</span></button>';
+                resultsEl.hidden = false;
+            } else if (!on && !hasAi) {
+                resultsEl.hidden = true;
+                resultsEl.innerHTML = '';
+            }
         }
 
         // Grouped results body (sections → named checks) + filter pills
@@ -2252,6 +2328,11 @@ const LC = (() => {
                 label: (saved.draft ? 'Draft' : 'Final') + (when ? ' · checked ' + when : ''),
                 cls:   saved.draft ? 'draft' : 'final',
             });
+        });
+
+        // Reflect any manual-accept overrides on their cards
+        Object.keys(lc.manualAccepts || {}).forEach(docId => {
+            if ((lc.manualAccepts || {})[docId]) reflectManualAccept(docId);
         });
 
         async function handleDocCheck(file, docId, isDraft = false) {
