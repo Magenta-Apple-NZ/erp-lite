@@ -5985,6 +5985,18 @@ a.db-row:hover { background: #f8fafc; border-color: #e2e8f0; }
 .lc-reqs-num  { font-size: 0.7rem; font-weight: 700; color: #cbd5e1; font-variant-numeric: tabular-nums; flex-shrink: 0; }
 .lc-reqs-text { font-size: 0.82rem; color: #334155; line-height: 1.5; }
 
+/* Collapsed "general LC conditions" group in the Requirements tab */
+.lc-reqs-general { margin-top: 0.5rem; border-top: 1px solid #f1f5f9; }
+.lc-reqs-general > summary {
+    cursor: pointer; padding: 0.55rem 0; list-style: none;
+    font-size: 0.78rem; font-weight: 600; color: #64748b;
+}
+.lc-reqs-general > summary::-webkit-details-marker { display: none; }
+.lc-reqs-general > summary::before { content: '▸ '; color: #94a3b8; }
+.lc-reqs-general[open] > summary::before { content: '▾ '; }
+.lc-reqs-general[open] > summary { color: #334155; }
+.lc-reqs-general-hint { font-weight: 400; color: #94a3b8; }
+
 .lc-chip {
     font-size: 0.65rem;
     font-weight: 700;

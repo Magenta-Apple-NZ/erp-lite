@@ -2087,13 +2087,25 @@ const LC = (() => {
             }
 
             function reqsTabHtml() {
-                return docDef.checks.map((c, i) =>
+                const rowHtml = (c, i) =>
                     '<div class="lc-reqs-row">'
                     + '<span class="lc-reqs-num">' + String(i + 1).padStart(2, '0') + '</span>'
                     + '<span class="lc-reqs-text">' + esc(c.text)
                     + ' <a class="lc-cite-link" style="opacity:0.55" data-cite="' + (c.cite || 'lc-raw-section') + '" role="button" tabindex="0" title="View in LC reference">§</a></span>'
-                    + '</div>'
-                ).join('');
+                    + '</div>';
+                // Document-specific requirements in full; the universal F47A
+                // conditions (repeated on every document) collapse into one group.
+                // Both are still checked by the AI — this is display only.
+                const specific = docDef.checks.filter(c => !/^f47a-/.test(c.id));
+                const general  = docDef.checks.filter(c =>  /^f47a-/.test(c.id));
+                let html = specific.map(rowHtml).join('');
+                if (general.length) {
+                    html += '<details class="lc-reqs-general">'
+                        + '<summary>' + general.length + ' general LC conditions — apply to all documents <span class="lc-reqs-general-hint">(still checked)</span></summary>'
+                        + general.map(rowHtml).join('')
+                        + '</details>';
+                }
+                return html;
             }
 
             function filesTabHtml() {
