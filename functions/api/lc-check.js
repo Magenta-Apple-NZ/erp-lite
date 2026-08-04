@@ -8,20 +8,35 @@ function errResponse(msg, status = 500) {
     return jsonResponse({ error: msg }, status);
 }
 
+function addDaysIso(iso, days) {
+    if (!iso) return null;
+    const [y, m, d] = String(iso).split('-').map(Number);
+    if (!y || !m || !d) return null;
+    const dt = new Date(Date.UTC(y, m - 1, d));
+    dt.setUTCDate(dt.getUTCDate() + days);
+    return dt.toISOString().slice(0, 10);
+}
+
 function buildLcContextBlock(lc) {
     if (!lc) return '';
     const g  = lc.goods    || {};
     const p  = lc.ports    || {};
     const ap = lc.applicant || {};
     const ab = lc.applicantBank || {};
+    const presDays = lc.presentationDays || 21;
+    // Operational dates the Hub knows — used for time-limit checks so the AI
+    // doesn't demand the document restate them.
+    const forwardDeadline = addDaysIso(lc.shipmentDate, presDays);
     const lines = [
         `LC Number:          ${lc.lcNumber || '—'}`,
         `Issued Date:        ${lc.issuedDate || '—'}`,
         `Expiry Date:        ${lc.expiryDate || '—'}`,
         `Latest Ship Date:   ${lc.latestShipDate || '—'}`,
+        `Actual Shipment Date: ${lc.shipmentDate || '(not yet recorded)'}   <-- known to the Hub; documents need NOT restate this`,
         `Amount:             ${lc.currency || 'USD'} ${lc.amount != null ? Number(lc.amount).toFixed(2) : '—'}`,
         `Governed By:        ${lc.governedBy || 'UCP 600'}`,
-        `Presentation Days:  ${lc.presentationDays || 21} days after shipment`,
+        `Presentation Days:  ${presDays} days after shipment`,
+        `Forward/Advise Deadline: ${forwardDeadline || '—'}  (shipment + ${presDays} days — the date by which advices/emails/presentation must occur)`,
         ``,
         `Beneficiary:        ${lc.beneficiary || '—'}`,
         `Applicant Name:     ${ap.name || '—'}`,
@@ -133,6 +148,7 @@ ${checkList}
 - Never give "pass" when you cannot find and quote the relevant text in the document
 - Never give "pass" on a numerical check without confirming the exact figure
 - Exception — some checks are LC special conditions that do not concern this document type at all (e.g. a bill-of-lading free-time clause when checking an invoice, bank charge clauses, container size, import policy references). If a condition genuinely cannot apply to this document, grade it "pass" with note "N/A" — do NOT fail a document for not containing a condition that was never meant to appear on it. Conditions like "all documents must bear the LC number" DO apply to every document and must be checked normally.
+- Operational data known from the LC Ground Truth (above) — especially the Actual Shipment Date and the Forward/Advise Deadline — is authoritative and the document does NOT need to restate it. For time-limit checks (e.g. "within 21 days of shipment", "advise within 21 days", forwarding/presentation deadlines): read the DOCUMENT'S OWN date (the email send date, notification date, or certificate date), then compare it to the Forward/Advise Deadline from the ground truth. Pass if the document's date is on or before that deadline. Do NOT fail or flag merely because the document doesn't state the shipment date itself — you already have it. Only fail if the document's own date is genuinely after the deadline, or the document carries no date at all. If the Actual Shipment Date shows "(not yet recorded)", grade such timing checks "flag" with note "shipment date not yet recorded in Hub".
 - For any value that could appear in multiple places (weight, quantity, amount, date): scan the ENTIRE document — headers, line items, summary tables, footers, certification clauses. If two sections show different figures, that is a fail regardless of which figure matches the LC.
 - Return one object per check — every check in the list must appear in the output`;
 

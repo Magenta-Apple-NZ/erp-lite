@@ -174,7 +174,8 @@ const LC = (() => {
                 desc: 'Applicant opens insurance — beneficiary to advise within 21 days',
                 checks: [
                     { id: 'ins-note',       cite: 'lc-f-46a-insuranceNotification', text: "Insurance is applicant's responsibility — Enviroware advises only" },
-                    { id: 'ins-21days',     cite: 'lc-f-46a-insuranceNotification', text: 'Notification sent within 21 days of shipment (or within LC-specified period)' },
+                    { id: 'ins-21days',     cite: 'lc-f-46a-insuranceNotification', text: 'Notification sent within 21 days of shipment',
+                      detail: `Timeliness: extract the date the insurance advice/notification was sent. Compare it to the Forward/Advise Deadline in the LC ground truth (shipment ${fd(lc.shipmentDate) || '(not recorded)'} + ${lc.presentationDays || 21} days). Pass if on or before that deadline. The advice does NOT need to restate the shipment date — the Hub already has it.` },
                     { id: 'ins-covernote',  cite: 'lc-f-46a-insuranceNotification', text: 'Cover note number stated on shipping/insurance advice' },
                     { id: 'ins-addressed',  cite: 'lc-f-46a-insuranceNotification', text: `Addressed to both applicant (${ap.name || '—'}) and the insurance company` },
                     { id: 'ins-copy',       cite: 'lc-f-46a-insuranceNotification', text: 'Copy of notification included with presentation documents' },
@@ -209,7 +210,8 @@ const LC = (() => {
                 id: 'applicantEmail', title: 'Applicant Documents Email', copies: '1 email + copy', group: 'email',
                 desc: 'Full set of non-negotiable docs emailed to applicant within 21 days of shipment',
                 checks: [
-                    { id: 'apemail-21days',  cite: 'lc-f-47a', text: 'Email sent within 21 days of shipment date' },
+                    { id: 'apemail-21days',  cite: 'lc-f-47a', text: 'Email sent within 21 days of shipment',
+                      detail: `Timeliness: extract the date the email was sent. Compare it to the Forward/Advise Deadline in the LC ground truth (shipment ${fd(lc.shipmentDate) || '(not recorded)'} + ${lc.presentationDays || 21} days). Pass if the email date is on or before that deadline. The email does NOT need to state the shipment date — the Hub already has it.` },
                     { id: 'apemail-fullset', cite: 'lc-f-46a-applicantEmail', text: 'Full set of non-negotiable documents attached (invoice, packing list, B/L, COO, certs)' },
                     { id: 'apemail-address', cite: 'lc-f-50', text: `Addressed to applicant: ${ap.name || '—'}` },
                     { id: 'apemail-copy',    cite: 'lc-f-47a', text: 'Copy of email printed and included with original presentation documents' },
@@ -2397,6 +2399,8 @@ const LC = (() => {
                     issuedDate:       lc.issuedDate,
                     expiryDate:       lc.expiryDate,
                     latestShipDate:   lc.latestShipDate,
+                    shipmentDate:     lc.shipmentDate,       // actual shipment date, known to the Hub
+                    estimatedShipDate: lc.estimatedShipDate,
                     currency:         lc.currency,
                     amount:           lc.amount,
                     presentationDays: lc.presentationDays,
