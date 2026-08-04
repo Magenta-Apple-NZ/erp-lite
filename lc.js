@@ -757,6 +757,26 @@ const LC = (() => {
         return `${lcShipNum(lc)}_${pascal}_${ddmmyy}${extM ? extM[0] : '.pdf'}`;
     }
 
+    // Scroll the LC reference to a clause anchor WITHOUT changing the URL hash
+    // (a hash change would trigger the SPA router and navigate away). Tolerates
+    // cite/anchor id variants, e.g. lc-f-46a-<doc> → lcref-46a-<doc> → lc-f-46a.
+    function scrollToClause(cite) {
+        const tries = [];
+        if (cite) {
+            tries.push(cite);
+            const m46 = cite.match(/^lc-f-46a-(.+)$/);
+            if (m46) tries.push('lcref-46a-' + m46[1], 'lc-f-46a');
+            tries.push(cite.replace(/-[a-z0-9]+$/i, '')); // strip trailing -suffix to the base field
+        }
+        tries.push('lc-raw-section');
+        let el = null;
+        for (const t of tries) { if (t) { el = document.getElementById(t); if (el) break; } }
+        if (!el) return;
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        el.classList.add('lc-clause-flash');
+        setTimeout(() => el.classList.remove('lc-clause-flash'), 2200);
+    }
+
     function scheduleChecksave(id) {
         clearTimeout(_saveTimer);
         _saveTimer = setTimeout(async () => {
@@ -1852,7 +1872,13 @@ const LC = (() => {
                 ? finalDocs.map(d => 'Final ' + (d.docTitle || d.docType)).join('\n')
                 : '[No final documents archived yet]';
             const coverNoteRef = ins.coverNote ? 'Referring Cover Note No. ' + ins.coverNote + '.' : '';
-            const clausePara   = ins.clauseText ? '\n\nThese documents are required by the LC as stated:\n\n' + ins.clauseText : '';
+            // Quote the specific LC clause(s) this notification fulfils.
+            const insClauses = [ins.clauseText]
+                .concat((lc.f47aConditions || []).map(c => c.text).filter(t => /insuranc|advis|cover note/i.test(t)))
+                .filter(Boolean);
+            const clausePara = insClauses.length
+                ? '\nLC requirement this fulfils:\n' + insClauses.map(t => '“' + t.trim() + '”').join('\n\n')
+                : '';
 
             const subject = 'Insurance Notification — LC #' + lcRef;
             const body = [
@@ -1890,6 +1916,13 @@ const LC = (() => {
                 ? finalDocs.map(d => '- ' + (d.docTitle || d.docType)).join('\n')
                 : '[No final documents archived yet]';
 
+            // Quote the specific LC clause(s) this email fulfils.
+            const apClauses = (lc.f47aConditions || []).map(c => c.text)
+                .filter(t => /non-negotiable|forward|to the applicant|within 21|21 ?\(/i.test(t));
+            const clausePara = apClauses.length
+                ? '\nLC requirement this fulfils:\n' + apClauses.map(t => '“' + t.trim() + '”').join('\n\n') + '\n'
+                : '';
+
             const subject = 'Shipping Documents — LC #' + lcRef;
             const body = [
                 'Dear ' + (ap.name || 'Sir/Madam') + ',',
@@ -1897,7 +1930,7 @@ const LC = (() => {
                 'Please find attached one full set of non-negotiable shipping documents for LC #' + lcRef + ':',
                 '',
                 docLines,
-                '',
+                clausePara,
                 'As required under the LC, this email and its attachments constitute the forwarding of documents within 21 days of shipment.',
                 'Please retain a copy of this email to present with the original shipping documents.',
                 '',
@@ -2035,7 +2068,7 @@ const LC = (() => {
                 + '<button class="lc-doc-tab' + (active === 'results' ? ' lc-doc-tab--on' : '') + '" data-doc-tab="results" type="button">Check results</button>'
                 + '<button class="lc-doc-tab' + (active === 'reqs' ? ' lc-doc-tab--on' : '') + '" data-doc-tab="reqs" type="button">Requirements (' + docDef.checks.length + ')</button>'
                 + '<button class="lc-doc-tab' + (active === 'files' ? ' lc-doc-tab--on' : '') + '" data-doc-tab="files" type="button">Files</button>'
-                + '<a class="lc-doc-tab-cite" href="#lcref-46a-' + esc(docDef.id) + '" title="Jump to LC reference">§ LC clause</a>'
+                + '<a class="lc-doc-tab-cite" data-cite="lcref-46a-' + esc(docDef.id) + '" role="button" tabindex="0" title="Jump to LC reference">§ LC clause</a>'
                 + '</div>'
                 + '<button class="lc-email-modal-close" data-res-close type="button">✕</button>'
                 + '</div>'
@@ -2058,7 +2091,7 @@ const LC = (() => {
                     '<div class="lc-reqs-row">'
                     + '<span class="lc-reqs-num">' + String(i + 1).padStart(2, '0') + '</span>'
                     + '<span class="lc-reqs-text">' + esc(c.text)
-                    + ' <a class="lc-cite-link" style="opacity:0.55" href="#' + (c.cite || 'lc-raw-section') + '" title="View in LC reference">§</a></span>'
+                    + ' <a class="lc-cite-link" style="opacity:0.55" data-cite="' + (c.cite || 'lc-raw-section') + '" role="button" tabindex="0" title="View in LC reference">§</a></span>'
                     + '</div>'
                 ).join('');
             }
@@ -2111,7 +2144,8 @@ const LC = (() => {
 
                 if (ev.target.closest('[data-del-key]')) { handleArchiveDelete(ev, () => renderTab('files')); return; }
                 if (ev.target === modal || ev.target.closest('[data-res-close]')) { modal.remove(); return; }
-                if (ev.target.closest('.lc-cite-link') || ev.target.closest('.lc-doc-tab-cite')) { modal.remove(); return; }
+                const citeEl = ev.target.closest('.lc-cite-link') || ev.target.closest('.lc-doc-tab-cite');
+                if (citeEl) { ev.preventDefault(); modal.remove(); scrollToClause(citeEl.dataset.cite); return; }
                 handleFlagClick(ev);
             });
         }
@@ -2148,7 +2182,7 @@ const LC = (() => {
                 rows.forEach(({ c, r, name }) => {
                     const cls  = r.result === 'pass' ? 'pass' : r.result === 'flag' ? 'flag' : 'fail';
                     const icon = r.result === 'pass' ? '✓' : r.result === 'flag' ? '⚠' : '✗';
-                    const citeLink = '<a class="lc-cite-link" style="opacity:0.55" href="#' + (c.cite || 'lc-raw-section') + '" title="View in LC reference">§</a>';
+                    const citeLink = '<a class="lc-cite-link" style="opacity:0.55" data-cite="' + (c.cite || 'lc-raw-section') + '" role="button" tabindex="0" title="View in LC reference">§</a>';
                     const noteAttr = r.note ? ' data-ai-note="' + esc(r.note) + '"' : '';
                     bodyHtml += '<div class="lc-res-row lc-res-row--' + cls + '">'
                         + '<span class="lc-check-ai-badge lc-check-ai-badge--' + cls + '">' + icon + '</span>'

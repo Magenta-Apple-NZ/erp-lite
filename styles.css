@@ -5941,7 +5941,7 @@ a.db-row:hover { background: #f8fafc; border-color: #e2e8f0; }
 .lc-doc-tab:hover { background: #f1f5f9; color: #334155; }
 .lc-doc-tab--on { background: #eef2ff; border-color: #c7d2fe; color: #4f46e5; }
 .lc-doc-tab-cite {
-    margin-left: auto; font-size: 0.74rem; color: #94a3b8; text-decoration: none;
+    margin-left: auto; font-size: 0.74rem; color: #94a3b8; text-decoration: none; cursor: pointer;
 }
 .lc-doc-tab-cite:hover { color: #4f46e5; }
 
@@ -6836,13 +6836,22 @@ a.db-row:hover { background: #f8fafc; border-color: #e2e8f0; }
 
 /* ── Per-check cite link (§ inline with label) — always visible ── */
 .lc-cite-link {
-    font-size: 0.68rem; color: #94a3b8; text-decoration: none;
+    font-size: 0.68rem; color: #94a3b8; text-decoration: none; cursor: pointer;
     margin-left: 0.3rem; font-weight: 400; vertical-align: super;
     opacity: 0.55; transition: opacity 0.12s, color 0.12s;
 }
 .lc-check-item:hover .lc-cite-link,
 .lc-check-item--ai:hover .lc-cite-link { opacity: 1; }
 .lc-cite-link:hover { color: #2563eb; opacity: 1; }
+
+/* Clause highlight when jumped to from a § link (no :target, since we don't
+   change the hash — applied briefly via JS instead). */
+.lc-clause-flash {
+    background: #eff6ff !important;
+    box-shadow: inset 3px 0 0 #2563eb;
+    border-radius: 3px;
+    transition: background 0.3s ease;
+}
 
 /* ── Order detail tabs ── */
 .order-detail-tabs {
