@@ -2020,6 +2020,18 @@ const LC = (() => {
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ data: base64, mediaType: 'application/pdf' }),
                     });
+                    // Also archive the source LC PDF to KV + the shipment Drive
+                    // folder (e.g. 42_LetterOfCredit_050826.pdf). Non-blocking.
+                    fetch('/api/lc-docs', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            lcId: id, docType: 'letterOfCredit', docTitle: 'Letter of Credit',
+                            filename: lcStructuredFilename(lc, 'letterOfCredit', 'lc.pdf'),
+                            data: base64, driveFolderUrl: _driveFolderUrl,
+                            subfolder: lcShipmentFolder(lc), draft: false,
+                        }),
+                    }).catch(e => console.error('[LC] source PDF archive failed', e));
                     hideExtractOverlay();
                     showExtractReviewModal(json.fields, lc, id, () => renderDetail(container, id));
                 } catch (err) {
