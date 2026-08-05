@@ -5868,6 +5868,24 @@ a.db-row:hover { background: #f8fafc; border-color: #e2e8f0; }
 .lc-srow-label { font-size: 0.72rem; color: #94a3b8; white-space: nowrap; flex-shrink: 0; }
 .lc-srow-val   { font-size: 0.78rem; color: #334155; text-align: right; word-break: break-word; }
 
+.lc-scard-hint { font-weight: 400; text-transform: none; letter-spacing: 0; color: #cbd5e1; }
+
+/* Key Details — the 2% that varies per LC, highlighted */
+.lc-scard--key { border-color: #c7d2fe; box-shadow: 0 0 0 1px #e0e7ff inset; }
+.lc-scard--key > .lc-scard-title { background: #eef2ff; color: #4f46e5; border-bottom-color: #e0e7ff; }
+.lc-scard--key .lc-srow-label { color: #64748b; }
+.lc-scard--key .lc-srow-val { font-size: 0.86rem; font-weight: 700; color: #1e293b; }
+
+/* Collapsed boilerplate panel */
+.lc-scard--boiler { padding: 0; }
+.lc-scard--boiler > summary {
+    cursor: pointer; list-style: none; display: flex; align-items: center; gap: 0.35rem;
+}
+.lc-scard--boiler > summary::-webkit-details-marker { display: none; }
+.lc-scard--boiler > summary::before { content: '▸'; color: #cbd5e1; font-size: 0.7rem; }
+.lc-scard--boiler[open] > summary::before { content: '▾'; }
+.lc-scard--boiler[open] > summary { border-bottom: 1px solid #f1f5f9; }
+
 /* ── Doc checklist ── */
 .lc-checker-main { display: flex; flex-direction: column; gap: 0.75rem; min-width: 0; }
 .lc-section-label {

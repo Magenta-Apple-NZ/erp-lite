@@ -1316,34 +1316,34 @@ const LC = (() => {
                 </main>
 
                 <aside class="lc-ref-sidebar">
-                    <div class="lc-scard">
-                        <div class="lc-scard-title">Amounts &amp; Goods</div>
-                        ${sideRow('LC Amount',   fmtAmt(lc.currency, lc.amount), true)}
-                        ${sideRow('Unit price',  `${lc.currency || 'USD'} ${g.unitPrice || '—'} / ${g.quantityUnit || 'kg'}`, true)}
-                        ${sideRow('Quantity',    `${(g.quantity || 0).toLocaleString()} ${g.quantityUnit || 'kg'}`, true)}
-                        ${sideRow('Packages',    `${g.packageCount || '?'} ${g.packageType || 'packages'}`, true)}
-                        ${sideRow('HS Code',     g.hsCode, true)}
-                        ${sideRow('Origin',      g.origin)}
-                        ${sideRow('Container',   g.container)}
-                        ${sideRow('Incoterms',   g.incoterms)}
-                    </div>
-                    <div class="lc-scard">
-                        <div class="lc-scard-title">Parties</div>
-                        ${sideRow('Beneficiary',   lc.beneficiary || 'Enviroware Ltd')}
-                        ${sideRow('Applicant',     ap.name + (ap.address ? ', ' + ap.address : ''))}
-                        ${sideRow('Issuing bank',  ab.name + (ab.city ? ', ' + ab.city : ''))}
-                        ${sideRow('Advising bank', adv.name + (adv.city ? ', ' + adv.city : ''))}
-                    </div>
-                    <div class="lc-scard">
-                        <div class="lc-scard-title">References</div>
-                        ${sideRow('Proforma',    lc.proformaRef, true)}
-                        ${sideRow('PI date',     fmtDate(lc.proformaDate))}
+                    <div class="lc-scard lc-scard--key">
+                        <div class="lc-scard-title">Key Details <span class="lc-scard-hint">— what changes per LC</span></div>
+                        ${sideRow('LC #',        lc.lcNumber, true)}
                         ${sideRow('LC issued',   fmtDate(lc.issuedDate))}
-                        ${sideRow('Governed by', lc.governedBy)}
-                        ${sideRow('Port loading',   p.loading)}
-                        ${sideRow('Port discharge', p.discharge)}
-                        ${sideRow('Final dest.',    p.finalDestination)}
+                        ${sideRow('Incoterms',   g.incoterms)}
+                        ${sideRow('Quantity',    `${(g.quantity || 0).toLocaleString()} ${g.quantityUnit || 'kg'}`, true)}
+                        ${sideRow('Unit price',  `${lc.currency || 'USD'} ${g.unitPrice || '—'} / ${g.quantityUnit || 'kg'}`, true)}
+                        ${sideRow('LC Amount',   fmtAmt(lc.currency, lc.amount), true)}
+                        ${sideRow('Proforma #',  lc.proformaRef, true)}
+                        ${sideRow('PI date',     fmtDate(lc.proformaDate))}
                     </div>
+                    <details class="lc-scard lc-scard--boiler">
+                        <summary class="lc-scard-title">LC details <span class="lc-scard-hint">— boilerplate, usually unchanged</span></summary>
+                        <div class="lc-scard-boiler-body">
+                            ${sideRow('Beneficiary',   lc.beneficiary || 'Enviroware Ltd')}
+                            ${sideRow('Applicant',     ap.name + (ap.address ? ', ' + ap.address : ''))}
+                            ${sideRow('Issuing bank',  ab.name + (ab.city ? ', ' + ab.city : ''))}
+                            ${sideRow('Advising bank', adv.name + (adv.city ? ', ' + adv.city : ''))}
+                            ${sideRow('HS Code',     g.hsCode, true)}
+                            ${sideRow('Origin',      g.origin)}
+                            ${sideRow('Container',   g.container)}
+                            ${sideRow('Packages',    `${g.packageCount || '?'} ${g.packageType || 'packages'}`, true)}
+                            ${sideRow('Governed by', lc.governedBy)}
+                            ${sideRow('Port loading',   p.loading)}
+                            ${sideRow('Port discharge', p.discharge)}
+                            ${sideRow('Final dest.',    p.finalDestination)}
+                        </div>
+                    </details>
                     ${insCardHtml}
                     <div class="lc-scard lc-known-issues-card" id="lc-known-issues-card">
                         <div class="lc-scard-title">Recurring Issues
