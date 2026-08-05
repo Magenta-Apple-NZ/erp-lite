@@ -137,6 +137,25 @@ const LC = (() => {
                 ]
             },
             {
+                id: 'packingList', title: 'Packing List', copies: '1 original', group: 'enviro',
+                desc: 'Required only by F47A cond. 05 — quantity, gross & net weight',
+                checks: [
+                    { id: 'pl-quantity',    cite: 'lc-f-45a',
+                      text: `Quantity: ${(g.quantity || 0).toLocaleString()} ${g.quantityUnit || 'kg'}`,
+                      detail: `Quantity: extract the net quantity and confirm it matches ${(g.quantity || 0).toLocaleString()} ${g.quantityUnit || 'kg'} and agrees with the commercial invoice and B/L.` },
+                    { id: 'pl-grossnet',    cite: 'lc-f-47a',
+                      text: `Gross AND net weight both stated`,
+                      detail: `F47A condition 05: the packing list must indicate the QUANTITY, GROSS WEIGHT and NET WEIGHT of merchandise. Extract all three. Net weight must equal ${(g.quantity || 0).toLocaleString()} ${g.quantityUnit || 'kg'}; gross weight must be stated separately (a missing gross or net weight is a fail).` },
+                    { id: 'pl-packages',    cite: 'lc-f-45a',
+                      text: `Packages: ${g.packageCount || '?'} ${g.packageType || 'bales'}`,
+                      detail: `Packing breakdown: confirm the package count is ${g.packageCount || '?'} ${g.packageType || 'bales'} and packing is export standard seaworthy.` },
+                    { id: 'pl-blconsistent', cite: 'lc-f-47a',
+                      text: `Weights & quantity consistent with the B/L`,
+                      detail: `F47A condition 05 requires BOTH the packing list and the bill of lading to indicate quantity, gross and net weight — the figures must agree between the two documents.` },
+                    ...f47aChecks('packingList'),
+                ]
+            },
+            {
                 id: 'billOfLading', title: 'Clean Shipped-on-Board Ocean B/L', copies: 'Full set (3/3 originals)', group: '3rdparty',
                 desc: `To order of ${ab.name || '—'}`,
                 checks: [
@@ -272,6 +291,10 @@ const LC = (() => {
         'ci-proforma':      ['References & dates',   'Proforma reference'],
         'ci-importer':      ['Parties & banks',      'Importer name & address'],
         'ci-regs':          ['Compliance & wording', 'BIN / TIN / IRC / HS code'],
+        'pl-quantity':      ['Amounts & goods',      'Quantity'],
+        'pl-grossnet':      ['Amounts & goods',      'Gross & net weight'],
+        'pl-packages':      ['Amounts & goods',      'Packages'],
+        'pl-blconsistent':  ['Amounts & goods',      'Consistent with B/L'],
         'bl-sob':           ['Shipment details',     'Shipped-on-board notation'],
         'bl-shipdate':      ['References & dates',   'On-board date'],
         'bl-consignee':     ['Parties & banks',      'Consignee'],
@@ -844,6 +867,7 @@ const LC = (() => {
             applicantEmail:         `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="3" width="14" height="10" rx="1.5"/><polyline points="1,3 8,9 15,3"/></svg>`,
             beneficiaryCertificate: `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="1" width="12" height="14" rx="1"/><path d="M5.5 8l2 2 3-3"/></svg>`,
             inspectionCertificate:  `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="6.5" cy="6.5" r="4"/><path d="M9.5 9.5l4 4"/></svg>`,
+            packingList:            `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 5l6-3 6 3-6 3z"/><path d="M2 5v6l6 3 6-3V5"/><path d="M8 8v6"/></svg>`,
         };
 
         return `
@@ -2055,7 +2079,7 @@ const LC = (() => {
             // Presentation groupings (differ from the page's — Bill of Exchange
             // sits under Third Party here).
             const CHECKLIST_GROUPS = [
-                { label: 'Enviroware Documents', ids: ['commercialInvoice', 'beneficiaryCertificate', 'inspectionCertificate'] },
+                { label: 'Enviroware Documents', ids: ['commercialInvoice', 'packingList', 'beneficiaryCertificate', 'inspectionCertificate'] },
                 { label: 'Third Party',          ids: ['draft', 'billOfLading', 'certificateOfOrigin'] },
                 { label: 'Emails',               ids: ['insuranceNotification', 'applicantEmail'] },
             ];
