@@ -1249,6 +1249,10 @@ const LC = (() => {
                         </button>
                     </div>
                     <div class="lc-idbar-spacer"></div>
+                    <button class="lc-hd-btn lc-hd-btn--drive" id="lc-print-checklist-btn" type="button" title="Print the presentation checklist — copy counts per document">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9V2h12v7"/><path d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
+                        Print checklist
+                    </button>
                     <button class="lc-hd-btn lc-hd-btn--primary" id="lc-extract-btn" type="button" title="Upload LC PDF to re-extract all fields with AI">
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
                         Upload LC PDF
@@ -2042,6 +2046,68 @@ const LC = (() => {
                     extractBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg> Upload LC PDF';
                 }
             });
+        }
+
+        // Print presentation checklist — copy counts + status per document
+        container.querySelector('#lc-print-checklist-btn')?.addEventListener('click', () => printChecklist());
+
+        function printChecklist() {
+            const shipLabel = lc.shipmentRef || ('LC ' + (lc.lcNumber || ''));
+            const rows = docs.map(d => {
+                const all    = _archivedByType[d.id] || [];
+                const latest = all.find(x => !x.draft && !x.superseded) || all[0] || null;
+                const saved  = (lc.aiChecks || {})[d.id];
+                const ma     = (lc.manualAccepts || {})[d.id];
+                let status = '—';
+                if (ma) status = 'Accepted';
+                else if (saved && Array.isArray(saved.results)) {
+                    const f  = saved.results.filter(r => r.result === 'fail').length;
+                    const fl = saved.results.filter(r => r.result === 'flag').length;
+                    status = f ? (f + ' fail') : fl ? (fl + ' flag') : 'Pass';
+                }
+                return `<tr>
+                    <td class="chk">☐</td>
+                    <td class="doc">${esc(d.title)}</td>
+                    <td class="copies">${esc(d.copies)}</td>
+                    <td class="file">${latest ? esc(latest.filename) : '<span class="muted">not registered</span>'}</td>
+                    <td class="status status--${status.toLowerCase().replace(/[^a-z]/g,'')}">${esc(status)}</td>
+                </tr>`;
+            }).join('');
+
+            const win = window.open('', '_blank', 'width=940,height=860');
+            if (!win) return;
+            win.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8">
+                <title>Presentation Checklist — LC ${esc(lc.lcNumber || '')}</title>
+                <style>
+                    * { box-sizing: border-box; }
+                    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; color: #1e293b; margin: 32px; }
+                    h1 { font-size: 20px; margin: 0 0 4px; }
+                    .meta { color: #475569; font-size: 13px; margin-bottom: 20px; }
+                    .meta strong { color: #1e293b; }
+                    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+                    th { text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; color: #94a3b8; border-bottom: 2px solid #e2e8f0; padding: 6px 8px; }
+                    td { padding: 9px 8px; border-bottom: 1px solid #f1f5f9; vertical-align: top; }
+                    td.chk { font-size: 16px; width: 28px; }
+                    td.copies { font-weight: 700; white-space: nowrap; }
+                    td.doc { font-weight: 600; }
+                    .muted { color: #cbd5e1; }
+                    .status--pass, .status--accepted { color: #15803d; }
+                    .status--fail { color: #b91c1c; font-weight: 700; }
+                    .foot { margin-top: 22px; font-size: 11px; color: #94a3b8; }
+                    @media print { body { margin: 12mm; } @page { size: A4; } }
+                </style></head><body>
+                <h1>Presentation Checklist</h1>
+                <div class="meta"><strong>LC #${esc(lc.lcNumber || '—')}</strong> · ${esc(shipLabel)} · ${esc(lc.beneficiary || 'Enviroware Ltd')} → ${esc((lc.applicant || {}).name || '—')}<br>
+                    Amount ${esc(fmtAmt(lc.currency, lc.amount))} · Latest ship ${esc(fmtDate(lc.latestShipDate) || '—')} · Present by ${esc(fmtDate(lc.expiryDate) || '—')}</div>
+                <table>
+                    <thead><tr><th></th><th>Document</th><th>Copies to present</th><th>Registered file</th><th>Check</th></tr></thead>
+                    <tbody>${rows}</tbody>
+                </table>
+                <div class="foot">Generated ${esc(fmtDate(new Date().toISOString().slice(0,10)))} — tick each document as it's printed and assembled. "Copies to present" is the LC-required count.</div>
+                </body></html>`);
+            win.document.close();
+            win.focus();
+            setTimeout(() => win.print(), 350);
         }
 
         // Shipment link — populate dropdown from active orders
