@@ -2117,6 +2117,15 @@ const LC = (() => {
             const others = docs.filter(d => !seen.has(d.id));
             if (others.length) rows += '<tr class="grp"><td colspan="5">Other</td></tr>' + others.map(docRow).join('');
 
+            // Covering letter (page 2) — beneficiary → ANZ (advising/nominated bank).
+            const adv = lc.advisingBank || {};
+            const ab  = lc.applicantBank || {};
+            const orderedDocs = [];
+            CHECKLIST_GROUPS.forEach(gp => gp.ids.forEach(cid => { if (byId[cid]) orderedDocs.push(byId[cid]); }));
+            docs.forEach(d => { if (!orderedDocs.includes(d)) orderedDocs.push(d); });
+            const letterList = orderedDocs.map(d => `<li>${esc(d.title)} — <strong>${esc(d.copies)}</strong></li>`).join('');
+            const today = fmtDate(new Date().toISOString().slice(0, 10));
+
             const win = window.open('', '_blank', 'width=940,height=860');
             if (!win) return;
             win.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8">
@@ -2138,7 +2147,16 @@ const LC = (() => {
                     .status--pass, .status--accepted { color: #15803d; }
                     .status--fail { color: #b91c1c; font-weight: 700; }
                     .foot { margin-top: 22px; font-size: 11px; color: #94a3b8; }
-                    @media print { body { margin: 12mm; } @page { size: A4; } }
+                    .page-break { page-break-before: always; }
+                    .letter { font-size: 13px; line-height: 1.6; max-width: 640px; margin-top: 28px; }
+                    .letter p { margin: 12px 0; }
+                    .letter-date { color: #475569; margin-bottom: 26px; }
+                    .letter-to { font-weight: 600; margin-bottom: 20px; }
+                    .letter-re { margin: 18px 0; }
+                    .letter-docs { margin: 10px 0 14px 18px; }
+                    .letter-docs li { margin: 4px 0; }
+                    .letter-sign { margin-top: 30px; }
+                    @media print { body { margin: 12mm; } @page { size: A4; } .letter { margin-top: 0; } }
                 </style></head><body>
                 <h1>Presentation Checklist</h1>
                 <div class="meta"><strong>LC #${esc(lc.lcNumber || '—')}</strong> · ${esc(shipLabel)} · ${esc(lc.beneficiary || 'Enviroware Ltd')} → ${esc((lc.applicant || {}).name || '—')}<br>
@@ -2147,7 +2165,19 @@ const LC = (() => {
                     <thead><tr><th></th><th>Document</th><th>Copies to present</th><th>Registered file</th><th>Check</th></tr></thead>
                     <tbody>${rows}</tbody>
                 </table>
-                <div class="foot">Generated ${esc(fmtDate(new Date().toISOString().slice(0,10)))} — tick each document as it's printed and assembled. "Copies to present" is the LC-required count.</div>
+                <div class="foot">Generated ${esc(today)} — tick each document as it's printed and assembled. "Copies to present" is the LC-required count.</div>
+
+                <div class="page-break"></div>
+                <div class="letter">
+                    <div class="letter-date">${esc(today)}</div>
+                    <div class="letter-to">${esc(adv.name || 'ANZ Bank New Zealand Limited')}<br>Trade &amp; Supply Chain${adv.city ? '<br>' + esc(adv.city) : ''}</div>
+                    <p>Dear Trade Services Team,</p>
+                    <p class="letter-re"><strong>Re: Documentary Credit No. ${esc(lc.lcNumber || '—')}${ab.name ? ' — issued by ' + esc(ab.name) : ''}</strong></p>
+                    <p>We enclose the following documents for negotiation under the above irrevocable documentary credit${lc.amount != null ? ', in the amount of ' + esc(fmtAmt(lc.currency, lc.amount)) : ''}, in respect of ${esc(shipLabel)}. We confirm the enclosed documents are presented in accordance with the terms and conditions of the credit.</p>
+                    <ol class="letter-docs">${letterList}</ol>
+                    <p>Kindly negotiate this presentation and remit the proceeds in accordance with the credit instructions. Should you require anything further, please don't hesitate to contact us.</p>
+                    <p class="letter-sign">Yours faithfully,<br><br><br>${esc(lc.beneficiary || 'Enviroware Ltd')}</p>
+                </div>
                 </body></html>`);
             win.document.close();
             win.focus();
