@@ -2207,8 +2207,9 @@ const LC = (() => {
             modal.className = 'lc-extract-modal lc-results-modal';
             modal.innerHTML = '<div class="lc-extract-modal-box">'
                 + '<div class="lc-extract-modal-hd">'
-                + '<span class="lc-extract-modal-title">' + esc(docDef.title) + '</span>'
-                + '<span class="lc-extract-modal-sub">' + esc(docDef.copies) + ' · ' + esc(docDef.desc) + '</span>'
+                + '<span class="lc-extract-modal-title">' + esc(docDef.title)
+                + ' <span class="lc-copies-badge" title="Copies to present">' + esc(docDef.copies) + '</span></span>'
+                + '<span class="lc-extract-modal-sub">' + esc(docDef.desc) + '</span>'
                 + '<div class="lc-doc-tabs">'
                 + '<button class="lc-doc-tab' + (active === 'results' ? ' lc-doc-tab--on' : '') + '" data-doc-tab="results" type="button">Check results</button>'
                 + '<button class="lc-doc-tab' + (active === 'reqs' ? ' lc-doc-tab--on' : '') + '" data-doc-tab="reqs" type="button">Requirements (' + docDef.checks.length + ')</button>'

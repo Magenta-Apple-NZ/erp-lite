@@ -6518,6 +6518,13 @@ a.db-row:hover { background: #f8fafc; border-color: #e2e8f0; }
     gap: 0.1rem 0.5rem;
 }
 .lc-extract-modal-title { font-size: 0.9rem; font-weight: 700; color: #1e293b; }
+/* Copies-to-present badge in the doc pop-over header */
+.lc-copies-badge {
+    display: inline-block; vertical-align: middle; margin-left: 0.4rem;
+    font-size: 0.72rem; font-weight: 700; letter-spacing: 0.01em;
+    color: #92400e; background: #fef3c7; border: 1px solid #fde68a;
+    padding: 0.12rem 0.5rem; border-radius: 999px; white-space: nowrap;
+}
 .lc-extract-modal-sub   { font-size: 0.72rem; color: #94a3b8; grid-column: 1; }
 .lc-extract-modal-body  { padding: 0.75rem 1rem; overflow-y: auto; max-height: 60vh; display: flex; flex-direction: column; gap: 0.3rem; }
 .lc-extract-modal-ft    { display: flex; gap: 0.5rem; padding: 0.75rem 1rem; border-top: 1px solid #f1f5f9; }
