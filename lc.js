@@ -2158,8 +2158,8 @@ const LC = (() => {
                     .letter-docs { margin: 10px 0 14px 18px; }
                     .letter-docs li { margin: 4px 0; }
                     .letter-sign { margin-top: 30px; }
-                    @page { size: A4; margin: 0; }
-                    @media print { body { margin: 0; padding: 14mm; } .letter { margin-top: 0; } }
+                    @page { size: A4; margin: 16mm; }
+                    @media print { body { margin: 0; padding: 0; } .letter { margin-top: 0; } }
                 </style></head><body>
                 <h1>Presentation Checklist</h1>
                 <div class="meta"><strong>LC #${esc(lc.lcNumber || '—')}</strong> · ${esc(shipLabel)} · ${esc(lc.beneficiary || 'Enviroware Ltd')} → ${esc((lc.applicant || {}).name || '—')}<br>
