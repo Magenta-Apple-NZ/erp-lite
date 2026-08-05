@@ -2174,13 +2174,13 @@ const LC = (() => {
                 <div class="letter">
                     <img class="letter-logo" src="${esc(logoUrl)}" alt="Enviroware" onerror="this.style.display='none'">
                     <div class="letter-date">${esc(today)}</div>
-                    <div class="letter-to">${esc(adv.name || 'ANZ Bank New Zealand Limited')}<br>Trade &amp; Supply Chain${adv.city ? '<br>' + esc(adv.city) : ''}</div>
+                    <div class="letter-to">${esc(adv.name || 'ANZ Bank New Zealand Limited')}<br>Trade &amp; Supply Chain<br>Level 24, ANZ Centre, 23-29 Albert Street<br>Auckland, New Zealand</div>
                     <p>Dear Trade Services Team,</p>
-                    <p class="letter-re"><strong>Re: Documentary Credit No. ${esc(lc.lcNumber || '—')}${ab.name ? ' — issued by ' + esc(ab.name) : ''}</strong></p>
-                    <p>We enclose the following documents for negotiation under the above irrevocable documentary credit${lc.amount != null ? ', in the amount of ' + esc(fmtAmt(lc.currency, lc.amount)) : ''}, in respect of ${esc(shipLabel)}. We confirm the enclosed documents are presented in accordance with the terms and conditions of the credit.</p>
+                    <p class="letter-re"><strong>Re: Documentary Credit No. ${esc(lc.lcNumber || '—')}${ab.name ? ' (issued by ' + esc(ab.name) + ')' : ''}</strong></p>
+                    <p>Please find the documents listed below, presented for negotiation under the above documentary credit${lc.amount != null ? ' (' + esc(fmtAmt(lc.currency, lc.amount)) + ')' : ''} for ${esc(shipLabel)}. We confirm they are presented in line with the terms of the credit.</p>
                     <ol class="letter-docs">${letterList}</ol>
-                    <p>Kindly negotiate this presentation and remit the proceeds in accordance with the credit instructions. Should you require anything further, please don't hesitate to contact us.</p>
-                    <p class="letter-sign">Yours faithfully,<br><br><br>${esc(lc.beneficiary || 'Enviroware Ltd')}</p>
+                    <p>We look forward to hearing your review of these documents. If you need anything further, just let us know.</p>
+                    <p class="letter-sign">Cheers,<br><br><br>${esc(lc.beneficiary || 'Enviroware Ltd')}</p>
                 </div>
                 </body></html>`);
             win.document.close();
