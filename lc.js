@@ -804,6 +804,17 @@ const LC = (() => {
         return `${lcShipNum(lc)}_${pascal}_${ddmmyy}${extM ? extM[0] : '.pdf'}`;
     }
 
+    // Header control for the ANZ presentation ("claim") form — a per-LC link,
+    // completed for each LC. Just a link; we don't rebuild the form.
+    function claimFormControl(lc) {
+        const svg = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="13" y2="17"/></svg>';
+        if (lc.claimFormUrl) {
+            return `<a href="${esc(lc.claimFormUrl)}" target="_blank" rel="noopener" class="lc-hd-btn lc-hd-btn--drive">${svg} ANZ Claim Form ↗</a>`
+                + `<button class="lc-drive-change-btn" id="lc-claimform-change" type="button">Change</button>`;
+        }
+        return `<button class="lc-hd-btn lc-hd-btn--drive" id="lc-claimform-add" type="button">${svg} + ANZ Claim Form</button>`;
+    }
+
     // Scroll the LC reference to a clause anchor WITHOUT changing the URL hash
     // (a hash change would trigger the SPA router and navigate away). Tolerates
     // cite/anchor id variants, e.g. lc-f-46a-<doc> → lcref-46a-<doc> → lc-f-46a.
@@ -1294,6 +1305,7 @@ const LC = (() => {
                                </button>`
                         }
                     </div>
+                    <div class="lc-claimform-wrap" id="lc-claimform-wrap">${claimFormControl(lc)}</div>
                     <div class="lc-idbar-amt lc-mono">${esc(fmtAmt(lc.currency, lc.amount))}</div>
                 </div>
                 <div class="lc-ship-link-form" id="lc-ship-link-form" hidden>
@@ -1800,6 +1812,17 @@ const LC = (() => {
             if (!e.target.closest('#lc-drive-add-btn') && !e.target.closest('#lc-drive-change-btn')) return;
             container.querySelector('#lc-drive-folder-form').hidden = false;
             container.querySelector('#lc-drive-folder-input')?.focus();
+        });
+
+        // ANZ claim-form link: add/change (delegated so it survives re-render)
+        container.addEventListener('click', e => {
+            if (!e.target.closest('#lc-claimform-add') && !e.target.closest('#lc-claimform-change')) return;
+            const url = prompt('Link to the completed ANZ Export Documentary Credit Presentation Form for this LC (Drive/PDF URL):', lc.claimFormUrl || '');
+            if (url === null) return;
+            lc.claimFormUrl = url.trim();
+            apiFetch('/api/lc/' + id, { method: 'PATCH', body: JSON.stringify({ claimFormUrl: lc.claimFormUrl }) }).catch(() => {});
+            const wrap = container.querySelector('#lc-claimform-wrap');
+            if (wrap) wrap.innerHTML = claimFormControl(lc);
         });
 
         // Drive folder: save, then backfill-sync any archived files not yet on Drive
