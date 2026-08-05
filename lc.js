@@ -2052,7 +2052,16 @@ const LC = (() => {
 
         function printChecklist() {
             const shipLabel = lc.shipmentRef || ('LC ' + (lc.lcNumber || ''));
-            const rows = docs.map(d => {
+            // Presentation groupings (differ from the page's — Bill of Exchange
+            // sits under Third Party here).
+            const CHECKLIST_GROUPS = [
+                { label: 'Enviroware Documents', ids: ['commercialInvoice', 'beneficiaryCertificate', 'inspectionCertificate'] },
+                { label: 'Third Party',          ids: ['draft', 'billOfLading', 'certificateOfOrigin'] },
+                { label: 'Emails',               ids: ['insuranceNotification', 'applicantEmail'] },
+            ];
+            const byId = {};
+            docs.forEach(d => { byId[d.id] = d; });
+            const docRow = d => {
                 const all    = _archivedByType[d.id] || [];
                 const latest = all.find(x => !x.draft && !x.superseded) || all[0] || null;
                 const saved  = (lc.aiChecks || {})[d.id];
@@ -2071,7 +2080,18 @@ const LC = (() => {
                     <td class="file">${latest ? esc(latest.filename) : '<span class="muted">not registered</span>'}</td>
                     <td class="status status--${status.toLowerCase().replace(/[^a-z]/g,'')}">${esc(status)}</td>
                 </tr>`;
+            };
+            const seen = new Set();
+            let rows = CHECKLIST_GROUPS.map(gp => {
+                const groupDocs = gp.ids.map(cid => byId[cid]).filter(Boolean);
+                groupDocs.forEach(d => seen.add(d.id));
+                if (!groupDocs.length) return '';
+                return `<tr class="grp"><td colspan="5">${esc(gp.label)}</td></tr>`
+                    + groupDocs.map(docRow).join('');
             }).join('');
+            // Any doc not covered above (safety net) under "Other".
+            const others = docs.filter(d => !seen.has(d.id));
+            if (others.length) rows += '<tr class="grp"><td colspan="5">Other</td></tr>' + others.map(docRow).join('');
 
             const win = window.open('', '_blank', 'width=940,height=860');
             if (!win) return;
@@ -2089,6 +2109,7 @@ const LC = (() => {
                     td.chk { font-size: 16px; width: 28px; }
                     td.copies { font-weight: 700; white-space: nowrap; }
                     td.doc { font-weight: 600; }
+                    tr.grp td { background: #f8fafc; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: #475569; padding-top: 12px; border-bottom: 1px solid #e2e8f0; }
                     .muted { color: #cbd5e1; }
                     .status--pass, .status--accepted { color: #15803d; }
                     .status--fail { color: #b91c1c; font-weight: 700; }
