@@ -2125,6 +2125,7 @@ const LC = (() => {
             docs.forEach(d => { if (!orderedDocs.includes(d)) orderedDocs.push(d); });
             const letterList = orderedDocs.map(d => `<li>${esc(d.title)} — <strong>${esc(d.copies)}</strong></li>`).join('');
             const today = fmtDate(new Date().toISOString().slice(0, 10));
+            const logoUrl = location.origin + '/enviroware_logo_clean.png'; // absolute — print window has no base URL
 
             const win = window.open('', '_blank', 'width=940,height=860');
             if (!win) return;
@@ -2150,6 +2151,7 @@ const LC = (() => {
                     .page-break { page-break-before: always; }
                     .letter { font-size: 13px; line-height: 1.6; max-width: 640px; margin-top: 28px; }
                     .letter p { margin: 12px 0; }
+                    .letter-logo { height: 48px; width: auto; display: block; margin-bottom: 24px; }
                     .letter-date { color: #475569; margin-bottom: 26px; }
                     .letter-to { font-weight: 600; margin-bottom: 20px; }
                     .letter-re { margin: 18px 0; }
@@ -2169,6 +2171,7 @@ const LC = (() => {
 
                 <div class="page-break"></div>
                 <div class="letter">
+                    <img class="letter-logo" src="${esc(logoUrl)}" alt="Enviroware" onerror="this.style.display='none'">
                     <div class="letter-date">${esc(today)}</div>
                     <div class="letter-to">${esc(adv.name || 'ANZ Bank New Zealand Limited')}<br>Trade &amp; Supply Chain${adv.city ? '<br>' + esc(adv.city) : ''}</div>
                     <p>Dear Trade Services Team,</p>
