@@ -91,7 +91,10 @@ export async function onRequestPost({ env, request }) {
         const checkList = checks.map((c, i) => `${i + 1}. [${c.id}] ${c.detail || c.text}`).join('\n');
         const lcBlock   = buildLcContextBlock(lcContext);
 
-        // Build known patterns block — hardcoded baseline + user-flagged additions
+        // Build known patterns block — hardcoded baseline + user-flagged additions.
+        // The extended list below is distilled from real discrepancy notices
+        // raised by the negotiating bank (ANZ) on past presentations for this
+        // trade relationship — these recur, so every check is primed for them.
         const basePatterns = [
             'Net weight appearing correctly in the goods/price section but differently in a separate weight summary, packing details, or footer. Both figures must match exactly.',
             'Incoterms abbreviated (C&F, C&I, CFR) rather than the full required form with "Incoterms 2020".',
@@ -99,6 +102,18 @@ export async function onRequestPost({ env, request }) {
             'Port of loading vaguely stated or abbreviated rather than the exact LC wording.',
             'Importer name/address differing in punctuation, spacing, or abbreviation from the LC.',
             'Invoice dated before LC opening date.',
+            // --- From ANZ discrepancy notices (recurring) ---
+            'Goods description not reproducing the LC field 45A wording EXACTLY, including its capitalisation and even its misspellings (e.g. the LC spells it "STOKING") — a corrected, re-cased, or paraphrased description is a discrepancy. Applies to the invoice, certificate of origin, and any document that restates the goods.',
+            'Incoterm SUBSTITUTED for a different term — e.g. the document shows CFR where the LC field 45A requires CPT. The exact incoterm must match, not just the "Incoterms 2020" suffix.',
+            'Place of delivery / port of discharge abbreviated (e.g. "Dhaka") instead of the full LC field 44B wording (e.g. "ICD Kamlapur, Dhaka via Chattogram Seaport, Bangladesh").',
+            'Draft / Bill of Exchange (and every shipping document) omitting the LC field 47A(2) details that must be quoted on all documents: importer name & address, H.S. code, BIN, TIN, IRC, and the applicant bank\'s TIN and VAT registration numbers.',
+            'A document presented short of the number of originals the LC requires (e.g. Beneficiary\'s Certificate short by 2 originals) — present exactly the count stated, no fewer.',
+            'Extra copies of a document presented that the LC field 47A does not require — do not over-present; include only what the credit calls for.',
+            'Beneficiary\'s Certificate paraphrasing the LC\'s specification/description clause instead of reproducing the exact wording (the LC requires the certificate to state the quality, quantity, description, unit price and all other details are as per the beneficiary\'s proforma invoice, verbatim).',
+            'Free-time clause reworded (e.g. "14C/Days Free Detention at Destination") instead of the LC field 47A exact wording (e.g. "14 (Fourteen) Days Free-Time of Container Destination at Port of Discharge").',
+            'Document referring to "Beneficiary\'s Invoice No." where the LC field 45A wording is "Beneficiary\'s Proforma Invoice No." — the word "Proforma" must not be dropped.',
+            'Bill of Lading notify party missing the full name and address of the issuing bank\'s Trade Processing Unit as required by LC field 46A(3).',
+            'Emails and advices (the applicant documents email, the insurance advice) omitting the LC number, the LC issue date, or the LC field 47A(2) regulatory details that must appear on all documents.',
         ];
         const userPatterns = knownIssues
             .filter(i => !i.docType || i.docType === docType)
