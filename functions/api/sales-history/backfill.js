@@ -11,6 +11,7 @@
 
 import { jsonResponse, errResponse } from '../_xero.js';
 import { rowFromOrder } from './_writer.js';
+import { loadItemsMap } from '../catalog/items.js';
 
 export async function onRequestPost({ env, request }) {
     try {
@@ -31,13 +32,15 @@ export async function onRequestPost({ env, request }) {
             hubIds.map(id => env.ORDERS_KV.get('order:' + id, { type: 'json' }))
         );
 
+        const itemsMap = await loadItemsMap(env).catch(() => null);
+
         const wouldAdd = [];
         const wouldUpdate = [];
         const skipped = { noOrder: 0, noProductKg: 0 };
 
         for (const o of orders) {
             if (!o) { skipped.noOrder++; continue; }
-            const row = rowFromOrder(o);
+            const row = rowFromOrder(o, itemsMap);
             if (!row) { skipped.noProductKg++; continue; }
             const prev = existingById.get(row.id);
             if (!prev) {

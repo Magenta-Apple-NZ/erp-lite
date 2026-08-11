@@ -2,7 +2,15 @@
 // elsewhere in the codebase (currently: the Xero push handler). Kept in
 // an underscore-prefixed file so Pages doesn't treat it as a route.
 
+import { loadItemsMap } from '../catalog/items.js';
+
 const HUB_LIVE_YM = '2026-04'; // (Reference; sales_history doesn't gate on it)
+
+// Look up an order line's SKU in the items catalogue (Map keyed by SKU).
+function catalogItem(l, itemsMap) {
+    if (!itemsMap || !l?.sku) return null;
+    return itemsMap.get(String(l.sku).toUpperCase()) || null;
+}
 
 // Classify an order line into one of three product buckets, or 'other'
 // for freight / fees / anything not in the catalog. Layered fallbacks:
@@ -13,7 +21,11 @@ const HUB_LIVE_YM = '2026-04'; // (Reference; sales_history doesn't gate on it)
 //        ET*    → ecoTies    e.g. ET-10, ET-1B
 //   2. Description text keywords (legacy / manual entries).
 //   3. Catalog-stamped kgPerUnit (Hub-created orders).
-function classifyLine(l) {
+function classifyLine(l, itemsMap) {
+    // 1. Explicit Type from the items catalogue (deterministic).
+    const cat = catalogItem(l, itemsMap);
+    if (cat && cat.type) return cat.type;
+
     const sku  = String(l?.sku || '').toUpperCase();
     const desc = String(l?.description || '').toLowerCase();
 
@@ -25,6 +37,7 @@ function classifyLine(l) {
     if (/bundle/.test(desc))   return 'bundles';
     if (/loose/.test(desc))    return 'loose';
 
+    // NB: kgPerUnit is the SIZE, not the type — only a last-resort guess.
     const kpu = Number(l?.kgPerUnit);
     if (kpu === 10) return 'bundles';
     if (kpu === 1)  return 'loose';
@@ -34,7 +47,9 @@ function classifyLine(l) {
 // Kg per unit for the line. Prefer the catalog-stamped value, otherwise
 // derive from the SKU suffix (-10 → 10kg, -1B → 1kg), otherwise look
 // for "10kg" / "1kg" anywhere in the description.
-function inferKgPerUnit(l) {
+function inferKgPerUnit(l, itemsMap) {
+    const cat = catalogItem(l, itemsMap);
+    if (cat && cat.kgPerUnit != null && !isNaN(Number(cat.kgPerUnit))) return Number(cat.kgPerUnit);
     if (l?.kgPerUnit != null && !isNaN(Number(l.kgPerUnit))) return Number(l.kgPerUnit);
     const sku = String(l?.sku || '').toUpperCase();
     if (/-10$/.test(sku))    return 10;
@@ -48,18 +63,19 @@ function inferKgPerUnit(l) {
     return 0;
 }
 
-function lineKg(l) {
-    return (Number(l?.quantity) || 0) * inferKgPerUnit(l);
+function lineKg(l, itemsMap) {
+    return (Number(l?.quantity) || 0) * inferKgPerUnit(l, itemsMap);
 }
 
-// Product SIZE (independent of type) from the item name — "10kg" / "1kg".
-// Name wins (a SKU suffix like PT-b-10 can mislead); falls back to the
-// catalog/derived per-unit weight. Returns 'tenKg' | 'oneKg' | null.
-function inferSizeBucket(l) {
+// Product SIZE (independent of type). Explicit catalogue Size wins, then the
+// item name ("10kg"/"1kg"), then the derived per-unit weight. 'tenKg'|'oneKg'|null.
+function inferSizeBucket(l, itemsMap) {
+    const cat = catalogItem(l, itemsMap);
+    if (cat && cat.size) return cat.size;
     const text = String(l?.description || l?.name || '');
     if (/\b10\s*kg\b/i.test(text)) return 'tenKg';
     if (/\b1\s*kg\b/i.test(text))  return 'oneKg';
-    const k = inferKgPerUnit(l);
+    const k = inferKgPerUnit(l, itemsMap);
     if (k === 10) return 'tenKg';
     if (k === 1)  return 'oneKg';
     return null;
@@ -73,17 +89,17 @@ function fyLabel(year, month) {
 
 // Build the sales_history row for an order. Returns null when the order
 // has no countable product kg (e.g. freight-only or empty lines).
-export function rowFromOrder(order) {
+export function rowFromOrder(order, itemsMap = null) {
     if (!order || !Array.isArray(order.lines)) return null;
     const buckets = { bundles: 0, loose: 0, ecoTies: 0 };
     const sizes   = { oneKg: 0, tenKg: 0 };
     for (const l of order.lines) {
-        const cat = classifyLine(l);
+        const cat = classifyLine(l, itemsMap);
         if (cat === 'other') continue;
-        const kg = lineKg(l);
+        const kg = lineKg(l, itemsMap);
         if (kg !== 0) {
             buckets[cat] += kg;
-            const sz = inferSizeBucket(l);
+            const sz = inferSizeBucket(l, itemsMap);
             if (sz) sizes[sz] += kg;
         }
     }
@@ -144,7 +160,9 @@ export async function removeRow(env, id) {
 // removed if one exists.
 export async function syncSalesHistory(env, order) {
     if (!order || !order.id) return;
-    const row = rowFromOrder(order);
+    // Load the items catalogue so type/size come from the sheet, not heuristics.
+    const itemsMap = await loadItemsMap(env).catch(() => null);
+    const row = rowFromOrder(order, itemsMap);
     if (row) {
         try { await upsertRow(env, row); }
         catch (err) { console.error('sales_history upsert failed for', order.id, err); }
