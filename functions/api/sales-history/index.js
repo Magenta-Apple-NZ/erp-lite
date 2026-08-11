@@ -109,23 +109,26 @@ function parseHistoricalCsv(csv) {
     const branchCol   = findCol(h => h.toLowerCase() === 'branch');
     const poCol       = findCol(h => /^po#?$/i.test(h.trim()));
     const invCol      = findCol(h => h.toLowerCase() === 'invoice');
-    // Column matching tolerates both old format ("Prime Tie Bundles Volume")
-    // and the current "Prime Tie (Bundled) Volume" / "(Loose)" form.
-    const bundleCol = findCol(h => {
-        const l = h.toLowerCase();
-        return l.includes('prime tie') && /bundle/.test(l) && l.includes('volume');
-    });
-    const looseCol = findCol(h => {
-        const l = h.toLowerCase();
-        return l.includes('prime tie') && /loose/.test(l) && l.includes('volume');
-    });
-    const ecoCol = findCol(h => {
-        const l = h.toLowerCase();
-        return /eco\s*ties?/.test(l) && l.includes('volume');
-    });
-    // Optional product-size columns (independent of type). Absent → dormant.
-    const oneKgCol = findCol(h => /^\s*1\s*kg\b/i.test(h) || /\b1kg\b.*volume/i.test(h));
-    const tenKgCol = findCol(h => /^\s*10\s*kg\b/i.test(h) || /\b10kg\b.*volume/i.test(h));
+    // Products are a 3×2 cross: type (Prime Tie Bundles / Loose / eco Ties) ×
+    // size (1kg / 10kg) = six columns. We sum the cross to get both the type
+    // totals (Type chart) and the size totals (Size chart). Falls back to the
+    // legacy single "… Volume" type columns + separate 1kg/10kg totals.
+    const is1    = l => /\b1\s*kg\b/.test(l);
+    const is10   = l => /\b10\s*kg\b/.test(l);
+    const bundle = l => l.includes('prime tie') && /bundle/.test(l);
+    const loose  = l => l.includes('prime tie') && /loose/.test(l);
+    const eco    = l => /eco\s*ties?/.test(l);
+    const isTotal = l => (l.includes('volume') || /\bkg\b/.test(l)) && !is1(l) && !is10(l);
+    const crossCol = (t, s) => findCol(h => { const l = h.toLowerCase(); return t(l) && s(l); });
+    const xb1 = crossCol(bundle, is1), xb10 = crossCol(bundle, is10);
+    const xl1 = crossCol(loose, is1),  xl10 = crossCol(loose, is10);
+    const xe1 = crossCol(eco, is1),    xe10 = crossCol(eco, is10);
+    const hasCross = [xb1, xb10, xl1, xl10, xe1, xe10].some(i => i >= 0);
+    const bundleCol = findCol(h => bundle(h.toLowerCase()) && isTotal(h.toLowerCase()));
+    const looseCol  = findCol(h => loose(h.toLowerCase())  && isTotal(h.toLowerCase()));
+    const ecoCol    = findCol(h => eco(h.toLowerCase())    && isTotal(h.toLowerCase()));
+    const oneKgCol  = findCol(h => /^\s*1\s*kg\b/i.test(h) || /\b1kg\b.*volume/i.test(h));
+    const tenKgCol  = findCol(h => /^\s*10\s*kg\b/i.test(h) || /\b10kg\b.*volume/i.test(h));
 
     if (dateCol < 0 || customerCol < 0) {
         throw new Error('CSV missing required Date / Customer columns. Found: ' + header.join(', '));
@@ -148,9 +151,16 @@ function parseHistoricalCsv(csv) {
         const invoice = (r[invCol] || '').trim();
         if (invoice.toUpperCase() === 'CANCELLED') { skipped.cancelled++; continue; }
 
-        const bundleKg = bundleCol >= 0 ? parseNum(r[bundleCol]) : 0;
-        const looseKg  = looseCol  >= 0 ? parseNum(r[looseCol])  : 0;
-        const ecoKg    = ecoCol    >= 0 ? parseNum(r[ecoCol])    : 0;
+        const num = c => c >= 0 ? parseNum(r[c]) : 0;
+        let bundleKg, looseKg, ecoKg, oneKg, tenKg;
+        if (hasCross) {
+            const B1 = num(xb1), B10 = num(xb10), L1 = num(xl1), L10 = num(xl10), E1 = num(xe1), E10 = num(xe10);
+            bundleKg = B1 + B10; looseKg = L1 + L10; ecoKg = E1 + E10;
+            oneKg = B1 + L1 + E1; tenKg = B10 + L10 + E10;
+        } else {
+            bundleKg = num(bundleCol); looseKg = num(looseCol); ecoKg = num(ecoCol);
+            oneKg = num(oneKgCol); tenKg = num(tenKgCol);
+        }
         if (bundleKg === 0 && looseKg === 0 && ecoKg === 0) { skipped.allZero++; continue; }
 
         const [yr, mo] = isoDate.split('-').map(n => parseInt(n, 10));
@@ -168,8 +178,8 @@ function parseHistoricalCsv(csv) {
             bundlesKg: bundleKg,
             looseKg,
             ecoTiesKg: ecoKg,
-            oneKg: oneKgCol >= 0 ? parseNum(r[oneKgCol]) : 0,
-            tenKg: tenKgCol >= 0 ? parseNum(r[tenKgCol]) : 0,
+            oneKg,
+            tenKg,
         });
     }
 
