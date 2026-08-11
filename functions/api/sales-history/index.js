@@ -113,11 +113,14 @@ function parseHistoricalCsv(csv) {
     // size (1kg / 10kg) = six columns. We sum the cross to get both the type
     // totals (Type chart) and the size totals (Size chart). Falls back to the
     // legacy single "… Volume" type columns + separate 1kg/10kg totals.
+    // Type is identified by keyword alone — the historical sheet heads the
+    // columns "Bundled - 10kg", "Loose - 1kg", "ecoTies - 10kg" (no "prime
+    // tie" prefix), so don't require it. No other column carries these words.
     const is1    = l => /\b1\s*kg\b/.test(l);
     const is10   = l => /\b10\s*kg\b/.test(l);
-    const bundle = l => l.includes('prime tie') && /bundle/.test(l);
-    const loose  = l => l.includes('prime tie') && /loose/.test(l);
-    const eco    = l => /eco\s*ties?/.test(l);
+    const bundle = l => /bundl/.test(l);
+    const loose  = l => /loose/.test(l);
+    const eco    = l => /eco/.test(l);
     const isTotal = l => (l.includes('volume') || /\bkg\b/.test(l)) && !is1(l) && !is10(l);
     const crossCol = (t, s) => findCol(h => { const l = h.toLowerCase(); return t(l) && s(l); });
     const xb1 = crossCol(bundle, is1), xb10 = crossCol(bundle, is10);
