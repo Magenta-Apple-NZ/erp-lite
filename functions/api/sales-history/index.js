@@ -155,11 +155,12 @@ function parseHistoricalCsv(csv) {
         if (invoice.toUpperCase() === 'CANCELLED') { skipped.cancelled++; continue; }
 
         const num = c => c >= 0 ? parseNum(r[c]) : 0;
-        let bundleKg, looseKg, ecoKg, oneKg, tenKg;
+        let bundleKg, looseKg, ecoKg, oneKg, tenKg, cross = null;
         if (hasCross) {
             const B1 = num(xb1), B10 = num(xb10), L1 = num(xl1), L10 = num(xl10), E1 = num(xe1), E10 = num(xe10);
             bundleKg = B1 + B10; looseKg = L1 + L10; ecoKg = E1 + E10;
             oneKg = B1 + L1 + E1; tenKg = B10 + L10 + E10;
+            cross = { b1: B1, b10: B10, l1: L1, l10: L10, e1: E1, e10: E10 };
         } else {
             bundleKg = num(bundleCol); looseKg = num(looseCol); ecoKg = num(ecoCol);
             oneKg = num(oneKgCol); tenKg = num(tenKgCol);
@@ -183,6 +184,7 @@ function parseHistoricalCsv(csv) {
             ecoTiesKg: ecoKg,
             oneKg,
             tenKg,
+            ...(cross ? { xkg: cross } : {}),
         });
     }
 

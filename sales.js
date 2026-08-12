@@ -328,6 +328,8 @@ const SalesView = (() => {
         // calendar year, else the latest year with data).
         const nowYr = new Date().getFullYear().toString();
         let chartYear = allAvailableYears.includes(nowYr) ? nowYr : (allAvailableYears[allAvailableYears.length - 1] || nowYr);
+        // Product Type chart size filter: 'both' | 'oneKg' | 'tenKg'.
+        let typeSize = localStorage.getItem('sales-type-size') || 'both';
         // Top Stores: date range (default this calendar year) + grouping.
         let storeFrom  = nowYr + '-01-01';
         let storeTo    = new Date().toISOString().slice(0, 10);
@@ -379,9 +381,18 @@ const SalesView = (() => {
                 if (String(r.year) !== String(chartYear)) continue;
                 const mo = r.month - 1;
                 if (mo < 0 || mo > 11) continue;
-                t.bundles[mo] += Number(r.bundlesKg) || 0;
-                t.loose[mo]   += Number(r.looseKg)   || 0;
-                t.eco[mo]     += Number(r.ecoTiesKg) || 0;
+                // Type breakdown — all sizes, or one size via the xkg cross.
+                if (typeSize === 'both') {
+                    t.bundles[mo] += Number(r.bundlesKg) || 0;
+                    t.loose[mo]   += Number(r.looseKg)   || 0;
+                    t.eco[mo]     += Number(r.ecoTiesKg) || 0;
+                } else if (r.xkg) {
+                    const x = r.xkg, sfx = typeSize === 'tenKg' ? '10' : '1';
+                    t.bundles[mo] += Number(x['b' + sfx]) || 0;
+                    t.loose[mo]   += Number(x['l' + sfx]) || 0;
+                    t.eco[mo]     += Number(x['e' + sfx]) || 0;
+                }
+                // Size chart is independent of the type filter.
                 const one = Number(r.oneKg) || 0, ten = Number(r.tenKg) || 0;
                 s.oneKg[mo] += one; s.tenKg[mo] += ten;
                 if (one || ten) s.hasData = true;
@@ -569,9 +580,16 @@ const SalesView = (() => {
                         <h2 class="cat-title" style="margin-bottom:0.4rem">Sales by Product Type</h2>
                         <p class="cat-sub" style="margin-bottom:0">kg by type per month · one year.</p>
                     </div>
-                    <select class="sales-filter-sel" id="sf-chart-year" title="Year for the type and size charts">
-                        ${allAvailableYears.map(yr => `<option value="${escHtml(yr)}"${yr === chartYear ? ' selected' : ''}>${escHtml(yr)}</option>`).join('')}
-                    </select>
+                    <div style="display:flex;gap:0.4rem;flex-shrink:0">
+                        <select class="sales-filter-sel" id="sf-type-size" title="Show all sizes, or only the 1kg / 10kg portion of each type">
+                            <option value="both"${typeSize === 'both' ? ' selected' : ''}>Both sizes</option>
+                            <option value="tenKg"${typeSize === 'tenKg' ? ' selected' : ''}>10kg only</option>
+                            <option value="oneKg"${typeSize === 'oneKg' ? ' selected' : ''}>1kg only</option>
+                        </select>
+                        <select class="sales-filter-sel" id="sf-chart-year" title="Year for the type and size charts">
+                            ${allAvailableYears.map(yr => `<option value="${escHtml(yr)}"${yr === chartYear ? ' selected' : ''}>${escHtml(yr)}</option>`).join('')}
+                        </select>
+                    </div>
                 </div>
                 <div id="sales-chart-area-type"></div>
             </div>
@@ -591,6 +609,12 @@ const SalesView = (() => {
 
         document.getElementById('sf-chart-year')?.addEventListener('change', e => {
             chartYear = e.target.value; rebuildTypeSize();
+        });
+
+        document.getElementById('sf-type-size')?.addEventListener('change', e => {
+            typeSize = e.target.value;
+            localStorage.setItem('sales-type-size', typeSize);
+            rebuildTypeSize();
         });
 
         // ── Cumulative chart Cal/FY toggle ──

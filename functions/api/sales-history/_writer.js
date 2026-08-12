@@ -93,6 +93,10 @@ export function rowFromOrder(order, itemsMap = null) {
     if (!order || !Array.isArray(order.lines)) return null;
     const buckets = { bundles: 0, loose: 0, ecoTies: 0 };
     const sizes   = { oneKg: 0, tenKg: 0 };
+    // type×size cross, so charts can split a type by size: b1/b10, l1/l10, e1/e10.
+    const cross = { b1: 0, b10: 0, l1: 0, l10: 0, e1: 0, e10: 0 };
+    const CX = { bundles: 'b', loose: 'l', ecoTies: 'e' };
+    let hasCross = false;
     for (const l of order.lines) {
         const cat = classifyLine(l, itemsMap);
         if (cat === 'other') continue;
@@ -100,7 +104,11 @@ export function rowFromOrder(order, itemsMap = null) {
         if (kg !== 0) {
             buckets[cat] += kg;
             const sz = inferSizeBucket(l, itemsMap);
-            if (sz) sizes[sz] += kg;
+            if (sz) {
+                sizes[sz] += kg;
+                cross[CX[cat] + (sz === 'tenKg' ? '10' : '1')] += kg;
+                hasCross = true;
+            }
         }
     }
     if (buckets.bundles === 0 && buckets.loose === 0 && buckets.ecoTies === 0) {
@@ -124,6 +132,7 @@ export function rowFromOrder(order, itemsMap = null) {
         ecoTiesKg: buckets.ecoTies,
         oneKg:     sizes.oneKg,
         tenKg:     sizes.tenKg,
+        ...(hasCross ? { xkg: cross } : {}),
     };
 }
 
