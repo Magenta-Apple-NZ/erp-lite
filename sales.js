@@ -192,7 +192,7 @@ const SalesView = (() => {
 
     // Grouped bars — sales by product size (1kg vs 10kg) across one year's months.
     // Dormant until the seed data carries the size split.
-    function buildProductSizeChart(sd, year) {
+    function buildProductSizeChart(sd, year, sizeFilter) {
         if (!sd.hasData) {
             return `<p style="color:#94a3b8;font-size:0.85rem;padding:1rem 0;line-height:1.5">
                 No size data yet. Add <strong>1kg</strong> and <strong>10kg</strong> volume columns to the
@@ -203,7 +203,7 @@ const SalesView = (() => {
         const SIZE_SERIES = [
             { key: 'tenKg', label: '10kg', color: '#6366f1' },
             { key: 'oneKg', label: '1kg',  color: '#f59e0b' },
-        ];
+        ].filter(s => !sizeFilter || sizeFilter === 'both' || sizeFilter === s.key);
         window._chartQ[id] = {
             type: 'bar',
             data: {
@@ -281,13 +281,26 @@ const SalesView = (() => {
     // and Xero hook both classify into these three buckets.
     const PRODUCTS = ['Prime Tie Bundles', 'Prime Tie Loose', 'eco Ties'];
 
-    function rowKg(r, productFilter) {
-        if (productFilter === 'Prime Tie Bundles') return Number(r.bundlesKg) || 0;
-        if (productFilter === 'Prime Tie Loose')   return Number(r.looseKg)   || 0;
-        if (productFilter === 'eco Ties')          return Number(r.ecoTiesKg) || 0;
-        return (Number(r.bundlesKg) || 0)
-             + (Number(r.looseKg)   || 0)
-             + (Number(r.ecoTiesKg) || 0);
+    function rowKg(r, productFilter, sizeFilter) {
+        if (!sizeFilter || sizeFilter === 'both') {
+            if (productFilter === 'Prime Tie Bundles') return Number(r.bundlesKg) || 0;
+            if (productFilter === 'Prime Tie Loose')   return Number(r.looseKg)   || 0;
+            if (productFilter === 'eco Ties')          return Number(r.ecoTiesKg) || 0;
+            return (Number(r.bundlesKg) || 0)
+                 + (Number(r.looseKg)   || 0)
+                 + (Number(r.ecoTiesKg) || 0);
+        }
+        // Size-specific: read the type×size cross. Rows without it (legacy,
+        // pre-cross) contribute 0 at a specific size.
+        const x = r.xkg;
+        if (!x) return 0;
+        const sfx = sizeFilter === 'tenKg' ? '10' : '1';
+        if (productFilter === 'Prime Tie Bundles') return Number(x['b' + sfx]) || 0;
+        if (productFilter === 'Prime Tie Loose')   return Number(x['l' + sfx]) || 0;
+        if (productFilter === 'eco Ties')          return Number(x['e' + sfx]) || 0;
+        return (Number(x['b' + sfx]) || 0)
+             + (Number(x['l' + sfx]) || 0)
+             + (Number(x['e' + sfx]) || 0);
     }
 
     async function renderBody(bodyEl) {
@@ -322,14 +335,13 @@ const SalesView = (() => {
 
         // ── State ──
         let filterCustomer = '', filterBranch = '', filterProduct = '';
+        let filterSize = 'both'; // page-wide size filter: 'both' | 'oneKg' | 'tenKg'
         let selectedYears = new Set(defaultYears);
         let cumMode = localStorage.getItem('sales-cum-mode') === 'fy' ? 'fy' : 'cal';
         // Single-year scope for the type/size breakdown charts (default current
         // calendar year, else the latest year with data).
         const nowYr = new Date().getFullYear().toString();
         let chartYear = allAvailableYears.includes(nowYr) ? nowYr : (allAvailableYears[allAvailableYears.length - 1] || nowYr);
-        // Product Type chart size filter: 'both' | 'oneKg' | 'tenKg'.
-        let typeSize = localStorage.getItem('sales-type-size') || 'both';
         // Top Stores: date range (default this calendar year) + grouping.
         let storeFrom  = nowYr + '-01-01';
         let storeTo    = new Date().toISOString().slice(0, 10);
@@ -358,7 +370,7 @@ const SalesView = (() => {
                 if (!data[yr]) continue;
                 const mo = r.month - 1;
                 if (mo < 0 || mo > 11) continue;
-                const kg = rowKg(r, filterProduct);
+                const kg = rowKg(r, filterProduct, filterSize);
                 if (!kg) continue;
                 data[yr][mo] = (data[yr][mo] || 0) + kg;
             }
@@ -382,17 +394,18 @@ const SalesView = (() => {
                 const mo = r.month - 1;
                 if (mo < 0 || mo > 11) continue;
                 // Type breakdown — all sizes, or one size via the xkg cross.
-                if (typeSize === 'both') {
+                if (filterSize === 'both') {
                     t.bundles[mo] += Number(r.bundlesKg) || 0;
                     t.loose[mo]   += Number(r.looseKg)   || 0;
                     t.eco[mo]     += Number(r.ecoTiesKg) || 0;
                 } else if (r.xkg) {
-                    const x = r.xkg, sfx = typeSize === 'tenKg' ? '10' : '1';
+                    const x = r.xkg, sfx = filterSize === 'tenKg' ? '10' : '1';
                     t.bundles[mo] += Number(x['b' + sfx]) || 0;
                     t.loose[mo]   += Number(x['l' + sfx]) || 0;
                     t.eco[mo]     += Number(x['e' + sfx]) || 0;
                 }
-                // Size chart is independent of the type filter.
+                // Size chart tracks both series; the page filter just hides the
+                // unselected one at render time.
                 const one = Number(r.oneKg) || 0, ten = Number(r.tenKg) || 0;
                 s.oneKg[mo] += one; s.tenKg[mo] += ten;
                 if (one || ten) s.hasData = true;
@@ -417,7 +430,7 @@ const SalesView = (() => {
                 const k = keyOf(r);
                 if (!map[k]) map[k] = { customer: r.customer || '', branch: r.branch || '', kg: 0, orders: 0, lastOrder: '', cur: 0, prev: 0 };
                 const m = map[k];
-                const kg = (Number(r.bundlesKg) || 0) + (Number(r.looseKg) || 0) + (Number(r.ecoTiesKg) || 0);
+                const kg = rowKg(r, '', filterSize);
                 if (inCur)  { m.kg += kg; m.orders++; if (d > m.lastOrder) m.lastOrder = d; m.cur += kg; }
                 if (inPrev) m.prev += kg;
             }
@@ -455,7 +468,7 @@ const SalesView = (() => {
             }
             const sizeArea = document.getElementById('sales-chart-area-size');
             if (sizeArea) {
-                sizeArea.innerHTML = buildProductSizeChart(s, chartYear);
+                sizeArea.innerHTML = buildProductSizeChart(s, chartYear, filterSize);
                 if (typeof initCharts === 'function') initCharts(sizeArea);
             }
         }
@@ -536,6 +549,11 @@ const SalesView = (() => {
             <select class="sales-filter-sel" id="sf-product">
                 ${makeOpts(PRODUCTS, filterProduct, 'Products')}
             </select>
+            <select class="sales-filter-sel" id="sf-size" title="Filter every view to 1kg or 10kg product">
+                <option value="both"${filterSize === 'both' ? ' selected' : ''}>All Sizes</option>
+                <option value="tenKg"${filterSize === 'tenKg' ? ' selected' : ''}>10kg</option>
+                <option value="oneKg"${filterSize === 'oneKg' ? ' selected' : ''}>1kg</option>
+            </select>
             <div id="sf-years" style="display:flex;gap:0.25rem;flex-wrap:wrap">
                 ${allAvailableYears.map(yr =>
                     `<button class="imp-view-btn${selectedYears.has(yr) ? ' active' : ''}" data-year="${escHtml(yr)}">${escHtml(yr)}</button>`
@@ -580,16 +598,9 @@ const SalesView = (() => {
                         <h2 class="cat-title" style="margin-bottom:0.4rem">Sales by Product Type</h2>
                         <p class="cat-sub" style="margin-bottom:0">kg by type per month · one year.</p>
                     </div>
-                    <div style="display:flex;gap:0.4rem;flex-shrink:0">
-                        <select class="sales-filter-sel" id="sf-type-size" title="Show all sizes, or only the 1kg / 10kg portion of each type">
-                            <option value="both"${typeSize === 'both' ? ' selected' : ''}>Both sizes</option>
-                            <option value="tenKg"${typeSize === 'tenKg' ? ' selected' : ''}>10kg only</option>
-                            <option value="oneKg"${typeSize === 'oneKg' ? ' selected' : ''}>1kg only</option>
-                        </select>
-                        <select class="sales-filter-sel" id="sf-chart-year" title="Year for the type and size charts">
-                            ${allAvailableYears.map(yr => `<option value="${escHtml(yr)}"${yr === chartYear ? ' selected' : ''}>${escHtml(yr)}</option>`).join('')}
-                        </select>
-                    </div>
+                    <select class="sales-filter-sel" id="sf-chart-year" title="Year for the type and size charts" style="flex-shrink:0">
+                        ${allAvailableYears.map(yr => `<option value="${escHtml(yr)}"${yr === chartYear ? ' selected' : ''}>${escHtml(yr)}</option>`).join('')}
+                    </select>
                 </div>
                 <div id="sales-chart-area-type"></div>
             </div>
@@ -611,10 +622,10 @@ const SalesView = (() => {
             chartYear = e.target.value; rebuildTypeSize();
         });
 
-        document.getElementById('sf-type-size')?.addEventListener('change', e => {
-            typeSize = e.target.value;
-            localStorage.setItem('sales-type-size', typeSize);
-            rebuildTypeSize();
+        document.getElementById('sf-size')?.addEventListener('change', e => {
+            filterSize = e.target.value;
+            rebuildCharts();      // monthly + cumulative + table + type/size charts
+            renderTopStores();    // top stores tally by size too
         });
 
         // ── Cumulative chart Cal/FY toggle ──
@@ -677,16 +688,19 @@ const SalesView = (() => {
         });
 
         document.getElementById('sf-clear')?.addEventListener('click', () => {
-            filterCustomer = ''; filterBranch = ''; filterProduct = '';
+            filterCustomer = ''; filterBranch = ''; filterProduct = ''; filterSize = 'both';
             selectedYears = new Set(defaultYears);
             // Restore the customer + branch dropdowns to their full option
             // sets so prior cross-filter narrowing doesn't linger.
             rebuildFilterOptions();
             document.getElementById('sf-product').value = '';
+            const sizeEl = document.getElementById('sf-size');
+            if (sizeEl) sizeEl.value = 'both';
             document.querySelectorAll('#sf-years [data-year]').forEach(btn => {
                 btn.classList.toggle('active', selectedYears.has(btn.dataset.year));
             });
             rebuildCharts();
+            renderTopStores();
         });
     }
 
