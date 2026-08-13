@@ -48,10 +48,13 @@ export async function onRequestPost({ env, request }) {
             } else {
                 // Only flag as update if any tracked field differs — avoids
                 // noise from re-running the backfill on already-synced rows.
-                const changed = ['date','customer','branch','poNumber','invoice',
-                                 'bundlesKg','looseKg','ecoTiesKg']
+                // Includes the size split (oneKg/tenKg) and the type×size cross
+                // so a catalogue Type/Size fix actually re-syncs the row.
+                const scalarChanged = ['date','customer','branch','poNumber','invoice',
+                                       'bundlesKg','looseKg','ecoTiesKg','oneKg','tenKg']
                     .some(k => (prev[k] ?? null) !== (row[k] ?? null));
-                if (changed) wouldUpdate.push(row);
+                const xkgChanged = JSON.stringify(prev.xkg || null) !== JSON.stringify(row.xkg || null);
+                if (scalarChanged || xkgChanged) wouldUpdate.push(row);
             }
         }
 
