@@ -2981,6 +2981,11 @@ a.xero-inv-linked:hover { background: #d1fae5; border-color: #6ee7b7; }
     font-weight: 700; border-top: 2px solid #e2e8f0;
     color: #1e293b;
 }
+/* Annual Summary: centre the header row and the Month (date) column.
+   Body number cells stay right-aligned for tabular reading. */
+.sales-data-tbl thead th { text-align: center; }
+.sales-data-tbl .sales-tbl-month { text-align: center; }
+.sales-data-tbl tfoot td:first-child { text-align: center; }
 
 /* ── Shipment cost breakdown ── */
 .imp-cost-section {
