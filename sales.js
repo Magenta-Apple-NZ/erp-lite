@@ -289,6 +289,31 @@ const SalesView = (() => {
     // and Xero hook both classify into these three buckets.
     const PRODUCTS = ['Prime Tie Bundles', 'Prime Tie Loose', 'eco Ties'];
 
+    const PRODUCT_TYPE = {
+        'Prime Tie Bundles': 'bundles',
+        'Prime Tie Loose':   'loose',
+        'eco Ties':          'ecoTies',
+    };
+
+    // kg of one product TYPE at one SIZE for a row. Prefers the type×size cross
+    // (xkg) when present; otherwise, if the row is a single type, its whole
+    // size total belongs to that type. Mixed-type rows without a cross can't be
+    // split and return 0 (re-seed to add the cross).
+    function typeSizeKg(r, type, sizeFilter) {
+        const sfx    = sizeFilter === 'tenKg' ? '10' : '1';
+        const letter = type === 'bundles' ? 'b' : type === 'loose' ? 'l' : 'e';
+        const x = r.xkg;
+        if (x) return Number(x[letter + sfx]) || 0;
+        const totals = {
+            bundles: Number(r.bundlesKg) || 0,
+            loose:   Number(r.looseKg)   || 0,
+            ecoTies: Number(r.ecoTiesKg) || 0,
+        };
+        const nonzero = (totals.bundles > 0) + (totals.loose > 0) + (totals.ecoTies > 0);
+        if (nonzero === 1 && totals[type] > 0) return Number(r[sizeFilter]) || 0;
+        return 0;
+    }
+
     function rowKg(r, productFilter, sizeFilter) {
         if (!sizeFilter || sizeFilter === 'both') {
             if (productFilter === 'Prime Tie Bundles') return Number(r.bundlesKg) || 0;
@@ -298,17 +323,13 @@ const SalesView = (() => {
                  + (Number(r.looseKg)   || 0)
                  + (Number(r.ecoTiesKg) || 0);
         }
-        // Size-specific: read the type×size cross. Rows without it (legacy,
-        // pre-cross) contribute 0 at a specific size.
-        const x = r.xkg;
-        if (!x) return 0;
-        const sfx = sizeFilter === 'tenKg' ? '10' : '1';
-        if (productFilter === 'Prime Tie Bundles') return Number(x['b' + sfx]) || 0;
-        if (productFilter === 'Prime Tie Loose')   return Number(x['l' + sfx]) || 0;
-        if (productFilter === 'eco Ties')          return Number(x['e' + sfx]) || 0;
-        return (Number(x['b' + sfx]) || 0)
-             + (Number(x['l' + sfx]) || 0)
-             + (Number(x['e' + sfx]) || 0);
+        // Size-specific. All-products at a size is just the stored size total,
+        // present on every row — no cross needed.
+        const sizeKey = sizeFilter === 'tenKg' ? 'tenKg' : 'oneKg';
+        const type = PRODUCT_TYPE[productFilter];
+        if (!type) return Number(r[sizeKey]) || 0;
+        // Product + size needs the type×size split.
+        return typeSizeKg(r, type, sizeFilter);
     }
 
     async function renderBody(bodyEl) {
@@ -401,16 +422,15 @@ const SalesView = (() => {
                 if (String(r.year) !== String(chartYear)) continue;
                 const mo = r.month - 1;
                 if (mo < 0 || mo > 11) continue;
-                // Type breakdown — all sizes, or one size via the xkg cross.
+                // Type breakdown — all sizes, or one size (cross or fallback).
                 if (filterSize === 'both') {
                     t.bundles[mo] += Number(r.bundlesKg) || 0;
                     t.loose[mo]   += Number(r.looseKg)   || 0;
                     t.eco[mo]     += Number(r.ecoTiesKg) || 0;
-                } else if (r.xkg) {
-                    const x = r.xkg, sfx = filterSize === 'tenKg' ? '10' : '1';
-                    t.bundles[mo] += Number(x['b' + sfx]) || 0;
-                    t.loose[mo]   += Number(x['l' + sfx]) || 0;
-                    t.eco[mo]     += Number(x['e' + sfx]) || 0;
+                } else {
+                    t.bundles[mo] += typeSizeKg(r, 'bundles', filterSize);
+                    t.loose[mo]   += typeSizeKg(r, 'loose',   filterSize);
+                    t.eco[mo]     += typeSizeKg(r, 'ecoTies', filterSize);
                 }
                 // Size chart tracks both series; the page filter just hides the
                 // unselected one at render time.
