@@ -54,17 +54,21 @@ const SalesView = (() => {
 
     const CHART_COLORS = ['#94a3b8', '#3b82f6', '#10b981', '#f59e0b', '#8b5cf6'];
 
-    function buildSalesByMonthChart(data) {
-        const years = Object.keys(data).sort();
+    function buildSalesByMonthChart(data, mode = 'cal') {
+        const useFy = mode === 'fy';
+        const source = useFy ? toFinancialYear(data) : data;
+        const years = Object.keys(source).sort();
         if (!years.length) return '<p style="color:#94a3b8;font-size:0.875rem;padding:1rem 0">No data for selected filters.</p>';
         const id = 'monthly-sales-chart';
+        const labels  = useFy ? FY_MO_NAMES : MO_NAMES;
+        const yrLabel = yr => useFy ? `FY${String(yr).slice(-2)}` : yr;
         window._chartQ[id] = {
             type: 'bar',
             data: {
-                labels: MO_NAMES,
+                labels,
                 datasets: years.map((yr, yi) => ({
-                    label: yr,
-                    data: (data[yr] || new Array(12).fill(null)).map(v => v ?? null),
+                    label: yrLabel(yr),
+                    data: (source[yr] || new Array(12).fill(null)).map(v => v ?? null),
                     backgroundColor: CHART_COLORS[yi] || '#94a3b8',
                     borderRadius: 2,
                     borderSkipped: false,
@@ -231,17 +235,21 @@ const SalesView = (() => {
         return `<div style="position:relative;height:210px;width:100%"><canvas data-chart-id="${id}"></canvas></div>`;
     }
 
-    function buildDataTable(data) {
-        const years = Object.keys(data).sort();
+    function buildDataTable(data, mode = 'cal') {
+        const useFy = mode === 'fy';
+        const source = useFy ? toFinancialYear(data) : data;
+        const years = Object.keys(source).sort();
         if (!years.length) return '';
 
+        const months  = useFy ? FY_MO_NAMES : MO_NAMES;
+        const yrLabel = yr => useFy ? `FY${String(yr).slice(-2)}` : yr;
         const yearTotals = years.map(yr =>
-            (data[yr] || []).reduce((s, v) => s + (v || 0), 0)
+            (source[yr] || []).reduce((s, v) => s + (v || 0), 0)
         );
 
-        const tableRows = MO_NAMES.map((m, mo) => {
+        const tableRows = months.map((m, mo) => {
             const cells = years.map(yr => {
-                const v = data[yr]?.[mo];
+                const v = source[yr]?.[mo];
                 const display = (v !== null && v !== undefined && v > 0)
                     ? Math.round(v).toLocaleString('en-NZ')
                     : '<span style="color:#e2e8f0">—</span>';
@@ -262,7 +270,7 @@ const SalesView = (() => {
                     <thead>
                         <tr>
                             <th class="sales-tbl-month">Month</th>
-                            ${years.map(yr => `<th class="sales-tbl-num">${yr}</th>`).join('')}
+                            ${years.map(yr => `<th class="sales-tbl-num">${yrLabel(yr)}</th>`).join('')}
                         </tr>
                     </thead>
                     <tbody>${tableRows}</tbody>
@@ -442,7 +450,7 @@ const SalesView = (() => {
 
             const monthlyArea = document.getElementById('sales-chart-area');
             if (monthlyArea) {
-                monthlyArea.innerHTML = buildSalesByMonthChart(data);
+                monthlyArea.innerHTML = buildSalesByMonthChart(data, cumMode);
                 if (typeof initCharts === 'function') initCharts(monthlyArea);
             }
 
@@ -453,7 +461,7 @@ const SalesView = (() => {
             }
 
             const tableArea = document.getElementById('sales-data-table');
-            if (tableArea) tableArea.innerHTML = buildDataTable(data);
+            if (tableArea) tableArea.innerHTML = buildDataTable(data, cumMode);
 
             rebuildTypeSize();
         }
@@ -560,6 +568,10 @@ const SalesView = (() => {
                 ).join('')}
             </div>
             <button class="btn-secondary btn-sm" id="sf-clear">Clear</button>
+            <div class="sales-mode-toggle" role="tablist" aria-label="Calendar or financial year" style="margin-left:auto">
+                <button class="sales-mode-btn${cumMode === 'cal' ? ' active' : ''}" data-mode="cal" role="tab" aria-selected="${cumMode === 'cal'}">Calendar</button>
+                <button class="sales-mode-btn${cumMode === 'fy' ? ' active' : ''}" data-mode="fy" role="tab" aria-selected="${cumMode === 'fy'}">Financial</button>
+            </div>
         </div>`;
 
         const initData = computeChartData();
@@ -569,28 +581,24 @@ const SalesView = (() => {
         <div class="sales-charts-row">
             <div class="cat-section sales-chart-block">
                 <h2 class="cat-title" style="margin-bottom:0.4rem">Sales by Month
-                    <span class="chart-info" title="Bars are kg sold per calendar month. One bar per selected year — pick years in the filter row above. Filter by customer / branch / product narrows what's counted across the whole chart. Pre-Hub-live months come from the seeded sales history; later months from dispatched orders.">&#9432;</span>
+                    <span class="chart-info" title="Bars are kg sold per month. One bar per selected year — pick years in the filter row above. The Calendar / Financial toggle switches Jan→Dec vs Apr→Mar (NZ FY). Filter by customer / branch / product / size narrows what's counted across the whole chart. Pre-Hub-live months come from the seeded sales history; later months from dispatched orders.">&#9432;</span>
                 </h2>
                 <p class="cat-sub" style="margin-bottom:0.75rem">kg sold per month by year.</p>
-                <div id="sales-chart-area">${buildSalesByMonthChart(initData)}</div>
+                <div id="sales-chart-area">${buildSalesByMonthChart(initData, cumMode)}</div>
             </div>
             <div class="cat-section sales-chart-block">
                 <div class="sales-chart-head">
                     <div>
                         <h2 class="cat-title" style="margin-bottom:0.4rem">Cumulative Sales
-                            <span class="chart-info" title="Each line is the running total of kg sold within one year, from the start of the period to date. Toggle Calendar (Jan→Dec) vs Financial (Apr→Mar, NZ FY). When a month has no data the line carries the running total forward as a flat segment rather than dropping out — so you can still read where the line is mid-year.">&#9432;</span>
+                            <span class="chart-info" title="Each line is the running total of kg sold within one year, from the start of the period to date. The Calendar / Financial toggle in the filter row switches Jan→Dec vs Apr→Mar (NZ FY) for this chart, Sales by Month, and the Annual Summary. When a month has no data the line carries the running total forward as a flat segment rather than dropping out.">&#9432;</span>
                         </h2>
                         <p class="cat-sub" style="margin-bottom:0">Running total kg by year.</p>
-                    </div>
-                    <div class="sales-mode-toggle" role="tablist" aria-label="Year mode">
-                        <button class="sales-mode-btn${cumMode === 'cal' ? ' active' : ''}" data-mode="cal" role="tab" aria-selected="${cumMode === 'cal'}">Calendar</button>
-                        <button class="sales-mode-btn${cumMode === 'fy' ? ' active' : ''}" data-mode="fy" role="tab" aria-selected="${cumMode === 'fy'}">Financial</button>
                     </div>
                 </div>
                 <div id="sales-chart-area-cumulative">${buildCumulativeChart(initData, cumMode)}</div>
             </div>
         </div>
-        <div id="sales-data-table">${buildDataTable(initData)}</div>
+        <div id="sales-data-table">${buildDataTable(initData, cumMode)}</div>
         <div class="sales-charts-row">
             <div class="cat-section sales-chart-block">
                 <div class="sales-chart-head">
@@ -628,7 +636,8 @@ const SalesView = (() => {
             renderTopStores();    // top stores tally by size too
         });
 
-        // ── Cumulative chart Cal/FY toggle ──
+        // ── Page-level Calendar / Financial year toggle (drives Sales by
+        //    Month, Cumulative, and the Annual Summary table) ──
         bodyEl.querySelectorAll('.sales-mode-btn').forEach(btn => {
             btn.addEventListener('click', () => {
                 const mode = btn.dataset.mode;
