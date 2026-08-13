@@ -620,6 +620,10 @@ const Admin = (() => {
                         <input type="file" id="sd-file" accept=".csv,text/csv">
                         <button class="btn-secondary btn-sm" id="sd-dryrun-btn">Preview (dry-run)</button>
                     </div>
+                    <label class="cat-sub" style="display:flex;align-items:flex-start;gap:0.45rem;margin-top:0.5rem;cursor:pointer">
+                        <input type="checkbox" id="sd-replace-hist" style="margin-top:0.15rem">
+                        <span><strong>Replace ALL historical rows</strong> — wholesale rebuild from this file, so deleted rows disappear and edits take. Hub orders are kept. Use this for an edited <code>sales-history.csv</code> export (it also rescues rows whose date drifted into the wrong column).</span>
+                    </label>
                     <div id="sd-upload-results"></div>
                 </div>
             </details>
@@ -651,7 +655,8 @@ const Admin = (() => {
             uploadResults.innerHTML = '<p class="bulk-loading">Parsing CSV…</p>';
             try {
                 const csv = await file.text();
-                const resp = await fetch('/api/sales-history', {
+                const replaceHist = document.getElementById('sd-replace-hist')?.checked;
+                const resp = await fetch('/api/sales-history' + (replaceHist ? '?replace=historical' : ''), {
                     method: 'POST', headers: { 'Content-Type': 'text/csv' }, body: csv,
                 });
                 if (!resp.ok) {
@@ -667,31 +672,46 @@ const Admin = (() => {
         function renderUploadResults(result, applied) {
             const s = result.summary;
             const isRoundTrip = s.mode === 'round-trip';
+            const isReplace   = s.mode === 'replace-historical';
+            const backupLine = ts => `<br><span class="bulk-backup">Backup: <code>backup:sales_history:${escHtml(ts)}</code></span>`;
             const summaryHtml = isRoundTrip
-                ? `<strong>${applied ? 'Applied' : 'Dry run'} (round-trip):</strong> ${s.csvRowsParsed} parsed · ${s.adds} new · ${s.updates} updated · ${s.unchanged} unchanged.${applied ? `<br><span class="bulk-backup">Backup: <code>backup:sales_history:${escHtml(s.backupTs)}</code></span>` : ''}`
+                ? `<strong>${applied ? 'Applied' : 'Dry run'} (round-trip):</strong> ${s.csvRowsParsed} parsed · ${s.adds} new · ${s.updates} updated · ${s.unchanged} unchanged.${applied ? backupLine(s.backupTs) : ''}`
+                : isReplace
+                ? `<strong>${applied ? 'Applied' : 'Dry run'} (replace historical):</strong> ${s.csvRowsParsed} parsed · ${s.historicalRows} historical rebuilt · ${s.hubRowsPreserved} hub kept.${applied ? backupLine(s.backupTs) : ''}`
                 : `<strong>${applied ? 'Applied' : 'Dry run'} (seed):</strong> ${s.csvRowsParsed} rows parsed.${applied ? `<br><span class="bulk-backup">Backup: <code>backup:sales_history:${escHtml(s.backupTs)}</code> · ${s.hstOrdersDeleted} HST orders wiped · ${s.hubRowsPreserved} hub rows preserved</span>` : ''}`;
-            const changesPending = isRoundTrip ? (s.adds + s.updates) : s.csvRowsParsed;
+            const changesPending = isRoundTrip ? (s.adds + s.updates) : isReplace ? s.historicalRows : s.csvRowsParsed;
             const applyLabel = isRoundTrip
                 ? `Apply ${(s.adds + s.updates)} change${(s.adds + s.updates) === 1 ? '' : 's'}`
+                : isReplace
+                ? `Replace ${s.historicalRows} historical rows`
                 : `Apply seed (${s.csvRowsParsed} rows)`;
+            const applyHint = isRoundTrip
+                ? 'Upserts by Id · missing rows left untouched · backs up first.'
+                : isReplace
+                ? 'Rebuilds source:historical from this file · preserves source:hub · backs up first.'
+                : 'Replaces source:historical rows · preserves source:hub rows · backs up first.';
             uploadResults.innerHTML = `
             <div class="bulk-summary ${applied ? 'bulk-summary--applied' : ''}">${summaryHtml}</div>
             ${!applied && changesPending > 0 ? `
             <div class="bulk-apply-bar">
                 <button class="btn-primary" id="sd-apply-btn">${applyLabel}</button>
-                <span class="bulk-apply-hint">${isRoundTrip ? 'Upserts by Id · missing rows left untouched · backs up first.' : 'Replaces source:historical rows · preserves source:hub rows · backs up first.'}</span>
+                <span class="bulk-apply-hint">${applyHint}</span>
             </div>` : ''}`;
 
             document.getElementById('sd-apply-btn')?.addEventListener('click', async (e) => {
                 if (!lastFile) return;
-                if (!confirm(isRoundTrip
+                const confirmMsg = isRoundTrip
                     ? `Apply ${s.adds + s.updates} change(s)?\n\nUpserts by Id; missing rows left alone. Backup taken first.`
-                    : `Seed ${s.csvRowsParsed} historical rows?\n\nReplaces source:historical rows. Preserves source:hub rows. Backup taken first.`)) return;
+                    : isReplace
+                    ? `Rebuild ${s.historicalRows} historical rows from this file?\n\nReplaces ALL source:historical rows (deletions take effect). Preserves source:hub rows. Backup taken first.`
+                    : `Seed ${s.csvRowsParsed} historical rows?\n\nReplaces source:historical rows. Preserves source:hub rows. Backup taken first.`;
+                if (!confirm(confirmMsg)) return;
                 const btn = e.currentTarget;
                 btn.disabled = true; btn.textContent = 'Applying…';
                 try {
                     const csv = await lastFile.text();
-                    const resp = await fetch('/api/sales-history?apply=true', {
+                    const url = '/api/sales-history?apply=true' + (isReplace ? '&replace=historical' : '');
+                    const resp = await fetch(url, {
                         method: 'POST', headers: { 'Content-Type': 'text/csv' }, body: csv,
                     });
                     if (!resp.ok) {
@@ -699,7 +719,7 @@ const Admin = (() => {
                         throw new Error(err.error || resp.statusText);
                     }
                     renderUploadResults(await resp.json(), true);
-                    showToast(isRoundTrip ? `Applied ${s.adds + s.updates} changes` : `Seeded ${s.csvRowsParsed} rows`);
+                    showToast(isRoundTrip ? `Applied ${s.adds + s.updates} changes` : isReplace ? `Rebuilt ${s.historicalRows} historical rows` : `Seeded ${s.csvRowsParsed} rows`);
                 } catch (err) {
                     showToast('Apply failed: ' + err.message);
                     btn.disabled = false; btn.textContent = applyLabel;

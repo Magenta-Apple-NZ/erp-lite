@@ -332,24 +332,30 @@ function parseRoundTripExport(csv) {
         if (!r.length || r.every(c => !String(c || '').trim())) { skipped.blank++; continue; }
 
         // Date column normalises ISO / NZ slash / Excel-reformatted alike.
-        let isoDate = parseAnyDate(r[dateCol] || '');
-
-        // Month and Year columns are first-class — if the user edits Month
-        // or Year in the spreadsheet, those wins over what the Date column
-        // says. The Date is then reconstructed using the day component
-        // from the original Date + the user's month/year, so stored
-        // `date`, `month`, and `year` always agree.
         const rawMonth = monthCol >= 0 ? String(r[monthCol] || '').trim() : '';
         const rawYear  = yearCol  >= 0 ? String(r[yearCol]  || '').trim() : '';
+        let isoDate = parseAnyDate(r[dateCol] || '');
+        // Date-column rescue: some spreadsheets land the full date in the
+        // Year (or Month) column with Date/Month blank. If the Date column
+        // gave nothing, pull a full date from whichever column holds one.
+        // A plain year like "2019" won't parse here, so this is a no-op for
+        // well-formed rows.
+        if (!isoDate) isoDate = parseAnyDate(rawYear) || parseAnyDate(rawMonth);
+
+        // Month and Year columns are first-class — if the user edits Month
+        // or Year in the spreadsheet, those win over the Date column. The
+        // stored `date`, `month`, `year` are then kept internally consistent.
         let yr = NaN, mo = NaN, day = 1;
         if (isoDate) {
             [yr, mo, day] = isoDate.split('-').map(n => parseInt(n, 10));
         }
-        if (rawMonth) {
+        // Only override from Month/Year columns when they are plain numbers —
+        // a date sitting in the Year column must not be parsed as a year.
+        if (/^\d+$/.test(rawMonth)) {
             const m = parseInt(rawMonth, 10);
             if (m >= 1 && m <= 12) mo = m;
         }
-        if (rawYear) {
+        if (/^\d+$/.test(rawYear)) {
             let y = parseInt(rawYear, 10);
             if (y > 0 && y < 100) y += 2000;
             if (y >= 1900 && y <= 2100) yr = y;
@@ -397,9 +403,15 @@ export async function onRequestPost({ env, request }) {
     try {
         const { searchParams } = new URL(request.url);
         const apply = searchParams.get('apply') === 'true';
+        const replaceHistorical = searchParams.get('replace') === 'historical';
 
         const csv = await request.text();
         if (!csv || !csv.trim()) return errResponse('Empty CSV body', 400);
+
+        // Explicit wholesale rebuild of history from an export-layout file.
+        if (replaceHistorical) {
+            return await handleReplaceHistorical(env, csv, apply);
+        }
 
         // Branch on column shape: round-trip edit vs seed-from-source.
         const headerLine = parseCsv(csv)[0] || [];
@@ -514,6 +526,65 @@ async function handleRoundTrip(env, csv, apply) {
     for (const r of adds) byId.set(r.id, r);
     for (const r of updates) byId.set(r.id, r);
     const merged = [...byId.values()];
+    await env.ORDERS_KV.put('sales_history', JSON.stringify(merged));
+
+    return jsonResponse({
+        mode: 'apply',
+        summary: { ...summary, backupTs, totalRowsAfter: merged.length },
+    });
+}
+
+// Derive the type×size cross (xkg) from a row's type + size totals when the
+// row is a single type — the export layout carries totals, not the six cross
+// cells, so a mixed-type row can't be split and gets no xkg (the frontend
+// falls back gracefully). Returns {} or { xkg: {...} }.
+function deriveXkg(r) {
+    const one = Number(r.oneKg) || 0, ten = Number(r.tenKg) || 0;
+    if (!one && !ten) return {};
+    const b = Number(r.bundlesKg) || 0, l = Number(r.looseKg) || 0, e = Number(r.ecoTiesKg) || 0;
+    if ((b > 0) + (l > 0) + (e > 0) !== 1) return {};
+    const letter = b > 0 ? 'b' : l > 0 ? 'l' : 'e';
+    const cross = { b1: 0, b10: 0, l1: 0, l10: 0, e1: 0, e10: 0 };
+    cross[letter + '1'] = one;
+    cross[letter + '10'] = ten;
+    return { xkg: cross };
+}
+
+// Replace-historical flow: the user maintains corrections in the export
+// layout (or any Date/Month/Year + kg/1kg/10kg CSV) and wants a wholesale
+// rebuild of the historical set — deletions and edits both take effect —
+// rather than the round-trip's edit-by-id-with-no-deletes. Non-hub rows in
+// the file become the new source:'historical' set; existing hub rows in KV
+// are preserved (they're owned by the order writer, not this file).
+async function handleReplaceHistorical(env, csv, apply) {
+    const { rows: parsed, skipped } = parseRoundTripExport(csv);
+    const newHist = parsed
+        .filter(r => r.source !== 'hub')
+        .map((r, i) => ({
+            ...r,
+            id: 'historical-' + String(i + 1).padStart(4, '0'),
+            source: 'historical',
+            ...deriveXkg(r),
+        }));
+
+    const existing = await loadAll(env);
+    const hubRows = existing.filter(r => r.source === 'hub');
+
+    const summary = {
+        mode: 'replace-historical',
+        csvRowsParsed: parsed.length,
+        historicalRows: newHist.length,
+        hubRowsPreserved: hubRows.length,
+        skipped,
+        sampleIds: newHist.slice(0, 3).map(r => r.id),
+    };
+
+    if (!apply) return jsonResponse({ mode: 'dry-run', summary });
+
+    const backupTs = new Date().toISOString().replace(/[:.]/g, '-');
+    await env.ORDERS_KV.put(`backup:sales_history:${backupTs}`, JSON.stringify(existing));
+
+    const merged = [...newHist, ...hubRows];
     await env.ORDERS_KV.put('sales_history', JSON.stringify(merged));
 
     return jsonResponse({
