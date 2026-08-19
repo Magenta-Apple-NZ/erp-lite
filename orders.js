@@ -636,9 +636,10 @@ const Orders = (() => {
             defaults: order,
         });
 
-        // Same Xero-push promotion logic as the old review/detail view.
+        // Promote the Xero push whenever an order still lacks an invoice —
+        // any status, since stages aren't always linear (an order can be
+        // dispatched before it's pushed to Xero).
         const needsXeroPush = xeroConnected
-            && (order.status === 'new' || order.status === 'reviewed')
             && !order.xeroInvoiceId
             && !order.xeroSourced;
 
@@ -1412,15 +1413,25 @@ const Orders = (() => {
         let primaryAction = '';
         let xeroMenuItem  = '';
 
-        if (order.status === 'new' || order.status === 'reviewed') {
-            if (order.xeroSourced && !order.xeroInvoiceId) {
+        // Xero push stays available on ANY status until an invoice is linked —
+        // stages aren't always linear (an order can be dispatched before it's
+        // pushed to Xero). Empty once an invoice exists; the overflow menu then
+        // carries a "View in Xero" link instead.
+        let xeroPush = '';
+        if (!order.xeroInvoiceId) {
+            xeroPush = order.xeroSourced
                 // Order was created in Xero — push would duplicate. Link instead.
-                primaryAction = `<button id="link-xero-primary-btn" class="btn-primary">Link Xero Invoice</button>`;
-            } else {
-                primaryAction = xeroConnected
+                ? `<button id="link-xero-primary-btn" class="btn-primary">Link Xero Invoice</button>`
+                : xeroConnected
                     ? `<button id="push-xero-btn" class="btn-primary">Send to Xero</button>`
                     : `<span class="xero-not-connected">Xero not connected</span>`;
-            }
+        }
+        xeroMenuItem = order.xeroInvoiceId
+            ? `<a href="https://go.xero.com/AccountsReceivable/Edit.aspx?InvoiceID=${encodeURIComponent(order.xeroInvoiceId)}" target="_blank" rel="noopener" class="overflow-item xero-only">✓ ${escHtml(order.xeroInvoiceNumber)} — View in Xero ↗</a>`
+            : '';
+
+        if (order.status === 'new' || order.status === 'reviewed') {
+            primaryAction = xeroPush;
         } else if (order.status === 'sent_to_xero') {
             // Admin can pick the dispatcher; warehouse always dispatches as themselves (Jake).
             const picker = isWarehouseRole()
@@ -1432,17 +1443,9 @@ const Orders = (() => {
             const printedTag = order.printedAt
                 ? `<span class="status-printed-tag" title="Slip auto-printed at ${escHtml(order.printedTo || 'depot')} on ${escHtml(new Date(order.printedAt).toLocaleString('en-NZ'))}">🖨 Printed at ${escHtml(order.printedTo || 'depot')}</span>`
                 : '';
-            primaryAction = `${printedTag}${courierAction(order)}${picker}<button id="dispatch-btn" class="btn-primary">Mark Complete</button>`;
-            if (order.xeroInvoiceId) {
-                const url = `https://go.xero.com/AccountsReceivable/Edit.aspx?InvoiceID=${encodeURIComponent(order.xeroInvoiceId)}`;
-                xeroMenuItem = `<a href="${url}" target="_blank" rel="noopener" class="overflow-item xero-only">✓ ${escHtml(order.xeroInvoiceNumber)} — View in Xero ↗</a>`;
-            }
+            primaryAction = `${printedTag}${courierAction(order)}${picker}${xeroPush}<button id="dispatch-btn" class="btn-primary">Mark Complete</button>`;
         } else {
-            primaryAction = `${courierAction(order)}<span class="status-dispatched-tag">✓ Complete</span>`;
-            if (order.xeroInvoiceId) {
-                const url = `https://go.xero.com/AccountsReceivable/Edit.aspx?InvoiceID=${encodeURIComponent(order.xeroInvoiceId)}`;
-                xeroMenuItem = `<a href="${url}" target="_blank" rel="noopener" class="overflow-item xero-only">✓ ${escHtml(order.xeroInvoiceNumber)} — View in Xero ↗</a>`;
-            }
+            primaryAction = `${courierAction(order)}${xeroPush}<span class="status-dispatched-tag">✓ Complete</span>`;
         }
 
         const menu = `
@@ -1514,11 +1517,10 @@ const Orders = (() => {
         const body = document.getElementById('order-detail-body');
 
         // Promote the Xero push when an order is still awaiting it — easy to
-        // miss the small button in the action bar when reviewing API-received
-        // orders for the first time. Hidden once invoiced, dispatched, or
-        // flagged as xeroSourced (created in Xero).
+        // miss the small button in the action bar. Shown for any status until
+        // an invoice is linked (stages aren't always linear), and hidden once
+        // invoiced or flagged as xeroSourced (created in Xero).
         const needsXeroPush = xeroConnected
-            && (order.status === 'new' || order.status === 'reviewed')
             && !order.xeroInvoiceId
             && !order.xeroSourced;
 
@@ -2503,17 +2505,24 @@ const Orders = (() => {
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ orderId }),
                 });
-                await api('/api/orders/' + orderId, {
-                    method: 'PATCH',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ status: 'sent_to_xero' }),
-                });
+                // Only advance status when the order hasn't already moved past
+                // this stage — a late push (dispatched before Xero) must not
+                // regress a completed order back to "sent to Xero".
+                const advance = order.status === 'new' || order.status === 'reviewed';
+                if (advance) {
+                    await api('/api/orders/' + orderId, {
+                        method: 'PATCH',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ status: 'sent_to_xero' }),
+                    });
+                    order.status = 'sent_to_xero';
+                    const sel = document.getElementById('order-status-sel');
+                    if (sel) sel.value = 'sent_to_xero';
+                }
                 const invRow = document.querySelector('.slip-inv-details .slip-inv-row strong');
                 if (invRow) invRow.textContent = result.invoiceNumber;
-                order.status = 'sent_to_xero';
+                order.xeroInvoiceId = result.invoiceId;
                 order.xeroInvoiceNumber = result.invoiceNumber;
-                const sel = document.getElementById('order-status-sel');
-                if (sel) sel.value = 'sent_to_xero';
                 document.getElementById('xero-push-banner')?.remove();
                 refreshActionBar(order);
                 logEvent(orderId, 'Sent to Xero', result.invoiceNumber);
@@ -2521,7 +2530,9 @@ const Orders = (() => {
 
                 // Prompt the user to print rather than auto-printing — some
                 // export and pickup orders don't need a slip at the depot.
-                const depot = getDepotPrinter();
+                // Only on the normal advance flow (a late push was already
+                // dispatched, so its slip is done).
+                const depot = advance ? getDepotPrinter() : null;
                 if (depot) {
                     const existing = document.getElementById('print-confirm-banner');
                     if (existing) existing.remove();
