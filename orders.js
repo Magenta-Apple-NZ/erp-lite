@@ -211,6 +211,7 @@ const Orders = (() => {
                 <option value="paid">Paid</option>
             </select>
             <button class="btn-secondary btn-sm" id="filter-clear">Clear</button>
+            <button class="btn-secondary btn-sm" id="orders-sync-pay" title="Check Xero for payments and mark orders paid" style="display:none;margin-left:auto">Sync payments</button>
         </div>
         <a href="#orders/new" class="orders-new-fab" aria-label="New order" title="New order">+</a>
         <div id="orders-list-body"><div class="orders-loading">Loading…</div></div>`;
@@ -235,7 +236,8 @@ const Orders = (() => {
             return orders.filter(o =>
                 (!cust   || (o.customer?.name || '').toLowerCase().includes(cust)) &&
                 (!branch || (o.shipTo?.branch || '').toLowerCase().includes(branch)) &&
-                (!status || o.status === status)
+                // "Paid" is a payment flag (paidAt), independent of workflow status.
+                (!status || (status === 'paid' ? !!o.paidAt : o.status === status))
             );
         }
 
@@ -431,6 +433,43 @@ const Orders = (() => {
         });
 
         renderTable();
+
+        // ── Xero payment reconciliation ──
+        // Stamps paidAt on orders whose Xero invoice is fully paid. Fulfilment
+        // status is untouched. The endpoint self-throttles to one Xero call
+        // per 5 min, so the on-load call is cheap; the button forces a refresh.
+        async function reconcilePayments(bust) {
+            return api('/api/xero/reconcile-payments' + (bust ? '?bust=1' : ''), { method: 'POST' });
+        }
+        async function refreshAfterReconcile(r, opts = {}) {
+            if (r && r.marked > 0) {
+                try { orders = await api('/api/orders'); renderTable(); } catch (_) {}
+                showToast(`${r.marked} order${r.marked === 1 ? '' : 's'} marked paid from Xero`);
+            } else if (opts.announceNoop) {
+                showToast('No new payments in Xero');
+            }
+        }
+
+        if (xeroConnected) {
+            const syncBtn = document.getElementById('orders-sync-pay');
+            if (syncBtn) {
+                syncBtn.style.display = '';
+                syncBtn.addEventListener('click', async () => {
+                    syncBtn.disabled = true;
+                    const label = syncBtn.textContent;
+                    syncBtn.textContent = 'Syncing…';
+                    try {
+                        await refreshAfterReconcile(await reconcilePayments(true), { announceNoop: true });
+                    } catch (e) {
+                        showToast('Payment sync failed: ' + (e.message || 'Xero error'));
+                    } finally {
+                        syncBtn.disabled = false; syncBtn.textContent = label;
+                    }
+                });
+            }
+            // Automatic, non-blocking reconcile on load.
+            reconcilePayments(false).then(r => refreshAfterReconcile(r)).catch(() => {});
+        }
     }
 
     // ── Customer section HTML (shared by new + edit forms) ──
@@ -649,7 +688,7 @@ const Orders = (() => {
             <div class="order-actions-left">
                 <a href="#orders" class="btn-secondary btn-sm">← Orders</a>
                 <select id="order-status-sel" class="order-status-sel">
-                    ${Object.keys(STATUS_LABELS).map(k => `<option value="${k}"${order.status === k ? ' selected' : ''}>${statusLabelForRole(k)}</option>`).join('')}
+                    ${Object.keys(STATUS_LABELS).filter(k => k !== 'paid').map(k => `<option value="${k}"${order.status === k ? ' selected' : ''}>${statusLabelForRole(k)}</option>`).join('')}
                 </select>
             </div>
             <div class="order-actions-right" id="action-btns">
@@ -1530,7 +1569,7 @@ const Orders = (() => {
             <div class="order-actions-left">
                 <a href="#orders" class="btn-secondary btn-sm">← Orders</a>
                 <select id="order-status-sel" class="order-status-sel">
-                    ${Object.keys(STATUS_LABELS).map(k => `<option value="${k}"${order.status === k ? ' selected' : ''}>${statusLabelForRole(k)}</option>`).join('')}
+                    ${Object.keys(STATUS_LABELS).filter(k => k !== 'paid').map(k => `<option value="${k}"${order.status === k ? ' selected' : ''}>${statusLabelForRole(k)}</option>`).join('')}
                 </select>
             </div>
             <div class="order-actions-right" id="action-btns">
