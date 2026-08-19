@@ -349,6 +349,7 @@ const Warehouse = (() => {
         </div>` : '';
 
         body.innerHTML = `
+        <div id="stk-running"></div>
         <div class="stk-layout">
             <div class="stk-editor cat-section">
                 <div class="cat-section-head">
@@ -462,6 +463,64 @@ const Warehouse = (() => {
                 }
             });
         });
+
+        renderRunning();
+    }
+
+    // Live "running" stocktake: latest snapshot burnt down by sales since the
+    // count. Read-only for now (raw/processed stages + manual restocks to come).
+    async function renderRunning() {
+        const el = document.getElementById('stk-running');
+        if (!el) return;
+        let data;
+        try { data = await api('/api/inventory/running'); }
+        catch (e) { el.innerHTML = ''; return; }
+        if (!data || data.empty || !Array.isArray(data.rows)) { el.innerHTML = ''; return; }
+
+        const kindLabel = { finished: 'Finished (RTS)', boxes: 'Boxes', raw: 'Raw', processed: 'Processed', static: '—' };
+        const rows = data.rows.map(r => {
+            const moved = r.kind === 'finished' || r.kind === 'boxes';
+            const cover = r.weeksCover != null
+                ? `<span class="${r.weeksCover <= 3 ? 'stk-run-low' : ''}">${r.weeksCover} wk</span>`
+                : '<span style="color:#cbd5e1">—</span>';
+            return `
+            <tr${moved ? '' : ' class="stk-run-static"'}>
+                <td>${escHtml(r.description)}</td>
+                <td style="color:#94a3b8">${kindLabel[r.kind] || '—'}</td>
+                <td style="text-align:right;color:#94a3b8">${fmt(r.anchorUnits)}</td>
+                <td style="text-align:right;color:${r.used ? '#b45309' : '#cbd5e1'}">${r.used ? '−' + fmt(r.used) : '—'}</td>
+                <td style="text-align:right;font-weight:700">${fmt(r.runningUnits)}</td>
+                <td style="text-align:right">${cover}</td>
+                <td style="text-align:right">$${fmt(r.runningNet)}</td>
+            </tr>`;
+        }).join('');
+
+        el.className = 'cat-section';
+        el.style.marginBottom = '1.25rem';
+        el.innerHTML = `
+        <div class="cat-section-head">
+            <div>
+                <h2 class="cat-title">Running Stocktake</h2>
+                <p class="cat-sub">Latest count (<strong>${escHtml(data.label || data.snapshotDate)}</strong>, ${fmtDate(data.snapshotDate)}) less sales over the ${data.daysSince} days since. Finished (RTS) and boxes update live; raw/processed hold until the next count.</p>
+            </div>
+            <div style="text-align:right">
+                <div class="cat-sub" style="margin:0">Running value (ex. GST)</div>
+                <strong style="font-size:1.15rem">$${fmt(data.totals.running)}</strong>
+            </div>
+        </div>
+        <div class="stk-table-wrap">
+            <table class="stk-table">
+                <thead><tr>
+                    <th>Item</th><th>Type</th>
+                    <th style="text-align:right">At count</th>
+                    <th style="text-align:right">Sold since</th>
+                    <th style="text-align:right">On hand</th>
+                    <th style="text-align:right">Cover</th>
+                    <th style="text-align:right">Value</th>
+                </tr></thead>
+                <tbody>${rows}</tbody>
+            </table>
+        </div>`;
     }
 
     function loadSnapshot(snap) {

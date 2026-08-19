@@ -2184,6 +2184,10 @@ a.xero-inv-linked:hover { background: #d1fae5; border-color: #6ee7b7; }
 .stk-inactive .stk-active { opacity: 1; }
 .stk-net { font-weight: 600; color: #1e293b; }
 
+/* Running stocktake */
+.stk-run-low { color: #dc2626; font-weight: 700; }
+.stk-run-static td { opacity: 0.5; }
+
 .stk-total-row {
     display: flex;
     justify-content: space-between;
