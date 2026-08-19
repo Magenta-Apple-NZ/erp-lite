@@ -222,6 +222,10 @@ const Warehouse = (() => {
     // ── Stocktake editor state ──
     let editRows = [];
     let currentSnapshotId = null;
+    // The element the stocktake editor renders into. Defaults to the Warehouse
+    // view's #wh-body, but can be pointed at any container (e.g. embedded in
+    // the Sales History view) via renderStocktakeInto().
+    let stkBody = null;
 
     function tableHtml(rows) {
         if (!rows.length) return '<p class="wh-empty">No items yet.</p>';
@@ -305,11 +309,20 @@ const Warehouse = (() => {
         </div>
         <div id="wh-body"><div class="orders-loading">Loading…</div></div>`;
 
+        stkBody = document.getElementById('wh-body');
+        await renderStocktake();
+    }
+
+    // Render the stocktake editor into an arbitrary container (used to embed
+    // it in the Sales History view).
+    async function renderStocktakeInto(container) {
+        if (!container) return;
+        stkBody = container;
         await renderStocktake();
     }
 
     async function renderStocktake() {
-        const body = document.getElementById('wh-body');
+        const body = stkBody || document.getElementById('wh-body');
         body.innerHTML = '<div class="orders-loading">Loading…</div>';
 
         let snapshots = [];
@@ -3843,5 +3856,5 @@ const Warehouse = (() => {
         rebuild();
     }
 
-    return { render, renderImports, prefetchImports, renderDashboardForecast };
+    return { render, renderImports, prefetchImports, renderDashboardForecast, renderStocktakeInto };
 })();
