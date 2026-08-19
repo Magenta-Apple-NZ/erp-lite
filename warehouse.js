@@ -350,6 +350,7 @@ const Warehouse = (() => {
 
         body.innerHTML = `
         <div id="stk-running"></div>
+        <div id="stk-consumables"></div>
         <div class="stk-layout">
             <div class="stk-editor cat-section">
                 <div class="cat-section-head">
@@ -465,6 +466,70 @@ const Warehouse = (() => {
         });
 
         renderRunning();
+        renderConsumables();
+    }
+
+    // Packaging & consumables — BOM-derived usage since a baseline count, with
+    // on-hand + reorder tracking. Quantities only (packaging is expensed).
+    async function renderConsumables() {
+        const el = document.getElementById('stk-consumables');
+        if (!el) return;
+        let data;
+        try { data = await api('/api/inventory/consumables'); }
+        catch (e) { el.innerHTML = ''; return; }
+        if (!data || !Array.isArray(data.rows)) { el.innerHTML = ''; return; }
+
+        const rows = data.rows.map(r => `
+            <tr>
+                <td>${escHtml(r.name)}</td>
+                <td style="color:#94a3b8;text-transform:capitalize">${escHtml(r.unit)}</td>
+                <td style="text-align:right;color:${r.used ? '#b45309' : '#cbd5e1'}">${r.used ? fmt(r.used) : '—'}</td>
+                <td style="text-align:right"><input class="stk-cons-inp stk-units" data-key="${r.key}" data-f="onHand" type="number" step="any" value="${r.onHand != null ? r.onHand : ''}" placeholder="—" style="width:84px;text-align:right"></td>
+                <td style="text-align:right;font-weight:700">${r.running != null ? fmt(r.running) : '<span style="color:#cbd5e1">—</span>'}</td>
+                <td style="text-align:right"><input class="stk-cons-inp stk-units" data-key="${r.key}" data-f="reorder" type="number" step="any" value="${r.reorder != null ? r.reorder : ''}" placeholder="—" style="width:74px;text-align:right"></td>
+                <td style="text-align:right">${r.weeksCover != null ? `<span class="${r.weeksCover <= 3 ? 'stk-run-low' : ''}">${r.weeksCover} wk</span>` : '<span style="color:#cbd5e1">—</span>'}${r.low ? ' <span class="stk-run-low" title="At or below reorder level">⚠</span>' : ''}</td>
+            </tr>`).join('');
+
+        el.className = 'cat-section';
+        el.style.marginBottom = '1.25rem';
+        el.innerHTML = `
+        <div class="cat-section-head">
+            <div>
+                <h2 class="cat-title">Packaging &amp; Consumables</h2>
+                <p class="cat-sub">Used since <input type="date" id="stk-cons-asat" value="${escHtml(data.asAt || '')}" class="stk-date-input"> — derived from sales via the box BOM. Enter on-hand counts (as at that date) to track what's left and get a reorder flag.</p>
+            </div>
+            <button class="btn-primary btn-sm" id="stk-cons-save">Save levels</button>
+        </div>
+        <div class="stk-table-wrap">
+            <table class="stk-table">
+                <thead><tr>
+                    <th>Consumable</th><th>Unit</th>
+                    <th style="text-align:right">Used since</th>
+                    <th style="text-align:right">On hand @ date</th>
+                    <th style="text-align:right">Remaining</th>
+                    <th style="text-align:right">Reorder at</th>
+                    <th style="text-align:right">Cover</th>
+                </tr></thead>
+                <tbody>${rows}</tbody>
+            </table>
+        </div>`;
+
+        document.getElementById('stk-cons-save')?.addEventListener('click', async () => {
+            const levels = {};
+            el.querySelectorAll('.stk-cons-inp').forEach(inp => {
+                const k = inp.dataset.key, f = inp.dataset.f;
+                (levels[k] = levels[k] || {})[f] = inp.value === '' ? null : Number(inp.value);
+            });
+            const asAt = document.getElementById('stk-cons-asat').value || null;
+            try {
+                await api('/api/inventory/consumables', {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ asAt, levels }),
+                });
+                showToast('Levels saved');
+                renderConsumables();
+            } catch (e) { showToast('Save failed: ' + e.message); }
+        });
     }
 
     // Live "running" stocktake: latest snapshot burnt down by sales since the
