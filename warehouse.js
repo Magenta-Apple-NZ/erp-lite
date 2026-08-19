@@ -3343,7 +3343,7 @@ const Warehouse = (() => {
                 await api('/api/import/forecast', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ shipments: config.shipments }),
+                    body: JSON.stringify({ shipments: config.shipments, stageDefaults: config.stageDefaults }),
                 });
                 if (currentDetailShipId) {
                     const updated = config.shipments.find(sh => sh.id === currentDetailShipId);
@@ -3359,7 +3359,7 @@ const Warehouse = (() => {
                 await api('/api/import/forecast', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ shipments: config.shipments }),
+                    body: JSON.stringify({ shipments: config.shipments, stageDefaults: config.stageDefaults }),
                 });
             } catch (err) { showToast('Save failed: ' + err.message); }
         }
@@ -3690,9 +3690,11 @@ const Warehouse = (() => {
                 return;
             }
 
-            // Stage defaults — reset to factory defaults
+            // Stage defaults — reset to factory defaults. Use null (not
+            // delete) so the cleared value is actually sent and persisted;
+            // getStageDefaults treats a non-array as "fall back to factory".
             if (e.target.closest('#ship-tl-cfg-reset')) {
-                delete config.stageDefaults;
+                config.stageDefaults = null;
                 await quietSave();
                 renderShipDetail(config.shipments.find(sh => sh.id === currentDetailShipId));
                 return;
