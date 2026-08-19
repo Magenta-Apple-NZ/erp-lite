@@ -68,6 +68,37 @@ export async function onRequestPost({ env, request }) {
 
         const token = await getValidToken(env);
 
+        // Cache was cold or missed — ask Xero directly by name. The customers
+        // cache only warms when the typeahead is opened and expires hourly, so
+        // a placeholder/legacy order often reaches here unresolved. A live
+        // SearchTerm lookup removes that dependency. Skipped for export orders
+        // (handled by on-the-fly contact creation below).
+        if (!UUID_RE.test(contactId) && order.customer?.name && !order.customer?.isExport) {
+            const wanted = order.customer.name.trim().toLowerCase();
+            const searchResp = await fetch(
+                'https://api.xero.com/api.xro/2.0/Contacts?SearchTerm=' +
+                    encodeURIComponent(order.customer.name.trim()),
+                { headers: xeroHeaders(token) }
+            );
+            if (searchResp.ok) {
+                const sd   = await searchResp.json();
+                const list = (sd.Contacts || []).map(c => ({ id: c.ContactID, name: (c.Name || '').trim() }));
+                // Prefer an exact (case-insensitive) name match. Only accept a
+                // partial match when it's unambiguous, so "Farmlands" can't
+                // silently resolve to some "Farmlands Retail - X" branch.
+                let match = list.find(c => c.name.toLowerCase() === wanted);
+                if (!match) {
+                    const partial = list.filter(c =>
+                        c.name.toLowerCase().includes(wanted) || wanted.includes(c.name.toLowerCase()));
+                    if (partial.length === 1) match = partial[0];
+                }
+                if (match && UUID_RE.test(match.id)) {
+                    contactId  = match.id;
+                    resolvedBy = 'xero-search';
+                }
+            }
+        }
+
         // Export orders with a new/unknown customer: create the Xero contact on the fly.
         // This eliminates the "Cash Sale + manual remap" workaround for overseas customers.
         if (!UUID_RE.test(contactId) && order.customer?.isExport && order.customer?.name) {
@@ -103,8 +134,9 @@ export async function onRequestPost({ env, request }) {
         }
 
         // Persist the resolved contact id back onto the order so subsequent reads
-        // (and re-pushes) see the corrected value.
-        if (resolvedBy === 'name-lookup' || resolvedBy === 'export-create') {
+        // (and re-pushes) see the corrected value — the placeholder is healed
+        // permanently once the order is pushed.
+        if (resolvedBy) {
             order.customer = { ...order.customer, xeroContactId: contactId };
         }
 
