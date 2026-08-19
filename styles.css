@@ -2188,6 +2188,24 @@ a.xero-inv-linked:hover { background: #d1fae5; border-color: #6ee7b7; }
 .stk-run-low { color: #dc2626; font-weight: 700; }
 .stk-run-static td { opacity: 0.5; }
 
+/* Inventory flow / reconciliation */
+.inv-flow { margin-top: 0.5rem; }
+.inv-flow-line {
+    display: flex; justify-content: space-between;
+    padding: 0.4rem 0.25rem; border-bottom: 1px solid #f1f5f9;
+    font-size: 0.9rem; font-variant-numeric: tabular-nums;
+}
+.inv-flow-line:last-child { border-bottom: none; border-top: 2px solid #e2e8f0; margin-top: 0.15rem; }
+.inv-neg { color: #b45309; }
+.inv-pos { color: #047857; }
+.inv-gap {
+    display: flex; justify-content: space-between; align-items: center;
+    gap: 1rem; margin-top: 0.85rem; padding: 0.6rem 0.85rem; border-radius: 8px;
+}
+.inv-gap .cat-sub { display: block; margin: 0.1rem 0 0; }
+.inv-gap--loss { background: #fef2f2; color: #b91c1c; }
+.inv-gap--over { background: #ecfdf5; color: #047857; }
+
 .stk-total-row {
     display: flex;
     justify-content: space-between;

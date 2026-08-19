@@ -349,6 +349,7 @@ const Warehouse = (() => {
         </div>` : '';
 
         body.innerHTML = `
+        <div id="stk-reconcile"></div>
         <div id="stk-running"></div>
         <div id="stk-consumables"></div>
         <div class="stk-layout">
@@ -465,8 +466,65 @@ const Warehouse = (() => {
             });
         });
 
+        renderReconcile();
         renderRunning();
         renderConsumables();
+    }
+
+    // One kg-of-product flow: Opening − Sales + Shipments = Expected, and the
+    // gap vs the next physical count (wastage / yield loss / miscount).
+    async function renderReconcile() {
+        const el = document.getElementById('stk-reconcile');
+        if (!el) return;
+        let d;
+        try { d = await api('/api/inventory/reconcile'); }
+        catch (e) { el.innerHTML = ''; return; }
+        if (!d || d.empty) { el.innerHTML = ''; return; }
+
+        const kg = n => fmt(Math.round(Number(n) || 0)) + ' kg';
+        const line = (label, val, cls) =>
+            `<div class="inv-flow-line"><span>${label}</span><span class="${cls || ''}">${val}</span></div>`;
+        const shipDetail = (d.inboundShipments || []).length
+            ? `<div class="cat-sub" style="margin:0.25rem 0 0">In: ${d.inboundShipments.map(s => `${escHtml(s.note)} (${fmt(Math.round(s.kg))})`).join(' · ')}</div>`
+            : '';
+
+        let gapHtml;
+        if (d.closedPeriod) {
+            const g = d.closedPeriod;
+            const loss = g.gap < 0;
+            gapHtml = `
+            <div class="inv-gap ${loss ? 'inv-gap--loss' : 'inv-gap--over'}">
+                <div>
+                    <strong>Last period gap</strong>
+                    <span class="cat-sub">${fmtDate(g.from)} → ${fmtDate(g.to)} · counted ${kg(g.actual)} vs expected ${kg(g.expected)}</span>
+                </div>
+                <strong style="font-size:1.05rem">${g.gap > 0 ? '+' : ''}${kg(g.gap)}</strong>
+            </div>`;
+        } else {
+            gapHtml = `<p class="cat-sub" style="margin:0.5rem 0 0">The gap (wastage / yield loss / miscount) is measured the next time you take a physical count — it's <strong>actual − expected</strong>.</p>`;
+        }
+
+        el.className = 'cat-section';
+        el.style.marginBottom = '1.25rem';
+        el.innerHTML = `
+        <div class="cat-section-head">
+            <div>
+                <h2 class="cat-title">Inventory Flow <span class="cat-sub" style="font-weight:400">· kg of product</span></h2>
+                <p class="cat-sub" style="margin:0">One pool of product kg: last count, less sales, plus shipments in.</p>
+            </div>
+            <div style="text-align:right">
+                <div class="cat-sub" style="margin:0">Expected on hand</div>
+                <strong style="font-size:1.35rem">${kg(d.expectedNow)}</strong>
+            </div>
+        </div>
+        <div class="inv-flow">
+            ${line(`Opening &middot; ${escHtml(d.countLabel || fmtDate(d.countDate))}`, kg(d.opening))}
+            ${line('Sold since', '− ' + kg(d.soldSince), 'inv-neg')}
+            ${line('Shipments in since', '+ ' + kg(d.shipmentsInSince), 'inv-pos')}
+            ${shipDetail}
+            ${line('<strong>Expected on hand now</strong>', '<strong>' + kg(d.expectedNow) + '</strong>')}
+        </div>
+        ${gapHtml}`;
     }
 
     // Packaging & consumables — BOM-derived usage since a baseline count, with
