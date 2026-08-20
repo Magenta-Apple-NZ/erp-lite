@@ -7,19 +7,20 @@
 //
 // Method is decided by box count (not a manual flag): courier up to ~14 boxes
 // (1m²), freight beyond that; at 25 boxes a full pallet is charged on FR-06 and
-// any remainder rides FR-05. A region with no freight rate (Local) stays on
+// any remainder rides FR-05. A minimum (min_pallet, when set) floors the
+// freight charge on FR-06. A region with no freight rate (Local) stays on
 // courier. Returns an array of 0..2 lines.
 //
-// INTERIM: rates are hard-coded from the pricing sheet (2026). Swap for a live
-// fetch of the published freight tab (keyed on its zone_courier/zone_freight
-// columns) when it's available. `min_pallet` (partial-pallet minimum) is not
-// yet in the sheet — add it here + in the pallet branch once you have values.
+// Freight REGION rates are read live from the published freight tab (same doc
+// as items/stores). Courier rates stay fixed on FR-01..04 by zone.
 
 import { loadItemsMap } from './catalog/items.js';
 import { getStoresWithBootstrap } from './catalog/stores.js';
 
 const COURIER_MAX_BOXES = 14;   // ~1m²; above this we freight
 const BOXES_PER_PALLET  = 25;
+
+const FREIGHT_CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSf_VXDqVAC5KqHJZTil7H-2MoeK5lSqx5OWmCaigi6Xn7wNdznlp0mS-D5rgI35-X4Vh-itflowh1j/pub?gid=764885648&single=true&output=csv';
 
 // ZoneCourier label → fixed FR courier code + rate.
 const COURIER_ZONES = {
@@ -29,17 +30,63 @@ const COURIER_ZONES = {
     'inter': { code: 'FR-04', price: 27.99, name: 'Courier - Inter Island' },
 };
 
-// ZoneFreight label → per-box freight rate + full-pallet price (2026).
-const FREIGHT_ZONES = {
-    'auckland/waikato':   { freight: 10.99, pallet: 275, region: 'Auckland/Waikato' },
-    'northland':          { freight: 14.99, pallet: 375, region: 'Northland' },
-    'hawkes bay':         { freight: 10.99, pallet: 275, region: 'Hawkes Bay' },
-    'wellington/wairapa': { freight: 10.99, pallet: 275, region: 'Wellington/Wairarapa' },
-    'south':              { freight: 19.99, pallet: 500, region: 'South Island' },
-    'local':              { freight: 0,     pallet: 0,   region: 'Local' },
-};
-
 const norm = s => String(s || '').toLowerCase().replace(/\s+/g, ' ').trim();
+const num  = v => { const n = parseFloat(String(v ?? '').replace(/[,$\s]/g, '')); return isFinite(n) ? n : 0; };
+
+// Minimal CSV parse (handles quoted fields).
+function parseCsv(text) {
+    const rows = []; let row = [], field = '', q = false;
+    for (let i = 0; i < text.length; i++) {
+        const c = text[i], n = text[i + 1];
+        if (q) { if (c === '"' && n === '"') { field += '"'; i++; } else if (c === '"') q = false; else field += c; }
+        else if (c === '"') q = true;
+        else if (c === ',') { row.push(field); field = ''; }
+        else if (c === '\n' || c === '\r') { if (field.length || row.length) { row.push(field); rows.push(row); row = []; field = ''; } if (c === '\r' && n === '\n') i++; }
+        else field += c;
+    }
+    if (field.length || row.length) { row.push(field); rows.push(row); }
+    return rows;
+}
+
+// Load the freight region rates for the current pricing year, keyed by region.
+// Row: year, region, courier_per_box, freight_per_box, min_pallet, full_pallet,
+// zone_courier, zone_freight.
+async function loadFreightRates(env) {
+    const url = (env && env.CATALOG_FREIGHT_CSV_URL) || FREIGHT_CSV_URL;
+    const resp = await fetch(url, { cf: { cacheTtl: 300, cacheEverything: true } });
+    if (!resp.ok) throw new Error('freight sheet fetch ' + resp.status);
+    const rows = parseCsv(await resp.text());
+    if (rows.length < 2) return [];
+    const head = rows[0].map(h => norm(h));
+    const col = name => head.indexOf(name);
+    const c = { year: col('year'), region: col('region'), freight: col('freight_per_box'),
+                min: col('min_pallet'), pallet: col('full_pallet'),
+                zc: col('zone_courier'), zf: head.findIndex(h => h.startsWith('zone_fr')) };
+    const parsed = rows.slice(1).filter(r => r.length && r[c.region]).map(r => ({
+        year:      parseInt(r[c.year], 10) || 0,
+        region:    (r[c.region] || '').trim(),
+        freight:   c.freight >= 0 ? num(r[c.freight]) : 0,
+        minPallet: c.min     >= 0 ? num(r[c.min])     : 0,
+        pallet:    c.pallet  >= 0 ? num(r[c.pallet])  : 0,
+        zoneFreight: c.zf >= 0 ? (r[c.zf] || '').trim() : '',
+    }));
+    // Latest year present that is ≤ the current calendar year (fallback: max).
+    const yr = new Date().getFullYear();
+    const years = [...new Set(parsed.map(p => p.year))].filter(Boolean);
+    const useYear = years.filter(y => y <= yr).sort((a, b) => b - a)[0] || Math.max(...years, 0);
+    return parsed.filter(p => p.year === useYear);
+}
+
+// Match a store's ZoneFreight label to a rate row: by the row's zone_freight
+// join column first, then by region name (exact, then fuzzy).
+function rateForFreightZone(label, rates) {
+    const z = norm(label);
+    if (!z) return null;
+    return rates.find(r => r.zoneFreight && norm(r.zoneFreight) === z)
+        || rates.find(r => norm(r.region) === z)
+        || rates.find(r => { const rr = norm(r.region); return rr.includes(z) || z.includes(rr); })
+        || null;
+}
 
 function isCourierLine(l) {
     const sku  = String(l?.sku || '').toUpperCase();
@@ -90,7 +137,8 @@ export async function computeAutoFreightLines(env, order) {
     if (boxes <= 0) return [];
 
     const cz = COURIER_ZONES[norm(store.zoneCourier)];
-    const fz = FREIGHT_ZONES[norm(store.zoneFreight)];
+    const rates = await loadFreightRates(env).catch(() => []);
+    const fz = rateForFreightZone(store.zoneFreight, rates);
 
     // Up to 1m² (or no freight rate available): courier.
     if (boxes <= COURIER_MAX_BOXES || !fz || fz.freight <= 0) {
@@ -112,5 +160,16 @@ export async function computeAutoFreightLines(env, order) {
         out.push({ sku: 'FR-05', description: `Freight - ${fz.region}`,
             quantity: rem, unitPrice: fz.freight, autoFreight: true });
     }
-    return out.length ? out : (cz ? [courierLine(cz, boxes)] : []);
+    if (!out.length) return cz ? [courierLine(cz, boxes)] : [];
+
+    // Minimum charge (e.g. 1m² floor): if the freight total is below the
+    // region's min_pallet, charge that minimum on FR-06 instead.
+    if (fz.minPallet > 0) {
+        const total = out.reduce((s, l) => s + l.quantity * l.unitPrice, 0);
+        if (total < fz.minPallet) {
+            return [{ sku: 'FR-06', description: `Freight - Minimum (${fz.region})`,
+                quantity: 1, unitPrice: fz.minPallet, autoFreight: true }];
+        }
+    }
+    return out;
 }
