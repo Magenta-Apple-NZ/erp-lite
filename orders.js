@@ -1593,6 +1593,7 @@ const Orders = (() => {
                 </div>
                 <button id="xero-push-banner-btn" class="btn-primary">Send to Xero</button>
             </div>` : ''}
+            ${orderMissingFreight(order) ? `<div class="form-warn no-print">No freight line on this order — it will invoice without freight. ${order.source === 'inbound' ? 'Received from the portal (common on PGG orders). ' : ''}Edit the order to add one before pushing to Xero.</div>` : ''}
             <div class="packing-slip" id="packing-slip">${slipBodyHTML(order)}</div>
             ${renderEventLog(order.events || [])}
         </div>
@@ -1889,6 +1890,19 @@ const Orders = (() => {
         const sku  = String(l?.sku || '').toUpperCase();
         const desc = String(l?.description || '').toLowerCase();
         return /^FR-\d|COURIER|FREIGHT|CARTAGE|LABEL/.test(sku) || /courier|freight|cartage|\blabel/.test(desc);
+    }
+
+    // True when an order would invoice without freight but probably shouldn't —
+    // it has product lines, no courier/freight line, and isn't a pickup or an
+    // export. Orders received from PGG via the portal commonly arrive like this.
+    function orderMissingFreight(order) {
+        const method = String(order?.fulfilmentMethod || 'courier').toLowerCase();
+        if (method === 'pickup') return false;
+        if (order?.customer?.isExport) return false;
+        const lines = order?.lines || [];
+        const hasProduct = lines.some(l => !isCourierLine(l) && (Number(l.quantity) || 0) !== 0);
+        const hasFreight = lines.some(l => isCourierLine(l));
+        return hasProduct && !hasFreight;
     }
 
     // Number of courier labels invoiced on the order (sum of courier-line qty).
@@ -2536,6 +2550,15 @@ const Orders = (() => {
         //   Entered → Sent to Xero → Printed at Depot → Complete.
         // Wired to both the action-bar button and the prominent banner.
         async function pushToXero(btn) {
+            // Guard against invoicing without freight — the common PGG case.
+            if (orderMissingFreight(order)) {
+                const ok = confirm(
+                    'No freight line on this order.\n\n' +
+                    'It will be invoiced to Xero WITHOUT freight (common on PGG orders received via the portal).\n\n' +
+                    'OK = push without freight.\nCancel = go back and add a freight line first.'
+                );
+                if (!ok) return;
+            }
             if (btn) { btn.disabled = true; btn.textContent = 'Sending to Xero…'; }
             clearErrorBanner();
             try {
