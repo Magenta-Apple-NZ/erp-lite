@@ -5,7 +5,7 @@
 
 import { jsonResponse, errResponse } from '../_xero.js';
 import { syncSalesHistory } from '../sales-history/_writer.js';
-import { computeAutoFreightLine } from '../_freight.js';
+import { computeAutoFreightLines } from '../_freight.js';
 
 export async function onRequestPost({ env, request }) {
     // ── Auth: shared secret ──
@@ -91,8 +91,8 @@ export async function onRequestPost({ env, request }) {
         // without this they'd invoice without freight. No-op if the payload
         // already includes a freight line, or the store has no courier zone.
         try {
-            const freightLine = await computeAutoFreightLine(env, order);
-            if (freightLine) order.lines.push(freightLine);
+            const freightLines = await computeAutoFreightLines(env, order);
+            if (freightLines && freightLines.length) order.lines.push(...freightLines);
         } catch (_) { /* freight is best-effort; never block intake */ }
 
         await env.ORDERS_KV.put('order:' + id, JSON.stringify(order));
