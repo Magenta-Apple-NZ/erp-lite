@@ -5,6 +5,7 @@
 
 import { jsonResponse, errResponse } from '../_xero.js';
 import { syncSalesHistory } from '../sales-history/_writer.js';
+import { computeAutoFreightLine } from '../_freight.js';
 
 export async function onRequestPost({ env, request }) {
     // ── Auth: shared secret ──
@@ -74,6 +75,9 @@ export async function onRequestPost({ env, request }) {
             source:           body.source || 'inbound',
             customer,
             poNumber:         body.poNumber || body.po || body.invoice_no || '',
+            // WebSupplier deep link (Order.action?order=NNNN) captured by the
+            // extension — lets other surfaces link back to the Farmlands order.
+            farmlandsOrderUrl: String(body.farmlandsOrderUrl || body.farmlands_order_url || '').slice(0, 500) || null,
             shipTo,
             lines,
             packingNotes:     body.packingNotes || body.packing_notes || body.notes || '',
@@ -81,6 +85,15 @@ export async function onRequestPost({ env, request }) {
             xeroInvoiceNumber: null,
             xeroSourced:      body.xeroSourced === true || body.xero_sourced === true,
         };
+
+        // Auto-add a courier freight line the way the order form would — orders
+        // arriving here (e.g. PGG portal orders) never touch recalcFreight, so
+        // without this they'd invoice without freight. No-op if the payload
+        // already includes a freight line, or the store has no courier zone.
+        try {
+            const freightLine = await computeAutoFreightLine(env, order);
+            if (freightLine) order.lines.push(freightLine);
+        } catch (_) { /* freight is best-effort; never block intake */ }
 
         await env.ORDERS_KV.put('order:' + id, JSON.stringify(order));
 

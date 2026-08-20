@@ -214,7 +214,7 @@ function nextSeq(stores) {
 
 // On GET when the KV blob is empty, seed it from the sheet so the first
 // request returns useful data and subsequent edits land in KV.
-async function getStoresWithBootstrap(env) {
+export async function getStoresWithBootstrap(env) {
     let stores = await loadStores(env);
     if (stores) return stores;
     try {
