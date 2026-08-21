@@ -5,7 +5,8 @@
 
 import { jsonResponse, errResponse } from '../../_xero.js';
 
-const EDITABLE_FIELDS = ['customerCode', 'customer', 'branch', 'city', 'address', 'postcode', 'phone'];
+// Keep in sync with EDITABLE_FIELDS in ../stores.js (zones drive auto-freight).
+const EDITABLE_FIELDS = ['customerCode', 'customer', 'branch', 'city', 'address', 'postcode', 'phone', 'zoneCourier', 'zoneFreight'];
 
 async function loadStores(env) {
     const raw = await env.ORDERS_KV.get('stores');

@@ -73,23 +73,35 @@ function renderDashboardWidgets(config) {
             <a class="db-top-btn db-top-btn--primary" href="#orders/new">${DB_ICONS.plus}<span>Add Order</span></a>
         </div>`;
 
+    // Layout: charts stacked in the main (left) column — Stock Trajectory
+    // on top, Cumulative Sales beneath it — with the calendar and Xero P&L
+    // in a narrower right-hand column so the calendar sits up at eye level
+    // without dominating the page.
     el.innerHTML = `
         <div id="db-alerts" class="db-alerts" hidden></div>
         ${topRow}
-        <div class="db-charts-row">
-            <section class="db-mod db-mod--chart" id="db-stock-trajectory">
-                <div class="db-mod-hd"><h3 class="db-mod-title">Stock Trajectory <span class="chart-info" title="Projected kg-on-hand 18 months forward from the stocktake date. Bold line = active scenario (Average / Good / Great); faded lines are the other two for reference. Triangle markers are shipment arrivals. A red fill means stock goes below zero.">&#9432;</span></h3><a class="db-mod-link" href="#imports">Open Imports →</a></div>
-                <div class="db-mod-body"><span class="db-mod-loading">Loading…</span></div>
-            </section>
-            <section class="db-mod db-mod--chart" id="db-cumulative-sales">
-                <div class="db-mod-hd"><h3 class="db-mod-title">Cumulative Sales <span class="db-mod-sub">last 3 FYs</span> <span class="chart-info" title="Running total of kg sold within each year. Toggle Calendar (Jan→Dec) vs Financial (NZ FY, Apr→Mar). Compare year-on-year pace at a glance — the current line should sit on or above the prior years' curves at the same point if you're tracking ahead.">&#9432;</span></h3><a class="db-mod-link" href="#sales">Open Sales →</a></div>
-                <div class="db-mod-body"><span class="db-mod-loading">Loading…</span></div>
-            </section>
-        </div>
-        <section class="db-mod db-mod--cal" id="db-calendar-module">
-            <div class="db-mod-hd"><h3 class="db-mod-title" id="db-cal-title">Next 30 days <span class="chart-info" title="Horizontal timeline of the next 30 days. Dot colours: red = public holiday · amber = tax due date · green = shipment arrival or milestone · blue = Google Calendar event. Click a day for its events. The mini-month underneath gives broader context.">&#9432;</span></h3><a class="db-mod-link" href="#calendar">Open Calendar →</a></div>
-            <div class="db-mod-body"><span class="db-mod-loading">Loading…</span></div>
-        </section>`;
+        <div class="db-main-grid">
+            <div class="db-main-left">
+                <section class="db-mod db-mod--chart" id="db-stock-trajectory">
+                    <div class="db-mod-hd"><h3 class="db-mod-title">Stock Trajectory <span class="chart-info" title="Projected kg-on-hand 18 months forward from the stocktake date. Bold line = active scenario (Average / Good / Great); faded lines are the other two for reference. Triangle markers are shipment arrivals. A red fill means stock goes below zero.">&#9432;</span></h3><a class="db-mod-link" href="#imports">Open Imports →</a></div>
+                    <div class="db-mod-body"><span class="db-mod-loading">Loading…</span></div>
+                </section>
+                <section class="db-mod db-mod--chart" id="db-cumulative-sales">
+                    <div class="db-mod-hd"><h3 class="db-mod-title">Cumulative Sales <span class="db-mod-sub">last 3 years</span> <span class="chart-info" title="Running total of kg sold within each year, up to the latest month with sales. Toggle Calendar (Jan→Dec, last 3 calendar years) vs Financial (NZ FY Apr→Mar, last 3 financial years). Compare year-on-year pace at a glance — the current line should sit on or above the prior years' curves at the same point if you're tracking ahead.">&#9432;</span></h3><a class="db-mod-link" href="#sales">Open Sales →</a></div>
+                    <div class="db-mod-body"><span class="db-mod-loading">Loading…</span></div>
+                </section>
+            </div>
+            <aside class="db-main-right">
+                <section class="db-mod db-mod--cal" id="db-calendar-module">
+                    <div class="db-mod-hd"><h3 class="db-mod-title" id="db-cal-title">Next ${DB_STRIP_DAYS} days <span class="chart-info" title="Timeline of the next ${DB_STRIP_DAYS} days. Dot colours: red = public holiday · amber = tax due date · green = shipment arrival or milestone · blue = Google Calendar event. Click a day for its events; the list underneath shows the next 10 events beyond that.">&#9432;</span></h3><a class="db-mod-link" href="#calendar">Open Calendar →</a></div>
+                    <div class="db-mod-body"><span class="db-mod-loading">Loading…</span></div>
+                </section>
+                <section class="db-mod db-mod--chart" id="db-xero-pnl">
+                    <div class="db-mod-hd"><h3 class="db-mod-title">Profit &amp; Loss <span class="db-mod-sub">FY to date · Xero</span> <span class="chart-info" title="Income, expenses and net profit for the current NZ financial year to date (from Xero's Profit &amp; Loss report), compared with the same period last year. Bars = net profit by month for the last 12 months. Refreshed hourly.">&#9432;</span></h3><a class="db-mod-link" href="https://go.xero.com/app/!8QbL4/reports/profit-and-loss" target="_blank" rel="noopener">Open in Xero ↗</a></div>
+                    <div class="db-mod-body"><span class="db-mod-loading">Loading…</span></div>
+                </section>
+            </aside>
+        </div>`;
 
     // Delegate the two priority charts to the views that own them —
     // identical chart code, identical toggles (scenario for the
@@ -97,7 +109,95 @@ function renderDashboardWidgets(config) {
     Warehouse.renderDashboardForecast(document.querySelector('#db-stock-trajectory .db-mod-body'));
     SalesView.renderDashboardCumulative(document.querySelector('#db-cumulative-sales .db-mod-body'));
     loadDashboardCalendar();
+    loadDashboardPnl();
     loadDashboardAlerts();
+}
+
+// ── Xero P&L widget ──────────────────────────────────────────────────────
+// Reads /api/xero/pnl (FY-to-date vs prior FY, plus 12 monthly net-profit
+// bars). Degrades to a connect / reconnect prompt when Xero isn't linked
+// or the token predates the reports scope.
+
+const _pnlMoney = n => {
+    const v = Math.round(Number(n) || 0);
+    const abs = Math.abs(v);
+    const s = abs >= 100000 ? (abs / 1000).toFixed(0) + 'k' : abs.toLocaleString('en-NZ');
+    return (v < 0 ? '−$' : '$') + s;
+};
+
+async function loadDashboardPnl() {
+    const body = document.querySelector('#db-xero-pnl .db-mod-body');
+    if (!body) return;
+    let resp, data = {};
+    try {
+        resp = await fetch('/api/xero/pnl');
+        data = await resp.json().catch(() => ({}));
+    } catch (e) {
+        body.innerHTML = `<p class="db-mod-empty">Could not reach the Hub API.</p>`;
+        return;
+    }
+    if (resp.status === 401) {
+        body.innerHTML = `<p class="db-mod-empty">Xero not connected. <a href="/api/xero/auth">Connect Xero →</a></p>`;
+        return;
+    }
+    if (data.needsReauth) {
+        body.innerHTML = `<p class="db-mod-empty">Xero needs the <strong>Reports</strong> permission for this widget — <a href="/api/xero/auth">reconnect Xero →</a> (one-off).</p>`;
+        return;
+    }
+    if (!resp.ok || !data.fy) {
+        body.innerHTML = `<p class="db-mod-empty">P&amp;L unavailable${data.error ? ': ' + _notifEsc(data.error) : ''}.</p>`;
+        return;
+    }
+
+    const fy = data.fy, prior = data.priorFy || {};
+    const delta = (cur, prev) => {
+        if (!prev) return '';
+        const pct = Math.round(((cur - prev) / Math.abs(prev)) * 100);
+        const up = pct >= 0;
+        return `<span class="db-pnl-delta ${up ? 'db-pnl-delta--up' : 'db-pnl-delta--down'}" title="vs same period ${_notifEsc(prior.label || 'last FY')}: ${_pnlMoney(prev)}">${up ? '▲' : '▼'} ${Math.abs(pct)}%</span>`;
+    };
+    const tile = (label, cur, prev, cls = '') => `
+        <div class="db-pnl-tile ${cls}">
+            <div class="db-pnl-label">${label}</div>
+            <div class="db-pnl-value">${_pnlMoney(cur)}</div>
+            <div class="db-pnl-sub">${delta(cur, prev)}</div>
+        </div>`;
+
+    const m = data.monthly || { labels: [], netProfit: [] };
+    const chartId = 'db-pnl-chart';
+    window._chartQ[chartId] = {
+        type: 'bar',
+        data: {
+            labels: m.labels,
+            datasets: [{
+                label: 'Net profit',
+                data: m.netProfit,
+                backgroundColor: (m.netProfit || []).map(v => v >= 0 ? '#10b981' : '#ef4444'),
+                borderRadius: 2, borderSkipped: false,
+            }],
+        },
+        options: {
+            animation: false, responsive: true, maintainAspectRatio: false,
+            plugins: {
+                legend: { display: false },
+                tooltip: { callbacks: { label: ctx => ` Net profit: ${_pnlMoney(ctx.parsed.y)}` } },
+            },
+            scales: {
+                x: { grid: { display: false }, ticks: { font: { size: 10 }, color: '#64748b' } },
+                y: { grid: { color: '#f1f5f9' }, ticks: { font: { size: 10 }, color: '#94a3b8', callback: v => Math.abs(v) >= 1000 ? (v / 1000).toFixed(0) + 'k' : v } },
+            },
+        },
+    };
+
+    body.innerHTML = `
+        <div class="db-pnl-period">${_notifEsc(fy.label || 'FY to date')} · ${_notifEsc(fy.from || '')} → ${_notifEsc(fy.to || '')}</div>
+        <div class="db-pnl-tiles">
+            ${tile('Income', fy.income, prior.income)}
+            ${tile('Expenses', fy.expenses, prior.expenses, 'db-pnl-tile--exp')}
+            ${tile('Net profit', fy.netProfit, prior.netProfit, fy.netProfit >= 0 ? 'db-pnl-tile--pos' : 'db-pnl-tile--neg')}
+        </div>
+        <div style="position:relative;height:150px;width:100%"><canvas data-chart-id="${chartId}"></canvas></div>`;
+    initCharts(body);
 }
 
 // ── Notification system ──────────────────────────────────────────────────
@@ -106,24 +206,33 @@ function renderDashboardWidgets(config) {
 const _notifEsc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 const _notifFmt = n => '$' + Number(n).toLocaleString('en-NZ', { maximumFractionDigits: 0 });
 const NOTIF_DISMISS_KEY = 'hub-notif-dismissed';
-const NOTIF_TTL = 86400000; // 24h
+const NOTIF_TTL = 86400000;            // 24h — ordinary notifications come back tomorrow
+const NOTIF_STICKY_TTL = 180 * 86400000; // sticky ones stay dismissed (per occurrence) ~6 months
 
+// Dismissals: { id: timestamp } for 24h items, { id: { ts, sticky: true } }
+// for sticky reminders (calendar events like "Pay Suppliers" / tax dates)
+// that must be dismissed by hand and never auto-return.
 function notifGetDismissed() {
     try {
         const raw = JSON.parse(localStorage.getItem(NOTIF_DISMISS_KEY) || '{}');
         const now = Date.now();
         const clean = {};
-        for (const [k, ts] of Object.entries(raw)) {
-            if (now - ts < NOTIF_TTL) clean[k] = ts;
+        for (const [k, v] of Object.entries(raw)) {
+            const sticky = v && typeof v === 'object' && v.sticky;
+            const ts = typeof v === 'number' ? v : Number(v && v.ts) || 0;
+            if (now - ts < (sticky ? NOTIF_STICKY_TTL : NOTIF_TTL)) clean[k] = v;
         }
         return clean;
     } catch { return {}; }
 }
-function notifDismiss(id) {
+function notifDismiss(id, sticky = false) {
     const d = notifGetDismissed();
-    d[id] = Date.now();
+    d[id] = sticky ? { ts: Date.now(), sticky: true } : Date.now();
     localStorage.setItem(NOTIF_DISMISS_KEY, JSON.stringify(d));
 }
+
+// Local YYYY-MM-DD (toISOString would shift NZ evenings to the next UTC day).
+const _ymd = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 function notifRestoreAll() {
     localStorage.removeItem(NOTIF_DISMISS_KEY);
 }
@@ -239,6 +348,53 @@ async function fetchNotificationItems() {
         });
     }
 
+    // 4. Sticky calendar reminders — tax due dates and keyword-matched
+    //    Google Calendar events (e.g. "Pay Suppliers"). Unlike the items
+    //    above these persist until dismissed by hand, and a dismissal only
+    //    covers that occurrence (next month's "Pay Suppliers" shows again).
+    //    Keywords/lookahead live in config.json → notifications.
+    try {
+        const cfgN = (typeof currentConfig !== 'undefined' && currentConfig && currentConfig.notifications) || {};
+        const keywords  = (cfgN.stickyEventKeywords || ['pay suppliers']).map(k => String(k).toLowerCase());
+        const stickyTax = cfgN.stickyTaxDates !== false;
+        const ahead = Number(cfgN.lookaheadDays) || 7;
+        const back  = Number(cfgN.lookbackDays)  || 30;
+        if (typeof CalendarView !== 'undefined' && CalendarView.loadEvents) {
+            const { eventsByDate } = await CalendarView.loadEvents({ rangeDays: ahead + 1 });
+            const todayStr = _ymd(today);
+            const from = new Date(today); from.setDate(from.getDate() - back);
+            const to   = new Date(today); to.setDate(to.getDate() + ahead);
+            const fromStr = _ymd(from), toStr = _ymd(to);
+            const slug = s => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40);
+            for (const date of Object.keys(eventsByDate).sort()) {
+                if (date < fromStr || date > toStr) continue;
+                for (const ev of eventsByDate[date]) {
+                    const label = String(ev.label || '');
+                    const isSticky = (ev.type === 'tax' && stickyTax) ||
+                        (ev.type === 'gcal' && keywords.some(k => k && label.toLowerCase().includes(k)));
+                    if (!isSticky) continue;
+                    const d = new Date(date + 'T00:00:00');
+                    const days = Math.round((d - today) / 86400000);
+                    const when = days === 0 ? 'today' : days === 1 ? 'tomorrow'
+                        : days > 1 ? `in ${days} days`
+                        : days === -1 ? 'yesterday' : `${Math.abs(days)} days ago`;
+                    const dateLbl = d.toLocaleDateString('en-NZ', { weekday: 'short', day: 'numeric', month: 'short' });
+                    items.push({
+                        id: `cal-${ev.type}-${date}-${slug(label)}`,
+                        type: 'cal',
+                        sticky: true,
+                        severity: days < 0 ? 'critical' : days <= 1 ? 'warning' : 'info',
+                        icon: '📌',
+                        text: `<strong>${_notifEsc(label)}</strong> · ${dateLbl} (${when})${days < 0 ? ' <span class="db-alert-badge db-alert-badge--red">overdue</span>' : ''}`,
+                        link: ev.url || '#calendar',
+                        linkLabel: ev.url ? 'Open event ↗' : 'Open Calendar →',
+                        external: !!ev.url,
+                    });
+                }
+            }
+        }
+    } catch (_) { /* calendar is optional — never block other notifications */ }
+
     return items;
 }
 
@@ -263,6 +419,13 @@ async function loadDashboardAlerts() {
                <button class="db-alert-confirm-btn" data-ship-id="${_notifEsc(n.shipId)}" data-notif-id="${_notifEsc(n.id)}">✓ Confirm arrival</button>
                <a class="db-alert-link" href="${n.link}">Open shipment →</a>
            </div>`
+        : n.sticky
+        ? `<div class="db-alert-row db-alert-row--${n.type} db-alert-row--sticky${n.severity === 'critical' ? ' db-alert-row--overdue' : ''}">
+               <span class="db-alert-icon">${n.icon}</span>
+               <span class="db-alert-main">${n.text}</span>
+               <a class="db-alert-link" href="${n.link}"${n.external ? ' target="_blank" rel="noopener"' : ''}>${n.linkLabel}</a>
+               <button class="db-alert-dismiss-btn" data-notif-id="${_notifEsc(n.id)}" title="Dismiss — stays gone until the next occurrence">✕</button>
+           </div>`
         : `<a class="db-alert-row db-alert-row--${n.type}${n.severity === 'critical' ? ' db-alert-row--overdue' : ''}"
               href="${n.link}"${n.external ? ' target="_blank" rel="noopener"' : ''}>
                <span class="db-alert-icon">${n.icon}</span>
@@ -271,6 +434,13 @@ async function loadDashboardAlerts() {
            </a>`
     ).join('');
     el.hidden = false;
+
+    el.querySelectorAll('.db-alert-dismiss-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            notifDismiss(btn.dataset.notifId, true);
+            loadDashboardAlerts();
+        });
+    });
 
     el.querySelectorAll('.db-alert-confirm-btn').forEach(btn => {
         btn.addEventListener('click', async () => {
@@ -317,7 +487,7 @@ async function loadNotificationsView(container) {
             </span>
             <span class="notif-row-actions">
                 ${n.confirmable ? `<button class="notif-confirm-btn" data-ship-id="${_notifEsc(n.shipId)}" data-notif-id="${_notifEsc(n.id)}">✓ Confirm arrival</button>` : ''}
-                <button class="notif-dismiss-btn" data-id="${_notifEsc(n.id)}" title="Dismiss for 24h">✕</button>
+                <button class="notif-dismiss-btn" data-id="${_notifEsc(n.id)}" data-sticky="${n.sticky ? '1' : ''}" title="${n.sticky ? 'Dismiss (stays gone until the next occurrence)' : 'Dismiss for 24h'}">✕</button>
             </span>
         </div>`).join('');
 
@@ -352,7 +522,7 @@ async function loadNotificationsView(container) {
     container.querySelectorAll('.notif-dismiss-btn').forEach(btn => {
         btn.addEventListener('click', e => {
             e.stopPropagation();
-            notifDismiss(btn.dataset.id);
+            notifDismiss(btn.dataset.id, btn.dataset.sticky === '1');
             btn.closest('.notif-row').remove();
             const remaining = container.querySelectorAll('.notif-row').length;
             notifUpdateBadge(remaining);
@@ -381,6 +551,10 @@ const _cal = {
     availableTypes: ['holiday', 'tax', 'shipment'],
     toggles: null,  // initialised on first load to all availableTypes
 };
+// Days shown on the dashboard timeline strip. 14 fits the right-hand
+// column without horizontal scrolling; the "next 10 events" list covers
+// what lies beyond.
+const DB_STRIP_DAYS = 14;
 
 async function loadDashboardCalendar() {
     const body = document.querySelector('#db-calendar-module .db-mod-body');
@@ -418,10 +592,10 @@ function _renderCalendarModule() {
         </button>`
     ).join('');
 
-    // Primary: 30-day horizontal strip starting today. Each cell shows the
-    // weekday + date and stacks event dots.
+    // Primary: horizontal strip of the next DB_STRIP_DAYS days starting
+    // today. Each cell shows the weekday + date and stacks event dots.
     const stripCells = [];
-    for (let i = 0; i < 30; i++) {
+    for (let i = 0; i < DB_STRIP_DAYS; i++) {
         const d = new Date(today.getFullYear(), today.getMonth(), today.getDate() + i);
         const date = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
         const events = (_cal.eventsByDate[date] || []).filter(visible);

@@ -6,6 +6,7 @@ const SCOPES = [
     'openid',
     'accounting.invoices',
     'accounting.contacts.read',
+    'accounting.reports.read',   // P&L / dashboard report widgets
     'offline_access',
 ].join(' ');
 

@@ -23,7 +23,7 @@ const BOXES_PER_PALLET  = 25;
 const FREIGHT_CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSf_VXDqVAC5KqHJZTil7H-2MoeK5lSqx5OWmCaigi6Xn7wNdznlp0mS-D5rgI35-X4Vh-itflowh1j/pub?gid=764885648&single=true&output=csv';
 
 // ZoneCourier label → fixed FR courier code + rate.
-const COURIER_ZONES = {
+export const COURIER_ZONES = {
     'local': { code: 'FR-01', price: 7,     name: 'Courier - Local' },
     'inner': { code: 'FR-02', price: 14.99, name: 'Courier - Inner Island' },
     'outer': { code: 'FR-03', price: 18.99, name: 'Courier - Outer Island' },
@@ -59,7 +59,7 @@ function parseCsv(text) {
 // Load the freight region rates for the current pricing year, keyed by region.
 // Row: year, region, courier_per_box, freight_per_box, min_pallet, full_pallet,
 // zone_courier, zone_freight.
-async function loadFreightRates(env) {
+export async function loadFreightRates(env) {
     const url = (env && env.CATALOG_FREIGHT_CSV_URL) || FREIGHT_CSV_URL;
     const resp = await fetch(url, { cf: { cacheTtl: 300, cacheEverything: true } });
     if (!resp.ok) throw new Error('freight sheet fetch ' + resp.status);
@@ -87,12 +87,16 @@ async function loadFreightRates(env) {
 
 // Match a store's ZoneFreight label to a rate row: by the row's zone_freight
 // join column first, then by region name (exact, then fuzzy).
+// Region labels are compared ignoring spacing around "/" so "Auckland / Waikato"
+// (stores) still matches "Auckland/Waikato" (freight tab).
+const zkey = s => norm(s).replace(/\s*\/\s*/g, '/');
+
 function rateForFreightZone(label, rates) {
-    const z = norm(label);
+    const z = zkey(label);
     if (!z) return null;
-    return rates.find(r => r.zoneFreight && norm(r.zoneFreight) === z)
-        || rates.find(r => norm(r.region) === z)
-        || rates.find(r => { const rr = norm(r.region); return rr.includes(z) || z.includes(rr); })
+    return rates.find(r => r.zoneFreight && zkey(r.zoneFreight) === z)
+        || rates.find(r => zkey(r.region) === z)
+        || rates.find(r => { const rr = zkey(r.region); return rr.includes(z) || z.includes(rr); })
         || null;
 }
 

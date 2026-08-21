@@ -92,24 +92,33 @@ const SalesView = (() => {
         return `<div style="position:relative;height:210px;width:100%"><canvas data-chart-id="${id}"></canvas></div>`;
     }
 
-    function buildCumulativeChart(data, mode = 'cal') {
+    // maxYears > 0 keeps only the most recent N years *after* the Cal/FY
+    // reshape — so "last 3" means 3 financial years in FY mode, not 3
+    // calendar years squeezed into 4 partial FYs.
+    function buildCumulativeChart(data, mode = 'cal', maxYears = 0) {
         const useFy = mode === 'fy';
         const source = useFy ? toFinancialYear(data) : data;
-        const years = Object.keys(source).sort();
+        let years = Object.keys(source).sort();
+        if (maxYears > 0) years = years.slice(-maxYears);
         if (!years.length) return '';
         const id = 'cumulative-chart';
         const labels = useFy ? FY_MO_NAMES : MO_NAMES;
         const yrLabel = yr => useFy ? `FY${String(yr).slice(-2)}` : yr;
         // Cumulative line: carry the running total forward through null
-        // months so the chart shows a flat segment instead of a gap. We
-        // still leave leading null months (before the first data point of
-        // a year) as null so the line doesn't start at zero before the
-        // year has actually started selling.
+        // months *between* data points so the chart shows a flat segment
+        // instead of a gap. Leading null months (before the first sale of
+        // the year) stay null, and so do months after the LAST data point —
+        // otherwise the current year's line runs flat out to December as if
+        // the rest of the year had already happened.
         const cumData = {};
         for (const yr of years) {
+            const vals = source[yr] || [];
+            let lastIdx = -1;
+            vals.forEach((v, i) => { if (v != null) lastIdx = i; });
             let run = 0;
             let started = false;
-            cumData[yr] = (source[yr] || []).map(v => {
+            cumData[yr] = vals.map((v, i) => {
+                if (i > lastIdx) return null;
                 if (v != null) { run += v; started = true; return run; }
                 return started ? run : null;
             });
@@ -794,16 +803,15 @@ const SalesView = (() => {
         }
         if (!rows.length) { container.innerHTML = '<p class="db-mod-empty">No sales history yet.</p>'; return; }
 
-        // Latest 3 calendar years that have any data — same logic the full
-        // page applies as a default. The Cal/FY toggle then flips between
-        // calendar and fiscal-year framing of that data.
+        // Aggregate ALL years → { year: [12 monthly kg or null] }; the chart
+        // builder keeps the latest 3 after the Cal/FY reshape, so the widget
+        // shows the last 3 calendar years or the last 3 financial years
+        // depending on the toggle.
         const allYears = [...new Set(rows.map(r => String(r.year)))].sort();
-        const recent  = new Set(allYears.slice(-3));
 
-        // Aggregate rows → { year: [12 monthly kg or null] } for the recent years.
         function computeData() {
             const data = {};
-            for (const yr of recent) data[yr] = new Array(12).fill(null);
+            for (const yr of allYears) data[yr] = new Array(12).fill(null);
             for (const r of rows) {
                 const yr = String(r.year);
                 if (!data[yr]) continue;
@@ -827,7 +835,7 @@ const SalesView = (() => {
                         <button class="sales-mode-btn${cumMode === 'fy' ? ' active' : ''}" data-mode="fy" role="tab" aria-selected="${cumMode === 'fy'}">Financial</button>
                     </div>
                 </div>
-                <div class="db-cumulative-chart-wrap">${buildCumulativeChart(data, cumMode)}</div>`;
+                <div class="db-cumulative-chart-wrap">${buildCumulativeChart(data, cumMode, 3)}</div>`;
             if (typeof initCharts === 'function') initCharts(container);
             container.querySelectorAll('.sales-mode-btn').forEach(btn => {
                 btn.addEventListener('click', () => {

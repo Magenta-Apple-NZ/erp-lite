@@ -3,6 +3,13 @@
     "base": "NZD",
     "targets": ["USD", "EUR", "AUD", "BDT", "ZAR"]
   },
+  "notifications": {
+    "_comment": "Sticky reminders: Google Calendar events whose title contains any keyword (case-insensitive), plus tax due dates, appear as dashboard notifications that stay until dismissed by hand. lookaheadDays = how early they appear; lookbackDays = how long an undismissed past one lingers.",
+    "stickyEventKeywords": ["pay suppliers"],
+    "stickyTaxDates": true,
+    "lookaheadDays": 7,
+    "lookbackDays": 30
+  },
   "printers": [
     { "id": 75308467, "label": "Warehouse",       "documents": ["slip", "address"] },
     { "id": 75409000, "label": "Andrew's Office", "documents": ["slip"] }

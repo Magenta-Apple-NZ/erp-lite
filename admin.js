@@ -44,7 +44,7 @@ const Admin = (() => {
     }
 
     const STORE_HEADERS = ['Customer Code', 'Customer', 'Branch', 'City', 'Street Address', 'Postcode', 'Phone', 'Zone_courier', 'Zone_freight'];
-    const STORE_EXAMPLE = ['FF-Te-Puke', 'Fruitfed', 'Fruitfed - Te Puke', 'Te Puke', '1 Jellicoe Street', '3119', '07 533 1234', 'Inner Island', 'Inner Island'];
+    const STORE_EXAMPLE = ['FF-Te-Puke', 'Fruitfed', 'Fruitfed - Te Puke', 'Te Puke', '1 Jellicoe Street', '3119', '07 533 1234', 'Local', 'Tauranga / Te Puke'];
 
     function downloadCsv(csv, filename) {
         const a = document.createElement('a');
@@ -168,13 +168,157 @@ const Admin = (() => {
         body.innerHTML = '<div class="orders-loading">Loading stores…</div>';
 
         let stores = [];
-        let showArchived = false;
+
+        // Fixed option lists for the zone columns, from /api/catalog/zones:
+        // courier zones are the four fixed FR-01..04 zones; freight zones are
+        // the rate rows on the published freight tab (current pricing year).
+        // Values must match exactly for auto-freight to resolve — free text is
+        // how "inner" vs "Inner Island" mismatches crept in.
+        let zoneOpts = { courier: [], freight: [], loaded: false };
+        async function loadZones() {
+            try {
+                const z = await api('/api/catalog/zones');
+                zoneOpts = {
+                    courier: z.courierZones || [],
+                    freight: (z.freightZones || []).map(f => f.label),
+                    loaded:  true,
+                };
+            } catch (_) {
+                zoneOpts = {
+                    courier: ['Local', 'Inner Island', 'Outer Island', 'Inter Island'],
+                    freight: [...new Set(stores.map(s => s.zoneFreight).filter(Boolean))].sort(),
+                    loaded:  true,
+                };
+            }
+        }
 
         async function reload() {
-            const url = '/api/catalog/stores' + (showArchived ? '?archived=true' : '');
-            stores = await api(url);
-            if (typeof onUpdate === 'function') onUpdate(stores);
+            // Always fetch archived too — they render in their own section below.
+            stores = await api('/api/catalog/stores?archived=true');
+            if (!zoneOpts.loaded) await loadZones();
+            if (typeof onUpdate === 'function') onUpdate(stores.filter(s => !s.archived));
             render();
+        }
+
+        // ── Sales by Month for one store ─────────────────────────────────
+        // Sales rows (sales_history) name stores loosely — "PGG"/"Katikati",
+        // "PGG Wrightson"/"Fruitfed Supplies Katikati", "Farmlands"/"Farmlands
+        // Retail - Te Puna" — so match on customer family + branch containment.
+        let salesRowsP = null;
+        function loadSalesRows() {
+            if (!salesRowsP) {
+                salesRowsP = fetch('/api/sales-history?rows=true')
+                    .then(r => r.ok ? r.json() : { rows: [] })
+                    .then(d => d.rows || [])
+                    .catch(() => []);
+            }
+            return salesRowsP;
+        }
+        const normTxt = s => String(s || '').toLowerCase().replace(/\s+/g, ' ').trim();
+        function customerFamily(s) {
+            const n = normTxt(s);
+            if (!n) return '';
+            if (/fruitfed|^pgg/.test(n)) return 'pgg';
+            if (n.includes('farmlands')) return 'farmlands';
+            if (n.includes('horticentre') || n.includes('hortcentre')) return 'horticentre';
+            return n;
+        }
+        function rowMatchesStore(row, store) {
+            const sb = normTxt(store.branch);
+            if (!sb) return false;
+            const rb = normTxt(row.branch);
+            if (!(rb === sb || rb.includes(sb))) return false;
+            const sf = customerFamily(store.customer);
+            const rf = customerFamily(row.customer) || customerFamily(row.branch);
+            return !sf || !rf || sf === rf;
+        }
+
+        const MO_SHORT = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+        const CHART_COLORS = ['#94a3b8', '#3b82f6', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899', '#14b8a6', '#f97316'];
+
+        async function openStoreSales(store) {
+            const overlay = document.createElement('div');
+            overlay.className = 'modal-overlay';
+            const title = [store.customer, store.branch].filter(Boolean).map(escHtml).join(' — ');
+            overlay.innerHTML = `
+                <div class="modal-box modal-box--wide">
+                    <h3 class="modal-title">Sales by Month · ${title || escHtml(store.id)}</h3>
+                    <div id="store-sales-body"><p class="modal-hint">Loading sales history…</p></div>
+                    <div class="modal-actions"><button class="btn-secondary" id="store-sales-close">Close</button></div>
+                </div>`;
+            document.body.appendChild(overlay);
+            const close = () => { document.removeEventListener('keydown', onKey); overlay.remove(); };
+            const onKey = e => { if (e.key === 'Escape') close(); };
+            overlay.querySelector('#store-sales-close').addEventListener('click', close);
+            overlay.addEventListener('click', e => { if (e.target === overlay) close(); });
+            document.addEventListener('keydown', onKey);
+
+            const rows = (await loadSalesRows()).filter(r => rowMatchesStore(r, store));
+            if (!overlay.isConnected) return;
+            const bodyEl = overlay.querySelector('#store-sales-body');
+            if (!rows.length) {
+                bodyEl.innerHTML = '<p class="modal-hint">No sales rows found for this store.</p>';
+                return;
+            }
+
+            // kg per calendar month, one dataset per year
+            const byYear = {};
+            let totalKg = 0, lastDate = '';
+            rows.forEach(r => {
+                const kg = (Number(r.bundlesKg) || 0) + (Number(r.looseKg) || 0) + (Number(r.ecoTiesKg) || 0);
+                const y = r.year, m = Math.min(11, Math.max(0, (Number(r.month) || 1) - 1));
+                if (!y) return;
+                if (!byYear[y]) byYear[y] = new Array(12).fill(0);
+                byYear[y][m] += kg;
+                totalKg += kg;
+                if ((r.date || '') > lastDate) lastDate = r.date || '';
+            });
+            const allYears = Object.keys(byYear).sort();
+            const chartId = 'store-sales-chart';
+
+            function drawChart(years) {
+                window._chartQ[chartId] = {
+                    type: 'bar',
+                    data: {
+                        labels: MO_SHORT,
+                        datasets: years.map((y, i) => ({
+                            label: String(y),
+                            data: byYear[y],
+                            backgroundColor: CHART_COLORS[i % CHART_COLORS.length],
+                            borderRadius: 2, borderSkipped: false,
+                        })),
+                    },
+                    options: {
+                        animation: false, responsive: true, maintainAspectRatio: false,
+                        interaction: { mode: 'index', intersect: false },
+                        plugins: {
+                            legend: { display: true, position: 'bottom', labels: { font: { size: 11 }, boxWidth: 10, padding: 8 } },
+                            tooltip: { callbacks: { label: ctx => ` ${ctx.dataset.label}: ${Math.round(ctx.parsed.y).toLocaleString('en-NZ')} kg` } },
+                        },
+                        scales: {
+                            x: { grid: { display: false }, ticks: { font: { size: 10 }, color: '#64748b' } },
+                            y: { grid: { color: '#f1f5f9' }, ticks: { font: { size: 10 }, color: '#94a3b8', callback: v => Math.abs(v) >= 1000 ? (v / 1000).toFixed(0) + 'k' : v } },
+                        },
+                    },
+                };
+                if (typeof initCharts === 'function') initCharts(overlay);
+            }
+
+            const recent = allYears.slice(-3);
+            bodyEl.innerHTML = `
+                <div style="display:flex;justify-content:space-between;align-items:center;gap:0.75rem;margin:-0.35rem 0 0.75rem">
+                    <span class="modal-hint">${rows.length} sales row${rows.length === 1 ? '' : 's'} · ${Math.round(totalKg).toLocaleString('en-NZ')} kg total${lastDate ? ' · last sale ' + escHtml(lastDate) : ''}</span>
+                    ${allYears.length > 3 ? `<label class="modal-hint" style="white-space:nowrap">Years
+                        <select id="store-sales-years" style="margin-left:0.35rem;font-size:0.85rem">
+                            <option value="recent">Last 3</option>
+                            <option value="all">All (${allYears.length})</option>
+                        </select></label>` : ''}
+                </div>
+                <div style="position:relative;height:260px;width:100%"><canvas data-chart-id="${chartId}"></canvas></div>`;
+            drawChart(recent);
+            overlay.querySelector('#store-sales-years')?.addEventListener('change', e => {
+                drawChart(e.target.value === 'all' ? allYears : recent);
+            });
         }
 
         const STORE_HEADERS = [
@@ -185,12 +329,32 @@ const Admin = (() => {
             { key: 'city',         label: 'City',     width: '110px' },
             { key: 'postcode',     label: 'Postcode', width: '80px' },
             { key: 'phone',        label: 'Phone',    width: '110px' },
-            { key: 'zoneCourier',  label: 'Zone (courier)', width: '120px' },
-            { key: 'zoneFreight',  label: 'Zone (freight)', width: '120px' },
+            { key: 'zoneCourier',  label: 'Zone (courier)', width: '135px', select: () => zoneOpts.courier },
+            { key: 'zoneFreight',  label: 'Zone (freight)', width: '175px', select: () => zoneOpts.freight },
         ];
 
+        // Fixed-choice cell. A current value that isn't in the option list is
+        // kept as a flagged "⚠ … (not in list)" option so nothing is silently
+        // blanked — it just needs re-picking.
+        function selectCellHtml(s, h) {
+            const cur  = s[h.key] || '';
+            const opts = h.select();
+            const known = opts.some(o => o.toLowerCase() === cur.toLowerCase());
+            const optHtml = ['<option value="">—</option>'].concat(opts.map(o =>
+                `<option value="${escHtml(o)}"${o.toLowerCase() === cur.toLowerCase() ? ' selected' : ''}>${escHtml(o)}</option>`));
+            if (cur && !known) {
+                optHtml.push(`<option value="${escHtml(cur)}" selected>⚠ ${escHtml(cur)} (not in list)</option>`);
+            }
+            const warn = cur && !known;
+            return `
+                <td>
+                    <select class="store-cell${warn ? ' store-cell--warn' : ''}" data-id="${escHtml(s.id)}" data-field="${h.key}"
+                        title="${warn ? 'Not a recognised zone — auto-freight can\'t resolve it. Pick a value from the list.' : escHtml(h.label)}">${optHtml.join('')}</select>
+                </td>`;
+        }
+
         function rowHtml(s) {
-            const cells = STORE_HEADERS.map(h => `
+            const cells = STORE_HEADERS.map(h => h.select ? selectCellHtml(s, h) : `
                 <td>
                     <input class="store-cell" data-id="${escHtml(s.id)}" data-field="${h.key}"
                         value="${escHtml(s[h.key] || '')}" placeholder="${escHtml(h.label)}">
@@ -201,11 +365,12 @@ const Admin = (() => {
             return `
             <tr class="store-row${s.archived ? ' store-row--archived' : ''}" data-id="${escHtml(s.id)}">
                 <td class="store-id-cell">
-                    <span class="cat-mono">${escHtml(s.id)}</span>
+                    <a href="#" class="cat-mono store-id-link" data-action="sales" data-id="${escHtml(s.id)}" title="Sales by month for this store">${escHtml(s.id)}</a>
                     ${srcBadge}
                 </td>
                 ${cells}
                 <td class="store-actions-cell">
+                    <button class="btn-secondary btn-sm" data-action="sales" data-id="${escHtml(s.id)}" title="Sales by month">📊</button>
                     ${s.archived
                         ? `<button class="btn-secondary btn-sm" data-action="restore" data-id="${escHtml(s.id)}">Restore</button>`
                         : `<button class="btn-secondary btn-sm" data-action="archive" data-id="${escHtml(s.id)}">Archive</button>`}
@@ -213,40 +378,52 @@ const Admin = (() => {
             </tr>`;
         }
 
-        function render() {
-            const visible = stores.filter(s => showArchived || !s.archived);
-            body.innerHTML = `
-            <div class="cat-section" id="cat-stores">
-                <div class="cat-section-head">
-                    <div>
-                        <h2 class="cat-title">Store Locations</h2>
-                        <p class="cat-sub">Hub-owned. ${visible.length} store${visible.length === 1 ? '' : 's'}${showArchived ? ' (incl. archived)' : ''}. Edit any cell and click outside to save. Use Archive to soft-delete (data is preserved for historical references).</p>
-                    </div>
-                    <div class="cat-header-actions">
-                        <a class="btn-secondary btn-sm" href="/api/catalog/stores?format=csv" download="stores.csv">Export CSV ↓</a>
-                        <button class="btn-secondary btn-sm" id="stores-add-btn">+ Add store</button>
-                        <label class="store-toggle-archived">
-                            <input type="checkbox" id="stores-show-archived" ${showArchived ? 'checked' : ''}> Show archived
-                        </label>
-                    </div>
-                </div>
-
+        function tableHtml(rows, emptyText) {
+            return `
                 <div class="store-table-wrap">
                     <table class="store-table">
                         <thead>
                             <tr>
                                 <th style="width:120px">Id</th>
                                 ${STORE_HEADERS.map(h => `<th${h.width ? ` style="width:${h.width}"` : ''}>${h.label}</th>`).join('')}
-                                <th style="width:80px"></th>
+                                <th style="width:120px"></th>
                             </tr>
                         </thead>
                         <tbody>
-                            ${visible.length
-                                ? visible.map(rowHtml).join('')
-                                : '<tr><td colspan="9" class="cat-empty">No stores. Click "+ Add store" to create one.</td></tr>'}
+                            ${rows.length
+                                ? rows.map(rowHtml).join('')
+                                : `<tr><td colspan="${STORE_HEADERS.length + 2}" class="cat-empty">${emptyText}</td></tr>`}
                         </tbody>
                     </table>
+                </div>`;
+        }
+
+        function render() {
+            const active   = stores.filter(s => !s.archived);
+            const archived = stores.filter(s => s.archived);
+            body.innerHTML = `
+            <div class="cat-section" id="cat-stores">
+                <div class="cat-section-head">
+                    <div>
+                        <h2 class="cat-title">Store Locations</h2>
+                        <p class="cat-sub">Hub-owned. ${active.length} store${active.length === 1 ? '' : 's'}. Edit any cell and click outside to save. Click a store's Id (or 📊) for its sales by month. Archive soft-deletes — archived stores are listed below.</p>
+                    </div>
+                    <div class="cat-header-actions">
+                        <a class="btn-secondary btn-sm" href="/api/catalog/stores?format=csv" download="stores.csv">Export CSV ↓</a>
+                        <button class="btn-secondary btn-sm" id="stores-add-btn">+ Add store</button>
+                    </div>
                 </div>
+
+                ${tableHtml(active, 'No stores. Click "+ Add store" to create one.')}
+
+                <details class="cat-section store-archived" style="margin-top:1rem${archived.length ? '' : ';display:none'}">
+                    <summary style="cursor:pointer;list-style:none;padding:0.5rem 0">
+                        <strong>Archived stores</strong> &nbsp;<span class="cat-sub">— ${archived.length} hidden from order forms and auto-freight; kept for historical references. Restore to bring one back.</span>
+                    </summary>
+                    <div style="margin-top:0.5rem">
+                        ${tableHtml(archived, 'No archived stores.')}
+                    </div>
+                </details>
 
                 <details class="cat-section" style="margin-top:1rem">
                     <summary style="cursor:pointer;list-style:none;padding:0.5rem 0">
@@ -272,29 +449,43 @@ const Admin = (() => {
         }
 
         function wireRow() {
-            // Save-on-blur for every editable cell.
+            // Save-on-blur (text inputs) / save-on-change (zone selects).
+            async function saveCell(input, originalValue) {
+                const id    = input.dataset.id;
+                const field = input.dataset.field;
+                input.disabled = true;
+                try {
+                    await api(`/api/catalog/stores/${encodeURIComponent(id)}`, {
+                        method: 'PATCH',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ [field]: input.value }),
+                    });
+                    const local = stores.find(s => s.id === id);
+                    if (local) local[field] = input.value;
+                    if (input.tagName === 'SELECT') {
+                        // A valid pick clears the warning and its placeholder option.
+                        input.classList.remove('store-cell--warn');
+                        input.title = '';
+                        input.querySelectorAll('option').forEach(o => {
+                            if (o.textContent.startsWith('⚠') && !o.selected) o.remove();
+                        });
+                    }
+                    return true;
+                } catch (err) {
+                    showToast('Save failed: ' + err.message);
+                    input.value = originalValue;
+                    return false;
+                } finally {
+                    input.disabled = false;
+                }
+            }
             body.querySelectorAll('.store-cell').forEach(input => {
                 let originalValue = input.value;
                 input.addEventListener('focus', () => { originalValue = input.value; });
-                input.addEventListener('blur', async () => {
+                const evt = input.tagName === 'SELECT' ? 'change' : 'blur';
+                input.addEventListener(evt, async () => {
                     if (input.value === originalValue) return;
-                    const id    = input.dataset.id;
-                    const field = input.dataset.field;
-                    input.disabled = true;
-                    try {
-                        await api(`/api/catalog/stores/${encodeURIComponent(id)}`, {
-                            method: 'PATCH',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ [field]: input.value }),
-                        });
-                        const local = stores.find(s => s.id === id);
-                        if (local) local[field] = input.value;
-                    } catch (err) {
-                        showToast('Save failed: ' + err.message);
-                        input.value = originalValue;
-                    } finally {
-                        input.disabled = false;
-                    }
+                    if (await saveCell(input, originalValue)) originalValue = input.value;
                 });
             });
 
@@ -302,7 +493,11 @@ const Admin = (() => {
                 btn.addEventListener('click', async (e) => {
                     const id = e.currentTarget.dataset.id;
                     const action = e.currentTarget.dataset.action;
-                    if (action === 'archive') {
+                    if (action === 'sales') {
+                        e.preventDefault();
+                        const store = stores.find(s => s.id === id);
+                        if (store) openStoreSales(store);
+                    } else if (action === 'archive') {
                         if (!confirm(`Archive store ${id}?\n\nIt'll be hidden but kept in KV for historical references.`)) return;
                         try {
                             await api(`/api/catalog/stores/${encodeURIComponent(id)}`, { method: 'DELETE' });
@@ -321,12 +516,6 @@ const Admin = (() => {
                         } catch (err) { showToast('Restore failed: ' + err.message); }
                     }
                 });
-            });
-
-            // Show / hide archived rows.
-            document.getElementById('stores-show-archived')?.addEventListener('change', async (e) => {
-                showArchived = e.target.checked;
-                await reload();
             });
 
             // Add a new store inline — minimal flow: prompt for customer + branch,
