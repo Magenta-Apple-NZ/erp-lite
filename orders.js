@@ -1420,10 +1420,11 @@ const Orders = (() => {
 
     // Courier label control — a "Create Courier label" button before a label
     // exists, or a tracking chip (with reprint) once one does.
-    // Courier label UI is built but not in use yet. Flip to true to surface the
-    // "Create Courier label" button + tracking chip; all backend/modal code
-    // stays wired regardless.
-    const COURIER_UI_ENABLED = false;
+    // Surfaces the "Create Courier label" button + tracking chip. Whether a
+    // label is a real (billable) Post Haste consignment or a mock is decided
+    // server-side by COURIER_TEST_MODE in the Cloudflare Pages env — the
+    // modal shows a TEST MODE chip while that's on.
+    const COURIER_UI_ENABLED = true;
 
     function courierAction(order) {
         if (!COURIER_UI_ENABLED) return '';
