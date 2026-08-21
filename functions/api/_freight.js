@@ -33,6 +33,14 @@ const COURIER_ZONES = {
 const norm = s => String(s || '').toLowerCase().replace(/\s+/g, ' ').trim();
 const num  = v => { const n = parseFloat(String(v ?? '').replace(/[,$\s]/g, '')); return isFinite(n) ? n : 0; };
 
+// Store ZoneCourier labels are "Local" / "Inner Island" / "Outer Island" /
+// "Inter Island" (see Catalogue → Stores); COURIER_ZONES is keyed on the
+// first word so either the short or the full label resolves.
+function courierZoneFor(label) {
+    const key = norm(label).split(' ')[0];
+    return COURIER_ZONES[key] || null;
+}
+
 // Minimal CSV parse (handles quoted fields).
 function parseCsv(text) {
     const rows = []; let row = [], field = '', q = false;
@@ -98,9 +106,16 @@ function resolveStore(order, stores) {
     const cust = norm(order?.customer?.name);
     const br   = norm(order?.shipTo?.branch);
     if (!br && !cust) return null;
-    return (cust && br && stores.find(s => norm(s.customer) === cust && norm(s.branch) === br))
-        || (br && stores.find(s => norm(s.branch) === br))
-        || (br && stores.find(s => { const b = norm(s.branch); return b && (b.includes(br) || br.includes(b)); }))
+    const live = (stores || []).filter(s => !s.archived);
+    const sc = s => norm(s.customer), sb = s => norm(s.branch);
+    return (cust && br && live.find(s => sc(s) === cust && sb(s) === br))
+        // Portal branch names embed the store's customer label, e.g.
+        // "Fruitfed Supplies Pukekohe" → customer "Fruitfed", branch "Pukekohe";
+        // "Farmlands Retail - Pukekohe" → "Farmlands" / "Pukekohe". Match both
+        // parts so same-town stores of different customers don't collide.
+        || (br && live.find(s => sc(s) && sb(s) && br.includes(sc(s)) && br.includes(sb(s))))
+        || (br && live.find(s => sb(s) === br))
+        || (br && live.find(s => { const b = sb(s); return b && (b.includes(br) || br.includes(b)); }))
         || null;
 }
 
@@ -136,7 +151,7 @@ export async function computeAutoFreightLines(env, order) {
     const boxes = boxCount(lines, itemsMap);
     if (boxes <= 0) return [];
 
-    const cz = COURIER_ZONES[norm(store.zoneCourier)];
+    const cz = courierZoneFor(store.zoneCourier);
     const rates = await loadFreightRates(env).catch(() => []);
     const fz = rateForFreightZone(store.zoneFreight, rates);
 

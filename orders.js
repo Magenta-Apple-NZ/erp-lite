@@ -314,7 +314,9 @@ const Orders = (() => {
                             <td class="order-po">${escHtml(o.poNumber || '—')}</td>
                             <td class="order-date">${fmtDate(o.createdAt)}</td>
                             <td class="order-total">$${fmt(orderTotal(o))}</td>
-                            <td>${statusBadge(o.status)}${o.paidAt ? '<span class="paid-badge" title="Paid">✓ Paid</span>' : ''}</td>
+                            <td>${statusBadge(o.status)}${o.paidAt ? '<span class="paid-badge" title="Paid">✓ Paid</span>' : ''}${!o.xeroInvoiceNumber && orderMissingFreight(o)
+                                ? '<span class="paid-badge" style="background:#fff4e5;color:#9a4b00;border:1px solid #f0c38e;" title="Product lines but no courier/freight line — add one before pushing to Xero (unless pickup)">🚚 No freight</span>'
+                                : ''}</td>
                             <td class="order-xero">${o.xeroInvoiceNumber
                                 ? `<span class="xero-inv-num">${escHtml(o.xeroInvoiceNumber)}</span>`
                                 : '<span class="xero-pending">—</span>'}</td>

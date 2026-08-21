@@ -93,6 +93,7 @@ export async function onRequestGet({ env, request }) {
             totals:            orderTotals(hit),
             xeroInvoiceId:     hit.xeroInvoiceId || null,
             xeroInvoiceNumber: hit.xeroInvoiceNumber || null,
+            farmlandsOrderUrl: hit.farmlandsOrderUrl || null,
             dispatchedAt:      hit.dispatchedAt || null,
             dispatchedBy:      hit.dispatchedBy || null,
             printedAt:         hit.printedAt || null,
