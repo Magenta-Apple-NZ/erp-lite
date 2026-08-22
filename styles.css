@@ -662,6 +662,23 @@ li.drag-over { background: #eff6ff; }
 .modal-box--wide { max-width: 560px; max-height: 88vh; overflow-y: auto; }
 
 /* Courier label modal grid */
+/* Courier modal: two sections side by side — Recipient | Items */
+.courier-modal-box { max-width: 780px; }
+.courier-modal-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; }
+.courier-modal-cols > .courier-modal-col:first-child {
+    border-right: 1px solid #e2e8f0; padding-right: 1.5rem;
+}
+.cm-section-title {
+    font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.06em;
+    color: #64748b; font-weight: 700; margin: 0 0 0.7rem;
+}
+@media (max-width: 680px) {
+    .courier-modal-cols { grid-template-columns: 1fr; gap: 0; }
+    .courier-modal-cols > .courier-modal-col:first-child {
+        border-right: none; border-bottom: 1px solid #e2e8f0;
+        padding-right: 0; padding-bottom: 0.4rem; margin-bottom: 1.1rem;
+    }
+}
 .courier-modal-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 0.85rem; }
 .courier-modal-grid .cm-span2 { grid-column: 1 / -1; }
 .courier-modal-grid .modal-field { margin-bottom: 0.65rem; }
