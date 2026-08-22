@@ -714,10 +714,10 @@ li.drag-over { background: #eff6ff; }
 .cm-recon-note { font-size: 0.78rem; opacity: 0.85; font-weight: 600; }
 
 /* Courier label popup — PDF preview + condensed details */
-.clv-box { max-width: 640px; }
-.clv-body { display: grid; grid-template-columns: 1fr 200px; gap: 1rem; align-items: start; }
+.clv-box { max-width: 960px; }
+.clv-body { display: grid; grid-template-columns: 1fr 280px; gap: 1.25rem; align-items: start; }
 .clv-pdf {
-    height: 380px; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden;
+    height: 570px; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden;
     background: #f8fafc; display: flex; align-items: center; justify-content: center;
 }
 .clv-pdf iframe { width: 100%; height: 100%; border: 0; }
@@ -736,7 +736,7 @@ li.drag-over { background: #eff6ff; }
 .btn-text.clv-clear { color: #dc2626; }
 @media (max-width: 560px) {
     .clv-body { grid-template-columns: 1fr; }
-    .clv-pdf { height: 300px; }
+    .clv-pdf { height: 450px; }
 }
 .modal-actions .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
 /* Page 3 "label created" confirmation banner */
