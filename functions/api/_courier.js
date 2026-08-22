@@ -54,11 +54,29 @@ export async function createShipment(env, body) {
     });
     const data = await res.json().catch(() => ({}));
 
+    // GSS errors come back in several shapes — a top-level Message, or arrays
+    // of strings OR objects (e.g. { Property, Message }). Flatten them all to
+    // readable text so the real reason isn't lost as "[object Object]".
+    const errText = () => {
+        const one = e => typeof e === 'string' ? e
+            : (e && (e.Message || e.message || e.ErrorMessage || e.Error || [e.Property, e.Reason].filter(Boolean).join(': ')))
+              || JSON.stringify(e);
+        const parts = [];
+        if (data && data.Message) parts.push(data.Message);
+        for (const key of ['Errors', 'ValidationErrors', 'ModelState']) {
+            const v = data && data[key];
+            if (Array.isArray(v)) parts.push(...v.map(one));
+            else if (v && typeof v === 'object') parts.push(...Object.values(v).flat().map(one));
+        }
+        return parts.filter(Boolean).join('; ') || `HTTP ${res.status} ${res.statusText}`;
+    };
+
     if (!res.ok) {
-        throw new Error(`GoSweetSpot ${res.status}: ${data.Message || res.statusText}`);
+        throw new Error(`GoSweetSpot ${res.status}: ${errText()}`);
     }
-    if (Array.isArray(data.Errors) && data.Errors.length) {
-        throw new Error('GoSweetSpot: ' + data.Errors.join('; '));
+    if ((Array.isArray(data.Errors) && data.Errors.length) ||
+        (Array.isArray(data.ValidationErrors) && data.ValidationErrors.length)) {
+        throw new Error('GoSweetSpot: ' + errText());
     }
     const c = (data.Consignments || [])[0];
     if (!c || !c.Connote) {
