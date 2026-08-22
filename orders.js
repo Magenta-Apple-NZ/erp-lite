@@ -1493,10 +1493,11 @@ const Orders = (() => {
         if (dispatched) {
             const who = order.dispatchedBy || 'Jake';
             dispatchMain = `<button id="dispatch-btn" class="btn-primary split-btn-main" data-dispatch-by="${escHtml(who)}">✓ Complete · ${escHtml(who)}</button>`;
-            dispatchItems = isWarehouseRole()
+            dispatchItems = (isWarehouseRole()
                 ? `<button class="overflow-item" data-dispatch-by="Jake">Re-dispatch (Jake)</button>`
                 : `<button class="overflow-item" data-dispatch-by="Jake">Dispatched by Jake</button>`
-                  + `<button class="overflow-item" data-dispatch-by="Andrew">Dispatched by Andrew</button>`;
+                  + `<button class="overflow-item" data-dispatch-by="Andrew">Dispatched by Andrew</button>`)
+                + `<button class="overflow-item" id="undispatch-btn">Unmark as dispatched</button>`;
         } else {
             dispatchMain = `<button id="dispatch-btn" class="btn-primary split-btn-main" data-dispatch-by="Jake">Dispatch (Jake)</button>`;
             dispatchItems = isWarehouseRole()
@@ -1519,7 +1520,9 @@ const Orders = (() => {
             ? `<span class="status-printed-tag" title="Slip auto-printed at ${escHtml(order.printedTo || 'depot')} on ${escHtml(new Date(order.printedAt).toLocaleString('en-NZ'))}">🖨 Printed at ${escHtml(order.printedTo || 'depot')}</span>`
             : '';
 
-        return `${printedTag}${xeroBtn}${courierBtn}${dispatchBtn}${kebab}`;
+        // Warehouse staff don't touch Xero — omit that button for them entirely.
+        const xeroSlot = isWarehouseRole() ? '' : xeroBtn;
+        return `${printedTag}${xeroSlot}${courierBtn}${dispatchBtn}${kebab}`;
     }
 
     function refreshActionBar(order) {
@@ -1574,20 +1577,21 @@ const Orders = (() => {
         <div class="order-actions no-print">
             <div class="order-actions-left">
                 <a href="#orders" class="btn-secondary btn-sm">← Orders</a>
-                <select id="order-status-sel" class="order-status-sel">
+                ${isWarehouseRole() ? '' : `<select id="order-status-sel" class="order-status-sel">
                     ${statusStageOptions(order)}
-                </select>
+                </select>`}
             </div>
             <div class="order-actions-right" id="action-btns">
                 ${actionButtons(order, xeroConnected)}
             </div>
         </div>
 
-        <!-- Detail tabs -->
+        <!-- Detail tabs (Letter of Credit is admin-only — redundant for warehouse) -->
+        ${isWarehouseRole() ? '' : `
         <div class="order-detail-tabs no-print">
             <button class="order-detail-tab order-detail-tab--active" data-tab="overview">Overview</button>
             <button class="order-detail-tab" data-tab="lc">Letter of Credit</button>
-        </div>
+        </div>`}
 
         <!-- Overview panel -->
         <div id="order-tab-overview" class="order-tab-panel">
@@ -3064,6 +3068,29 @@ const Orders = (() => {
             }
         }
         document.querySelectorAll('#action-btns [data-dispatch-by]').forEach(btn => btn.addEventListener('click', runDispatch));
+
+        // Unmark as dispatched — revert to the prior stage (Sent to Xero if
+        // invoiced, else New) and clear who dispatched it.
+        document.getElementById('undispatch-btn')?.addEventListener('click', async () => {
+            const revert = order.xeroInvoiceId ? 'sent_to_xero' : 'new';
+            clearErrorBanner();
+            try {
+                await api('/api/orders/' + orderId, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ status: revert, dispatchedBy: null, event: { ts: new Date().toISOString(), msg: 'Unmarked as dispatched' } }),
+                });
+                order.status = revert;
+                order.dispatchedBy = null;
+                const sel = document.getElementById('order-status-sel');
+                if (sel) sel.value = revert;
+                refreshActionBar(order);
+                logEvent(orderId, 'Unmarked as dispatched');
+                showToast('Unmarked as dispatched');
+            } catch (e) {
+                showErrorBanner('Error: ' + e.message);
+            }
+        });
 
         // Duplicate — clone this order (customer, ship-to, lines, notes) into a
         // fresh draft and open it for editing.
