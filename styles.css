@@ -696,11 +696,13 @@ li.drag-over { background: #eff6ff; }
 }
 .cm-recon--ok   { background: #f0fdf4; border: 1px solid #bbf7d0; color: #15803d; }
 .cm-recon--warn { background: #fef2f2; border: 1px solid #fecaca; color: #b91c1c; }
-.courier-reprint-btn {
+.courier-reprint-btn, .courier-clear-btn {
     background: none; border: none; cursor: pointer; padding: 0 0.1rem;
     font-size: 0.9rem; line-height: 1; opacity: 0.7;
 }
 .courier-reprint-btn:hover { opacity: 1; }
+.courier-clear-btn { color: #dc2626; }
+.courier-clear-btn:hover { opacity: 1; }
 .modal-title {
     margin: 0 0 1.1rem;
     font-size: 0.95rem;

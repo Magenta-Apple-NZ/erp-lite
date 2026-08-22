@@ -1441,7 +1441,7 @@ const Orders = (() => {
             const mismatchTag = c.labelMismatch
                 ? `<span class="courier-chip-warn" title="${escHtml(String(c.boxesOrdered))} label(s) ordered via Post Haste but ${escHtml(String(c.invoicedLabels))} invoiced">⚠ ${escHtml(String(c.boxesOrdered))}≠${escHtml(String(c.invoicedLabels))}</span>`
                 : '';
-            return `<span class="courier-chip" title="${escHtml(c.carrier)} · created ${escHtml(fmtDateTime(c.createdAt))}">📦 ${track}${testTag}${mismatchTag}<button class="courier-reprint-btn" id="courier-reprint-btn" title="Reprint label">🖨</button></span>`;
+            return `<span class="courier-chip" title="${escHtml(c.carrier)} · created ${escHtml(fmtDateTime(c.createdAt))}">📦 ${track}${testTag}${mismatchTag}<button class="courier-reprint-btn" id="courier-reprint-btn" title="Reprint label">🖨</button><button class="courier-clear-btn" id="courier-clear-btn" title="Clear this label so you can create a new one">✕</button></span>`;
         }
         return `<button id="create-courier-btn" class="btn-secondary">📦 Create Courier label</button>`;
     }
@@ -2212,6 +2212,31 @@ const Orders = (() => {
         }
     }
 
+    // Clear the stored courier label so a new one can be created. Hub-side only
+    // — a live Post Haste consignment is NOT voided here (do that in GoSweetSpot
+    // if it shouldn't be billed).
+    async function runClearCourier(order) {
+        const c = order.courier || {};
+        const live = c.connote && !c.mock;
+        const msg = live
+            ? `Clear courier label ${c.connote} from this order?\n\nThis only unlinks it in the Hub so you can create a new label. The Post Haste consignment is NOT voided — void it in GoSweetSpot if it shouldn't be billed.`
+            : 'Clear the test label so you can create a new one?';
+        if (!confirm(msg)) return;
+        try {
+            await api('/api/orders/' + order.id, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ courier: null }),
+            });
+            order.courier = null;
+            refreshActionBar(order);
+            showToast('Courier label cleared — you can create a new one');
+            logEvent(order.id, 'Cleared courier label', c.connote || '');
+        } catch (e) {
+            showErrorBanner('Clear failed: ' + e.message);
+        }
+    }
+
     function printAddressPopup(order) {
         const ref = order.xeroInvoiceNumber || order.id;
         const win = window.open('', '_blank', 'width=1100,height=780');
@@ -2489,6 +2514,7 @@ const Orders = (() => {
         // Courier label — create / reprint
         document.getElementById('create-courier-btn')?.addEventListener('click', e => runCreateCourier(order, e.currentTarget));
         document.getElementById('courier-reprint-btn')?.addEventListener('click', () => runReprintCourier(order));
+        document.getElementById('courier-clear-btn')?.addEventListener('click', () => runClearCourier(order));
 
         // Download packing slip as PDF
         document.getElementById('download-slip-btn')?.addEventListener('click', e => {

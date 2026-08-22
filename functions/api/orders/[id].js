@@ -68,6 +68,9 @@ export async function onRequestPatch({ env, params, request }) {
         if (updates.xeroInvoiceNumber !== undefined) order.xeroInvoiceNumber = updates.xeroInvoiceNumber;
         if (updates.xeroSourced !== undefined) order.xeroSourced = updates.xeroSourced === true;
         if (updates.paidAt !== undefined) order.paidAt = updates.paidAt;
+        // Courier label link — set by /api/courier/label, or cleared (null)
+        // from the UI to allow creating a fresh label.
+        if (updates.courier !== undefined) order.courier = updates.courier;
         // Slip print receipt (set by the order-detail view after auto-print
         // to the depot succeeds). Lets the UI show "🖨 Printed at <where>".
         if (updates.printedAt !== undefined) order.printedAt = updates.printedAt;
