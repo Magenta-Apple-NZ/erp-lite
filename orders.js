@@ -1439,9 +1439,10 @@ const Orders = (() => {
     // of secondary actions. Reuses the .overflow-menu machinery so the global
     // click-outside closer applies. `mainHtml` is the primary element; `items`
     // is the dropdown's inner HTML (empty → caret omitted, plain button).
-    function splitButton(mainHtml, items) {
-        if (!items) return `<div class="split-btn">${mainHtml}</div>`;
-        return `<div class="split-btn">${mainHtml}<div class="overflow-menu split-btn-menu">`
+    function splitButton(mainHtml, items, opts = {}) {
+        const cls = 'split-btn' + (opts.done ? ' split-btn--done' : '');
+        if (!items) return `<div class="${cls}">${mainHtml}</div>`;
+        return `<div class="${cls}">${mainHtml}<div class="overflow-menu split-btn-menu">`
             + `<button class="overflow-trigger split-btn-caret" title="More" onclick="event.stopPropagation();this.closest('.overflow-menu').classList.toggle('open')">▾</button>`
             + `<div class="overflow-dropdown">${items}</div></div></div>`;
     }
@@ -1451,26 +1452,31 @@ const Orders = (() => {
     // (rendered separately) sets the stage; these buttons perform the work.
     function actionButtons(order, xeroConnected) {
         const invoiced = !!order.xeroInvoiceId;
+        const xeroUrl  = invoiced ? `https://go.xero.com/AccountsReceivable/Edit.aspx?InvoiceID=${encodeURIComponent(order.xeroInvoiceId)}` : '';
 
         // 1) Send to Xero — primary pushes; dropdown links / views the invoice.
+        // Turns green once invoiced; the dropdown still allows re-linking.
         let xeroMain;
-        if (order.xeroSourced && !invoiced) {
+        if (invoiced) {
+            xeroMain = `<a class="btn-primary split-btn-main" href="${xeroUrl}" target="_blank" rel="noopener">✓ Sent to Xero</a>`;
+        } else if (order.xeroSourced) {
             // Created in Xero — pushing would duplicate, so link instead.
             xeroMain = `<button id="link-xero-primary-btn" class="btn-primary split-btn-main">Link Xero Invoice</button>`;
         } else {
-            xeroMain = `<button id="push-xero-btn" class="btn-primary split-btn-main"${(invoiced || !xeroConnected) ? ' disabled' : ''}>Send to Xero</button>`;
+            xeroMain = `<button id="push-xero-btn" class="btn-primary split-btn-main"${!xeroConnected ? ' disabled' : ''}>Send to Xero</button>`;
         }
         const xeroItems = `<button class="overflow-item" id="link-xero-btn">Link to Xero…</button>`
             + (invoiced
-                ? `<a class="overflow-item xero-only" href="https://go.xero.com/AccountsReceivable/Edit.aspx?InvoiceID=${encodeURIComponent(order.xeroInvoiceId)}" target="_blank" rel="noopener">✓ ${escHtml(order.xeroInvoiceNumber || 'Invoice')} — View in Xero ↗</a>`
+                ? `<a class="overflow-item xero-only" href="${xeroUrl}" target="_blank" rel="noopener">✓ ${escHtml(order.xeroInvoiceNumber || 'Invoice')} — View in Xero ↗</a>`
                 : '');
-        const xeroBtn = splitButton(xeroMain, xeroItems);
+        const xeroBtn = splitButton(xeroMain, xeroItems, { done: invoiced });
 
         // 2) Create Courier label — primary creates (or shows the tracking chip);
-        //    dropdown prints the slip / address.
+        //    dropdown prints the slip / address. Green once a label exists.
         let courierMain;
         const c = order.courier;
-        if (c && c.connote) {
+        const hasLabel = !!(c && c.connote);
+        if (hasLabel) {
             const track = c.trackingUrl
                 ? `<a href="${escHtml(c.trackingUrl)}" target="_blank" rel="noopener" class="courier-chip-link">${escHtml(c.connote)} ↗</a>`
                 : escHtml(c.connote);
@@ -1482,19 +1488,27 @@ const Orders = (() => {
         }
         const courierItems = `<button class="overflow-item" id="print-slip-btn">Print Packing Slip</button>`
             + `<button class="overflow-item" id="print-address-btn">Print Address</button>`;
-        const courierBtn = splitButton(courierMain, courierItems);
+        const courierBtn = splitButton(courierMain, courierItems, { done: hasLabel });
 
         // 3) Dispatch — primary dispatches as Jake; dropdown as Andrew (admin only).
-        let dispatchBtn;
-        if (order.status === 'dispatched') {
-            dispatchBtn = `<span class="status-dispatched-tag">✓ Complete${order.dispatchedBy ? ' · ' + escHtml(order.dispatchedBy) : ''}</span>`;
+        // Once dispatched it turns green ("✓ Complete · who") but stays a split
+        // button so the operator can re-stamp / change who dispatched it.
+        const dispatched = order.status === 'dispatched';
+        let dispatchMain, dispatchItems;
+        if (dispatched) {
+            const who = order.dispatchedBy || 'Jake';
+            dispatchMain = `<button id="dispatch-btn" class="btn-primary split-btn-main" data-dispatch-by="${escHtml(who)}">✓ Complete · ${escHtml(who)}</button>`;
+            dispatchItems = isWarehouseRole()
+                ? `<button class="overflow-item" data-dispatch-by="Jake">Re-dispatch (Jake)</button>`
+                : `<button class="overflow-item" data-dispatch-by="Jake">Dispatched by Jake</button>`
+                  + `<button class="overflow-item" data-dispatch-by="Andrew">Dispatched by Andrew</button>`;
         } else {
-            const dispatchMain = `<button id="dispatch-btn" class="btn-primary split-btn-main" data-dispatch-by="Jake">Dispatch (Jake)</button>`;
-            const dispatchItems = isWarehouseRole()
+            dispatchMain = `<button id="dispatch-btn" class="btn-primary split-btn-main" data-dispatch-by="Jake">Dispatch (Jake)</button>`;
+            dispatchItems = isWarehouseRole()
                 ? ''
-                : `<button class="overflow-item" id="dispatch-andrew-btn" data-dispatch-by="Andrew">Dispatched (Andrew)</button>`;
-            dispatchBtn = splitButton(dispatchMain, dispatchItems);
+                : `<button class="overflow-item" data-dispatch-by="Andrew">Dispatched (Andrew)</button>`;
         }
+        const dispatchBtn = splitButton(dispatchMain, dispatchItems, { done: dispatched });
 
         // Kebab — duplicate / delete only.
         const kebab = `
@@ -2808,8 +2822,7 @@ const Orders = (() => {
                 btn.textContent = label;
             }
         }
-        document.getElementById('dispatch-btn')?.addEventListener('click', runDispatch);
-        document.getElementById('dispatch-andrew-btn')?.addEventListener('click', runDispatch);
+        document.querySelectorAll('#action-btns [data-dispatch-by]').forEach(btn => btn.addEventListener('click', runDispatch));
 
         // Duplicate — clone this order (customer, ship-to, lines, notes) into a
         // fresh draft and open it for editing.

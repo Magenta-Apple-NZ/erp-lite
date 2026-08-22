@@ -57,6 +57,8 @@ export async function onRequestPatch({ env, params, request }) {
             }
             order.status = updates.status;
         }
+        // Allow correcting who dispatched an already-dispatched order.
+        if (updates.dispatchedBy !== undefined) order.dispatchedBy = updates.dispatchedBy;
 
         // Full order field updates (edit order)
         if (updates.customer !== undefined) order.customer = updates.customer;

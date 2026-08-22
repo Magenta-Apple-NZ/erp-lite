@@ -1165,18 +1165,33 @@ li.drag-over { background: #eff6ff; }
 /* ── Overflow / context menu ── */
 /* Split button — primary action joined to a ▾ dropdown caret */
 .split-btn { display: inline-flex; align-items: stretch; }
+.split-btn-main { display: inline-flex; align-items: center; text-decoration: none; }
 .split-btn .split-btn-main { border-radius: 6px 0 0 6px; }
 .split-btn .courier-chip.split-btn-main { border-right: none; }
 .split-btn-menu { display: inline-flex; }
+/* The caret matches the primary button (blue), joined seamlessly. */
 .split-btn-caret {
-    background: #e2e8f0; color: #475569; border: none;
+    background: #2563eb; color: #fff; border: none;
+    border-left: 1px solid rgba(255,255,255,0.35);
     padding: 0 0.5rem; min-width: 0;
     border-radius: 0 6px 6px 0;
     font-size: 0.7rem; line-height: 1; cursor: pointer; font-family: inherit;
     display: inline-flex; align-items: center; justify-content: center;
-    transition: background 0.12s, color 0.12s;
+    transition: background 0.12s;
 }
-.split-btn-caret:hover { background: #cbd5e1; color: #1e293b; }
+.split-btn-caret:hover { background: #1d4ed8; }
+
+/* Done — the action is complete: main + caret go green. The dropdown still
+   works so the operator can change the action/status. */
+.split-btn--done .split-btn-main,
+.split-btn--done .split-btn-caret { background: #10b981; color: #fff; }
+.split-btn--done .split-btn-main:hover,
+.split-btn--done .split-btn-caret:hover { background: #059669; }
+.split-btn--done .split-btn-main[disabled] { opacity: 1; cursor: default; }
+.split-btn--done .courier-chip { background: #10b981; border-color: #059669; color: #fff; }
+.split-btn--done .courier-chip .courier-chip-link { color: #fff; }
+.split-btn--done .courier-reprint-btn,
+.split-btn--done .courier-clear-btn { color: #fff; }
 
 .overflow-menu { position: relative; display: inline-flex; }
 .overflow-trigger {
