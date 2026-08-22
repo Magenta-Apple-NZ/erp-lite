@@ -1484,16 +1484,10 @@ const Orders = (() => {
         const printSlipItem   = `<button class="overflow-item" id="print-slip-btn">Print Packing Slip</button>`;
         const printAddrItem   = `<button class="overflow-item" id="print-address-btn">🏷 Print Address</button>`;
         if (hasLabel) {
-            // Green track chip — kept deliberately simple (connote + clear).
-            const track = c.trackingUrl
-                ? `<a href="${escHtml(c.trackingUrl)}" target="_blank" rel="noopener" class="courier-chip-link">${escHtml(c.connote)} ↗</a>`
-                : escHtml(c.connote);
-            const testTag = c.mock ? '<span class="courier-chip-test">TEST</span>' : '';
-            courierMain = `<span class="courier-chip split-btn-main" title="${escHtml(c.carrier)} · created ${escHtml(fmtDateTime(c.createdAt))}">📦 ${track}${testTag}<button class="courier-clear-btn" id="courier-clear-btn" title="Clear this label so you can create a new one">✕</button></span>`;
-            // Reprint re-sends the existing label to PrintNode (works any time,
-            // even after navigating away and back).
-            const reprintItem = `<button class="overflow-item" id="courier-reprint-btn">🖨 Reprint label</button>`;
-            courierItems = reprintItem + printSlipItem + printAddrItem;
+            // A created label collapses to one green "Courier Label" button that
+            // opens a popup (PDF preview + condensed details + actions).
+            courierMain = `<button id="courier-label-btn" class="btn-primary split-btn-main" title="${escHtml(c.carrier)} ${escHtml(c.connote)} · created ${escHtml(fmtDateTime(c.createdAt))}">📦 Courier Label</button>`;
+            courierItems = printSlipItem + printAddrItem;
         } else if (freight) {
             // Freight / over 14 boxes — ships on a pallet, so print the address
             // label; courier labels stay available but demoted.
@@ -2544,6 +2538,88 @@ const Orders = (() => {
         }
     }
 
+    // Trigger a browser download of a base64 PDF.
+    function downloadPdfBase64(base64, filename) {
+        const bytes = atob(base64);
+        const arr = new Uint8Array(bytes.length);
+        for (let i = 0; i < bytes.length; i++) arr[i] = bytes.charCodeAt(i);
+        const url = URL.createObjectURL(new Blob([arr], { type: 'application/pdf' }));
+        const a = document.createElement('a');
+        a.href = url; a.download = filename;
+        document.body.appendChild(a); a.click(); a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 2000);
+    }
+
+    // Popup for a created label: PDF preview + condensed recipient/label details
+    // + Print (PrintNode) / Download PDF / View Tracking (and Clear).
+    function openCourierLabelModal(order) {
+        const c = order.courier || {};
+        const st = order.shipTo || {};
+        const recipName = (order.customer && order.customer.name) || st.branch || order.id;
+        const addr = [st.street || st.address, st.suburb, [st.city, st.postcode].filter(Boolean).join(' ')]
+            .map(s => (s || '').trim()).filter(Boolean).map(escHtml).join('<br>');
+        const labels = c.boxesOrdered || (c.packages && c.packages.length) || 1;
+
+        const overlay = document.createElement('div');
+        overlay.className = 'modal-overlay';
+        overlay.innerHTML = `
+            <div class="modal-box clv-box">
+                <h3 class="modal-title">Courier Label</h3>
+                <div class="clv-body">
+                    <div class="clv-pdf" id="clv-pdf"><div class="clv-loading">Loading label…</div></div>
+                    <div class="clv-side">
+                        <div class="clv-detail">
+                            <div class="clv-connote">📦 ${escHtml(c.connote || '—')}${c.mock ? ' <span class="courier-chip-test">TEST</span>' : ''}</div>
+                            <div class="clv-meta">${escHtml(c.carrier || 'Post Haste')} · ${labels} label${labels === 1 ? '' : 's'}${c.createdAt ? ' · ' + escHtml(fmtDateTime(c.createdAt)) : ''}</div>
+                            <div class="clv-recip"><strong>${escHtml(recipName)}</strong>${addr ? '<br>' + addr : ''}</div>
+                        </div>
+                        <div class="clv-actions">
+                            <button class="btn-primary" id="clv-print">🖨 Print label</button>
+                            <button class="btn-secondary" id="clv-download">⬇ Download PDF</button>
+                            ${c.trackingUrl ? `<a class="btn-secondary" href="${escHtml(c.trackingUrl)}" target="_blank" rel="noopener">📍 View Tracking</a>` : `<button class="btn-secondary" disabled title="No tracking URL">📍 View Tracking</button>`}
+                            <button class="btn-text clv-clear" id="clv-clear">Clear label</button>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-actions"><button class="btn-secondary" id="clv-close">Close</button></div>
+            </div>`;
+        document.body.appendChild(overlay);
+        const $ = sel => overlay.querySelector(sel);
+        const close = () => { document.removeEventListener('keydown', onKey); overlay.remove(); };
+        const onKey = e => { if (e.key === 'Escape') close(); };
+        $('#clv-close').addEventListener('click', close);
+        overlay.addEventListener('click', e => { if (e.target === overlay) close(); });
+        document.addEventListener('keydown', onKey);
+
+        // Fetch the label PDF once; reuse it for preview / print / download.
+        let labelBase64 = null;
+        (async () => {
+            try {
+                const result = await api('/api/courier/label?orderId=' + encodeURIComponent(order.id));
+                labelBase64 = result.labelBase64 || null;
+                const pdf = $('#clv-pdf');
+                if (labelBase64) {
+                    pdf.innerHTML = `<iframe title="Courier label" src="data:application/pdf;base64,${labelBase64}"></iframe>`;
+                } else {
+                    pdf.innerHTML = `<div class="clv-loading">${result.mock ? 'No preview in test mode.' : 'Label PDF unavailable.'}</div>`;
+                    $('#clv-download').disabled = true;
+                }
+            } catch (e) {
+                $('#clv-pdf').innerHTML = `<div class="clv-loading">Could not load label: ${escHtml(e.message)}</div>`;
+                $('#clv-download').disabled = true;
+            }
+        })();
+
+        $('#clv-print').addEventListener('click', async () => {
+            if (labelBase64) await printCourierLabel(order, labelBase64);
+            else await runReprintCourier(order); // refetches + prints
+        });
+        $('#clv-download').addEventListener('click', () => {
+            if (labelBase64) downloadPdfBase64(labelBase64, `${c.connote || order.id}-label.pdf`);
+        });
+        $('#clv-clear').addEventListener('click', async () => { await runClearCourier(order); if (!order.courier) close(); });
+    }
+
     // Clear the stored courier label so a new one can be created. Hub-side only
     // — a live Post Haste consignment is NOT voided here (do that in GoSweetSpot
     // if it shouldn't be billed).
@@ -2845,6 +2921,7 @@ const Orders = (() => {
 
         // Courier label — create / reprint
         document.getElementById('create-courier-btn')?.addEventListener('click', e => runCreateCourier(order, e.currentTarget));
+        document.getElementById('courier-label-btn')?.addEventListener('click', () => openCourierLabelModal(order));
         document.getElementById('courier-reprint-btn')?.addEventListener('click', () => runReprintCourier(order));
         document.getElementById('courier-clear-btn')?.addEventListener('click', () => runClearCourier(order));
 

@@ -712,6 +712,32 @@ li.drag-over { background: #eff6ff; }
 .cm-options-body { display: flex; flex-direction: column; gap: 0.5rem; padding: 0.6rem 0.7rem; border-top: 1px solid #e2e8f0; }
 .cm-options-body[hidden] { display: none; }
 .cm-recon-note { font-size: 0.78rem; opacity: 0.85; font-weight: 600; }
+
+/* Courier label popup — PDF preview + condensed details */
+.clv-box { max-width: 640px; }
+.clv-body { display: grid; grid-template-columns: 1fr 200px; gap: 1rem; align-items: start; }
+.clv-pdf {
+    height: 380px; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden;
+    background: #f8fafc; display: flex; align-items: center; justify-content: center;
+}
+.clv-pdf iframe { width: 100%; height: 100%; border: 0; }
+.clv-loading { color: #64748b; font-size: 0.85rem; padding: 1rem; text-align: center; }
+.clv-side { display: flex; flex-direction: column; gap: 1rem; }
+.clv-detail { display: flex; flex-direction: column; gap: 0.35rem; }
+.clv-connote { font-size: 1rem; font-weight: 700; color: #1e293b; }
+.clv-meta { font-size: 0.76rem; color: #64748b; }
+.clv-recip { font-size: 0.82rem; color: #334155; line-height: 1.4; margin-top: 0.3rem; }
+.clv-actions { display: flex; flex-direction: column; gap: 0.5rem; }
+.clv-actions .btn-primary, .clv-actions .btn-secondary { width: 100%; text-align: center; box-sizing: border-box; }
+.btn-text {
+    background: none; border: none; color: #64748b; cursor: pointer; font-family: inherit;
+    font-size: 0.78rem; padding: 0.2rem; text-decoration: underline;
+}
+.btn-text.clv-clear { color: #dc2626; }
+@media (max-width: 560px) {
+    .clv-body { grid-template-columns: 1fr; }
+    .clv-pdf { height: 300px; }
+}
 .modal-actions .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
 /* Page 3 "label created" confirmation banner */
 .cm-created {
