@@ -2028,9 +2028,9 @@ const Orders = (() => {
                         <div class="modal-field">
                             <label>Box L×W×H (cm)</label>
                             <div class="cm-dims">
-                                <input type="number" id="cm-l" value="44" min="1" step="1">
-                                <input type="number" id="cm-w" value="44" min="1" step="1">
-                                <input type="number" id="cm-h" value="34" min="1" step="1">
+                                <input type="number" id="cm-l" value="36" min="1" step="1">
+                                <input type="number" id="cm-w" value="46" min="1" step="1">
+                                <input type="number" id="cm-h" value="35" min="1" step="1">
                             </div>
                         </div>
                         <div class="modal-field">
@@ -2085,7 +2085,7 @@ const Orders = (() => {
                 }
                 const boxes = Math.max(1, parseInt($('#cm-boxes').value, 10) || 1);
                 const totalKg = Math.max(0.1, parseFloat($('#cm-kg').value) || 0.1);
-                const L = Number($('#cm-l').value) || 44, W = Number($('#cm-w').value) || 44, H = Number($('#cm-h').value) || 34;
+                const L = Number($('#cm-l').value) || 36, W = Number($('#cm-w').value) || 46, H = Number($('#cm-h').value) || 35;
                 // Untouched box count + weight → use the accurate per-box weights
                 // from the line-item derivation; otherwise split the total evenly.
                 const untouched = boxes === derived.boxes && Math.abs(totalKg - derived.totalKg) < 0.01;
