@@ -1597,6 +1597,17 @@ const Orders = (() => {
                 <button id="xero-push-banner-btn" class="btn-primary">Send to Xero</button>
             </div>` : ''}
             ${orderMissingFreight(order) ? `<div class="form-warn no-print">No freight line on this order — it will invoice without freight. ${order.source === 'inbound' ? 'Received from the portal (common on PGG orders). ' : ''}Edit the order to add one before pushing to Xero.</div>` : ''}
+            ${shouldOfferCourierLabels(order) ? `
+            <div class="courier-cta-banner no-print" id="courier-cta-banner">
+                <div class="courier-cta-text">
+                    <strong>📦 Looks like a courier order</strong>
+                    <span>Create the Post Haste label${invoicedLabelCount(order) > 1 ? 's (' + invoicedLabelCount(order) + ')' : ''} when you're ready.</span>
+                </div>
+                <div class="courier-cta-actions">
+                    <button class="btn-primary btn-sm" id="courier-cta-create">Create labels</button>
+                    <button class="btn-secondary btn-sm" id="courier-cta-dismiss">Not now</button>
+                </div>
+            </div>` : ''}
             <div class="packing-slip" id="packing-slip">${slipBodyHTML(order)}</div>
             ${renderEventLog(order.events || [])}
         </div>
@@ -1607,6 +1618,16 @@ const Orders = (() => {
         </div>`;
 
         wireDetailButtons(order);
+
+        // Courier CTA banner (overview panel, wired once — it's not re-rendered
+        // by refreshActionBar). "Create labels" opens the modal; on success the
+        // banner is removed. "Not now" just dismisses it.
+        document.getElementById('courier-cta-create')?.addEventListener('click', async () => {
+            await runCreateCourier(order);
+            if (order.courier?.connote) document.getElementById('courier-cta-banner')?.remove();
+        });
+        document.getElementById('courier-cta-dismiss')?.addEventListener('click', () =>
+            document.getElementById('courier-cta-banner')?.remove());
 
         // Tab switching
         body.querySelectorAll('.order-detail-tab').forEach(btn => {
@@ -1906,6 +1927,23 @@ const Orders = (() => {
         const hasProduct = lines.some(l => !isCourierLine(l) && (Number(l.quantity) || 0) !== 0);
         const hasFreight = lines.some(l => isCourierLine(l));
         return hasProduct && !hasFreight;
+    }
+
+    // A freight (not courier) shipment — carries a per-carton/pallet freight
+    // line (FR-05/FR-06). Those go on a pallet/transport run, not Post Haste.
+    function isFreightShipment(order) {
+        return (order?.lines || []).some(l =>
+            /^FR-0[56]\b/i.test(String(l.sku || '')) || /\bpallet\b/i.test(String(l.description || '')));
+    }
+
+    // Prompt to create courier labels? Courier-shippable, not yet labelled,
+    // and not a freight / pickup / export order.
+    function shouldOfferCourierLabels(order) {
+        if (order?.courier?.connote) return false;
+        if (order?.customer?.isExport) return false;
+        if (String(order?.fulfilmentMethod || 'courier').toLowerCase() === 'pickup') return false;
+        if (isFreightShipment(order)) return false;
+        return (order?.lines || []).some(l => !isCourierLine(l) && (Number(l.quantity) || 0) > 0);
     }
 
     // Number of courier labels invoiced on the order (sum of courier-line qty).

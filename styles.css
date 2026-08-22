@@ -1057,6 +1057,17 @@ li.drag-over { background: #eff6ff; }
 .xero-push-banner-text span { font-size: 0.78rem; color: #b45309; }
 .xero-push-banner .btn-primary { flex-shrink: 0; }
 
+.courier-cta-banner {
+    display: flex; align-items: center; justify-content: space-between; gap: 1rem;
+    background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 8px;
+    padding: 0.85rem 1.1rem; margin: 0 auto 1rem; max-width: 794px; width: 100%;
+    box-sizing: border-box;
+}
+.courier-cta-text { display: flex; flex-direction: column; gap: 0.1rem; }
+.courier-cta-text strong { color: #1e40af; font-size: 0.92rem; }
+.courier-cta-text span { font-size: 0.78rem; color: #2563eb; }
+.courier-cta-actions { display: flex; gap: 0.4rem; flex-shrink: 0; }
+
 .print-confirm-banner {
     display: flex;
     align-items: center;
