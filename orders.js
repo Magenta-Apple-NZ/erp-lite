@@ -1471,11 +1471,18 @@ const Orders = (() => {
                 : '');
         const xeroBtn = splitButton(xeroMain, xeroItems, { done: invoiced });
 
-        // 2) Create Courier label — primary creates (or shows the tracking chip);
-        //    dropdown prints the slip / address. Green once a label exists.
-        let courierMain;
+        // 2) Dispatch label — courier vs freight. Under the courier box ceiling
+        //    (≤14) the priority is Create Courier Label; above it (freight /
+        //    pallet) it's Print Address, with courier labels de-prioritised into
+        //    the dropdown. Green once a courier label exists.
+        let courierMain, courierItems;
         const c = order.courier;
         const hasLabel = !!(c && c.connote);
+        const freight = shipsAsFreight(order);
+        const boxes = physicalBoxCount(order);
+        const createCourierItem = `<button class="overflow-item" id="create-courier-btn">📦 Create Courier Label${boxes ? ' (' + boxes + ')' : ''}</button>`;
+        const printSlipItem   = `<button class="overflow-item" id="print-slip-btn">Print Packing Slip</button>`;
+        const printAddrItem   = `<button class="overflow-item" id="print-address-btn">🏷 Print Address</button>`;
         if (hasLabel) {
             const track = c.trackingUrl
                 ? `<a href="${escHtml(c.trackingUrl)}" target="_blank" rel="noopener" class="courier-chip-link">${escHtml(c.connote)} ↗</a>`
@@ -1483,11 +1490,16 @@ const Orders = (() => {
             const testTag = c.mock ? '<span class="courier-chip-test">TEST</span>' : '';
             const mismatchTag = courierMismatchTag(c);
             courierMain = `<span class="courier-chip split-btn-main" title="${escHtml(c.carrier)} · created ${escHtml(fmtDateTime(c.createdAt))}">📦 ${track}${testTag}${mismatchTag}<button class="courier-reprint-btn" id="courier-reprint-btn" title="Reprint label">🖨</button><button class="courier-clear-btn" id="courier-clear-btn" title="Clear this label so you can create a new one">✕</button></span>`;
+            courierItems = printSlipItem + printAddrItem;
+        } else if (freight) {
+            // Freight / over 14 boxes — ships on a pallet, so print the address
+            // label; courier labels stay available but demoted.
+            courierMain = `<button id="print-address-btn" class="btn-primary split-btn-main" title="${boxes && boxes > COURIER_MAX_BOXES ? boxes + ' boxes — over the ' + COURIER_MAX_BOXES + '-box courier limit, ships as freight' : 'Freight shipment — ships on a pallet'}">🏷 Print Address</button>`;
+            courierItems = printSlipItem + createCourierItem;
         } else {
             courierMain = `<button id="create-courier-btn" class="btn-primary split-btn-main">📦 Create Courier Label</button>`;
+            courierItems = printSlipItem + printAddrItem;
         }
-        const courierItems = `<button class="overflow-item" id="print-slip-btn">Print Packing Slip</button>`
-            + `<button class="overflow-item" id="print-address-btn">Print Address</button>`;
         const courierBtn = splitButton(courierMain, courierItems, { done: hasLabel });
 
         // 3) Dispatch — primary dispatches as Jake; dropdown as Andrew (admin only).
@@ -1957,7 +1969,7 @@ const Orders = (() => {
         if (order?.courier?.connote) return false;
         if (order?.customer?.isExport) return false;
         if (String(order?.fulfilmentMethod || 'courier').toLowerCase() === 'pickup') return false;
-        if (isFreightShipment(order)) return false;
+        if (shipsAsFreight(order)) return false;
         return (order?.lines || []).some(l => !isCourierLine(l) && (Number(l.quantity) || 0) > 0);
     }
 
@@ -2000,6 +2012,20 @@ const Orders = (() => {
             boxes += (isNaN(per) || per >= 5) ? qty : Math.ceil(qty / BAGS_PER_BOX);
         });
         return hasProduct ? boxes : null;
+    }
+
+    // Above this box count an order ships as freight (pallet/transport), not as
+    // individual Post Haste courier labels — mirrors COURIER_MAX_BOXES in
+    // functions/api/_freight.js. Keep the two in sync.
+    const COURIER_MAX_BOXES = 14;
+
+    // True when the order should ship as FREIGHT rather than courier: it already
+    // carries a freight/pallet line, OR it exceeds the courier box ceiling. In
+    // that case the priority action is the address label, not courier labels.
+    function shipsAsFreight(order) {
+        if (isFreightShipment(order)) return true;
+        const boxes = physicalBoxCount(order);
+        return boxes != null && boxes > COURIER_MAX_BOXES;
     }
 
     // Derive courier packages from an order. Every carton is the standard
