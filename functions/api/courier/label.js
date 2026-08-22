@@ -43,7 +43,7 @@ export async function onRequestPost({ env, request }) {
     try {
         step = 'parse';
         const body = await request.json();
-        const { orderId, destination = {}, packages = [], carrier, reference, invoicedLabels } = body;
+        const { orderId, destination = {}, packages = [], carrier, reference, invoicedLabels, boxesExpected } = body;
         if (!orderId) return errResponse('orderId required', 400);
         if (!destination.street || !destination.suburb || !destination.city || !destination.postcode) {
             return errResponse('Destination street, suburb, city, and postcode are required', 400);
@@ -101,10 +101,15 @@ export async function onRequestPost({ env, request }) {
         }
 
         step = 'persist';
-        // Reconcile labels ordered via the API against labels invoiced.
-        const boxesOrdered = gssBody.Packages.length;
-        const invoiced = (invoicedLabels === 0 || invoicedLabels > 0) ? invoicedLabels : null;
-        const labelMismatch = invoiced != null && invoiced !== boxesOrdered;
+        // Two-fold reconciliation of the labels actually created:
+        //   1) labelsCreated vs boxesExpected  — the boxes the order physically needs
+        //   2) labelsCreated vs invoicedLabels — the labels charged on the order
+        const labelsCreated = gssBody.Packages.length;
+        const invoiced  = (invoicedLabels === 0 || invoicedLabels > 0) ? invoicedLabels : null;
+        const expected  = (boxesExpected === 0 || boxesExpected > 0) ? boxesExpected : null;
+        const boxMismatch     = expected != null && expected !== labelsCreated;
+        const invoiceMismatch = invoiced != null && invoiced !== labelsCreated;
+        const labelMismatch   = boxMismatch || invoiceMismatch; // legacy single flag
 
         const courier = {
             carrier:        shipment.carrier,
@@ -115,9 +120,12 @@ export async function onRequestPost({ env, request }) {
             mock:           !!shipment.mock,
             reference:      gssBody.DeliveryReference,
             packages:       gssBody.Packages,
-            boxesOrdered,                 // labels created via the GSS API
-            invoicedLabels: invoiced,     // labels charged on the order (null if none)
-            labelMismatch,                // true when the two disagree
+            boxesOrdered:   labelsCreated, // labels created via the GSS API (kept name for back-compat)
+            boxesExpected:  expected,      // boxes the order physically needs (null if unknown)
+            invoicedLabels: invoiced,      // labels charged on the order (null if none)
+            boxMismatch,                   // labels created ≠ boxes needed
+            invoiceMismatch,               // labels created ≠ labels invoiced
+            labelMismatch,                 // either of the above
             createdAt:      new Date().toISOString(),
             labelError:     shipment.labelError || null,
         };
@@ -127,8 +135,9 @@ export async function onRequestPost({ env, request }) {
         order.events.unshift({
             ts: order.updatedAt,
             msg: `Courier label created — ${courier.carrier} ${courier.connote}${courier.mock ? ' (TEST)' : ''}`
-                + `; ${boxesOrdered} label(s) ordered`
-                + (invoiced != null ? `, ${invoiced} invoiced${labelMismatch ? ' — MISMATCH' : ''}` : ''),
+                + `; ${labelsCreated} label(s) created`
+                + (expected != null ? `, ${expected} box(es) needed${boxMismatch ? ' — MISMATCH' : ''}` : '')
+                + (invoiced != null ? `, ${invoiced} invoiced${invoiceMismatch ? ' — MISMATCH' : ''}` : ''),
         });
         await env.ORDERS_KV.put('order:' + orderId, JSON.stringify(order));
 

@@ -1431,33 +1431,9 @@ const Orders = (() => {
             .join('');
     }
 
-    // Courier label control — a "Create Courier label" button before a label
-    // exists, or a tracking chip (with reprint) once one does.
-    // Surfaces the "Create Courier label" button + tracking chip. Whether a
-    // label is a real (billable) Post Haste consignment or a mock is decided
-    // server-side by COURIER_TEST_MODE in the Cloudflare Pages env — the
-    // modal shows a TEST MODE chip while that's on.
+    // Courier UI toggle. The courier control now lives inline in the action bar
+    // (see actionButtons); this flag also gates the modal-hint status fetch.
     const COURIER_UI_ENABLED = true;
-
-    function courierAction(order) {
-        if (!COURIER_UI_ENABLED) return '';
-        // Legacy orders (created before the field) default to courier.
-        const method = order.fulfilmentMethod || 'courier';
-        const c = order.courier;
-        // Non-courier orders show nothing — unless a label already exists.
-        if (method !== 'courier' && !(c && c.connote)) return '';
-        if (c && c.connote) {
-            const track = c.trackingUrl
-                ? `<a href="${escHtml(c.trackingUrl)}" target="_blank" rel="noopener" class="courier-chip-link">${escHtml(c.connote)} ↗</a>`
-                : escHtml(c.connote);
-            const testTag = c.mock ? '<span class="courier-chip-test">TEST</span>' : '';
-            const mismatchTag = c.labelMismatch
-                ? `<span class="courier-chip-warn" title="${escHtml(String(c.boxesOrdered))} label(s) ordered via Post Haste but ${escHtml(String(c.invoicedLabels))} invoiced">⚠ ${escHtml(String(c.boxesOrdered))}≠${escHtml(String(c.invoicedLabels))}</span>`
-                : '';
-            return `<span class="courier-chip" title="${escHtml(c.carrier)} · created ${escHtml(fmtDateTime(c.createdAt))}">📦 ${track}${testTag}${mismatchTag}<button class="courier-reprint-btn" id="courier-reprint-btn" title="Reprint label">🖨</button><button class="courier-clear-btn" id="courier-clear-btn" title="Clear this label so you can create a new one">✕</button></span>`;
-        }
-        return `<button id="create-courier-btn" class="btn-secondary">📦 Create Courier label</button>`;
-    }
 
     // A split button: a primary action joined to a ▾ caret that opens a dropdown
     // of secondary actions. Reuses the .overflow-menu machinery so the global
@@ -1499,9 +1475,7 @@ const Orders = (() => {
                 ? `<a href="${escHtml(c.trackingUrl)}" target="_blank" rel="noopener" class="courier-chip-link">${escHtml(c.connote)} ↗</a>`
                 : escHtml(c.connote);
             const testTag = c.mock ? '<span class="courier-chip-test">TEST</span>' : '';
-            const mismatchTag = c.labelMismatch
-                ? `<span class="courier-chip-warn" title="${escHtml(String(c.boxesOrdered))} label(s) ordered but ${escHtml(String(c.invoicedLabels))} invoiced">⚠ ${escHtml(String(c.boxesOrdered))}≠${escHtml(String(c.invoicedLabels))}</span>`
-                : '';
+            const mismatchTag = courierMismatchTag(c);
             courierMain = `<span class="courier-chip split-btn-main" title="${escHtml(c.carrier)} · created ${escHtml(fmtDateTime(c.createdAt))}">📦 ${track}${testTag}${mismatchTag}<button class="courier-reprint-btn" id="courier-reprint-btn" title="Reprint label">🖨</button><button class="courier-clear-btn" id="courier-clear-btn" title="Clear this label so you can create a new one">✕</button></span>`;
         } else {
             courierMain = `<button id="create-courier-btn" class="btn-primary split-btn-main">📦 Create Courier Label</button>`;
@@ -1981,6 +1955,39 @@ const Orders = (() => {
         return lines.reduce((s, l) => s + (Number(l.quantity) || 0), 0);
     }
 
+    // Warning chip for a courier label whose count is off — either from the
+    // boxes the order needs, or from the labels invoiced. Empty when both agree.
+    function courierMismatchTag(c) {
+        if (!c) return '';
+        const created = c.boxesOrdered;
+        const bits = [], titles = [];
+        if (c.boxMismatch) { bits.push(`${created}≠${c.boxesExpected}📦`); titles.push(`${created} label(s) created but ${c.boxesExpected} box(es) needed`); }
+        if (c.invoiceMismatch) { bits.push(`${created}≠${c.invoicedLabels}💲`); titles.push(`${created} label(s) created but ${c.invoicedLabels} invoiced`); }
+        // Legacy labels stored before the split flags — fall back to the single flag.
+        if (!bits.length && c.labelMismatch && c.invoicedLabels != null) {
+            bits.push(`${created}≠${c.invoicedLabels}`); titles.push(`${created} label(s) created but ${c.invoicedLabels} invoiced`);
+        }
+        if (!bits.length) return '';
+        return `<span class="courier-chip-warn" title="${escHtml(titles.join('; '))}">⚠ ${escHtml(bits.join(' '))}</span>`;
+    }
+
+    // Boxes the order PHYSICALLY needs, from product lines only — deliberately
+    // ignoring any courier/freight line (that reflects what was *invoiced*, not
+    // what ships). Bundles (kgPerUnit ≥ 5) = 1 box/unit; 1kg bags = 1 box per
+    // 10. Returns null when there are no shippable product lines to judge by.
+    function physicalBoxCount(order) {
+        const BAGS_PER_BOX = 10;
+        let boxes = 0, hasProduct = false;
+        (order.lines || []).filter(l => !isCourierLine(l)).forEach(l => {
+            const qty = Number(l.quantity) || 0;
+            if (!qty) return;
+            hasProduct = true;
+            const per = Number(l.kgPerUnit);
+            boxes += (isNaN(per) || per >= 5) ? qty : Math.ceil(qty / BAGS_PER_BOX);
+        });
+        return hasProduct ? boxes : null;
+    }
+
     // Derive courier packages from an order. Every carton is the standard
     // 36×46×35 cm box weighing 11.5 kg (product + packaging), so packages are
     // uniform — only the box COUNT varies:
@@ -2028,13 +2035,15 @@ const Orders = (() => {
 
     function openCourierModal(order, store) {
         return new Promise(resolve => {
-            const mock = courierStatus ? courierStatus.mock : true;
             const st   = order.shipTo || {};
             store = store || {};
             // Prefer the order's own structured fields (captured at creation for
             // new orders), then fall back to the resolved store catalogue row.
             const street   = (st.street || store.address || (st.address || '').split('\n')[0] || '').trim();
-            const suburb   = (st.suburb || store.suburb || '').trim();
+            // We don't capture a Suburb in the store list — but "Branch" is the
+            // local town/suburb GoSweetSpot needs, so fall back to it. Use the
+            // catalogue row's clean branch (st.branch is often "Customer - Branch").
+            const suburb   = (st.suburb || store.suburb || store.branch || '').trim();
             const city     = st.city     || store.city     || '';
             const postcode = st.postcode || store.postcode || '';
             const phone    = st.phone    || store.phone    || '';
@@ -2042,17 +2051,17 @@ const Orders = (() => {
             const contact = st.branch || [store.customer, store.branch].filter(Boolean).join(' - ');
             const ref  = order.poNumber || order.id;
             const derived = derivePackages(order);
-            const invoiced = invoicedLabelCount(order); // null if no courier line
+            const invoiced = invoicedLabelCount(order);   // labels invoiced (null if no courier line)
+            const boxesExpected = physicalBoxCount(order); // boxes the order physically needs (null if no products)
+            const defaultBoxes = boxesExpected || derived.boxes || 1;
 
             const overlay = document.createElement('div');
             overlay.className = 'modal-overlay';
             overlay.innerHTML = `
                 <div class="modal-box modal-box--wide">
-                    <h3 class="modal-title">Create Courier Label${mock ? ' <span class="courier-chip-test">TEST MODE</span>' : ''}</h3>
+                    <h3 class="modal-title">Create Courier Label</h3>
                     <p class="modal-hint" style="margin:-0.35rem 0 0.85rem">
-                        ${mock
-                            ? 'Test mode — no live consignment is created and no charge is incurred.'
-                            : '⚠ Live — this creates a real, billable Post Haste consignment.'}
+                        ⚠ Live — this creates a real, billable Post Haste consignment.
                     </p>
                     <div class="courier-modal-grid">
                         <div class="modal-field cm-span2">
@@ -2098,8 +2107,8 @@ const Orders = (() => {
                             </select>
                         </div>
                         <div class="modal-field">
-                            <label>Boxes <span class="modal-hint">${invoiced != null ? 'invoiced: ' + invoiced : 'auto'}</span></label>
-                            <input type="number" id="cm-boxes" value="${derived.boxes}" min="1" step="1">
+                            <label>Labels (one per box) <span class="modal-hint">${boxesExpected != null ? boxesExpected + ' box' + (boxesExpected === 1 ? '' : 'es') + ' needed' : 'auto'}</span></label>
+                            <input type="number" id="cm-boxes" value="${defaultBoxes}" min="1" step="1">
                         </div>
                         <div class="modal-field">
                             <label>Total weight (kg) <span class="modal-hint">auto</span></label>
@@ -2126,7 +2135,7 @@ const Orders = (() => {
                     <div id="cm-recon" class="cm-recon" style="display:none"></div>
                     <div id="cm-error" style="display:none;color:#dc2626;font-size:0.9em;margin:0.4rem 0"></div>
                     <div class="modal-actions">
-                        <button class="btn-primary" id="cm-save">${mock ? 'Create test label' : 'Create label'}</button>
+                        <button class="btn-primary" id="cm-save">Create label</button>
                         <button class="btn-secondary" id="cm-cancel">Cancel</button>
                     </div>
                 </div>`;
@@ -2137,18 +2146,28 @@ const Orders = (() => {
             const close = value => { document.removeEventListener('keydown', onKey); overlay.remove(); resolve(value); };
             const onKey = e => { if (e.key === 'Escape') close(null); };
 
-            // Reconcile labels-to-order against labels-invoiced, live as boxes change.
+            // Two-fold reconciliation, live as the label count changes:
+            //   1) labels vs boxes the order physically needs
+            //   2) labels vs labels invoiced on the order
             const reconEl = $('#cm-recon');
             function updateRecon() {
-                if (invoiced == null) { reconEl.style.display = 'none'; return; }
-                const boxes = Math.max(1, parseInt($('#cm-boxes').value, 10) || 1);
-                if (boxes === invoiced) {
-                    reconEl.className = 'cm-recon cm-recon--ok';
-                    reconEl.textContent = `✓ ${boxes} label${boxes === 1 ? '' : 's'} — matches ${invoiced} invoiced`;
-                } else {
-                    reconEl.className = 'cm-recon cm-recon--warn';
-                    reconEl.textContent = `⚠ Ordering ${boxes} label${boxes === 1 ? '' : 's'} but ${invoiced} invoiced on this order — they don't match.`;
+                const boxes = Math.max(1, parseInt($('#cm-boxes').value, 10) || 1); // labels to create
+                const rows = [];
+                let warn = false;
+                const plural = n => n === 1 ? '' : 's';
+                if (boxesExpected != null) {
+                    const ok = boxes === boxesExpected;
+                    warn = warn || !ok;
+                    rows.push(`${ok ? '✓' : '⚠'} ${boxes} label${plural(boxes)} vs ${boxesExpected} box${boxesExpected === 1 ? '' : 'es'} needed`);
                 }
+                if (invoiced != null) {
+                    const ok = boxes === invoiced;
+                    warn = warn || !ok;
+                    rows.push(`${ok ? '✓' : '⚠'} ${boxes} label${plural(boxes)} vs ${invoiced} invoiced`);
+                }
+                if (!rows.length) { reconEl.style.display = 'none'; return; }
+                reconEl.className = 'cm-recon ' + (warn ? 'cm-recon--warn' : 'cm-recon--ok');
+                reconEl.innerHTML = rows.join('<br>');
                 reconEl.style.display = '';
             }
             // Package presets — set dims + per-box weight; "custom" frees them.
@@ -2206,7 +2225,8 @@ const Orders = (() => {
                         instructions: $('#cm-instructions').value.trim(),
                     },
                     packages,
-                    invoicedLabels: invoiced, // null if no courier line to reconcile against
+                    invoicedLabels: invoiced,       // labels charged on the order (null if none)
+                    boxesExpected,                  // boxes the order physically needs (null if no products)
                     reference: $('#cm-ref').value.trim(),
                     signatureRequired: $('#cm-sig').checked,
                     saturday: $('#cm-sat').checked,
@@ -2281,18 +2301,22 @@ const Orders = (() => {
             order.courier = {
                 carrier: result.carrier, connote: result.connote, trackingUrl: result.trackingUrl,
                 consignmentId: result.consignmentId, cost: result.cost, mock: result.mock,
-                boxesOrdered: result.boxesOrdered, invoicedLabels: result.invoicedLabels,
+                boxesOrdered: result.boxesOrdered, boxesExpected: result.boxesExpected,
+                invoicedLabels: result.invoicedLabels,
+                boxMismatch: result.boxMismatch, invoiceMismatch: result.invoiceMismatch,
                 labelMismatch: result.labelMismatch,
                 createdAt: result.createdAt || new Date().toISOString(),
             };
             refreshActionBar(order);
             showToast(`Label created: ${result.carrier} ${result.connote}${result.mock ? ' (TEST)' : ''}`);
             logEvent(order.id, 'Created courier label',
-                `${result.carrier} ${result.connote} · ${result.boxesOrdered} ordered`
+                `${result.carrier} ${result.connote} · ${result.boxesOrdered} created`
+                + (result.boxesExpected != null ? `, ${result.boxesExpected} needed` : '')
                 + (result.invoicedLabels != null ? `, ${result.invoicedLabels} invoiced` : ''));
-            if (result.labelMismatch) {
-                showErrorBanner(`⚠ Label count mismatch: ${result.boxesOrdered} ordered via Post Haste but ${result.invoicedLabels} invoiced on this order.`);
-            }
+            const warns = [];
+            if (result.boxMismatch)     warns.push(`${result.boxesOrdered} label(s) created but ${result.boxesExpected} box(es) needed`);
+            if (result.invoiceMismatch) warns.push(`${result.boxesOrdered} label(s) created but ${result.invoicedLabels} invoiced`);
+            if (warns.length) showErrorBanner('⚠ Label mismatch: ' + warns.join('; ') + '.');
             await printCourierLabel(order, result.labelBase64);
         } catch (e) {
             showErrorBanner('Courier label failed: ' + e.message);
