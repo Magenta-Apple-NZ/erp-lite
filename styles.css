@@ -711,6 +711,8 @@ li.drag-over { background: #eff6ff; }
 .cm-options-toggle.cm-options-open .cm-options-chev { transform: rotate(180deg); }
 .cm-options-body { display: flex; flex-direction: column; gap: 0.5rem; padding: 0.6rem 0.7rem; border-top: 1px solid #e2e8f0; }
 .cm-options-body[hidden] { display: none; }
+.cm-recon-note { font-size: 0.78rem; opacity: 0.85; font-weight: 600; }
+.modal-actions .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
 /* Page 3 "label created" confirmation banner */
 .cm-created {
     display: flex; align-items: center; gap: 0.4rem;

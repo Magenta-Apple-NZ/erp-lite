@@ -1484,13 +1484,16 @@ const Orders = (() => {
         const printSlipItem   = `<button class="overflow-item" id="print-slip-btn">Print Packing Slip</button>`;
         const printAddrItem   = `<button class="overflow-item" id="print-address-btn">🏷 Print Address</button>`;
         if (hasLabel) {
+            // Green track chip — kept deliberately simple (connote + clear).
             const track = c.trackingUrl
                 ? `<a href="${escHtml(c.trackingUrl)}" target="_blank" rel="noopener" class="courier-chip-link">${escHtml(c.connote)} ↗</a>`
                 : escHtml(c.connote);
             const testTag = c.mock ? '<span class="courier-chip-test">TEST</span>' : '';
-            const mismatchTag = courierMismatchTag(c);
-            courierMain = `<span class="courier-chip split-btn-main" title="${escHtml(c.carrier)} · created ${escHtml(fmtDateTime(c.createdAt))}">📦 ${track}${testTag}${mismatchTag}<button class="courier-reprint-btn" id="courier-reprint-btn" title="Reprint label">🖨</button><button class="courier-clear-btn" id="courier-clear-btn" title="Clear this label so you can create a new one">✕</button></span>`;
-            courierItems = printSlipItem + printAddrItem;
+            courierMain = `<span class="courier-chip split-btn-main" title="${escHtml(c.carrier)} · created ${escHtml(fmtDateTime(c.createdAt))}">📦 ${track}${testTag}<button class="courier-clear-btn" id="courier-clear-btn" title="Clear this label so you can create a new one">✕</button></span>`;
+            // Reprint re-sends the existing label to PrintNode (works any time,
+            // even after navigating away and back).
+            const reprintItem = `<button class="overflow-item" id="courier-reprint-btn">🖨 Reprint label</button>`;
+            courierItems = reprintItem + printSlipItem + printAddrItem;
         } else if (freight) {
             // Freight / over 14 boxes — ships on a pallet, so print the address
             // label; courier labels stay available but demoted.
@@ -2255,9 +2258,15 @@ const Orders = (() => {
                 if (invoiced != null && boxes !== invoiced) {
                     rows.push(`⚠ ${boxes} label${plural(boxes)} but ${invoiced} invoiced`);
                 }
+                // A mismatch blocks creation — the counts must line up first.
+                const create = $('#cm-create');
+                if (create) {
+                    create.disabled = rows.length > 0;
+                    create.title = rows.length ? 'Resolve the label vs box/invoiced mismatch before creating' : '';
+                }
                 if (!rows.length) { reconEl.style.display = 'none'; return; }
                 reconEl.className = 'cm-recon cm-recon--warn';
-                reconEl.innerHTML = rows.join('<br>');
+                reconEl.innerHTML = rows.join('<br>') + '<br><span class="cm-recon-note">Match the label count before creating.</span>';
                 reconEl.style.display = '';
             }
             // Package presets — set dims + per-box weight; "custom" frees them.
