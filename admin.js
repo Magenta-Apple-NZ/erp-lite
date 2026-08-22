@@ -411,6 +411,7 @@ const Admin = (() => {
                     <div class="cat-header-actions">
                         <a class="btn-secondary btn-sm" href="/api/catalog/stores?format=csv" download="stores.csv">Export CSV ↓</a>
                         <button class="btn-secondary btn-sm" id="stores-add-btn">+ Add store</button>
+                        <button class="btn-secondary btn-sm" id="stores-delete-ids-btn" title="Permanently remove stores by Id or Id range (e.g. store-0070 to store-0132). Backs up first.">Delete IDs…</button>
                     </div>
                 </div>
 
@@ -544,6 +545,44 @@ const Admin = (() => {
                 } catch (err) { showToast('Add failed: ' + err.message); }
             });
 
+            // Permanent bulk delete by Id — accepts a range ("store-0070 to
+            // store-0132", "70-132", "0070–0132") or a comma/space list of ids.
+            document.getElementById('stores-delete-ids-btn')?.addEventListener('click', async () => {
+                const raw = prompt('Delete stores by Id — permanent.\n\nEnter a range ("store-0070 to store-0132" or "70-132") or a comma-separated list of ids:');
+                if (raw == null || !raw.trim()) return;
+                const pad = n => 'store-' + String(n).padStart(4, '0');
+                const numOf = tok => {
+                    const m = String(tok).match(/(\d+)/);
+                    return m ? parseInt(m[1], 10) : null;
+                };
+                let ids = [];
+                const rangeMatch = raw.match(/(\d+)\s*(?:to|-|–|—|\.\.)\s*(\d+)/i);
+                if (rangeMatch) {
+                    let a = parseInt(rangeMatch[1], 10), b = parseInt(rangeMatch[2], 10);
+                    if (a > b) [a, b] = [b, a];
+                    for (let n = a; n <= b; n++) ids.push(pad(n));
+                } else {
+                    ids = raw.split(/[,\s]+/).map(t => t.trim()).filter(Boolean).map(t => {
+                        if (/^store-\d+$/i.test(t)) return 'store-' + t.replace(/\D/g, '').padStart(4, '0');
+                        const n = numOf(t);
+                        return n != null ? pad(n) : null;
+                    }).filter(Boolean);
+                }
+                if (!ids.length) { showToast('Could not parse any ids'); return; }
+                const preview = ids.length <= 6 ? ids.join(', ') : `${ids[0]} … ${ids[ids.length - 1]} (${ids.length} ids)`;
+                if (!confirm(`Permanently delete ${ids.length} store(s)?\n\n${preview}\n\nThis removes them from KV (a backup is taken first). It cannot be undone from the UI.`)) return;
+                try {
+                    const res = await api('/api/catalog/stores', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ action: 'delete-ids', ids }),
+                    });
+                    await reload();
+                    const missTxt = res.missing && res.missing.length ? ` · ${res.missing.length} not found` : '';
+                    showToast(`Deleted ${res.removed} store(s)${missTxt}`);
+                } catch (err) { showToast('Delete failed: ' + err.message); }
+            });
+
             // CSV upload — dry-run + apply.
             let lastFile = null;
             const resultsEl = document.getElementById('stores-upload-results');
@@ -574,9 +613,10 @@ const Admin = (() => {
             function renderUploadResults(result) {
                 const s = result.summary;
                 const prunedTxt = s.pruned ? ` · <strong style="color:#dc2626">${s.pruned} removed</strong>` : '';
+                const skipTxt = s.skippedNoId ? ` · <strong style="color:#dc2626">${s.skippedNoId} skipped (no Store ID)</strong>` : '';
                 const summaryText = s.mode === 'round-trip'
                     ? `<strong>Dry run (round-trip):</strong> ${s.csvRowsParsed} parsed · ${s.adds} new · ${s.updates} updated · ${s.unchanged} unchanged${prunedTxt}.`
-                    : `<strong>Dry run (seed):</strong> ${s.csvRowsParsed} rows parsed. Apply replaces sheet-sourced rows; hub-added stores are preserved.`;
+                    : `<strong>Dry run (seed):</strong> ${s.csvRowsParsed} rows parsed${skipTxt}. Apply replaces sheet-sourced rows; hub-added stores are preserved.`;
                 const hasChanges = (s.adds + s.updates + (s.pruned || 0) > 0) || s.mode === 'seed';
                 resultsEl.innerHTML = `
                 <div class="bulk-summary">${summaryText}</div>

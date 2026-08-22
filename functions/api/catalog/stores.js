@@ -96,7 +96,11 @@ function parseSheetCsv(csv, startSeq = 1) {
     if (!rows.length) return [];
     const header = rows[0].map(h => h.trim().toLowerCase());
     const col = name => header.indexOf(name.toLowerCase());
-    const codeCol   = [col('customer code'), col('customercode')].find(i => i >= 0) ?? -1;
+    // The Store ID is the stable dedup key. Accept a dedicated Store ID column
+    // or the Customer Code (same role). Rows without one are skipped so an
+    // ID-less row can never fall back to fuzzy customer+branch matching and
+    // spawn a duplicate on every re-seed.
+    const codeCol   = [col('store id'), col('storeid'), col('customer code'), col('customercode')].find(i => i >= 0) ?? -1;
     const custCol   = col('customer');
     const branchCol = col('branch');
     const cityCol   = col('city');
@@ -107,14 +111,19 @@ function parseSheetCsv(csv, startSeq = 1) {
     const zcCol     = [col('zone_courier'), col('zone courier')].find(i => i >= 0) ?? -1;
     const zfCol     = [col('zone_freight'), col('zone freight')].find(i => i >= 0) ?? -1;
 
-    let seq = startSeq;
+    let seq = startSeq, skippedNoId = 0;
     const out = [];
     for (let i = 1; i < rows.length; i++) {
         const r = rows[i];
-        if (!r.length || !((custCol >= 0 && r[custCol]) || (branchCol >= 0 && r[branchCol]))) continue;
+        // Ignore fully-blank rows.
+        if (!r.length || r.every(c => !String(c || '').trim())) continue;
+        // A row must carry a Store ID (customer code). No ID → skip it, rather
+        // than create an unkeyed row that duplicates on the next seed.
+        const code = codeCol >= 0 ? String(r[codeCol] || '').trim() : '';
+        if (!code) { skippedNoId++; continue; }
         out.push({
             id: 'store-' + String(seq++).padStart(4, '0'),
-            customerCode: codeCol   >= 0 ? (r[codeCol]   || '').trim() : '',
+            customerCode: code,
             customer:     custCol   >= 0 ? (r[custCol]   || '').trim() : '',
             branch:       branchCol >= 0 ? (r[branchCol] || '').trim() : '',
             city:         cityCol   >= 0 ? (r[cityCol]   || '').trim() : '',
@@ -129,6 +138,9 @@ function parseSheetCsv(csv, startSeq = 1) {
             updatedAt:    new Date().toISOString(),
         });
     }
+    // Expose how many rows were dropped for lack of a Store ID so the UI can
+    // warn (property on the array; ignored by callers that don't read it).
+    out.skippedNoId = skippedNoId;
     return out;
 }
 
@@ -274,9 +286,33 @@ export async function onRequestPost({ env, request }) {
                 return jsonResponse({
                     action: 'reseed-from-sheet',
                     seeded: seeded.length,
+                    skippedNoId: seeded.skippedNoId || 0,
                     added, updated,
                     preserved: merged.length - added,
                     totalRowsAfter: merged.length,
+                    backupTs,
+                });
+            }
+
+            // Hard-delete stores by exact id (bulk). Unlike the per-row DELETE
+            // (which only archives), this permanently removes the rows from KV —
+            // for clearing accidental duplicates. Backs up first. Matches by
+            // exact id regardless of archived state or shared business key.
+            if (body.action === 'delete-ids') {
+                const ids = Array.isArray(body.ids) ? body.ids.map(x => String(x).trim()).filter(Boolean) : [];
+                if (!ids.length) return errResponse('ids array is required', 400);
+                const idSet = new Set(ids);
+                const remaining = existing.filter(s => !idSet.has(s.id));
+                const removed = existing.length - remaining.length;
+                const backupTs = new Date().toISOString().replace(/[:.]/g, '-');
+                await env.ORDERS_KV.put(`backup:stores:${backupTs}`, JSON.stringify(existing));
+                await saveStores(env, remaining);
+                return jsonResponse({
+                    action: 'delete-ids',
+                    requested: ids.length,
+                    removed,
+                    missing: ids.filter(id => !existing.some(s => s.id === id)),
+                    totalRowsAfter: remaining.length,
                     backupTs,
                 });
             }
@@ -380,6 +416,7 @@ export async function onRequestPost({ env, request }) {
         const summary = {
             mode: 'seed',
             csvRowsParsed: seeded.length,
+            skippedNoId: seeded.skippedNoId || 0,
             adds: preview.added,
             updates: preview.updated,
         };
