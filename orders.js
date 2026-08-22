@@ -2585,9 +2585,34 @@ const Orders = (() => {
             }
         })();
 
+        // Print label → send to PrintNode (never open the PDF; that's Download).
         $('#clv-print').addEventListener('click', async () => {
-            if (labelBase64) await printCourierLabel(order, labelBase64);
-            else await runReprintCourier(order); // refetches + prints
+            const btn = $('#clv-print');
+            const orig = btn.textContent;
+            // Prefer a label-tagged printer, then the depot, then any printer.
+            const printer = getPrinters().find(p => Array.isArray(p.documents) && p.documents.includes('label'))
+                || getDepotPrinter() || getPrinters()[0];
+            if (!printer) { showErrorBanner('No PrintNode printer configured — add one in config.json.'); return; }
+            let base64 = labelBase64;
+            btn.disabled = true; btn.textContent = 'Printing…';
+            try {
+                if (!base64) { // not loaded yet (or reopened) — refetch
+                    const r = await api('/api/courier/label?orderId=' + encodeURIComponent(order.id));
+                    base64 = r.labelBase64;
+                }
+                if (!base64) { showErrorBanner('No label PDF available to print (test mode?).'); return; }
+                const result = await sendToPrintNode({ order, document: 'label', pdfBase64: base64, printerId: printer.id });
+                if (result.success) {
+                    showToast(`Label sent to ${printer.label}`);
+                    logEvent(order.id, 'Printed courier label', `${printer.label} · ${order.courier?.connote || ''}`);
+                } else {
+                    showErrorBanner(`Print not confirmed at ${printer.label}: ${describePrintFailure(result)}`);
+                }
+            } catch (e) {
+                showErrorBanner('Print failed: ' + e.message);
+            } finally {
+                btn.disabled = false; btn.textContent = orig;
+            }
         });
         $('#clv-download').addEventListener('click', () => {
             if (labelBase64) downloadPdfBase64(labelBase64, `${c.connote || order.id}-label.pdf`);
