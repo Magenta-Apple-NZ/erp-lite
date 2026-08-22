@@ -691,18 +691,19 @@ li.drag-over { background: #eff6ff; }
 .courier-modal-grid input.cm-valid   { border-color: #10b981; box-shadow: 0 0 0 1px #10b981; }
 .courier-modal-grid input.cm-invalid { border-color: #ef4444; box-shadow: 0 0 0 1px #ef4444; }
 
-/* Delivery options — collapsed to a green tick, expandable */
-.cm-options { border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden; }
+/* Delivery options — collapsed to a compact green tick, expandable */
+.cm-options-field { margin-top: 0.15rem; }
+.cm-options { border: 1px solid #e2e8f0; border-radius: 7px; overflow: hidden; }
 .cm-options-toggle {
-    display: flex; align-items: center; gap: 0.55rem; width: 100%;
+    display: flex; align-items: center; gap: 0.45rem; width: 100%;
     background: #f0fdf4; border: none; font-family: inherit; cursor: pointer;
-    padding: 0.5rem 0.7rem; font-size: 0.85rem; color: #166534; text-align: left;
+    padding: 0.4rem 0.6rem; font-size: 0.8rem; color: #166534; text-align: left;
 }
 .cm-options-toggle.cm-options-none { background: #f8fafc; color: #64748b; }
 .cm-options-tick {
     display: inline-flex; align-items: center; justify-content: center;
-    width: 1.25rem; height: 1.25rem; border-radius: 50%;
-    background: #10b981; color: #fff; font-size: 0.75rem; font-weight: 700; flex-shrink: 0;
+    width: 1.1rem; height: 1.1rem; border-radius: 50%;
+    background: #10b981; color: #fff; font-size: 0.7rem; font-weight: 700; flex-shrink: 0;
 }
 .cm-options-toggle.cm-options-none .cm-options-tick { background: #cbd5e1; }
 .cm-options-summary { flex: 1; font-weight: 600; }

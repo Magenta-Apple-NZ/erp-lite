@@ -2094,6 +2094,9 @@ const Orders = (() => {
             const invoiced = invoicedLabelCount(order);   // labels invoiced (null if no courier line)
             const boxesExpected = physicalBoxCount(order); // boxes the order physically needs (null if no products)
             const defaultBoxes = boxesExpected || derived.boxes || 1;
+            // Print-options page: available label printers + the depot slip printer.
+            const labelPrinters = getPrinters().filter(p => Array.isArray(p.documents) && p.documents.includes('label'));
+            const depotPrinter  = getDepotPrinter();
 
             const overlay = document.createElement('div');
             overlay.className = 'modal-overlay';
@@ -2107,6 +2110,8 @@ const Orders = (() => {
                         <button type="button" class="cm-step cm-step--active" data-goto="1"><span class="cm-step-num">1</span> Recipient</button>
                         <span class="cm-step-line"></span>
                         <button type="button" class="cm-step" data-goto="2"><span class="cm-step-num">2</span> Items</button>
+                        <span class="cm-step-line"></span>
+                        <button type="button" class="cm-step" data-goto="3"><span class="cm-step-num">3</span> Print</button>
                     </div>
 
                     <div class="cm-page" data-page="1">
@@ -2178,8 +2183,7 @@ const Orders = (() => {
                                 <label>Reference</label>
                                 <input type="text" id="cm-ref" data-required="1" value="${escHtml(ref)}" maxlength="50">
                             </div>
-                            <div class="modal-field cm-span2">
-                                <label>Delivery options</label>
+                            <div class="modal-field cm-span2 cm-options-field">
                                 <div class="cm-options">
                                     <button type="button" class="cm-options-toggle" id="cm-options-toggle" aria-expanded="false">
                                         <span class="cm-options-tick">✓</span>
@@ -2195,6 +2199,22 @@ const Orders = (() => {
                             </div>
                         </div>
                         <div id="cm-recon" class="cm-recon" style="display:none"></div>
+                    </div>
+
+                    <div class="cm-page" data-page="3" hidden>
+                        <div class="courier-modal-grid">
+                            <div class="modal-field cm-span2">
+                                <label>Send label to</label>
+                                <select id="cm-print-target">
+                                    ${labelPrinters.map(p => `<option value="${escHtml(String(p.id))}">🖨 ${escHtml(p.label || ('Printer #' + p.id))}</option>`).join('')}
+                                    <option value="pdf"${labelPrinters.length ? '' : ' selected'}>Open PDF (print manually)</option>
+                                </select>
+                            </div>
+                            <div class="modal-field cm-span2">
+                                <label class="cm-check"><input type="checkbox" id="cm-print-slip"> Also print packing slip${depotPrinter ? ' → ' + escHtml(depotPrinter.label || 'depot') : ''}</label>
+                            </div>
+                            ${labelPrinters.length ? '' : `<div class="modal-field cm-span2"><p class="modal-hint">No label printer configured yet — the label will open as a PDF to print manually. Add one in config.json with <code>documents: ["label"]</code>.</p></div>`}
+                        </div>
                     </div>
 
                     <div id="cm-error" style="display:none;color:#dc2626;font-size:0.9em;margin:0.4rem 0"></div>
@@ -2216,23 +2236,20 @@ const Orders = (() => {
             //   1) labels vs boxes the order physically needs
             //   2) labels vs labels invoiced on the order
             const reconEl = $('#cm-recon');
+            // Only surface reconciliation when something is OFF — when the label
+            // count matches the boxes needed and the invoiced count, stay silent.
             function updateRecon() {
                 const boxes = Math.max(1, parseInt($('#cm-boxes').value, 10) || 1); // labels to create
                 const rows = [];
-                let warn = false;
                 const plural = n => n === 1 ? '' : 's';
-                if (boxesExpected != null) {
-                    const ok = boxes === boxesExpected;
-                    warn = warn || !ok;
-                    rows.push(`${ok ? '✓' : '⚠'} ${boxes} label${plural(boxes)} vs ${boxesExpected} box${boxesExpected === 1 ? '' : 'es'} needed`);
+                if (boxesExpected != null && boxes !== boxesExpected) {
+                    rows.push(`⚠ ${boxes} label${plural(boxes)} but ${boxesExpected} box${boxesExpected === 1 ? '' : 'es'} needed`);
                 }
-                if (invoiced != null) {
-                    const ok = boxes === invoiced;
-                    warn = warn || !ok;
-                    rows.push(`${ok ? '✓' : '⚠'} ${boxes} label${plural(boxes)} vs ${invoiced} invoiced`);
+                if (invoiced != null && boxes !== invoiced) {
+                    rows.push(`⚠ ${boxes} label${plural(boxes)} but ${invoiced} invoiced`);
                 }
                 if (!rows.length) { reconEl.style.display = 'none'; return; }
-                reconEl.className = 'cm-recon ' + (warn ? 'cm-recon--warn' : 'cm-recon--ok');
+                reconEl.className = 'cm-recon cm-recon--warn';
                 reconEl.innerHTML = rows.join('<br>');
                 reconEl.style.display = '';
             }
@@ -2273,34 +2290,40 @@ const Orders = (() => {
                 .every(el => (el.value || '').trim());
             const markPage = page => overlay.querySelectorAll(`.cm-page[data-page="${page}"] input`).forEach(markField);
 
-            // ── Two-page wizard: 1 Recipient → 2 Items ──
+            // ── Three-page wizard: 1 Recipient → 2 Items → 3 Print ──
+            const TOTAL_STEPS = 3;
+            let step = 1;
             function showStep(n) {
+                step = n;
                 overlay.querySelectorAll('.cm-page').forEach(p => { p.hidden = p.dataset.page !== String(n); });
                 overlay.querySelectorAll('.cm-step').forEach(s => {
                     s.classList.toggle('cm-step--active', s.dataset.goto === String(n));
                     s.classList.toggle('cm-step--done', Number(s.dataset.goto) < n);
                 });
                 $('#cm-back').hidden = n === 1;
-                $('#cm-next').hidden = n !== 1;
-                $('#cm-save').hidden = n === 1;
-                if (n === 2) updateRecon();
+                $('#cm-next').hidden = n === TOTAL_STEPS;
+                $('#cm-save').hidden = n !== TOTAL_STEPS;
+                if (n >= 2) updateRecon();
                 const first = overlay.querySelector(`.cm-page[data-page="${n}"] input:not([disabled]), .cm-page[data-page="${n}"] select`);
                 setTimeout(() => first && first.focus(), 0);
             }
-            function goStep2() {
-                if (!pageValid(1)) {
-                    markPage(1);
-                    errEl.textContent = 'Fill in the required recipient fields (highlighted red) before continuing.';
-                    errEl.style.display = '';
-                    return;
-                }
-                errEl.style.display = 'none';
-                showStep(2);
+            // Validate the page being left before moving forward.
+            function canLeave(page) {
+                if (pageValid(page)) { errEl.style.display = 'none'; return true; }
+                markPage(page);
+                errEl.textContent = page === 1
+                    ? 'Fill in the required recipient fields (highlighted red) before continuing.'
+                    : 'Fill in the required item fields (highlighted red) before continuing.';
+                errEl.style.display = '';
+                return false;
             }
-            $('#cm-next').addEventListener('click', goStep2);
-            $('#cm-back').addEventListener('click', () => { errEl.style.display = 'none'; showStep(1); });
-            overlay.querySelectorAll('.cm-step').forEach(s => s.addEventListener('click', () =>
-                Number(s.dataset.goto) === 2 ? goStep2() : showStep(1)));
+            function goTo(target) {
+                if (target > step) { for (let p = step; p < target; p++) if (!canLeave(p)) return; }
+                showStep(target);
+            }
+            $('#cm-next').addEventListener('click', () => goTo(step + 1));
+            $('#cm-back').addEventListener('click', () => { errEl.style.display = 'none'; showStep(step - 1); });
+            overlay.querySelectorAll('.cm-step').forEach(s => s.addEventListener('click', () => goTo(Number(s.dataset.goto))));
 
             // ── Delivery options collapsed to a tick; expand to change ──
             const optBody = $('#cm-options-body');
@@ -2363,6 +2386,11 @@ const Orders = (() => {
                     signatureRequired: $('#cm-sig').checked,
                     saturday: $('#cm-sat').checked,
                     carrier: 'Post Haste',
+                    // Print options (page 3) — consumed client-side after creation.
+                    print: {
+                        target: $('#cm-print-target').value,   // printerId string, or 'pdf'
+                        slip: $('#cm-print-slip').checked,
+                    },
                 });
             });
             $('#cm-cancel').addEventListener('click', () => close(null));
@@ -2374,12 +2402,21 @@ const Orders = (() => {
 
     // Print a courier label PDF (base64) to a PrintNode 'label' printer, or fall
     // back to opening it in a new tab for manual printing.
-    async function printCourierLabel(order, labelBase64) {
+    // opts.pdf → open the PDF (no print); opts.printerId → send to that printer;
+    // neither → auto-pick the first 'label' printer. Falls back to PDF on failure.
+    async function printCourierLabel(order, labelBase64, opts = {}) {
         if (!labelBase64) {
             showToast('No printable label in test mode — go live to fetch the real PDF.');
             return;
         }
-        const labelPrinter = getPrinters().find(p => Array.isArray(p.documents) && p.documents.includes('label'));
+        const openPdf = () => {
+            const win = window.open('', '_blank');
+            if (win) win.document.write(`<iframe src="data:application/pdf;base64,${labelBase64}" style="width:100%;height:100%;border:0"></iframe>`);
+        };
+        if (opts.pdf) { openPdf(); return; }
+        const labelPrinter = opts.printerId
+            ? getPrinters().find(p => p.id === opts.printerId)
+            : getPrinters().find(p => Array.isArray(p.documents) && p.documents.includes('label'));
         if (labelPrinter) {
             try {
                 const result = await sendToPrintNode({ order, document: 'label', pdfBase64: labelBase64, printerId: labelPrinter.id });
@@ -2393,9 +2430,7 @@ const Orders = (() => {
                 showErrorBanner('Label print failed: ' + e.message + ' — opening PDF instead.');
             }
         }
-        // Fallback: open the PDF in a new tab
-        const win = window.open('', '_blank');
-        if (win) win.document.write(`<iframe src="data:application/pdf;base64,${labelBase64}" style="width:100%;height:100%;border:0"></iframe>`);
+        openPdf();
     }
 
     // Resolve an order back to its store catalogue row — by stored storeId
@@ -2449,7 +2484,15 @@ const Orders = (() => {
             if (result.boxMismatch)     warns.push(`${result.boxesOrdered} label(s) created but ${result.boxesExpected} box(es) needed`);
             if (result.invoiceMismatch) warns.push(`${result.boxesOrdered} label(s) created but ${result.invoicedLabels} invoiced`);
             if (warns.length) showErrorBanner('⚠ Label mismatch: ' + warns.join('; ') + '.');
-            await printCourierLabel(order, result.labelBase64);
+            // Honour the print-options page: chosen label printer (or PDF), and
+            // optionally the packing slip to the depot printer.
+            const pc = payload.print || {};
+            await printCourierLabel(order, result.labelBase64,
+                (pc.target && pc.target !== 'pdf') ? { printerId: Number(pc.target) } : { pdf: true });
+            if (pc.slip) {
+                const depot = getDepotPrinter();
+                if (depot) await sendSlipToPrinter(order, null, { printerId: depot.id, label: depot.label });
+            }
         } catch (e) {
             showErrorBanner('Courier label failed: ' + e.message);
             if (btn) { btn.disabled = false; btn.textContent = '📦 Create Courier label'; }
