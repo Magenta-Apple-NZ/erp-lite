@@ -96,7 +96,7 @@ function parseSheetCsv(csv, startSeq = 1) {
     if (!rows.length) return [];
     const header = rows[0].map(h => h.trim().toLowerCase());
     const col = name => header.indexOf(name.toLowerCase());
-    const codeCol   = col('customer code');
+    const codeCol   = [col('customer code'), col('customercode')].find(i => i >= 0) ?? -1;
     const custCol   = col('customer');
     const branchCol = col('branch');
     const cityCol   = col('city');
@@ -322,14 +322,19 @@ export async function onRequestPost({ env, request }) {
 
         if (isRoundTrip) {
             const parsed = parseRoundTripCsv(csv);
-            const byId = new Map(existing.map(s => [s.id, s]));
+            const byId  = new Map(existing.map(s => [s.id, s]));
+            const byKey = new Map(existing.map(s => [storeKey(s), s]));
             const updates = [], adds = [];
             for (const row of parsed) {
-                const prev = byId.get(row.id);
+                // Match by id, then fall back to the stable business key
+                // (customer code / customer+branch) so a re-imported row updates
+                // its store even when the id column has drifted — rather than
+                // being duplicated as a new record.
+                const prev = (row.id && byId.get(row.id)) || byKey.get(storeKey(row)) || null;
                 if (!prev) { adds.push(row); continue; }
                 const changed = EDITABLE_FIELDS.some(k => (prev[k] || '') !== (row[k] || ''))
                              || (!!prev.archived) !== (!!row.archived);
-                if (changed) updates.push(row);
+                if (changed) updates.push({ prevId: prev.id, row });
             }
             const summary = {
                 mode: 'round-trip',
@@ -343,8 +348,15 @@ export async function onRequestPost({ env, request }) {
             const backupTs = new Date().toISOString().replace(/[:.]/g, '-');
             await env.ORDERS_KV.put(`backup:stores:${backupTs}`, JSON.stringify(existing));
             const nowIso = new Date().toISOString();
-            for (const row of adds)    byId.set(row.id, { ...row, createdAt: nowIso, updatedAt: nowIso, source: row.source || 'hub' });
-            for (const row of updates) byId.set(row.id, { ...byId.get(row.id), ...row, updatedAt: nowIso });
+            let seq = nextSeq(existing);
+            for (const row of adds) {
+                // Keep the CSV's id if it's genuinely new, else mint one.
+                const id = (row.id && !byId.has(row.id)) ? row.id : 'store-' + String(seq++).padStart(4, '0');
+                byId.set(id, { ...row, id, createdAt: nowIso, updatedAt: nowIso, source: row.source || 'hub' });
+            }
+            for (const { prevId, row } of updates) {
+                byId.set(prevId, { ...byId.get(prevId), ...row, id: prevId, updatedAt: nowIso });
+            }
             const merged = [...byId.values()];
             await saveStores(env, merged);
             return jsonResponse({ mode: 'apply', summary: { ...summary, backupTs, totalRowsAfter: merged.length } });
