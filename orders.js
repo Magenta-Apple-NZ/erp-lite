@@ -1925,7 +1925,7 @@ const Orders = (() => {
     //     1kg bags = 1 box per 10.
     // Returns { boxes, totalKg, packages, source }.
     function derivePackages(order) {
-        const BOX = { length: 36, width: 46, height: 35 }; // cm, standard carton
+        const BOX = { length: 46, width: 45, height: 36 }; // cm, standard carton
         const BOX_KG = 11.5; // standard full-box weight (product + packaging)
         const BAGS_PER_BOX = 10;
         const lines = order.lines || [];
@@ -1953,6 +1953,14 @@ const Orders = (() => {
         return { boxes, totalKg, packages, source };
     }
 
+    // Package presets — dims (cm) + per-box weight (kg). "custom" leaves the
+    // fields free. Standard box is the default.
+    const COURIER_PRESETS = {
+        box:    { label: 'Standard box · 11.5 kg (46×45×36)', l: 46, w: 45, h: 36, kg: 11.5 },
+        bag:    { label: 'Standard bag · 1.5 kg (30×20×10)',  l: 30, w: 20, h: 10, kg: 1.5 },
+        custom: { label: 'Custom (enter dims + weight)',       l: null, w: null, h: null, kg: null },
+    };
+
     function openCourierModal(order, store) {
         return new Promise(resolve => {
             const mock = courierStatus ? courierStatus.mock : true;
@@ -1961,6 +1969,7 @@ const Orders = (() => {
             // Prefer the order's own structured fields (captured at creation for
             // new orders), then fall back to the resolved store catalogue row.
             const street   = (st.street || store.address || (st.address || '').split('\n')[0] || '').trim();
+            const suburb   = (st.suburb || store.suburb || '').trim();
             const city     = st.city     || store.city     || '';
             const postcode = st.postcode || store.postcode || '';
             const phone    = st.phone    || store.phone    || '';
@@ -1998,8 +2007,8 @@ const Orders = (() => {
                             <input type="text" id="cm-street" value="${escHtml(street)}">
                         </div>
                         <div class="modal-field">
-                            <label>Suburb <span class="modal-hint">optional</span></label>
-                            <input type="text" id="cm-suburb">
+                            <label>Suburb</label>
+                            <input type="text" id="cm-suburb" value="${escHtml(suburb)}">
                         </div>
                         <div class="modal-field">
                             <label>City</label>
@@ -2017,6 +2026,12 @@ const Orders = (() => {
                             <label>Delivery instructions <span class="modal-hint">optional</span></label>
                             <input type="text" id="cm-instructions" value="${escHtml(order.packingNotes || '')}">
                         </div>
+                        <div class="modal-field cm-span2">
+                            <label>Package type</label>
+                            <select id="cm-preset">
+                                ${Object.entries(COURIER_PRESETS).map(([k, p]) => `<option value="${k}">${escHtml(p.label)}</option>`).join('')}
+                            </select>
+                        </div>
                         <div class="modal-field">
                             <label>Boxes <span class="modal-hint">${invoiced != null ? 'invoiced: ' + invoiced : 'auto'}</span></label>
                             <input type="number" id="cm-boxes" value="${derived.boxes}" min="1" step="1">
@@ -2028,9 +2043,9 @@ const Orders = (() => {
                         <div class="modal-field">
                             <label>Box L×W×H (cm)</label>
                             <div class="cm-dims">
-                                <input type="number" id="cm-l" value="36" min="1" step="1">
-                                <input type="number" id="cm-w" value="46" min="1" step="1">
-                                <input type="number" id="cm-h" value="35" min="1" step="1">
+                                <input type="number" id="cm-l" value="46" min="1" step="1">
+                                <input type="number" id="cm-w" value="45" min="1" step="1">
+                                <input type="number" id="cm-h" value="36" min="1" step="1">
                             </div>
                         </div>
                         <div class="modal-field">
@@ -2071,30 +2086,48 @@ const Orders = (() => {
                 }
                 reconEl.style.display = '';
             }
-            $('#cm-boxes').addEventListener('input', updateRecon);
+            // Package presets — set dims + per-box weight; "custom" frees them.
+            const presetEl = $('#cm-preset');
+            function syncWeight() {
+                const p = COURIER_PRESETS[presetEl.value];
+                if (presetEl.value !== 'custom' && p) {
+                    const boxes = Math.max(1, parseInt($('#cm-boxes').value, 10) || 1);
+                    $('#cm-kg').value = Math.round(boxes * p.kg * 100) / 100;
+                }
+            }
+            function applyPreset() {
+                const p = COURIER_PRESETS[presetEl.value];
+                const custom = presetEl.value === 'custom';
+                if (!custom && p) { $('#cm-l').value = p.l; $('#cm-w').value = p.w; $('#cm-h').value = p.h; }
+                $('#cm-l').disabled = $('#cm-w').disabled = $('#cm-h').disabled = $('#cm-kg').disabled = !custom;
+                syncWeight();
+            }
+            presetEl.addEventListener('change', applyPreset);
+            $('#cm-boxes').addEventListener('input', () => { updateRecon(); syncWeight(); });
+            applyPreset();
             updateRecon();
 
             $('#cm-save').addEventListener('click', () => {
                 const street = $('#cm-street').value.trim();
+                const suburb = $('#cm-suburb').value.trim();
                 const city = $('#cm-city').value.trim();
                 const postcode = $('#cm-postcode').value.trim();
-                if (!street || !city || !postcode) {
-                    errEl.textContent = 'Street, city, and postcode are required for a courier label.';
+                if (!street || !suburb || !city || !postcode) {
+                    errEl.textContent = 'Street, suburb, city and postcode are all required — GoSweetSpot validates them together.';
                     errEl.style.display = '';
                     return;
                 }
                 const boxes = Math.max(1, parseInt($('#cm-boxes').value, 10) || 1);
                 const totalKg = Math.max(0.1, parseFloat($('#cm-kg').value) || 0.1);
-                const L = Number($('#cm-l').value) || 36, W = Number($('#cm-w').value) || 46, H = Number($('#cm-h').value) || 35;
-                // Untouched box count + weight → use the accurate per-box weights
-                // from the line-item derivation; otherwise split the total evenly.
-                const untouched = boxes === derived.boxes && Math.abs(totalKg - derived.totalKg) < 0.01;
-                const packages = (untouched ? derived.packages : Array.from({ length: boxes }, () => ({
-                    length: L, width: W, height: H, kg: Math.round((totalKg / boxes) * 100) / 100,
-                }))).map((p, i) => ({
+                const preset = COURIER_PRESETS[presetEl.value];
+                const L = Number($('#cm-l').value) || 46, W = Number($('#cm-w').value) || 45, H = Number($('#cm-h').value) || 36;
+                // Per-box weight comes from the preset; custom splits the total.
+                const perBoxKg = (presetEl.value !== 'custom' && preset)
+                    ? preset.kg
+                    : Math.round((totalKg / boxes) * 100) / 100;
+                const packages = Array.from({ length: boxes }, (_, i) => ({
                     name: `${order.id} box ${i + 1}/${boxes}`,
-                    length: untouched ? p.length : L, width: untouched ? p.width : W, height: untouched ? p.height : H,
-                    kg: p.kg,
+                    length: L, width: W, height: H, kg: Math.max(0.1, Math.round(perBoxKg * 100) / 100),
                 }));
                 close({
                     orderId: order.id,

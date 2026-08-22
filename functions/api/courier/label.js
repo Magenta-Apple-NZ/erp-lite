@@ -45,8 +45,8 @@ export async function onRequestPost({ env, request }) {
         const body = await request.json();
         const { orderId, destination = {}, packages = [], carrier, reference, invoicedLabels } = body;
         if (!orderId) return errResponse('orderId required', 400);
-        if (!destination.street || !destination.city || !destination.postcode) {
-            return errResponse('Destination street, city, and postcode are required', 400);
+        if (!destination.street || !destination.suburb || !destination.city || !destination.postcode) {
+            return errResponse('Destination street, suburb, city, and postcode are required', 400);
         }
         if (!packages.length) return errResponse('At least one package is required', 400);
 
