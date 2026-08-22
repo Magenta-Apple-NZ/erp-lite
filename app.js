@@ -125,13 +125,29 @@ const _pnlMoney = n => {
     return (v < 0 ? '−$' : '$') + s;
 };
 
+// Accounts-receivable line for the Xero module (folded in from notifications).
+function pnlArLine(xero) {
+    if (!xero || !xero.unpaidCount) return '';
+    const overdue = xero.overdueCount > 0
+        ? `<span class="db-alert-badge db-alert-badge--red">${xero.overdueCount} overdue · ${_pnlMoney(xero.overdueTotal)}</span>` : '';
+    return `<a class="db-pnl-ar${xero.overdueCount > 0 ? ' db-pnl-ar--overdue' : ''}" href="https://go.xero.com/AccountsReceivable/Search.aspx" target="_blank" rel="noopener">
+        <span class="db-pnl-ar-label">Accounts receivable</span>
+        <span class="db-pnl-ar-value"><strong>${xero.unpaidCount} unpaid</strong> · ${_pnlMoney(xero.unpaidTotal)} owed ${overdue}<span class="db-pnl-ar-arrow">↗</span></span>
+    </a>`;
+}
+
 async function loadDashboardPnl() {
     const body = document.querySelector('#db-xero-pnl .db-mod-body');
     if (!body) return;
-    let resp, data = {};
+    let resp, data = {}, xeroAlerts = null;
     try {
-        resp = await fetch('/api/xero/pnl');
-        data = await resp.json().catch(() => ({}));
+        const [pnlR, alertsR] = await Promise.all([
+            fetch('/api/xero/pnl'),
+            fetch('/api/xero/alerts').then(r => r.ok ? r.json() : null).catch(() => null),
+        ]);
+        resp = pnlR;
+        data = await pnlR.json().catch(() => ({}));
+        xeroAlerts = alertsR;
     } catch (e) {
         body.innerHTML = `<p class="db-mod-empty">Could not reach the Hub API.</p>`;
         return;
@@ -196,7 +212,8 @@ async function loadDashboardPnl() {
             ${tile('Expenses', fy.expenses, prior.expenses, 'db-pnl-tile--exp')}
             ${tile('Net profit', fy.netProfit, prior.netProfit, fy.netProfit >= 0 ? 'db-pnl-tile--pos' : 'db-pnl-tile--neg')}
         </div>
-        <div style="position:relative;height:150px;width:100%"><canvas data-chart-id="${chartId}"></canvas></div>`;
+        <div style="position:relative;height:150px;width:100%"><canvas data-chart-id="${chartId}"></canvas></div>
+        ${pnlArLine(xeroAlerts)}`;
     initCharts(body);
 }
 
@@ -204,7 +221,6 @@ async function loadDashboardPnl() {
 // Shared data fetch + dismiss persistence for dashboard banner and #notifications view.
 
 const _notifEsc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-const _notifFmt = n => '$' + Number(n).toLocaleString('en-NZ', { maximumFractionDigits: 0 });
 const NOTIF_DISMISS_KEY = 'hub-notif-dismissed';
 const NOTIF_TTL = 86400000;            // 24h — ordinary notifications come back tomorrow
 const NOTIF_STICKY_TTL = 180 * 86400000; // sticky ones stay dismissed (per occurrence) ~6 months
@@ -262,12 +278,10 @@ async function confirmShipmentArrival(shipId) {
 }
 
 async function fetchNotificationItems() {
-    const [xeroRes, ordersRes, forecastRes] = await Promise.allSettled([
-        fetch('/api/xero/alerts').then(r => r.ok ? r.json() : null).catch(() => null),
+    const [ordersRes, forecastRes] = await Promise.allSettled([
         fetch('/api/orders').then(r => r.ok ? r.json() : []).catch(() => []),
         fetch('/api/import/forecast').then(r => r.ok ? r.json() : {}).catch(() => ({})),
     ]);
-    const xero     = xeroRes.status     === 'fulfilled' ? xeroRes.value     : null;
     const orders   = ordersRes.status   === 'fulfilled' ? ordersRes.value   : [];
     const forecast = forecastRes.status === 'fulfilled' ? forecastRes.value : {};
 
@@ -332,23 +346,10 @@ async function fetchNotificationItems() {
         });
     }
 
-    // 3. Xero AR unpaid invoices
-    if (xero && xero.unpaidCount) {
-        const badge = xero.overdueCount > 0
-            ? `<span class="db-alert-badge db-alert-badge--red">${xero.overdueCount} overdue · ${_notifFmt(xero.overdueTotal)}</span>` : '';
-        items.push({
-            id: 'xero-ar',
-            type: 'xero',
-            severity: xero.overdueCount > 0 ? 'critical' : 'info',
-            icon: `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></svg>`,
-            text: `<strong>${xero.unpaidCount} unpaid invoice${xero.unpaidCount === 1 ? '' : 's'}</strong> · ${_notifFmt(xero.unpaidTotal)} owed <span class="db-alert-gst">incl. GST</span>${badge}`,
-            link: 'https://go.xero.com/AccountsReceivable/Search.aspx',
-            linkLabel: 'Open Xero AR ↗',
-            external: true,
-        });
-    }
+    // (Xero AR unpaid/overdue invoices now live in the dashboard Xero P&L
+    //  module — see loadDashboardPnl — rather than as a notification.)
 
-    // 4. Sticky calendar reminders — tax due dates and keyword-matched
+    // 3. Sticky calendar reminders — tax due dates and keyword-matched
     //    Google Calendar events (e.g. "Pay Suppliers"). Unlike the items
     //    above these persist until dismissed by hand, and a dismissal only
     //    covers that occurrence (next month's "Pay Suppliers" shows again).
@@ -412,32 +413,32 @@ async function loadDashboardAlerts() {
     const active = items.filter(n => !dismissed[n.id]);
     notifUpdateBadge(active.length);
     if (!active.length) { el.hidden = true; return; }
-    el.innerHTML = active.map(n => n.confirmable
-        ? `<div class="db-alert-row db-alert-row--${n.type} db-alert-row--overdue">
+    el.innerHTML = active.map(n => {
+        if (n.confirmable) {
+            return `<div class="db-alert-row db-alert-row--${n.type} db-alert-row--overdue">
                <span class="db-alert-icon">${n.icon}</span>
                <span class="db-alert-main">${n.text}</span>
                <button class="db-alert-confirm-btn" data-ship-id="${_notifEsc(n.shipId)}" data-notif-id="${_notifEsc(n.id)}">✓ Confirm arrival</button>
                <a class="db-alert-link" href="${n.link}">Open shipment →</a>
-           </div>`
-        : n.sticky
-        ? `<div class="db-alert-row db-alert-row--${n.type} db-alert-row--sticky${n.severity === 'critical' ? ' db-alert-row--overdue' : ''}">
+               <button class="db-alert-dismiss-btn" data-notif-id="${_notifEsc(n.id)}" data-sticky="" title="Dismiss for 24h">✕</button>
+           </div>`;
+        }
+        // Every other row (sticky reminders AND ordinary alerts) is dismissable.
+        const stickyCls = n.sticky ? ' db-alert-row--sticky' : '';
+        const overdueCls = n.severity === 'critical' ? ' db-alert-row--overdue' : '';
+        const dismissTitle = n.sticky ? 'Dismiss — stays gone until the next occurrence' : 'Dismiss for 24h';
+        return `<div class="db-alert-row db-alert-row--${n.type}${stickyCls}${overdueCls}">
                <span class="db-alert-icon">${n.icon}</span>
                <span class="db-alert-main">${n.text}</span>
                <a class="db-alert-link" href="${n.link}"${n.external ? ' target="_blank" rel="noopener"' : ''}>${n.linkLabel}</a>
-               <button class="db-alert-dismiss-btn" data-notif-id="${_notifEsc(n.id)}" title="Dismiss — stays gone until the next occurrence">✕</button>
-           </div>`
-        : `<a class="db-alert-row db-alert-row--${n.type}${n.severity === 'critical' ? ' db-alert-row--overdue' : ''}"
-              href="${n.link}"${n.external ? ' target="_blank" rel="noopener"' : ''}>
-               <span class="db-alert-icon">${n.icon}</span>
-               <span class="db-alert-main">${n.text}</span>
-               <span class="db-alert-link">${n.linkLabel}</span>
-           </a>`
-    ).join('');
+               <button class="db-alert-dismiss-btn" data-notif-id="${_notifEsc(n.id)}" data-sticky="${n.sticky ? '1' : ''}" title="${dismissTitle}">✕</button>
+           </div>`;
+    }).join('');
     el.hidden = false;
 
     el.querySelectorAll('.db-alert-dismiss-btn').forEach(btn => {
         btn.addEventListener('click', () => {
-            notifDismiss(btn.dataset.notifId, true);
+            notifDismiss(btn.dataset.notifId, btn.dataset.sticky === '1');
             loadDashboardAlerts();
         });
     });

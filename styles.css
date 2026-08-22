@@ -7144,3 +7144,18 @@ a.db-row:hover { background: #f8fafc; border-color: #e2e8f0; }
 .db-pnl-delta--down { color: #b91c1c; }
 .db-pnl-tile--exp .db-pnl-delta--up { color: #b91c1c; }   /* rising expenses read as bad */
 .db-pnl-tile--exp .db-pnl-delta--down { color: #15803d; }
+
+/* Accounts-receivable line (folded in from notifications) */
+.db-pnl-ar {
+    display: flex; align-items: center; justify-content: space-between; gap: 0.75rem;
+    margin-top: 0.7rem; padding: 0.55rem 0.7rem;
+    background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px;
+    text-decoration: none; color: #334155; font-size: 0.82rem;
+    transition: background 0.12s, border-color 0.12s;
+}
+.db-pnl-ar:hover { background: #f1f5f9; border-color: #cbd5e1; }
+.db-pnl-ar--overdue { background: #fef2f2; border-color: #fecaca; }
+.db-pnl-ar--overdue:hover { background: #fee2e2; border-color: #fca5a5; }
+.db-pnl-ar-label { color: #64748b; font-weight: 600; }
+.db-pnl-ar-value { display: inline-flex; align-items: center; gap: 0.45rem; color: #1e293b; }
+.db-pnl-ar-arrow { color: #94a3b8; }
