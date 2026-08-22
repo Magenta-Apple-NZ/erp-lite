@@ -320,10 +320,15 @@ export async function onRequestPost({ env, request }) {
         const isRoundTrip = looksLikeRoundTrip(headerLine);
         const existing = (await loadStores(env)) || [];
 
+        // Opt-in authoritative sync: prune existing stores not present in the
+        // upload (removes deleted rows AND leftover same-key duplicates).
+        const prune = searchParams.get('prune') === 'true';
+
         if (isRoundTrip) {
             const parsed = parseRoundTripCsv(csv);
             const byId  = new Map(existing.map(s => [s.id, s]));
             const byKey = new Map(existing.map(s => [storeKey(s), s]));
+            const keptIds = new Set(); // existing stores an upload row maps to
             const updates = [], adds = [];
             for (const row of parsed) {
                 // Match by id, then fall back to the stable business key
@@ -332,16 +337,20 @@ export async function onRequestPost({ env, request }) {
                 // being duplicated as a new record.
                 const prev = (row.id && byId.get(row.id)) || byKey.get(storeKey(row)) || null;
                 if (!prev) { adds.push(row); continue; }
+                keptIds.add(prev.id);
                 const changed = EDITABLE_FIELDS.some(k => (prev[k] || '') !== (row[k] || ''))
                              || (!!prev.archived) !== (!!row.archived);
                 if (changed) updates.push({ prevId: prev.id, row });
             }
+            // Anything not matched by an upload row is pruned when prune is on.
+            const pruneIds = prune ? existing.filter(s => !keptIds.has(s.id)).map(s => s.id) : [];
             const summary = {
                 mode: 'round-trip',
                 csvRowsParsed: parsed.length,
                 adds: adds.length,
                 updates: updates.length,
                 unchanged: parsed.length - adds.length - updates.length,
+                pruned: pruneIds.length,
             };
             if (!apply) return jsonResponse({ mode: 'dry-run', summary });
 
@@ -353,11 +362,13 @@ export async function onRequestPost({ env, request }) {
                 // Keep the CSV's id if it's genuinely new, else mint one.
                 const id = (row.id && !byId.has(row.id)) ? row.id : 'store-' + String(seq++).padStart(4, '0');
                 byId.set(id, { ...row, id, createdAt: nowIso, updatedAt: nowIso, source: row.source || 'hub' });
+                keptIds.add(id);
             }
             for (const { prevId, row } of updates) {
                 byId.set(prevId, { ...byId.get(prevId), ...row, id: prevId, updatedAt: nowIso });
             }
-            const merged = [...byId.values()];
+            let merged = [...byId.values()];
+            if (prune) merged = merged.filter(s => keptIds.has(s.id));
             await saveStores(env, merged);
             return jsonResponse({ mode: 'apply', summary: { ...summary, backupTs, totalRowsAfter: merged.length } });
         }

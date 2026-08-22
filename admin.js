@@ -435,6 +435,10 @@ const Admin = (() => {
                             <button class="btn-secondary btn-sm" id="stores-upload-dryrun-btn">Preview (dry-run)</button>
                             <span class="bulk-step-hint">Auto-detects round-trip (Id column) vs seed (sheet format).</span>
                         </div>
+                        <label class="cat-sub" style="display:flex;align-items:flex-start;gap:0.45rem;margin-top:0.5rem;cursor:pointer">
+                            <input type="checkbox" id="stores-upload-prune" style="margin-top:0.15rem">
+                            <span><strong>Make this file authoritative</strong> — remove any store not in it (deletes rows you removed, and clears leftover duplicates). Round-trip uploads only; backs up first.</span>
+                        </label>
                         <div id="stores-upload-results"></div>
                         <div style="margin-top:1rem;border-top:1px solid #f1f5f9;padding-top:0.75rem">
                             <button class="btn-secondary btn-sm" id="stores-reseed-btn"
@@ -550,7 +554,8 @@ const Admin = (() => {
                 resultsEl.innerHTML = '<p class="bulk-loading">Parsing CSV…</p>';
                 try {
                     const csv = await file.text();
-                    const resp = await fetch('/api/catalog/stores', {
+                    const prune = document.getElementById('stores-upload-prune')?.checked;
+                    const resp = await fetch('/api/catalog/stores' + (prune ? '?prune=true' : ''), {
                         method: 'POST',
                         headers: { 'Content-Type': 'text/csv' },
                         body: csv,
@@ -568,24 +573,30 @@ const Admin = (() => {
 
             function renderUploadResults(result) {
                 const s = result.summary;
+                const prunedTxt = s.pruned ? ` · <strong style="color:#dc2626">${s.pruned} removed</strong>` : '';
                 const summaryText = s.mode === 'round-trip'
-                    ? `<strong>Dry run (round-trip):</strong> ${s.csvRowsParsed} parsed · ${s.adds} new · ${s.updates} updated · ${s.unchanged} unchanged.`
+                    ? `<strong>Dry run (round-trip):</strong> ${s.csvRowsParsed} parsed · ${s.adds} new · ${s.updates} updated · ${s.unchanged} unchanged${prunedTxt}.`
                     : `<strong>Dry run (seed):</strong> ${s.csvRowsParsed} rows parsed. Apply replaces sheet-sourced rows; hub-added stores are preserved.`;
+                const hasChanges = (s.adds + s.updates + (s.pruned || 0) > 0) || s.mode === 'seed';
                 resultsEl.innerHTML = `
                 <div class="bulk-summary">${summaryText}</div>
-                ${(s.adds + s.updates > 0) || s.mode === 'seed' ? `
+                ${hasChanges ? `
                 <div class="bulk-apply-bar">
                     <button class="btn-primary" id="stores-upload-apply-btn">Apply</button>
-                    <span class="bulk-apply-hint">Backs up the current stores table first.</span>
+                    <span class="bulk-apply-hint">${s.pruned ? `Removes ${s.pruned} store(s) not in the file. ` : ''}Backs up the current stores table first.</span>
                 </div>` : '<p class="bulk-empty">Nothing to apply — the CSV matches what is already stored.</p>'}`;
 
                 document.getElementById('stores-upload-apply-btn')?.addEventListener('click', async (e) => {
-                    if (!confirm('Apply this upload to the stores table?\n\nA backup is taken first.')) return;
+                    const prune = document.getElementById('stores-upload-prune')?.checked;
+                    const confirmMsg = prune
+                        ? `Apply and REMOVE ${s.pruned} store(s) not in this file?\n\nA backup is taken first (restorable).`
+                        : 'Apply this upload to the stores table?\n\nA backup is taken first.';
+                    if (!confirm(confirmMsg)) return;
                     const btn = e.currentTarget;
                     btn.disabled = true; btn.textContent = 'Applying…';
                     try {
                         const csv = await lastFile.text();
-                        const resp = await fetch('/api/catalog/stores?apply=true', {
+                        const resp = await fetch('/api/catalog/stores?apply=true' + (prune ? '&prune=true' : ''), {
                             method: 'POST',
                             headers: { 'Content-Type': 'text/csv' },
                             body: csv,
