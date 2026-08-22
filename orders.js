@@ -2103,90 +2103,106 @@ const Orders = (() => {
                     <p class="modal-hint" style="margin:-0.35rem 0 0.85rem">
                         ⚠ Live — this creates a real, billable Post Haste consignment.
                     </p>
-                    <div class="courier-modal-cols">
-                        <div class="courier-modal-col">
-                            <div class="cm-section-title">Recipient</div>
-                            <div class="courier-modal-grid">
-                                <div class="modal-field cm-span2">
-                                    <label>Recipient name</label>
-                                    <input type="text" id="cm-name" value="${escHtml(name)}">
-                                </div>
-                                <div class="modal-field">
-                                    <label>Contact person <span class="modal-hint">optional</span></label>
-                                    <input type="text" id="cm-contact" value="${escHtml(contact)}">
-                                </div>
-                                <div class="modal-field">
-                                    <label>Phone <span class="modal-hint">optional</span></label>
-                                    <input type="text" id="cm-phone" value="${escHtml(phone)}" placeholder="021 …">
-                                </div>
-                                <div class="modal-field cm-span2">
-                                    <label>Street address</label>
-                                    <input type="text" id="cm-street" value="${escHtml(street)}">
-                                </div>
-                                <div class="modal-field">
-                                    <label>Suburb</label>
-                                    <input type="text" id="cm-suburb" value="${escHtml(suburb)}">
-                                </div>
-                                <div class="modal-field">
-                                    <label>City</label>
-                                    <input type="text" id="cm-city" value="${escHtml(city)}">
-                                </div>
-                                <div class="modal-field">
-                                    <label>Postcode</label>
-                                    <input type="text" id="cm-postcode" value="${escHtml(postcode)}">
-                                </div>
-                                <div class="modal-field">
-                                    <label>Country</label>
-                                    <input type="text" id="cm-country" value="NZ">
-                                </div>
-                                <div class="modal-field cm-span2">
-                                    <label>Delivery instructions <span class="modal-hint">optional</span></label>
-                                    <input type="text" id="cm-instructions" value="" placeholder="e.g. leave at door, call on arrival…">
-                                </div>
+                    <div class="cm-steps">
+                        <button type="button" class="cm-step cm-step--active" data-goto="1"><span class="cm-step-num">1</span> Recipient</button>
+                        <span class="cm-step-line"></span>
+                        <button type="button" class="cm-step" data-goto="2"><span class="cm-step-num">2</span> Items</button>
+                    </div>
+
+                    <div class="cm-page" data-page="1">
+                        <div class="courier-modal-grid">
+                            <div class="modal-field cm-span2">
+                                <label>Recipient name</label>
+                                <input type="text" id="cm-name" data-required="1" value="${escHtml(name)}">
                             </div>
-                        </div>
-                        <div class="courier-modal-col">
-                            <div class="cm-section-title">Items</div>
-                            <div class="courier-modal-grid">
-                                <div class="modal-field cm-span2">
-                                    <label>Package type</label>
-                                    <select id="cm-preset">
-                                        ${Object.entries(COURIER_PRESETS).map(([k, p]) => `<option value="${k}">${escHtml(p.label)}</option>`).join('')}
-                                    </select>
-                                </div>
-                                <div class="modal-field">
-                                    <label>Labels (one per box) <span class="modal-hint">${boxesExpected != null ? boxesExpected + ' box' + (boxesExpected === 1 ? '' : 'es') + ' needed' : 'auto'}</span></label>
-                                    <input type="number" id="cm-boxes" value="${defaultBoxes}" min="1" step="1">
-                                </div>
-                                <div class="modal-field">
-                                    <label>Total weight (kg) <span class="modal-hint">auto</span></label>
-                                    <input type="number" id="cm-kg" value="${derived.totalKg}" min="0.1" step="0.1">
-                                </div>
-                                <div class="modal-field">
-                                    <label>Box L×W×H (cm)</label>
-                                    <div class="cm-dims">
-                                        <input type="number" id="cm-l" value="46" min="1" step="1">
-                                        <input type="number" id="cm-w" value="45" min="1" step="1">
-                                        <input type="number" id="cm-h" value="36" min="1" step="1">
-                                    </div>
-                                </div>
-                                <div class="modal-field cm-span2">
-                                    <label>Reference</label>
-                                    <input type="text" id="cm-ref" value="${escHtml(ref)}" maxlength="50">
-                                </div>
-                                <div class="modal-field cm-span2 cm-checks">
-                                    <label class="cm-check"><input type="checkbox" id="cm-sig" checked> Signature required</label>
-                                    <label class="cm-check"><input type="checkbox" id="cm-sat"> Saturday delivery</label>
-                                    <label class="cm-check"><input type="checkbox" id="cm-rural"> Rural delivery</label>
-                                </div>
+                            <div class="modal-field">
+                                <label>Contact person <span class="modal-hint">optional</span></label>
+                                <input type="text" id="cm-contact" value="${escHtml(contact)}">
+                            </div>
+                            <div class="modal-field">
+                                <label>Phone <span class="modal-hint">optional</span></label>
+                                <input type="text" id="cm-phone" value="${escHtml(phone)}" placeholder="021 …">
+                            </div>
+                            <div class="modal-field cm-span2">
+                                <label>Street address</label>
+                                <input type="text" id="cm-street" data-required="1" value="${escHtml(street)}">
+                            </div>
+                            <div class="modal-field">
+                                <label>Suburb</label>
+                                <input type="text" id="cm-suburb" data-required="1" value="${escHtml(suburb)}">
+                            </div>
+                            <div class="modal-field">
+                                <label>City</label>
+                                <input type="text" id="cm-city" data-required="1" value="${escHtml(city)}">
+                            </div>
+                            <div class="modal-field">
+                                <label>Postcode</label>
+                                <input type="text" id="cm-postcode" data-required="1" value="${escHtml(postcode)}">
+                            </div>
+                            <div class="modal-field">
+                                <label>Country</label>
+                                <input type="text" id="cm-country" data-required="1" value="NZ">
+                            </div>
+                            <div class="modal-field cm-span2">
+                                <label>Delivery instructions <span class="modal-hint">optional</span></label>
+                                <input type="text" id="cm-instructions" value="" placeholder="e.g. leave at door, call on arrival…">
                             </div>
                         </div>
                     </div>
-                    <div id="cm-recon" class="cm-recon" style="display:none"></div>
+
+                    <div class="cm-page" data-page="2" hidden>
+                        <div class="courier-modal-grid">
+                            <div class="modal-field cm-span2">
+                                <label>Package type</label>
+                                <select id="cm-preset">
+                                    ${Object.entries(COURIER_PRESETS).map(([k, p]) => `<option value="${k}">${escHtml(p.label)}</option>`).join('')}
+                                </select>
+                            </div>
+                            <div class="modal-field">
+                                <label>Labels (one per box) <span class="modal-hint">${boxesExpected != null ? boxesExpected + ' box' + (boxesExpected === 1 ? '' : 'es') + ' needed' : 'auto'}</span></label>
+                                <input type="number" id="cm-boxes" data-required="1" value="${defaultBoxes}" min="1" step="1">
+                            </div>
+                            <div class="modal-field">
+                                <label>Total weight (kg) <span class="modal-hint">auto</span></label>
+                                <input type="number" id="cm-kg" data-required="1" value="${derived.totalKg}" min="0.1" step="0.1">
+                            </div>
+                            <div class="modal-field">
+                                <label>Box L×W×H (cm)</label>
+                                <div class="cm-dims">
+                                    <input type="number" id="cm-l" value="46" min="1" step="1">
+                                    <input type="number" id="cm-w" value="45" min="1" step="1">
+                                    <input type="number" id="cm-h" value="36" min="1" step="1">
+                                </div>
+                            </div>
+                            <div class="modal-field cm-span2">
+                                <label>Reference</label>
+                                <input type="text" id="cm-ref" data-required="1" value="${escHtml(ref)}" maxlength="50">
+                            </div>
+                            <div class="modal-field cm-span2">
+                                <label>Delivery options</label>
+                                <div class="cm-options">
+                                    <button type="button" class="cm-options-toggle" id="cm-options-toggle" aria-expanded="false">
+                                        <span class="cm-options-tick">✓</span>
+                                        <span class="cm-options-summary" id="cm-options-summary">Signature required</span>
+                                        <span class="cm-options-chev">▾</span>
+                                    </button>
+                                    <div class="cm-options-body" id="cm-options-body" hidden>
+                                        <label class="cm-check"><input type="checkbox" id="cm-sig" checked> Signature required</label>
+                                        <label class="cm-check"><input type="checkbox" id="cm-sat"> Saturday delivery</label>
+                                        <label class="cm-check"><input type="checkbox" id="cm-rural"> Rural delivery</label>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div id="cm-recon" class="cm-recon" style="display:none"></div>
+                    </div>
+
                     <div id="cm-error" style="display:none;color:#dc2626;font-size:0.9em;margin:0.4rem 0"></div>
                     <div class="modal-actions">
-                        <button class="btn-primary" id="cm-save">Create label</button>
                         <button class="btn-secondary" id="cm-cancel">Cancel</button>
+                        <button class="btn-secondary" id="cm-back" hidden>← Back</button>
+                        <button class="btn-primary" id="cm-next">Next →</button>
+                        <button class="btn-primary" id="cm-save" hidden>Create label</button>
                     </div>
                 </div>`;
             document.body.appendChild(overlay);
@@ -2241,13 +2257,79 @@ const Orders = (() => {
             applyPreset();
             updateRecon();
 
+            // ── Field validation colouring — green outline when populated, red
+            //    when a required field is empty (optional fields stay neutral). ──
+            function markField(el) {
+                const req = el.dataset.required === '1';
+                const val = (el.value || '').trim();
+                el.classList.toggle('cm-valid', !!val);
+                el.classList.toggle('cm-invalid', req && !val);
+            }
+            overlay.querySelectorAll('.courier-modal-grid input').forEach(el => {
+                el.addEventListener('input', () => markField(el));
+                markField(el);
+            });
+            const pageValid = page => [...overlay.querySelectorAll(`.cm-page[data-page="${page}"] input[data-required="1"]`)]
+                .every(el => (el.value || '').trim());
+            const markPage = page => overlay.querySelectorAll(`.cm-page[data-page="${page}"] input`).forEach(markField);
+
+            // ── Two-page wizard: 1 Recipient → 2 Items ──
+            function showStep(n) {
+                overlay.querySelectorAll('.cm-page').forEach(p => { p.hidden = p.dataset.page !== String(n); });
+                overlay.querySelectorAll('.cm-step').forEach(s => {
+                    s.classList.toggle('cm-step--active', s.dataset.goto === String(n));
+                    s.classList.toggle('cm-step--done', Number(s.dataset.goto) < n);
+                });
+                $('#cm-back').hidden = n === 1;
+                $('#cm-next').hidden = n !== 1;
+                $('#cm-save').hidden = n === 1;
+                if (n === 2) updateRecon();
+                const first = overlay.querySelector(`.cm-page[data-page="${n}"] input:not([disabled]), .cm-page[data-page="${n}"] select`);
+                setTimeout(() => first && first.focus(), 0);
+            }
+            function goStep2() {
+                if (!pageValid(1)) {
+                    markPage(1);
+                    errEl.textContent = 'Fill in the required recipient fields (highlighted red) before continuing.';
+                    errEl.style.display = '';
+                    return;
+                }
+                errEl.style.display = 'none';
+                showStep(2);
+            }
+            $('#cm-next').addEventListener('click', goStep2);
+            $('#cm-back').addEventListener('click', () => { errEl.style.display = 'none'; showStep(1); });
+            overlay.querySelectorAll('.cm-step').forEach(s => s.addEventListener('click', () =>
+                Number(s.dataset.goto) === 2 ? goStep2() : showStep(1)));
+
+            // ── Delivery options collapsed to a tick; expand to change ──
+            const optBody = $('#cm-options-body');
+            function updateOptSummary() {
+                const on = [];
+                if ($('#cm-sig').checked)   on.push('Signature');
+                if ($('#cm-sat').checked)   on.push('Saturday');
+                if ($('#cm-rural').checked) on.push('Rural');
+                $('#cm-options-summary').textContent = on.length ? on.join(' · ') : 'No extra options';
+                $('#cm-options-toggle').classList.toggle('cm-options-none', !on.length);
+            }
+            $('#cm-options-toggle').addEventListener('click', () => {
+                const open = optBody.hasAttribute('hidden');
+                optBody.toggleAttribute('hidden', !open);
+                $('#cm-options-toggle').setAttribute('aria-expanded', String(open));
+                $('#cm-options-toggle').classList.toggle('cm-options-open', open);
+            });
+            ['#cm-sig', '#cm-sat', '#cm-rural'].forEach(id => $(id).addEventListener('change', updateOptSummary));
+            updateOptSummary();
+
             $('#cm-save').addEventListener('click', () => {
                 const street = $('#cm-street').value.trim();
                 const suburb = $('#cm-suburb').value.trim();
                 const city = $('#cm-city').value.trim();
                 const postcode = $('#cm-postcode').value.trim();
-                if (!street || !suburb || !city || !postcode) {
-                    errEl.textContent = 'Street, suburb, city and postcode are all required — GoSweetSpot validates them together.';
+                if (!pageValid(1)) {
+                    markPage(1);
+                    showStep(1);
+                    errEl.textContent = 'Fill in the required recipient fields (highlighted red) — GoSweetSpot validates them together.';
                     errEl.style.display = '';
                     return;
                 }
@@ -2286,7 +2368,7 @@ const Orders = (() => {
             $('#cm-cancel').addEventListener('click', () => close(null));
             overlay.addEventListener('click', e => { if (e.target === overlay) close(null); });
             document.addEventListener('keydown', onKey);
-            setTimeout(() => $('#cm-city').focus(), 0);
+            showStep(1);
         });
     }
 
