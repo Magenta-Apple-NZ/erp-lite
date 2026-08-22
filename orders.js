@@ -39,12 +39,25 @@ const Orders = (() => {
     //   Entered → Sent to Xero → (auto-print slip at depot) → Complete → Paid.
     // "reviewed" is a legacy intermediate kept so old orders still display.
     const STATUS_LABELS = {
-        new:          'Entered',
+        new:          'New',
         reviewed:     'Reviewed',
         sent_to_xero: 'Sent to Xero',
         dispatched:   'Complete',
         paid:         'Paid',
     };
+    // The three non-linear stages offered in the status dropdown. Legacy
+    // 'reviewed' folds into 'New'; 'paid' is derived and never picked here.
+    const STATUS_STAGES = [
+        { value: 'new',          label: 'New' },
+        { value: 'sent_to_xero', label: 'Sent to Xero' },
+        { value: 'dispatched',   label: 'Complete' },
+    ];
+    function statusStageOptions(order) {
+        const cur = order.status === 'reviewed' ? 'new' : order.status;
+        return STATUS_STAGES
+            .map(s => `<option value="${s.value}"${cur === s.value ? ' selected' : ''}>${s.label}</option>`)
+            .join('');
+    }
     const STATUS_COLOURS = {
         new:          '#3b82f6',
         reviewed:     '#f59e0b',
@@ -690,7 +703,7 @@ const Orders = (() => {
             <div class="order-actions-left">
                 <a href="#orders" class="btn-secondary btn-sm">← Orders</a>
                 <select id="order-status-sel" class="order-status-sel">
-                    ${Object.keys(STATUS_LABELS).filter(k => k !== 'paid').map(k => `<option value="${k}"${order.status === k ? ' selected' : ''}>${statusLabelForRole(k)}</option>`).join('')}
+                    ${statusStageOptions(order)}
                 </select>
             </div>
             <div class="order-actions-right" id="action-btns">
@@ -1446,70 +1459,84 @@ const Orders = (() => {
         return `<button id="create-courier-btn" class="btn-secondary">📦 Create Courier label</button>`;
     }
 
-    // ── Action bar buttons — driven by order status ──
+    // A split button: a primary action joined to a ▾ caret that opens a dropdown
+    // of secondary actions. Reuses the .overflow-menu machinery so the global
+    // click-outside closer applies. `mainHtml` is the primary element; `items`
+    // is the dropdown's inner HTML (empty → caret omitted, plain button).
+    function splitButton(mainHtml, items) {
+        if (!items) return `<div class="split-btn">${mainHtml}</div>`;
+        return `<div class="split-btn">${mainHtml}<div class="overflow-menu split-btn-menu">`
+            + `<button class="overflow-trigger split-btn-caret" title="More" onclick="event.stopPropagation();this.closest('.overflow-menu').classList.toggle('open')">▾</button>`
+            + `<div class="overflow-dropdown">${items}</div></div></div>`;
+    }
+
+    // ── Action bar — three fixed split buttons + a slim kebab ──
+    // Non-linear: every action is available at any stage. The status dropdown
+    // (rendered separately) sets the stage; these buttons perform the work.
     function actionButtons(order, xeroConnected) {
-        // Admin now lives on the edit view (which has the form), so there's
-        // no "Edit" affordance — they're already editing. Warehouse never
-        // got the button.
-        const edit = '';
-        let primaryAction = '';
-        let xeroMenuItem  = '';
+        const invoiced = !!order.xeroInvoiceId;
 
-        // Xero push stays available on ANY status until an invoice is linked —
-        // stages aren't always linear (an order can be dispatched before it's
-        // pushed to Xero). Empty once an invoice exists; the overflow menu then
-        // carries a "View in Xero" link instead.
-        let xeroPush = '';
-        if (!order.xeroInvoiceId) {
-            xeroPush = order.xeroSourced
-                // Order was created in Xero — push would duplicate. Link instead.
-                ? `<button id="link-xero-primary-btn" class="btn-primary">Link Xero Invoice</button>`
-                : xeroConnected
-                    ? `<button id="push-xero-btn" class="btn-primary">Send to Xero</button>`
-                    : `<span class="xero-not-connected">Xero not connected</span>`;
-        }
-        xeroMenuItem = order.xeroInvoiceId
-            ? `<a href="https://go.xero.com/AccountsReceivable/Edit.aspx?InvoiceID=${encodeURIComponent(order.xeroInvoiceId)}" target="_blank" rel="noopener" class="overflow-item xero-only">✓ ${escHtml(order.xeroInvoiceNumber)} — View in Xero ↗</a>`
-            : '';
-
-        if (order.status === 'new' || order.status === 'reviewed') {
-            primaryAction = xeroPush;
-        } else if (order.status === 'sent_to_xero') {
-            // Admin can pick the dispatcher; warehouse always dispatches as themselves (Jake).
-            const picker = isWarehouseRole()
-                ? ''
-                : `<select id="dispatch-by-sel" class="dispatch-by-sel" title="Dispatched by">
-                       <option value="Jake" selected>Jake</option>
-                       <option value="Andrew">Andrew</option>
-                   </select>`;
-            const printedTag = order.printedAt
-                ? `<span class="status-printed-tag" title="Slip auto-printed at ${escHtml(order.printedTo || 'depot')} on ${escHtml(new Date(order.printedAt).toLocaleString('en-NZ'))}">🖨 Printed at ${escHtml(order.printedTo || 'depot')}</span>`
-                : '';
-            primaryAction = `${printedTag}${courierAction(order)}${picker}${xeroPush}<button id="dispatch-btn" class="btn-primary">Mark Complete</button>`;
+        // 1) Send to Xero — primary pushes; dropdown links / views the invoice.
+        let xeroMain;
+        if (order.xeroSourced && !invoiced) {
+            // Created in Xero — pushing would duplicate, so link instead.
+            xeroMain = `<button id="link-xero-primary-btn" class="btn-primary split-btn-main">Link Xero Invoice</button>`;
         } else {
-            primaryAction = `${courierAction(order)}${xeroPush}<span class="status-dispatched-tag">✓ Complete</span>`;
+            xeroMain = `<button id="push-xero-btn" class="btn-primary split-btn-main"${(invoiced || !xeroConnected) ? ' disabled' : ''}>Send to Xero</button>`;
+        }
+        const xeroItems = `<button class="overflow-item" id="link-xero-btn">Link to Xero…</button>`
+            + (invoiced
+                ? `<a class="overflow-item xero-only" href="https://go.xero.com/AccountsReceivable/Edit.aspx?InvoiceID=${encodeURIComponent(order.xeroInvoiceId)}" target="_blank" rel="noopener">✓ ${escHtml(order.xeroInvoiceNumber || 'Invoice')} — View in Xero ↗</a>`
+                : '');
+        const xeroBtn = splitButton(xeroMain, xeroItems);
+
+        // 2) Create Courier label — primary creates (or shows the tracking chip);
+        //    dropdown prints the slip / address.
+        let courierMain;
+        const c = order.courier;
+        if (c && c.connote) {
+            const track = c.trackingUrl
+                ? `<a href="${escHtml(c.trackingUrl)}" target="_blank" rel="noopener" class="courier-chip-link">${escHtml(c.connote)} ↗</a>`
+                : escHtml(c.connote);
+            const testTag = c.mock ? '<span class="courier-chip-test">TEST</span>' : '';
+            const mismatchTag = c.labelMismatch
+                ? `<span class="courier-chip-warn" title="${escHtml(String(c.boxesOrdered))} label(s) ordered but ${escHtml(String(c.invoicedLabels))} invoiced">⚠ ${escHtml(String(c.boxesOrdered))}≠${escHtml(String(c.invoicedLabels))}</span>`
+                : '';
+            courierMain = `<span class="courier-chip split-btn-main" title="${escHtml(c.carrier)} · created ${escHtml(fmtDateTime(c.createdAt))}">📦 ${track}${testTag}${mismatchTag}<button class="courier-reprint-btn" id="courier-reprint-btn" title="Reprint label">🖨</button><button class="courier-clear-btn" id="courier-clear-btn" title="Clear this label so you can create a new one">✕</button></span>`;
+        } else {
+            courierMain = `<button id="create-courier-btn" class="btn-primary split-btn-main">📦 Create Courier Label</button>`;
+        }
+        const courierItems = `<button class="overflow-item" id="print-slip-btn">Print Packing Slip</button>`
+            + `<button class="overflow-item" id="print-address-btn">Print Address</button>`;
+        const courierBtn = splitButton(courierMain, courierItems);
+
+        // 3) Dispatch — primary dispatches as Jake; dropdown as Andrew (admin only).
+        let dispatchBtn;
+        if (order.status === 'dispatched') {
+            dispatchBtn = `<span class="status-dispatched-tag">✓ Complete${order.dispatchedBy ? ' · ' + escHtml(order.dispatchedBy) : ''}</span>`;
+        } else {
+            const dispatchMain = `<button id="dispatch-btn" class="btn-primary split-btn-main" data-dispatch-by="Jake">Dispatch (Jake)</button>`;
+            const dispatchItems = isWarehouseRole()
+                ? ''
+                : `<button class="overflow-item" id="dispatch-andrew-btn" data-dispatch-by="Andrew">Dispatched (Andrew)</button>`;
+            dispatchBtn = splitButton(dispatchMain, dispatchItems);
         }
 
-        const menu = `
+        // Kebab — duplicate / delete only.
+        const kebab = `
             <div class="overflow-menu">
                 <button class="overflow-trigger btn-secondary btn-sm" title="More actions" onclick="event.stopPropagation();this.closest('.overflow-menu').classList.toggle('open')">•••</button>
                 <div class="overflow-dropdown">
-                    ${xeroMenuItem}
-                    <div class="overflow-section overflow-section--slip">Send Packing Slip</div>
-                    ${printerMenuItems('slip', { indent: true })}
-                    <button class="overflow-item overflow-indent" id="print-slip-btn">Local Printer</button>
-                    <button class="overflow-item overflow-indent" id="download-slip-btn">Download as PDF</button>
-                    <hr class="overflow-divider">
-                    <button class="overflow-item" id="print-address-btn">Print Address</button>
-                    ${printerMenuItems('address', { prefix: 'Send Address to ' })}
-                    <hr class="overflow-divider">
-                    <button class="overflow-item" id="link-xero-btn">Link Xero Invoice…</button>
-                    <hr class="overflow-divider">
+                    <button class="overflow-item" id="duplicate-order-btn">Duplicate</button>
                     <button class="overflow-item overflow-danger" id="delete-order-btn">Delete</button>
                 </div>
             </div>`;
 
-        return `${edit}${primaryAction}${menu}`;
+        const printedTag = order.printedAt
+            ? `<span class="status-printed-tag" title="Slip auto-printed at ${escHtml(order.printedTo || 'depot')} on ${escHtml(new Date(order.printedAt).toLocaleString('en-NZ'))}">🖨 Printed at ${escHtml(order.printedTo || 'depot')}</span>`
+            : '';
+
+        return `${printedTag}${xeroBtn}${courierBtn}${dispatchBtn}${kebab}`;
     }
 
     function refreshActionBar(order) {
@@ -1572,7 +1599,7 @@ const Orders = (() => {
             <div class="order-actions-left">
                 <a href="#orders" class="btn-secondary btn-sm">← Orders</a>
                 <select id="order-status-sel" class="order-status-sel">
-                    ${Object.keys(STATUS_LABELS).filter(k => k !== 'paid').map(k => `<option value="${k}"${order.status === k ? ' selected' : ''}>${statusLabelForRole(k)}</option>`).join('')}
+                    ${statusStageOptions(order)}
                 </select>
             </div>
             <div class="order-actions-right" id="action-btns">
@@ -2729,9 +2756,12 @@ const Orders = (() => {
         document.getElementById('xero-push-banner-btn')?.addEventListener('click', e => pushToXero(e.currentTarget));
 
         // Mark as Dispatched
-        document.getElementById('dispatch-btn')?.addEventListener('click', async () => {
-            const btn = document.getElementById('dispatch-btn');
-            const dispatchedBy = document.getElementById('dispatch-by-sel')?.value || 'Jake';
+        // Dispatch — primary button dispatches as Jake, dropdown item as Andrew.
+        // Both carry data-dispatch-by so one handler covers them.
+        async function runDispatch(e) {
+            const btn = e.currentTarget;
+            const dispatchedBy = btn.dataset.dispatchBy || 'Jake';
+            const label = btn.textContent;
             btn.disabled = true;
             btn.textContent = 'Saving…';
             clearErrorBanner();
@@ -2743,13 +2773,42 @@ const Orders = (() => {
                 });
                 order.status = 'dispatched';
                 order.dispatchedBy = dispatchedBy;
+                const sel = document.getElementById('order-status-sel');
+                if (sel) sel.value = 'dispatched';
                 refreshActionBar(order);
                 logEvent(orderId, `Marked complete by ${dispatchedBy}`);
                 showToast(`Order marked complete by ${dispatchedBy}`);
-            } catch (e) {
-                showErrorBanner('Error: ' + e.message);
+            } catch (err) {
+                showErrorBanner('Error: ' + err.message);
                 btn.disabled = false;
-                btn.textContent = 'Mark Complete';
+                btn.textContent = label;
+            }
+        }
+        document.getElementById('dispatch-btn')?.addEventListener('click', runDispatch);
+        document.getElementById('dispatch-andrew-btn')?.addEventListener('click', runDispatch);
+
+        // Duplicate — clone this order (customer, ship-to, lines, notes) into a
+        // fresh draft and open it for editing.
+        document.getElementById('duplicate-order-btn')?.addEventListener('click', async () => {
+            if (!confirm('Duplicate this order?\n\nA new draft is created with the same customer, ship-to and lines. It will not be linked to Xero or have a courier label.')) return;
+            clearErrorBanner();
+            try {
+                const created = await api('/api/orders', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        customer:         order.customer,
+                        poNumber:         order.poNumber,
+                        shipTo:           order.shipTo,
+                        lines:            (order.lines || []).map(l => ({ ...l })),
+                        packingNotes:     order.packingNotes,
+                        fulfilmentMethod: order.fulfilmentMethod,
+                    }),
+                });
+                showToast('Order duplicated' + (created && created.id ? ': ' + created.id : ''));
+                if (created && created.id) location.hash = 'orders/' + created.id + (isWarehouseRole() ? '' : '/edit');
+            } catch (e) {
+                showErrorBanner('Duplicate failed: ' + e.message);
             }
         });
     }

@@ -1163,6 +1163,21 @@ li.drag-over { background: #eff6ff; }
 .row-action-btn--xero:hover { background: transparent; }
 
 /* ── Overflow / context menu ── */
+/* Split button — primary action joined to a ▾ dropdown caret */
+.split-btn { display: inline-flex; align-items: stretch; }
+.split-btn .split-btn-main { border-radius: 6px 0 0 6px; }
+.split-btn .courier-chip.split-btn-main { border-right: none; }
+.split-btn-menu { display: inline-flex; }
+.split-btn-caret {
+    background: #e2e8f0; color: #475569; border: none;
+    padding: 0 0.5rem; min-width: 0;
+    border-radius: 0 6px 6px 0;
+    font-size: 0.7rem; line-height: 1; cursor: pointer; font-family: inherit;
+    display: inline-flex; align-items: center; justify-content: center;
+    transition: background 0.12s, color 0.12s;
+}
+.split-btn-caret:hover { background: #cbd5e1; color: #1e293b; }
+
 .overflow-menu { position: relative; display: inline-flex; }
 .overflow-trigger {
     font-size: 0.8rem;
