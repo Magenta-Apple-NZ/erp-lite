@@ -2202,6 +2202,7 @@ const Orders = (() => {
                     </div>
 
                     <div class="cm-page" data-page="3" hidden>
+                        <div class="cm-created" id="cm-created"></div>
                         <div class="courier-modal-grid">
                             <div class="modal-field cm-span2">
                                 <label>Send label to</label>
@@ -2221,16 +2222,22 @@ const Orders = (() => {
                     <div class="modal-actions">
                         <button class="btn-secondary" id="cm-cancel">Cancel</button>
                         <button class="btn-secondary" id="cm-back" hidden>← Back</button>
-                        <button class="btn-primary" id="cm-next">Next →</button>
-                        <button class="btn-primary" id="cm-save" hidden>Create label</button>
+                        <button class="btn-primary" id="cm-next" hidden>Next →</button>
+                        <button class="btn-primary" id="cm-create" hidden>Create label</button>
+                        <button class="btn-secondary" id="cm-done" hidden>Done</button>
+                        <button class="btn-primary" id="cm-print" hidden>🖨 Print label</button>
                     </div>
                 </div>`;
             document.body.appendChild(overlay);
 
             const $ = sel => overlay.querySelector(sel);
             const errEl = $('#cm-error');
+            let createdResult = null; // set once the label is created (page 2 → 3)
             const close = value => { document.removeEventListener('keydown', onKey); overlay.remove(); resolve(value); };
-            const onKey = e => { if (e.key === 'Escape') close(null); };
+            // Dismissing (Esc / backdrop) after the label was created must still
+            // return it so the order updates — the consignment already exists.
+            const dismiss = () => close(createdResult ? { result: createdResult, print: null } : null);
+            const onKey = e => { if (e.key === 'Escape') dismiss(); };
 
             // Two-fold reconciliation, live as the label count changes:
             //   1) labels vs boxes the order physically needs
@@ -2300,10 +2307,14 @@ const Orders = (() => {
                     s.classList.toggle('cm-step--active', s.dataset.goto === String(n));
                     s.classList.toggle('cm-step--done', Number(s.dataset.goto) < n);
                 });
-                $('#cm-back').hidden = n === 1;
-                $('#cm-next').hidden = n === TOTAL_STEPS;
-                $('#cm-save').hidden = n !== TOTAL_STEPS;
-                if (n >= 2) updateRecon();
+                // Buttons per step: 1 Cancel/Next · 2 Cancel/Back/Create · 3 Done/Print
+                $('#cm-cancel').hidden = n === 3;
+                $('#cm-back').hidden   = n !== 2;
+                $('#cm-next').hidden   = n !== 1;
+                $('#cm-create').hidden = n !== 2;
+                $('#cm-done').hidden   = n !== 3;
+                $('#cm-print').hidden  = n !== 3;
+                if (n === 2) updateRecon();
                 const first = overlay.querySelector(`.cm-page[data-page="${n}"] input:not([disabled]), .cm-page[data-page="${n}"] select`);
                 setTimeout(() => first && first.focus(), 0);
             }
@@ -2318,6 +2329,8 @@ const Orders = (() => {
                 return false;
             }
             function goTo(target) {
+                if (createdResult) return;          // locked once the label exists
+                if (target === 3) return;           // page 3 is only reached by creating
                 if (target > step) { for (let p = step; p < target; p++) if (!canLeave(p)) return; }
                 showStep(target);
             }
@@ -2344,18 +2357,8 @@ const Orders = (() => {
             ['#cm-sig', '#cm-sat', '#cm-rural'].forEach(id => $(id).addEventListener('change', updateOptSummary));
             updateOptSummary();
 
-            $('#cm-save').addEventListener('click', () => {
-                const street = $('#cm-street').value.trim();
-                const suburb = $('#cm-suburb').value.trim();
-                const city = $('#cm-city').value.trim();
-                const postcode = $('#cm-postcode').value.trim();
-                if (!pageValid(1)) {
-                    markPage(1);
-                    showStep(1);
-                    errEl.textContent = 'Fill in the required recipient fields (highlighted red) — GoSweetSpot validates them together.';
-                    errEl.style.display = '';
-                    return;
-                }
+            // Build the GSS API payload from the Recipient + Items pages.
+            function buildPayload() {
                 const boxes = Math.max(1, parseInt($('#cm-boxes').value, 10) || 1);
                 const totalKg = Math.max(0.1, parseFloat($('#cm-kg').value) || 0.1);
                 const preset = COURIER_PRESETS[presetEl.value];
@@ -2368,13 +2371,16 @@ const Orders = (() => {
                     name: `${order.id} box ${i + 1}/${boxes}`,
                     length: L, width: W, height: H, kg: Math.max(0.1, Math.round(perBoxKg * 100) / 100),
                 }));
-                close({
+                return {
                     orderId: order.id,
                     destination: {
                         name: $('#cm-name').value.trim(),
                         contactPerson: $('#cm-contact').value.trim(),
                         phone: $('#cm-phone').value.trim(),
-                        street, suburb: $('#cm-suburb').value.trim(), city, postcode,
+                        street: $('#cm-street').value.trim(),
+                        suburb: $('#cm-suburb').value.trim(),
+                        city: $('#cm-city').value.trim(),
+                        postcode: $('#cm-postcode').value.trim(),
                         countryCode: $('#cm-country').value.trim() || 'NZ',
                         isRural: $('#cm-rural').checked,
                         instructions: $('#cm-instructions').value.trim(),
@@ -2386,15 +2392,41 @@ const Orders = (() => {
                     signatureRequired: $('#cm-sig').checked,
                     saturday: $('#cm-sat').checked,
                     carrier: 'Post Haste',
-                    // Print options (page 3) — consumed client-side after creation.
-                    print: {
-                        target: $('#cm-print-target').value,   // printerId string, or 'pdf'
-                        slip: $('#cm-print-slip').checked,
-                    },
-                });
+                };
+            }
+
+            // Create the label (between Items and Print). On success advance to
+            // the Print page; the consignment now exists server-side.
+            $('#cm-create').addEventListener('click', async () => {
+                if (!pageValid(1)) { markPage(1); showStep(1); errEl.textContent = 'Fill in the required recipient fields (highlighted red).'; errEl.style.display = ''; return; }
+                if (!canLeave(2)) return;
+                const btn = $('#cm-create');
+                btn.disabled = true; btn.textContent = 'Creating…';
+                errEl.style.display = 'none';
+                try {
+                    createdResult = await api('/api/courier/label', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(buildPayload()),
+                    });
+                    $('#cm-created').textContent = `✓ Label created · ${createdResult.carrier} ${createdResult.connote}${createdResult.mock ? ' (TEST)' : ''}`;
+                    showStep(3);
+                } catch (e) {
+                    errEl.textContent = 'Courier label failed: ' + e.message;
+                    errEl.style.display = '';
+                    btn.disabled = false; btn.textContent = 'Create label';
+                }
             });
+
+            // Print page — resolve with the created label + the print choice.
+            $('#cm-print').addEventListener('click', () => close({
+                result: createdResult,
+                print: { target: $('#cm-print-target').value, slip: $('#cm-print-slip').checked },
+            }));
+            $('#cm-done').addEventListener('click', () => close({ result: createdResult, print: null }));
+
             $('#cm-cancel').addEventListener('click', () => close(null));
-            overlay.addEventListener('click', e => { if (e.target === overlay) close(null); });
+            overlay.addEventListener('click', e => { if (e.target === overlay) dismiss(); });
             document.addEventListener('keydown', onKey);
             showStep(1);
         });
@@ -2452,50 +2484,44 @@ const Orders = (() => {
             || null;
     }
 
-    async function runCreateCourier(order, btn) {
+    async function runCreateCourier(order) {
         const stores = await loadCatalogStores().catch(() => []);
         const store  = resolveStore(order, stores);
-        const payload = await openCourierModal(order, store);
-        if (!payload) return;
-        if (btn) { btn.disabled = true; btn.textContent = 'Creating label…'; }
+        // The modal now creates the label itself (between Items and Print) and
+        // resolves with { result, print }. It resolves null if cancelled before
+        // creation.
+        const outcome = await openCourierModal(order, store);
+        if (!outcome || !outcome.result) return;
         clearErrorBanner();
-        try {
-            const result = await api('/api/courier/label', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload),
-            });
-            order.courier = {
-                carrier: result.carrier, connote: result.connote, trackingUrl: result.trackingUrl,
-                consignmentId: result.consignmentId, cost: result.cost, mock: result.mock,
-                boxesOrdered: result.boxesOrdered, boxesExpected: result.boxesExpected,
-                invoicedLabels: result.invoicedLabels,
-                boxMismatch: result.boxMismatch, invoiceMismatch: result.invoiceMismatch,
-                labelMismatch: result.labelMismatch,
-                createdAt: result.createdAt || new Date().toISOString(),
-            };
-            refreshActionBar(order);
-            showToast(`Label created: ${result.carrier} ${result.connote}${result.mock ? ' (TEST)' : ''}`);
-            logEvent(order.id, 'Created courier label',
-                `${result.carrier} ${result.connote} · ${result.boxesOrdered} created`
-                + (result.boxesExpected != null ? `, ${result.boxesExpected} needed` : '')
-                + (result.invoicedLabels != null ? `, ${result.invoicedLabels} invoiced` : ''));
-            const warns = [];
-            if (result.boxMismatch)     warns.push(`${result.boxesOrdered} label(s) created but ${result.boxesExpected} box(es) needed`);
-            if (result.invoiceMismatch) warns.push(`${result.boxesOrdered} label(s) created but ${result.invoicedLabels} invoiced`);
-            if (warns.length) showErrorBanner('⚠ Label mismatch: ' + warns.join('; ') + '.');
-            // Honour the print-options page: chosen label printer (or PDF), and
-            // optionally the packing slip to the depot printer.
-            const pc = payload.print || {};
+        const result = outcome.result;
+        order.courier = {
+            carrier: result.carrier, connote: result.connote, trackingUrl: result.trackingUrl,
+            consignmentId: result.consignmentId, cost: result.cost, mock: result.mock,
+            boxesOrdered: result.boxesOrdered, boxesExpected: result.boxesExpected,
+            invoicedLabels: result.invoicedLabels,
+            boxMismatch: result.boxMismatch, invoiceMismatch: result.invoiceMismatch,
+            labelMismatch: result.labelMismatch,
+            createdAt: result.createdAt || new Date().toISOString(),
+        };
+        refreshActionBar(order);
+        showToast(`Label created: ${result.carrier} ${result.connote}${result.mock ? ' (TEST)' : ''}`);
+        logEvent(order.id, 'Created courier label',
+            `${result.carrier} ${result.connote} · ${result.boxesOrdered} created`
+            + (result.boxesExpected != null ? `, ${result.boxesExpected} needed` : '')
+            + (result.invoicedLabels != null ? `, ${result.invoicedLabels} invoiced` : ''));
+        const warns = [];
+        if (result.boxMismatch)     warns.push(`${result.boxesOrdered} label(s) created but ${result.boxesExpected} box(es) needed`);
+        if (result.invoiceMismatch) warns.push(`${result.boxesOrdered} label(s) created but ${result.invoicedLabels} invoiced`);
+        if (warns.length) showErrorBanner('⚠ Label mismatch: ' + warns.join('; ') + '.');
+        // Print per the Print page (skipped when the user chose Done).
+        const pc = outcome.print;
+        if (pc) {
             await printCourierLabel(order, result.labelBase64,
                 (pc.target && pc.target !== 'pdf') ? { printerId: Number(pc.target) } : { pdf: true });
             if (pc.slip) {
                 const depot = getDepotPrinter();
                 if (depot) await sendSlipToPrinter(order, null, { printerId: depot.id, label: depot.label });
             }
-        } catch (e) {
-            showErrorBanner('Courier label failed: ' + e.message);
-            if (btn) { btn.disabled = false; btn.textContent = '📦 Create Courier label'; }
         }
     }
 
