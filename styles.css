@@ -710,10 +710,15 @@ li.drag-over { background: #eff6ff; }
 .cm-options-chev { color: #94a3b8; transition: transform 0.15s; }
 .cm-options-toggle.cm-options-open .cm-options-chev { transform: rotate(180deg); }
 .cm-options-body { display: flex; flex-direction: column; gap: 0.5rem; padding: 0.6rem 0.7rem; border-top: 1px solid #e2e8f0; }
+.cm-options-body[hidden] { display: none; }
+/* Native checkboxes inside the drawer — not full-width outlined inputs */
+.cm-check input[type=checkbox] {
+    width: auto; padding: 0; border: none; box-shadow: none; flex: none; margin: 0;
+}
 .courier-modal-grid .cm-span2 { grid-column: 1 / -1; }
 .courier-modal-grid .modal-field { margin-bottom: 0.65rem; }
 .cm-dims { display: flex; gap: 0.4rem; }
-.cm-dims input { text-align: center; }
+.cm-dims input { flex: 1; min-width: 0; text-align: center; }
 .cm-checks { display: flex; gap: 1.25rem; flex-wrap: wrap; }
 .cm-check { display: flex; align-items: center; gap: 0.4rem; font-size: 0.82rem; color: #334155; text-transform: none; letter-spacing: 0; font-weight: 500; }
 .cm-check input { width: auto; }

@@ -2171,7 +2171,7 @@ const Orders = (() => {
                                 <label>Total weight (kg) <span class="modal-hint">auto</span></label>
                                 <input type="number" id="cm-kg" data-required="1" value="${derived.totalKg}" min="0.1" step="0.1">
                             </div>
-                            <div class="modal-field">
+                            <div class="modal-field cm-span2">
                                 <label>Box L×W×H (cm)</label>
                                 <div class="cm-dims">
                                     <input type="number" id="cm-l" value="46" min="1" step="1">
@@ -2282,7 +2282,7 @@ const Orders = (() => {
                 el.classList.toggle('cm-valid', !!val);
                 el.classList.toggle('cm-invalid', req && !val);
             }
-            overlay.querySelectorAll('.courier-modal-grid input').forEach(el => {
+            overlay.querySelectorAll('.courier-modal-grid input:not([type=checkbox])').forEach(el => {
                 el.addEventListener('input', () => markField(el));
                 markField(el);
             });
