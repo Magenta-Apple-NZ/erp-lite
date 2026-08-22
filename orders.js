@@ -691,11 +691,6 @@ const Orders = (() => {
         });
 
         // Promote the Xero push whenever an order still lacks an invoice —
-        // any status, since stages aren't always linear (an order can be
-        // dispatched before it's pushed to Xero).
-        const needsXeroPush = xeroConnected
-            && !order.xeroInvoiceId
-            && !order.xeroSourced;
 
         body.innerHTML = `
         <!-- Action bar (hidden when printing) -->
@@ -710,15 +705,6 @@ const Orders = (() => {
                 ${actionButtons(order, xeroConnected)}
             </div>
         </div>
-
-        ${needsXeroPush ? `
-        <div class="xero-push-banner no-print" id="xero-push-banner">
-            <div class="xero-push-banner-text">
-                <strong>Ready to push to Xero</strong>
-                <span>${order.source === 'inbound' ? 'This order came in via API and has no invoice yet.' : 'No Xero invoice linked yet.'}</span>
-            </div>
-            <button id="xero-push-banner-btn" class="btn-primary">Send to Xero</button>
-        </div>` : ''}
 
         <div class="edit-with-preview">
             <div class="edit-form-col">${xeroWarn}${formHtml}</div>
@@ -1582,13 +1568,6 @@ const Orders = (() => {
 
         const body = document.getElementById('order-detail-body');
 
-        // Promote the Xero push when an order is still awaiting it — easy to
-        // miss the small button in the action bar. Shown for any status until
-        // an invoice is linked (stages aren't always linear), and hidden once
-        // invoiced or flagged as xeroSourced (created in Xero).
-        const needsXeroPush = xeroConnected
-            && !order.xeroInvoiceId
-            && !order.xeroSourced;
 
         body.innerHTML = `
         <!-- Action bar (hidden when printing) -->
@@ -1612,14 +1591,6 @@ const Orders = (() => {
 
         <!-- Overview panel -->
         <div id="order-tab-overview" class="order-tab-panel">
-            ${needsXeroPush ? `
-            <div class="xero-push-banner" id="xero-push-banner">
-                <div class="xero-push-banner-text">
-                    <strong>Ready to push to Xero</strong>
-                    <span>${order.source === 'inbound' ? 'This order came in via API and has no invoice yet.' : 'No Xero invoice linked yet.'}</span>
-                </div>
-                <button id="xero-push-banner-btn" class="btn-primary">Send to Xero</button>
-            </div>` : ''}
             ${orderMissingFreight(order) ? `<div class="form-warn no-print">No freight line on this order — it will invoice without freight. ${order.source === 'inbound' ? 'Received from the portal (common on PGG orders). ' : ''}Edit the order to add one before pushing to Xero.</div>` : ''}
             ${shouldOfferCourierLabels(order) ? `
             <div class="courier-cta-banner no-print" id="courier-cta-banner">
@@ -2893,7 +2864,6 @@ const Orders = (() => {
                 // both have a `#packing-slip` and an `#action-btns`.
                 const slip = document.getElementById('packing-slip');
                 if (slip) slip.innerHTML = slipBodyHTML(order);
-                document.getElementById('xero-push-banner')?.remove();
                 refreshActionBar(order);
             } catch (e) {
                 showErrorBanner('Link failed: ' + e.message);
@@ -3008,7 +2978,6 @@ const Orders = (() => {
                 if (invRow) invRow.textContent = result.invoiceNumber;
                 order.xeroInvoiceId = result.invoiceId;
                 order.xeroInvoiceNumber = result.invoiceNumber;
-                document.getElementById('xero-push-banner')?.remove();
                 refreshActionBar(order);
                 logEvent(orderId, 'Sent to Xero', result.invoiceNumber);
                 showToast('Invoice created in Xero: ' + result.invoiceNumber);
@@ -3064,7 +3033,6 @@ const Orders = (() => {
             }
         }
         document.getElementById('push-xero-btn')?.addEventListener('click', e => pushToXero(e.currentTarget));
-        document.getElementById('xero-push-banner-btn')?.addEventListener('click', e => pushToXero(e.currentTarget));
 
         // Mark as Dispatched
         // Dispatch — primary button dispatches as Jake, dropdown item as Andrew.

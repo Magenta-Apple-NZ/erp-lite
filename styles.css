@@ -1125,24 +1125,6 @@ li.drag-over { background: #eff6ff; }
 
 /* Prominent "Send to Xero" prompt on the order detail page. Sits between
    the action bar and the slip so it can't be missed on first review. */
-.xero-push-banner {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 1rem;
-    background: #fff7ed;
-    border: 1px solid #fed7aa;
-    border-radius: 8px;
-    padding: 0.85rem 1.1rem;
-    margin: 0 auto 1rem;
-    max-width: 794px;
-    width: 100%;
-    box-sizing: border-box;
-}
-.xero-push-banner-text { display: flex; flex-direction: column; gap: 0.1rem; }
-.xero-push-banner-text strong { color: #9a3412; font-size: 0.92rem; }
-.xero-push-banner-text span { font-size: 0.78rem; color: #b45309; }
-.xero-push-banner .btn-primary { flex-shrink: 0; }
 
 .courier-cta-banner {
     display: flex; align-items: center; justify-content: space-between; gap: 1rem;
@@ -1894,7 +1876,7 @@ a.xero-inv-linked:hover { background: #d1fae5; border-color: #6ee7b7; }
        At print time we hide the form column, drop the scaler's clipping
        and the scale transform, and let the slip render full-width. */
     .edit-with-preview { display: block !important; }
-    .edit-form-col, .event-log, .xero-push-banner, .edit-preview-label,
+    .edit-form-col, .event-log, .edit-preview-label,
     .form-warn { display: none !important; }
     .edit-preview { position: static !important; display: block !important; }
     .edit-preview-scaler {
