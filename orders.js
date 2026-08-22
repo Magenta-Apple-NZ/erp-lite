@@ -1458,7 +1458,7 @@ const Orders = (() => {
         // Turns green once invoiced; the dropdown still allows re-linking.
         let xeroMain;
         if (invoiced) {
-            xeroMain = `<a class="btn-primary split-btn-main" href="${xeroUrl}" target="_blank" rel="noopener">✓ Sent to Xero</a>`;
+            xeroMain = `<a class="btn-primary split-btn-main" href="${xeroUrl}" target="_blank" rel="noopener">View in Xero ↗</a>`;
         } else if (order.xeroSourced) {
             // Created in Xero — pushing would duplicate, so link instead.
             xeroMain = `<button id="link-xero-primary-btn" class="btn-primary split-btn-main">Link Xero Invoice</button>`;
