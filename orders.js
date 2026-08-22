@@ -2138,7 +2138,7 @@ const Orders = (() => {
                         </div>
                         <div class="modal-field cm-span2">
                             <label>Delivery instructions <span class="modal-hint">optional</span></label>
-                            <input type="text" id="cm-instructions" value="${escHtml(order.packingNotes || '')}">
+                            <input type="text" id="cm-instructions" value="" placeholder="e.g. leave at door, call on arrival…">
                         </div>
                         <div class="modal-field cm-span2">
                             <label>Package type</label>
