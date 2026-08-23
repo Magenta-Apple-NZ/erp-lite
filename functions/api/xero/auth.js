@@ -4,8 +4,8 @@ import { saveOAuthState } from '../_xero.js';
 
 const SCOPES = [
     'openid',
-    'accounting.invoices',
-    'accounting.contacts.read',
+    'accounting.transactions',   // invoices live under transactions (there is no accounting.invoices scope)
+    'accounting.contacts',       // read + create contacts (push.js creates missing ones)
     'accounting.reports.read',   // P&L / dashboard report widgets
     'offline_access',
 ].join(' ');
