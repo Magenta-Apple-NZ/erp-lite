@@ -13,32 +13,20 @@ const SCOPES = [
     'offline_access',
 ].join(' ');
 
-export async function onRequestGet({ env, request }) {
+export async function onRequestGet({ env }) {
     const state = crypto.randomUUID();
     await saveOAuthState(env, state);
 
-    const redirectUri = 'https://hub.primetie.co.nz/api/xero/callback';
     const params = new URLSearchParams({
         response_type: 'code',
-        client_id: env.XERO_CLIENT_ID || '',
-        redirect_uri: redirectUri,
+        client_id: env.XERO_CLIENT_ID,
+        redirect_uri: 'https://hub.primetie.co.nz/api/xero/callback',
         scope: SCOPES,
         state,
     });
-    const authorizeUrl = 'https://login.xero.com/identity/connect/authorize?' + params.toString();
 
-    // Diagnostic: /api/xero/auth?debug=1 shows exactly what we send to Xero
-    // (client_id length only — never the value) instead of redirecting.
-    if (new URL(request.url).searchParams.get('debug')) {
-        const cid = env.XERO_CLIENT_ID || '';
-        return new Response(JSON.stringify({
-            clientId_present: !!cid,
-            clientId_length: cid.length,
-            redirect_uri: redirectUri,
-            scope: SCOPES,
-            authorizeUrl,
-        }, null, 2), { headers: { 'Content-Type': 'application/json' } });
-    }
-
-    return Response.redirect(authorizeUrl, 302);
+    return Response.redirect(
+        'https://login.xero.com/identity/connect/authorize?' + params.toString(),
+        302
+    );
 }
