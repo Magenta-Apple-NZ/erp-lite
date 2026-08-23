@@ -2,11 +2,14 @@
 
 import { saveOAuthState } from '../_xero.js';
 
+// This Xero app was created after 2 Mar 2026, so it only has the NEW granular
+// scopes — the broad scopes (accounting.transactions / accounting.reports.read)
+// are NOT available to it and cause invalid_scope. Use the granular equivalents.
 const SCOPES = [
     'openid',
-    'accounting.transactions',   // invoices live under transactions (there is no accounting.invoices scope)
-    'accounting.contacts',       // read + create contacts (push.js creates missing ones)
-    'accounting.reports.read',   // P&L / dashboard report widgets
+    'accounting.invoices',                   // create + read invoices (push, alerts, reconcile)
+    'accounting.contacts',                   // create + read contacts (push.js creates missing ones)
+    'accounting.reports.profitandloss.read', // P&L dashboard widget
     'offline_access',
 ].join(' ');
 
