@@ -174,6 +174,31 @@ const Orders = (() => {
     function orderTotal(order) {
         return order.lines.reduce((sum, l) => sum + l.quantity * l.unitPrice, 0);
     }
+    // Cost breakdowns (all excl. GST unless noted). Freight = courier/freight
+    // lines (FR-*/courier/label); product = everything else.
+    const lineAmt = l => (Number(l.quantity) || 0) * (Number(l.unitPrice) || 0);
+    function orderFreightCost(order) {
+        return (order.lines || []).filter(isCourierLine).reduce((s, l) => s + lineAmt(l), 0);
+    }
+    function orderProductCost(order) {
+        return (order.lines || []).filter(l => !isCourierLine(l)).reduce((s, l) => s + lineAmt(l), 0);
+    }
+
+    // Optional, user-toggled columns for the Orders table (a column picker).
+    const ORDER_COLS = [
+        { key: 'productCost', label: 'Product Cost',           get: o => '$' + fmt(orderProductCost(o)) },
+        { key: 'freightCost', label: 'Freight Cost',           get: o => '$' + fmt(orderFreightCost(o)) },
+        { key: 'netCost',     label: 'Net Cost (excl. GST)',   get: o => '$' + fmt(orderTotal(o)) },
+        { key: 'totalCost',   label: 'Total Cost (incl. GST)', get: o => '$' + fmt(orderTotal(o) * 1.15) },
+    ];
+    const ORDER_COLS_KEY = 'hub-orders-cols';
+    function getOrderCols() {
+        try { const v = JSON.parse(localStorage.getItem(ORDER_COLS_KEY) || '[]'); return Array.isArray(v) ? v : []; }
+        catch { return []; }
+    }
+    function setOrderCols(keys) {
+        try { localStorage.setItem(ORDER_COLS_KEY, JSON.stringify(keys)); } catch {}
+    }
 
     // ── Date format ──
     function fmtDate(iso) {
@@ -224,6 +249,12 @@ const Orders = (() => {
                 <option value="paid">Paid</option>
             </select>
             <button class="btn-secondary btn-sm" id="filter-clear">Clear</button>
+            <div class="overflow-menu orders-col-menu">
+                <button class="btn-secondary btn-sm overflow-trigger" type="button" title="Show / hide columns" onclick="event.stopPropagation();this.closest('.overflow-menu').classList.toggle('open')">Columns ▾</button>
+                <div class="overflow-dropdown">
+                    ${ORDER_COLS.map(col => `<label class="overflow-item col-toggle"><input type="checkbox" data-col="${col.key}"${getOrderCols().includes(col.key) ? ' checked' : ''}> ${escHtml(col.label)}</label>`).join('')}
+                </div>
+            </div>
             <button class="btn-secondary btn-sm" id="orders-sync-pay" title="Check Xero for payments and mark orders paid" style="display:none;margin-left:auto">Sync payments</button>
         </div>
         <a href="#orders/new" class="orders-new-fab" aria-label="New order" title="New order">+</a>
@@ -263,6 +294,15 @@ const Orders = (() => {
             el?.addEventListener('input', renderTable);
             el?.addEventListener('change', renderTable);
         });
+        // Column picker — toggle optional cost columns, persist, re-render.
+        document.querySelectorAll('.orders-col-menu [data-col]').forEach(cb => {
+            cb.addEventListener('change', () => {
+                const keys = [...document.querySelectorAll('.orders-col-menu [data-col]:checked')].map(x => x.dataset.col);
+                setOrderCols(keys);
+                renderTable();
+            });
+        });
+
         document.getElementById('filter-clear')?.addEventListener('click', () => {
             document.getElementById('filter-customer').value = '';
             document.getElementById('filter-branch').value = '';
@@ -301,6 +341,8 @@ const Orders = (() => {
                 </div>`;
                 return;
             }
+            const cols = ORDER_COLS.filter(c => getOrderCols().includes(c.key));
+            const colHead = cols.map(c => `<th class="order-num">${escHtml(c.label)}</th>`).join('');
             body.innerHTML = `
             <div class="orders-table-wrap">
                 <table class="orders-table">
@@ -312,6 +354,7 @@ const Orders = (() => {
                             <th>PO</th>
                             <th>Date</th>
                             <th>Total</th>
+                            ${colHead}
                             <th>Status</th>
                             <th class="order-xero">Xero</th>
                             <th></th>
@@ -327,7 +370,8 @@ const Orders = (() => {
                             <td class="order-po">${escHtml(o.poNumber || '—')}</td>
                             <td class="order-date">${fmtDate(o.createdAt)}</td>
                             <td class="order-total">$${fmt(orderTotal(o))}</td>
-                            <td>${statusBadge(o.status)}${o.paidAt ? '<span class="paid-badge" title="Paid">✓ Paid</span>' : ''}${!o.xeroInvoiceNumber && orderMissingFreight(o)
+                            ${cols.map(c => `<td class="order-num">${c.get(o)}</td>`).join('')}
+                            <td class="order-status-cell">${statusBadge(o.status)}${o.paidAt ? '<span class="paid-badge" title="Paid">✓ Paid</span>' : ''}${!o.xeroInvoiceNumber && orderMissingFreight(o)
                                 ? '<span class="paid-badge" style="background:#fff4e5;color:#9a4b00;border:1px solid #f0c38e;" title="Product lines but no courier/freight line — add one before pushing to Xero (unless pickup)">🚚 No freight</span>'
                                 : ''}</td>
                             <td class="order-xero">${o.xeroInvoiceNumber

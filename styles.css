@@ -964,7 +964,9 @@ li.drag-over { background: #eff6ff; }
     .orders-table tr.order-row > td.order-ship-to { grid-area: shipto; color: #64748b; font-size: 0.8rem; }
     .orders-table tr.order-row > td.order-date  { grid-area: date;   color: #94a3b8; font-size: 0.78rem; }
     .orders-table tr.order-row > td.order-total { grid-area: total;  font-weight: 600; font-size: 0.88rem; text-align: right; }
-    .orders-table tr.order-row > td:nth-child(7) { grid-area: status; text-align: right; }
+    .orders-table tr.order-row > td.order-status-cell { grid-area: status; text-align: right; }
+    /* Optional cost columns are a desktop feature — hidden in the mobile card. */
+    .orders-table tr.order-row > td.order-num { display: none; }
     /* The desktop rule on .order-actions-col sets `width: 1px` to shrink the
        table cell to its content — on mobile (display: block in a grid) that
        1px collapses the flex container and forces every icon to wrap onto
@@ -1188,6 +1190,10 @@ li.drag-over { background: #eff6ff; }
 .order-date { color: #64748b; white-space: nowrap; }
 .order-total { font-weight: 600; white-space: nowrap; }
 .order-xero { white-space: nowrap; }
+/* Optional cost columns (column picker) */
+.orders-table th.order-num, .orders-table td.order-num { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.orders-col-menu .col-toggle { display: flex; align-items: center; gap: 0.5rem; cursor: pointer; }
+.orders-col-menu .col-toggle input { width: auto; margin: 0; }
 
 .order-status-badge {
     display: inline-block;
