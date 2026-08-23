@@ -30,6 +30,8 @@ export async function onRequestPatch({ env, params, request }) {
             if (updates[k] !== undefined) next[k] = String(updates[k] || '').trim();
         }
         if (updates.archived !== undefined) next.archived = !!updates.archived;
+        // Pickup stores are excluded from auto-freight (see _freight.js).
+        if (updates.pickup !== undefined) next.pickup = !!updates.pickup;
         next.updatedAt = new Date().toISOString();
 
         stores[idx] = next;

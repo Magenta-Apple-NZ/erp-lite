@@ -150,6 +150,8 @@ export async function computeAutoFreightLines(env, order) {
     const stores = await getStoresWithBootstrap(env).catch(() => []);
     const store  = resolveStore(order, stores || []);
     if (!store) return [];
+    // Pickup stores collect their own product — never auto-add freight.
+    if (store.pickup) return [];
 
     const itemsMap = await loadItemsMap(env).catch(() => null);
     const boxes = boxCount(lines, itemsMap);

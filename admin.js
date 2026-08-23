@@ -331,6 +331,7 @@ const Admin = (() => {
             { key: 'phone',        label: 'Phone',    width: '110px' },
             { key: 'zoneCourier',  label: 'Zone (courier)', width: '135px', select: () => zoneOpts.courier },
             { key: 'zoneFreight',  label: 'Zone (freight)', width: '175px', select: () => zoneOpts.freight },
+            { key: 'pickup',       label: 'Pickup',   width: '64px', check: true },
         ];
 
         // Fixed-choice cell. A current value that isn't in the option list is
@@ -354,7 +355,12 @@ const Admin = (() => {
         }
 
         function rowHtml(s) {
-            const cells = STORE_HEADERS.map(h => h.select ? selectCellHtml(s, h) : `
+            const cells = STORE_HEADERS.map(h =>
+                h.check ? `
+                <td class="store-check-cell">
+                    <input type="checkbox" class="store-check" data-id="${escHtml(s.id)}" data-field="${h.key}"${s[h.key] ? ' checked' : ''} title="Pick-up store — excluded from auto-freight">
+                </td>`
+                : h.select ? selectCellHtml(s, h) : `
                 <td>
                     <input class="store-cell" data-id="${escHtml(s.id)}" data-field="${h.key}"
                         value="${escHtml(s[h.key] || '')}" placeholder="${escHtml(h.label)}">
@@ -491,6 +497,28 @@ const Admin = (() => {
                 input.addEventListener(evt, async () => {
                     if (input.value === originalValue) return;
                     if (await saveCell(input, originalValue)) originalValue = input.value;
+                });
+            });
+            // Pickup checkbox — excludes the store from auto-freight.
+            body.querySelectorAll('.store-check').forEach(cb => {
+                cb.addEventListener('change', async () => {
+                    const id = cb.dataset.id, field = cb.dataset.field;
+                    cb.disabled = true;
+                    try {
+                        await api(`/api/catalog/stores/${encodeURIComponent(id)}`, {
+                            method: 'PATCH',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ [field]: cb.checked }),
+                        });
+                        const local = stores.find(s => s.id === id);
+                        if (local) local[field] = cb.checked;
+                        showToast(cb.checked ? 'Marked as pickup — no auto-freight' : 'Pickup removed');
+                    } catch (err) {
+                        showToast('Save failed: ' + err.message);
+                        cb.checked = !cb.checked;
+                    } finally {
+                        cb.disabled = false;
+                    }
                 });
             });
 
