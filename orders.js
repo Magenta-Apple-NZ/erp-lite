@@ -1600,6 +1600,10 @@ const Orders = (() => {
             return;
         }
 
+        // Load the items catalogue so box counts (courier CTA, freight priority,
+        // courier modal) match the server's unitsPerBox-based maths.
+        await loadCatalogItemsMap().catch(() => {});
+
         // Opening the detail view counts as reviewing — auto-advance new → reviewed.
         if (order.status === 'new') {
             order.status = 'reviewed';
@@ -2013,19 +2017,42 @@ const Orders = (() => {
         return `<span class="courier-chip-warn" title="${escHtml(titles.join('; '))}">⚠ ${escHtml(bits.join(' '))}</span>`;
     }
 
+    // Items catalogue (SKU → item incl. unitsPerBox), cached. Used so the client
+    // counts boxes the SAME way the server does (functions/api/_freight.js
+    // boxCount → itemsMap.unitsPerBox) rather than guessing from the line alone.
+    let _catalogItemsMap = null;
+    async function loadCatalogItemsMap() {
+        if (_catalogItemsMap) return _catalogItemsMap;
+        try {
+            const items = await api('/api/catalog/items');
+            const m = new Map();
+            for (const it of items || []) if (it.id) m.set(String(it.id).toUpperCase(), it);
+            _catalogItemsMap = m;
+        } catch { _catalogItemsMap = new Map(); }
+        return _catalogItemsMap;
+    }
+    // Units per box for a line. Authoritative: the catalogue's unitsPerBox
+    // (e.g. 10 for 1kg bags, 1 for 10kg). Fallbacks when the catalogue isn't
+    // loaded / the SKU is unknown: infer from kgPerUnit (1kg → 10/box), else 1.
+    function unitsPerBoxForLine(line) {
+        const it = _catalogItemsMap && _catalogItemsMap.get(String(line.sku || '').toUpperCase());
+        if (it && Number(it.unitsPerBox) > 0) return Number(it.unitsPerBox);
+        const per = Number(line.kgPerUnit);
+        if (!isNaN(per) && per > 0 && per < 5) return 10;
+        return 1;
+    }
+
     // Boxes the order PHYSICALLY needs, from product lines only — deliberately
     // ignoring any courier/freight line (that reflects what was *invoiced*, not
-    // what ships). Bundles (kgPerUnit ≥ 5) = 1 box/unit; 1kg bags = 1 box per
-    // 10. Returns null when there are no shippable product lines to judge by.
+    // what ships). Mirrors the server: Σ ceil(qty ÷ unitsPerBox). Returns null
+    // when there are no shippable product lines to judge by.
     function physicalBoxCount(order) {
-        const BAGS_PER_BOX = 10;
         let boxes = 0, hasProduct = false;
         (order.lines || []).filter(l => !isCourierLine(l)).forEach(l => {
             const qty = Number(l.quantity) || 0;
             if (!qty) return;
             hasProduct = true;
-            const per = Number(l.kgPerUnit);
-            boxes += (isNaN(per) || per >= 5) ? qty : Math.ceil(qty / BAGS_PER_BOX);
+            boxes += Math.ceil(qty / unitsPerBoxForLine(l));
         });
         return hasProduct ? boxes : null;
     }
@@ -2055,7 +2082,6 @@ const Orders = (() => {
     function derivePackages(order) {
         const BOX = { length: 46, width: 45, height: 36 }; // cm, standard carton
         const BOX_KG = 11.5; // standard full-box weight (product + packaging)
-        const BAGS_PER_BOX = 10;
         const lines = order.lines || [];
 
         // (1) Box count from the courier/freight line, if present.
@@ -2064,14 +2090,13 @@ const Orders = (() => {
             .reduce((s, l) => s + (Number(l.quantity) || 0), 0);
         let source = 'courier-line';
 
-        // (2) Fall back to per-product packaging rules.
+        // (2) Fall back to per-product packaging rules (Σ ceil(qty ÷ unitsPerBox)).
         if (boxes <= 0) {
             source = 'derived';
             lines.filter(l => !isCourierLine(l)).forEach(l => {
                 const qty = Number(l.quantity) || 0;
                 if (!qty) return;
-                const per = Number(l.kgPerUnit);
-                boxes += (isNaN(per) || per >= 5) ? qty : Math.ceil(qty / BAGS_PER_BOX);
+                boxes += Math.ceil(qty / unitsPerBoxForLine(l));
             });
         }
         if (boxes <= 0) boxes = 1;
@@ -2507,7 +2532,10 @@ const Orders = (() => {
     }
 
     async function runCreateCourier(order) {
-        const stores = await loadCatalogStores().catch(() => []);
+        const [stores] = await Promise.all([
+            loadCatalogStores().catch(() => []),
+            loadCatalogItemsMap().catch(() => {}), // ensures correct box count in the modal
+        ]);
         const store  = resolveStore(order, stores);
         // The modal now creates the label itself (between Items and Print) and
         // resolves with { result, print }. It resolves null if cancelled before
