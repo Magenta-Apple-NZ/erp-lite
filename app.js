@@ -73,15 +73,13 @@ function renderDashboardWidgets(config) {
             <a class="db-top-btn db-top-btn--primary" href="#orders/new">${DB_ICONS.plus}<span>Add Order</span></a>
         </div>`;
 
-    // Layout: charts stacked in the main (left) column — Stock Trajectory
-    // on top, Cumulative Sales beneath it — with the calendar and Xero P&L
-    // in a narrower right-hand column so the calendar sits up at eye level
-    // without dominating the page.
+    // Layout: three columns — Sales/Stock charts (widest), Xero data, and the
+    // calendar. Notification banners were removed (they duplicated the calendar);
+    // the Notifications view + nav badge still surface them.
     el.innerHTML = `
-        <div id="db-alerts" class="db-alerts" hidden></div>
         ${topRow}
-        <div class="db-main-grid">
-            <div class="db-main-left">
+        <div class="db-cols">
+            <div class="db-col db-col--charts">
                 <section class="db-mod db-mod--chart" id="db-stock-trajectory">
                     <div class="db-mod-hd"><h3 class="db-mod-title">Stock Trajectory <span class="chart-info" title="Projected kg-on-hand 18 months forward from the stocktake date. Bold line = active scenario (Average / Good / Great); faded lines are the other two for reference. Triangle markers are shipment arrivals. A red fill means stock goes below zero.">&#9432;</span></h3><a class="db-mod-link" href="#imports">Open Imports →</a></div>
                     <div class="db-mod-body"><span class="db-mod-loading">Loading…</span></div>
@@ -91,13 +89,15 @@ function renderDashboardWidgets(config) {
                     <div class="db-mod-body"><span class="db-mod-loading">Loading…</span></div>
                 </section>
             </div>
-            <aside class="db-main-right">
-                <section class="db-mod db-mod--cal" id="db-calendar-module">
-                    <div class="db-mod-hd"><h3 class="db-mod-title" id="db-cal-title">Next ${DB_STRIP_DAYS} days <span class="chart-info" title="Timeline of the next ${DB_STRIP_DAYS} days. Dot colours: red = public holiday · amber = tax due date · green = shipment arrival or milestone · blue = Google Calendar event. Click a day for its events; the list underneath shows the next 10 events beyond that.">&#9432;</span></h3><a class="db-mod-link" href="#calendar">Open Calendar →</a></div>
-                    <div class="db-mod-body"><span class="db-mod-loading">Loading…</span></div>
-                </section>
+            <div class="db-col db-col--xero">
                 <section class="db-mod db-mod--chart" id="db-xero-pnl">
                     <div class="db-mod-hd"><h3 class="db-mod-title">Profit &amp; Loss <span class="db-mod-sub">FY to date · Xero</span> <span class="chart-info" title="Income, expenses and net profit for the current NZ financial year to date (from Xero's Profit &amp; Loss report), compared with the same period last year. Bars = net profit by month for the last 12 months. Refreshed hourly.">&#9432;</span></h3><a class="db-mod-link" href="https://go.xero.com/app/!8QbL4/reports/profit-and-loss" target="_blank" rel="noopener">Open in Xero ↗</a></div>
+                    <div class="db-mod-body"><span class="db-mod-loading">Loading…</span></div>
+                </section>
+            </div>
+            <aside class="db-col db-col--cal">
+                <section class="db-mod db-mod--cal" id="db-calendar-module">
+                    <div class="db-mod-hd"><h3 class="db-mod-title" id="db-cal-title">Next ${DB_STRIP_DAYS} days <span class="chart-info" title="Timeline of the next ${DB_STRIP_DAYS} days. Dot colours: red = public holiday · amber = tax due date · green = shipment arrival or milestone · blue = Google Calendar event. Click a day for its events; the list underneath shows the next 10 events beyond that.">&#9432;</span></h3><a class="db-mod-link" href="#calendar">Open Calendar →</a></div>
                     <div class="db-mod-body"><span class="db-mod-loading">Loading…</span></div>
                 </section>
             </aside>
@@ -406,57 +406,13 @@ function notifUpdateBadge(activeCount) {
     badge.hidden = !activeCount;
 }
 
+// Dashboard no longer renders notification banners (they duplicated the
+// calendar). We still tally active notifications to keep the nav badge current;
+// the full list lives in the Notifications view.
 async function loadDashboardAlerts() {
-    const el = document.getElementById('db-alerts');
-    if (!el) return;
     const [items, dismissed] = [await fetchNotificationItems(), notifGetDismissed()];
     const active = items.filter(n => !dismissed[n.id]);
     notifUpdateBadge(active.length);
-    if (!active.length) { el.hidden = true; return; }
-    el.innerHTML = active.map(n => {
-        if (n.confirmable) {
-            return `<div class="db-alert-row db-alert-row--${n.type} db-alert-row--overdue">
-               <span class="db-alert-icon">${n.icon}</span>
-               <span class="db-alert-main">${n.text}</span>
-               <button class="db-alert-confirm-btn" data-ship-id="${_notifEsc(n.shipId)}" data-notif-id="${_notifEsc(n.id)}">✓ Confirm arrival</button>
-               <a class="db-alert-link" href="${n.link}">Open shipment →</a>
-               <button class="db-alert-dismiss-btn" data-notif-id="${_notifEsc(n.id)}" data-sticky="" title="Dismiss for 24h">✕</button>
-           </div>`;
-        }
-        // Every other row (sticky reminders AND ordinary alerts) is dismissable.
-        const stickyCls = n.sticky ? ' db-alert-row--sticky' : '';
-        const overdueCls = n.severity === 'critical' ? ' db-alert-row--overdue' : '';
-        const dismissTitle = n.sticky ? 'Dismiss — stays gone until the next occurrence' : 'Dismiss for 24h';
-        return `<div class="db-alert-row db-alert-row--${n.type}${stickyCls}${overdueCls}">
-               <span class="db-alert-icon">${n.icon}</span>
-               <span class="db-alert-main">${n.text}</span>
-               <a class="db-alert-link" href="${n.link}"${n.external ? ' target="_blank" rel="noopener"' : ''}>${n.linkLabel}</a>
-               <button class="db-alert-dismiss-btn" data-notif-id="${_notifEsc(n.id)}" data-sticky="${n.sticky ? '1' : ''}" title="${dismissTitle}">✕</button>
-           </div>`;
-    }).join('');
-    el.hidden = false;
-
-    el.querySelectorAll('.db-alert-dismiss-btn').forEach(btn => {
-        btn.addEventListener('click', () => {
-            notifDismiss(btn.dataset.notifId, btn.dataset.sticky === '1');
-            loadDashboardAlerts();
-        });
-    });
-
-    el.querySelectorAll('.db-alert-confirm-btn').forEach(btn => {
-        btn.addEventListener('click', async () => {
-            btn.disabled = true;
-            btn.textContent = 'Confirming…';
-            const ok = await confirmShipmentArrival(btn.dataset.shipId);
-            if (ok) {
-                notifDismiss(btn.dataset.notifId);
-                loadDashboardAlerts();
-            } else {
-                btn.disabled = false;
-                btn.textContent = '✓ Confirm arrival';
-            }
-        });
-    });
 }
 
 async function loadNotificationsView(container) {

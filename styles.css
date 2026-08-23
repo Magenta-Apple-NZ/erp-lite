@@ -7157,25 +7157,32 @@ a.db-row:hover { background: #f8fafc; border-color: #e2e8f0; }
 .ship-lc-del-btn:hover { color: #dc2626; }
 
 /* ── Dashboard main grid: charts stacked left, calendar + P&L right ── */
-.db-main-grid {
+/* Three-column dashboard: charts (widest) · Xero data · calendar */
+.db-cols {
     display: grid;
-    grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr) minmax(0, 1fr);
     gap: 0.85rem;
     align-items: start;
     margin-bottom: 0.85rem;
 }
-.db-main-left, .db-main-right {
+.db-col {
     display: flex;
     flex-direction: column;
     gap: 0.85rem;
     min-width: 0;
 }
-@media (max-width: 1100px) {
-    .db-main-grid { grid-template-columns: 1fr; }
+@media (max-width: 1280px) {
+    /* Charts span the top row; Xero + calendar share the row beneath. */
+    .db-cols { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+    .db-col--charts { grid-column: 1 / -1; }
 }
-/* Calendar in the narrow column: stack the two event panels, tighten the strip. */
-.db-main-right .db-cal-panels { grid-template-columns: 1fr; }
-.db-main-right .db-strip-scroller { grid-template-columns: repeat(14, minmax(30px, 1fr)); }
+@media (max-width: 800px) {
+    .db-cols { grid-template-columns: 1fr; }
+    .db-col--charts { grid-column: auto; }
+}
+/* Calendar in a narrow column: stack the two event panels, tighten the strip. */
+.db-col--cal .db-cal-panels { grid-template-columns: 1fr; }
+.db-col--cal .db-strip-scroller { grid-template-columns: repeat(14, minmax(30px, 1fr)); }
 
 /* ── Sticky (manually dismissed) alerts ── */
 .db-alert-row--cal { background: #fffbeb; border-color: #fde68a; }
