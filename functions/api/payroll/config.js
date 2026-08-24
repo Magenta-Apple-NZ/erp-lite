@@ -16,6 +16,8 @@ const DEFAULT_CONFIG = {
                 perBox10kgPacked: 0,
                 perBox1kgPacked:  0,
                 perHour:          0,
+                baseRate:         0,  // fixed $ added to every monthly payslip
+                petrol:           0,  // fixed $ petrol allowance per month
             },
             archived: false,
         },
@@ -46,6 +48,8 @@ export async function onRequestPost({ env, request }) {
                 perBox10kgPacked: Number(e.rates?.perBox10kgPacked) || 0,
                 perBox1kgPacked:  Number(e.rates?.perBox1kgPacked)  || 0,
                 perHour:          Number(e.rates?.perHour)          || 0,
+                baseRate:         Number(e.rates?.baseRate)         || 0,
+                petrol:           Number(e.rates?.petrol)           || 0,
             },
             archived: !!e.archived,
         })).filter(e => e.id && e.name);

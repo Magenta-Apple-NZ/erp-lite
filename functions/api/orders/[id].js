@@ -83,6 +83,12 @@ export async function onRequestPatch({ env, params, request }) {
         if (updates.payslipLabel !== undefined) {
             order.payslipLabel = String(updates.payslipLabel || '').trim() || null;
         }
+        // Manual pay-month reassignment (YYYY-MM) — overrides the dispatch-date
+        // month for payroll. Null clears it (back to the dispatch date's month).
+        if (updates.payslipMonth !== undefined) {
+            const m = String(updates.payslipMonth || '').trim();
+            order.payslipMonth = /^\d{4}-\d{2}$/.test(m) ? m : null;
+        }
 
         // Append event to activity log
         if (updates.event) {

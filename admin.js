@@ -1239,6 +1239,12 @@ const Admin = (() => {
                     <label>$ / hour
                         <input type="number" step="0.01" min="0" class="payroll-rate-input" data-field="perHour" value="${e.rates?.perHour ?? 0}">
                     </label>
+                    <label>Base rate ($/month)
+                        <input type="number" step="0.01" min="0" class="payroll-rate-input" data-field="baseRate" value="${e.rates?.baseRate ?? 0}">
+                    </label>
+                    <label>Petrol ($/month)
+                        <input type="number" step="0.01" min="0" class="payroll-rate-input" data-field="petrol" value="${e.rates?.petrol ?? 0}">
+                    </label>
                     <button class="btn-secondary btn-sm payroll-rates-save" data-emp="${escHtml(e.id)}">Save</button>
                 </div>`).join('');
             ratesEl.querySelectorAll('.payroll-rates-save').forEach(btn => {
