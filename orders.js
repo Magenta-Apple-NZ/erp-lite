@@ -1839,6 +1839,9 @@ const Orders = (() => {
                         ${order.poNumber
                             ? `<div class="slip-inv-row"><span>Purchase Order</span><strong>${escHtml(order.poNumber)}</strong></div>`
                             : ''}
+                        ${order.createdAt
+                            ? `<div class="slip-inv-row"><span>Date</span><strong>${escHtml(fmtDate(order.createdAt))}</strong></div>`
+                            : ''}
                     </div>
                 </div>
 
