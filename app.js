@@ -207,7 +207,7 @@ async function loadDashboardPnl() {
 
     body.innerHTML = `
         <div class="db-pnl-period">${_notifEsc(fy.label || 'FY to date')} · ${_notifEsc(fy.from || '')} → ${_notifEsc(fy.to || '')}</div>
-        <div class="db-pnl-tiles">
+        <div class="db-pnl-tiles${fy.cogs ? ' db-pnl-tiles--four' : ''}">
             ${tile('Income', fy.income, prior.income)}
             ${fy.cogs ? tile('Cost of sales', fy.cogs, prior.cogs, 'db-pnl-tile--exp') : ''}
             ${tile('Expenses', fy.expenses, prior.expenses, 'db-pnl-tile--exp')}
