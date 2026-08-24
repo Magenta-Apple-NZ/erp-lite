@@ -879,8 +879,10 @@ const Admin = (() => {
                     <p class="cat-sub">Walks orders_index and adds a row for every Hub order missing one. Existing rows untouched. Run this once if Hub orders aren't appearing in the combined export.</p>
                     <div class="bulk-step">
                         <button class="btn-secondary btn-sm" id="sd-backfill-btn">Backfill Hub orders</button>
+                        <button class="btn-secondary btn-sm" id="sd-audit-btn">Audit orders</button>
                     </div>
                     <div id="sd-backfill-results"></div>
+                    <div id="sd-audit-results"></div>
 
                     <h3 class="bulk-table-title" style="margin-top:1.5rem">Upload CSV</h3>
                     <p class="cat-sub">Auto-detects the format. Upload the original Prime Tie sales CSV to <strong>seed historicals</strong>, or a downloaded <code>sales-history.csv</code> (with Id + Source columns) to <strong>round-trip edits</strong> — rows match by Id and update in place; missing rows are left untouched.</p>
@@ -918,6 +920,48 @@ const Admin = (() => {
                 }
             }
         } catch (e) { /* nice-to-have */ }
+
+        // ── Audit orders: find untracked / pre-Xero strays (read-only) ──
+        document.getElementById('sd-audit-btn')?.addEventListener('click', async () => {
+            const el = document.getElementById('sd-audit-results');
+            el.innerHTML = '<p class="cat-sub">Scanning every order in KV…</p>';
+            let data;
+            try { data = await api('/api/orders/audit'); }
+            catch (e) { el.innerHTML = `<p class="cat-sub">Audit failed: ${escHtml(e.message)}</p>`; return; }
+
+            const t = data.totals || {};
+            const problems = data.problems || [];
+            const strays = problems.filter(p => p.dispatched && !p.hasSales);
+            const badge = (txt, cls) => `<span class="paid-badge${cls ? ' ' + cls : ''}">${escHtml(txt)}</span>`;
+            const issueLabel = { 'no-sales-row': 'no sales row', 'not-in-index': 'not indexed', 'no-xero-invoice': 'no invoice', 'unclassified-lines': 'lines don’t classify' };
+
+            if (!problems.length) {
+                el.innerHTML = `<p class="cat-sub" style="margin-top:0.6rem">✓ Scanned <strong>${t.total || 0}</strong> orders — no gaps found. Nothing dispatched is missing from sales history.</p>`;
+                return;
+            }
+            el.innerHTML = `
+                <p class="cat-sub" style="margin-top:0.6rem">
+                    Scanned <strong>${t.total || 0}</strong> orders · <strong style="color:#dc2626">${strays.length}</strong> dispatched but missing a sales row ·
+                    ${t.missingSales || 0} missing sales row · ${t.orphanIndex || 0} not indexed · ${t.noInvoice || 0} no Xero invoice.
+                </p>
+                <div class="store-table-wrap" style="margin-top:0.5rem">
+                    <table class="store-table">
+                        <thead><tr><th>Id</th><th>Customer / Branch</th><th>PO</th><th>Invoice</th><th>Status</th><th>kg</th><th>Issues</th></tr></thead>
+                        <tbody>
+                            ${problems.map(p => `<tr${(p.dispatched && !p.hasSales) ? ' style="background:#fef2f2"' : ''}>
+                                <td class="cat-mono">${escHtml(p.id)}${p.legacy ? ' ' + badge('legacy') : ''}</td>
+                                <td>${escHtml([p.customer, p.branch].filter(Boolean).join(' — ') || '—')}</td>
+                                <td>${escHtml(p.poNumber || '—')}</td>
+                                <td>${escHtml(p.invoice || '—')}</td>
+                                <td>${escHtml(p.status || '—')}${p.dispatched ? ' ' + badge('dispatched') : ''}</td>
+                                <td style="text-align:right">${p.kg || 0}</td>
+                                <td>${p.issues.map(i => badge(issueLabel[i] || i, i === 'no-sales-row' ? 'paid-badge' : '')).join(' ')}</td>
+                            </tr>`).join('')}
+                        </tbody>
+                    </table>
+                </div>
+                <p class="cat-sub" style="margin-top:0.6rem">Indexed orders missing a sales row are fixed by <strong>Backfill Hub orders</strong> above (check the line SKUs first if <em>kg</em> looks wrong). Rows flagged <em>not indexed</em> are orphaned — recover those via the round-trip CSV.</p>`;
+        });
 
         // ── Store mapping: assign a stable storeId to historical name-pairs ──
         document.getElementById('sd-map-load-btn')?.addEventListener('click', async () => {
