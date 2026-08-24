@@ -341,6 +341,43 @@ const SalesView = (() => {
         return typeSizeKg(r, type, sizeFilter);
     }
 
+    // ── Canonicalise rows to the current store catalogue ──
+    // Sales rows store customer/branch as free text captured at order time, so a
+    // renamed store splits its history across the old and new names. Match each
+    // row to a store (customer family + branch, exact then containment) and
+    // rewrite its customer/branch to the store's current values so old + new
+    // names collapse into one for filters, grouping and the top-stores table.
+    const _normTxt = s => String(s || '').toLowerCase().replace(/\s+/g, ' ').trim();
+    function _customerFamily(s) {
+        const n = _normTxt(s);
+        if (!n) return '';
+        if (/fruitfed|^pgg/.test(n)) return 'pgg';
+        if (n.includes('farmlands')) return 'farmlands';
+        if (n.includes('horticentre') || n.includes('hortcentre')) return 'horticentre';
+        return n;
+    }
+    function _matchStore(row, stores) {
+        const rb = _normTxt(row.branch);
+        if (!rb) return null;
+        const rf = _customerFamily(row.customer) || _customerFamily(row.branch);
+        const famOk = s => { const sf = _customerFamily(s.customer); return !sf || !rf || sf === rf; };
+        // Exact branch (within the same customer family) wins over containment.
+        return stores.find(s => famOk(s) && _normTxt(s.branch) === rb)
+            || stores.find(s => { const sb = _normTxt(s.branch); return sb && famOk(s) && (rb.includes(sb) || sb.includes(rb)); })
+            || null;
+    }
+    function canonicaliseRows(rows, stores) {
+        const list = (stores || []).filter(s => s && s.branch && !s.archived);
+        if (!list.length) return;
+        for (const r of rows) {
+            const m = _matchStore(r, list);
+            if (m) {
+                if (m.customer) r.customer = m.customer;
+                if (m.branch)   r.branch   = m.branch;
+            }
+        }
+    }
+
     async function renderBody(bodyEl) {
         bodyEl.innerHTML = '<div class="orders-loading">Loading…</div>';
 
@@ -364,6 +401,9 @@ const SalesView = (() => {
             </div>`;
             return;
         }
+
+        // Fold renamed stores together by matching rows to the current catalogue.
+        try { canonicaliseRows(rows, await api('/api/catalog/stores')); } catch { /* catalogue optional */ }
 
         // ── Filter options from the rows themselves ──
         const custSet   = new Set(rows.map(r => r.customer).filter(Boolean));
