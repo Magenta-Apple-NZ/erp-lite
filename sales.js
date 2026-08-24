@@ -367,10 +367,14 @@ const SalesView = (() => {
             || null;
     }
     function canonicaliseRows(rows, stores) {
-        const list = (stores || []).filter(s => s && s.branch && !s.archived);
+        const list = (stores || []).filter(s => s && s.branch);
         if (!list.length) return;
+        const byId = new Map(list.map(s => [s.id, s]));
         for (const r of rows) {
-            const m = _matchStore(r, list);
+            // A patched-in storeId is authoritative; else fall back to fuzzy
+            // customer-family + branch matching against active stores.
+            const m = (r.storeId && byId.get(r.storeId))
+                || _matchStore(r, list.filter(s => !s.archived));
             if (m) {
                 if (m.customer) r.customer = m.customer;
                 if (m.branch)   r.branch   = m.branch;

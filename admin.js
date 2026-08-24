@@ -893,6 +893,13 @@ const Admin = (() => {
                         <span><strong>Replace ALL historical rows</strong> — wholesale rebuild from this file, so deleted rows disappear and edits take. Hub orders are kept. Use this for an edited <code>sales-history.csv</code> export (it also rescues rows whose date drifted into the wrong column).</span>
                     </label>
                     <div id="sd-upload-results"></div>
+
+                    <h3 class="bulk-table-title" style="margin-top:1.5rem">Map to stores</h3>
+                    <p class="cat-sub">Give each historical customer/branch a stable store link so renamed stores stay aligned with Hub orders (which carry the store id natively). The suggested store is auto-matched — adjust any row, then Apply. Only the store link is written; the original names are left as-is.</p>
+                    <div class="bulk-step">
+                        <button class="btn-secondary btn-sm" id="sd-map-load-btn">Load store mapping</button>
+                    </div>
+                    <div id="sd-map-results"></div>
                 </div>
             </details>
         </div>`;
@@ -911,6 +918,80 @@ const Admin = (() => {
                 }
             }
         } catch (e) { /* nice-to-have */ }
+
+        // ── Store mapping: assign a stable storeId to historical name-pairs ──
+        document.getElementById('sd-map-load-btn')?.addEventListener('click', async () => {
+            const el = document.getElementById('sd-map-results');
+            el.innerHTML = '<p class="cat-sub">Loading…</p>';
+            let rows = [], stores = [];
+            try {
+                const [rd, sd] = await Promise.all([
+                    fetch('/api/sales-history?rows=true').then(r => r.json()),
+                    fetch('/api/catalog/stores').then(r => r.json()),
+                ]);
+                rows = rd.rows || []; stores = sd || [];
+            } catch (e) { el.innerHTML = `<p class="cat-sub">Could not load: ${escHtml(e.message)}</p>`; return; }
+
+            const norm = s => String(s || '').toLowerCase().replace(/\s+/g, ' ').trim();
+            const active = stores.filter(s => s.branch && !s.archived);
+            const fam = s => { const n = norm(s); if (!n) return ''; if (/fruitfed|^pgg/.test(n)) return 'pgg'; if (n.includes('farmlands')) return 'farmlands'; if (n.includes('horticentre') || n.includes('hortcentre')) return 'horticentre'; return n; };
+            const suggest = (customer, branch) => {
+                const rb = norm(branch); if (!rb) return null;
+                const rf = fam(customer) || fam(branch);
+                const famOk = s => { const sf = fam(s.customer); return !sf || !rf || sf === rf; };
+                return active.find(s => famOk(s) && norm(s.branch) === rb)
+                    || active.find(s => { const sb = norm(s.branch); return sb && famOk(s) && (rb.includes(sb) || sb.includes(rb)); })
+                    || null;
+            };
+
+            const pairs = new Map();
+            for (const r of rows) {
+                const k = norm(r.customer) + '|||' + norm(r.branch);
+                if (!pairs.has(k)) pairs.set(k, { customer: r.customer || '', branch: r.branch || '', count: 0, storeIds: new Set() });
+                const p = pairs.get(k); p.count++; if (r.storeId) p.storeIds.add(r.storeId);
+            }
+            const list = [...pairs.values()].sort((a, b) => b.count - a.count);
+            const optionsHtml = sid => ['<option value="">— none —</option>'].concat(
+                active.map(s => `<option value="${escHtml(s.id)}"${s.id === sid ? ' selected' : ''}>${escHtml([s.customer, s.branch].filter(Boolean).join(' — '))} (${escHtml(s.id)})</option>`)
+            ).join('');
+
+            el.innerHTML = `
+                <div class="store-table-wrap" style="margin-top:0.5rem">
+                    <table class="store-table">
+                        <thead><tr><th>Customer</th><th>Branch</th><th>Rows</th><th style="width:320px">Store</th></tr></thead>
+                        <tbody>
+                            ${list.map(p => {
+                                const cur = p.storeIds.size === 1 ? [...p.storeIds][0] : (suggest(p.customer, p.branch)?.id || '');
+                                const auto = !p.storeIds.size && cur ? ' <span class="store-src" title="Auto-matched suggestion">auto</span>' : '';
+                                return `<tr>
+                                    <td>${escHtml(p.customer || '—')}</td>
+                                    <td>${escHtml(p.branch || '—')}${auto}</td>
+                                    <td>${p.count}</td>
+                                    <td><select class="store-cell sd-map-sel" data-customer="${escHtml(p.customer)}" data-branch="${escHtml(p.branch)}">${optionsHtml(cur)}</select></td>
+                                </tr>`;
+                            }).join('')}
+                        </tbody>
+                    </table>
+                </div>
+                <div class="bulk-apply-bar">
+                    <button class="btn-primary" id="sd-map-apply-btn">Apply mapping</button>
+                    <span class="bulk-apply-hint">Writes the store link to matching rows (names untouched). Backs up first.</span>
+                </div>`;
+
+            document.getElementById('sd-map-apply-btn')?.addEventListener('click', async () => {
+                const mappings = [...document.querySelectorAll('.sd-map-sel')]
+                    .map(sel => ({ customer: sel.dataset.customer, branch: sel.dataset.branch, storeId: sel.value }));
+                if (!confirm(`Apply store mapping to ${mappings.length} customer/branch group(s)?\n\nA backup is taken first.`)) return;
+                try {
+                    const res = await api('/api/sales-history', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ action: 'assign-stores', mappings }),
+                    });
+                    showToast(`Linked ${res.updated} row(s)${res.cleared ? `, cleared ${res.cleared}` : ''}`);
+                } catch (e) { showToast('Apply failed: ' + e.message); }
+            });
+        });
 
         let lastFile = null;
         const uploadResults = document.getElementById('sd-upload-results');

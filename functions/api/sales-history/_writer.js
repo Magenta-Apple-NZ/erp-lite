@@ -125,6 +125,7 @@ export function rowFromOrder(order, itemsMap = null) {
         fy:        fyLabel(yr, mo),
         customer:  order.customer?.name || '',
         branch:    order.shipTo?.branch || '',
+        ...(order.shipTo?.storeId ? { storeId: order.shipTo.storeId } : {}),
         poNumber:  order.poNumber || '',
         invoice:   order.xeroInvoiceNumber || '',
         bundlesKg: buckets.bundles,

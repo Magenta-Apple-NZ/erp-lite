@@ -232,7 +232,7 @@ function rowsToCsv(rows) {
     const sorted = rows.slice().sort((a, b) => (a.date || '').localeCompare(b.date || ''));
     const out = [
         ['Date','Month','Year','Financial Year','Customer','Branch','PO#','Invoice',
-         'Prime Tie Bundles kg','Prime Tie Loose kg','eco Ties kg','1kg','10kg','Source','Id'].join(',')
+         'Prime Tie Bundles kg','Prime Tie Loose kg','eco Ties kg','1kg','10kg','Source','Id','StoreId'].join(',')
     ];
     for (const r of sorted) {
         out.push([
@@ -240,7 +240,7 @@ function rowsToCsv(rows) {
             r.customer, r.branch, r.poNumber, r.invoice,
             r.bundlesKg, r.looseKg, r.ecoTiesKg,
             r.oneKg || 0, r.tenKg || 0,
-            r.source, r.id,
+            r.source, r.id, r.storeId || '',
         ].map(csvEscape).join(','));
     }
     return out.join('\n') + '\n';
@@ -299,6 +299,7 @@ function parseRoundTripExport(csv) {
     const col = name => lower.indexOf(name);
 
     const idCol       = col('id');
+    const storeIdCol  = col('storeid');
     const sourceCol   = col('source');
     const dateCol     = col('date');
     const monthCol    = col('month');
@@ -394,6 +395,7 @@ function parseRoundTripExport(csv) {
             ecoTiesKg: ecoCol    >= 0 ? parseNum(r[ecoCol])    : 0,
             oneKg:     oneKgCol  >= 0 ? parseNum(r[oneKgCol])  : 0,
             tenKg:     tenKgCol  >= 0 ? parseNum(r[tenKgCol])  : 0,
+            ...(storeIdCol >= 0 && (r[storeIdCol] || '').trim() ? { storeId: (r[storeIdCol]).trim() } : {}),
         });
     }
     return { rows, skipped };
@@ -404,6 +406,17 @@ export async function onRequestPost({ env, request }) {
         const { searchParams } = new URL(request.url);
         const apply = searchParams.get('apply') === 'true';
         const replaceHistorical = searchParams.get('replace') === 'historical';
+
+        // JSON body → store-mapping action (assign a stable storeId to rows by
+        // their captured customer/branch text). Non-destructive: only storeId is
+        // written; the original customer/branch names are left intact.
+        if ((request.headers.get('Content-Type') || '').includes('application/json')) {
+            const body = await request.json();
+            if (body.action === 'assign-stores') {
+                return await handleAssignStores(env, body.mappings || []);
+            }
+            return errResponse('Unknown action', 400);
+        }
 
         const csv = await request.text();
         if (!csv || !csv.trim()) return errResponse('Empty CSV body', 400);
@@ -484,6 +497,36 @@ export async function onRequestPost({ env, request }) {
     } catch (e) {
         return errResponse(e.message);
     }
+}
+
+// Store-mapping flow: stamp a stable storeId onto historical/hub rows keyed by
+// their captured (customer, branch) text, so a store rename no longer splits its
+// history. Only storeId is written — names are untouched. A blank storeId in a
+// mapping clears it. Backs up first.
+async function handleAssignStores(env, mappings) {
+    const norm = s => String(s || '').toLowerCase().replace(/\s+/g, ' ').trim();
+    const key = (c, b) => norm(c) + '|||' + norm(b);
+    const map = new Map();
+    for (const m of (mappings || [])) {
+        if (m && (m.customer != null || m.branch != null)) {
+            map.set(key(m.customer, m.branch), String(m.storeId || '').trim());
+        }
+    }
+    if (!map.size) return errResponse('No mappings provided', 400);
+
+    const rows = await loadAll(env);
+    let updated = 0, cleared = 0;
+    for (const r of rows) {
+        const sid = map.get(key(r.customer, r.branch));
+        if (sid === undefined) continue;          // this pair wasn't mapped
+        if (sid) { if (r.storeId !== sid) { r.storeId = sid; updated++; } }
+        else if (r.storeId) { delete r.storeId; cleared++; }
+    }
+
+    const backupTs = new Date().toISOString().replace(/[:.]/g, '-');
+    await env.ORDERS_KV.put(`backup:sales_history:${backupTs}`, JSON.stringify(rows));
+    await env.ORDERS_KV.put('sales_history', JSON.stringify(rows));
+    return jsonResponse({ action: 'assign-stores', pairsMapped: map.size, updated, cleared, backupTs, totalRows: rows.length });
 }
 
 // Round-trip edit flow: user downloads sales-history.csv, fixes things
