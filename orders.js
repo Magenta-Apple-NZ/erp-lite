@@ -271,6 +271,9 @@ const Orders = (() => {
             return;
         }
 
+        // Stores drive the pickup-aware "No freight" badge — load before rendering.
+        await loadCatalogStores().catch(() => {});
+
         const body = document.getElementById('orders-list-body');
 
         function applyFilters() {
@@ -1528,21 +1531,21 @@ const Orders = (() => {
         const freight = shipsAsFreight(order);
         const boxes = physicalBoxCount(order);
         const createCourierItem = `<button class="overflow-item" id="create-courier-btn">📦 Create Courier Label${boxes ? ' (' + boxes + ')' : ''}</button>`;
-        const printSlipItem   = `<button class="overflow-item" id="print-slip-btn">Print Packing Slip</button>`;
         const printAddrItem   = `<button class="overflow-item" id="print-address-btn">🏷 Print Address</button>`;
+        // (Print Packing Slip is now a dedicated primary button — see below.)
         if (hasLabel) {
             // A created label collapses to one green "Courier Label" button that
             // opens a popup (PDF preview + condensed details + actions).
             courierMain = `<button id="courier-label-btn" class="btn-primary split-btn-main" title="${escHtml(c.carrier)} ${escHtml(c.connote)} · created ${escHtml(fmtDateTime(c.createdAt))}">📦 Courier Label</button>`;
-            courierItems = printSlipItem + printAddrItem;
+            courierItems = printAddrItem;
         } else if (freight) {
             // Freight / over 14 boxes — ships on a pallet, so print the address
             // label; courier labels stay available but demoted.
             courierMain = `<button id="print-address-btn" class="btn-primary split-btn-main" title="${boxes && boxes > COURIER_MAX_BOXES ? boxes + ' boxes — over the ' + COURIER_MAX_BOXES + '-box courier limit, ships as freight' : 'Freight shipment — ships on a pallet'}">🏷 Print Address</button>`;
-            courierItems = printSlipItem + createCourierItem;
+            courierItems = createCourierItem;
         } else {
             courierMain = `<button id="create-courier-btn" class="btn-primary split-btn-main">📦 Create Courier Label</button>`;
-            courierItems = printSlipItem + printAddrItem;
+            courierItems = printAddrItem;
         }
         const courierBtn = splitButton(courierMain, courierItems, { done: hasLabel });
 
@@ -1581,9 +1584,11 @@ const Orders = (() => {
             ? `<span class="status-printed-tag" title="Slip auto-printed at ${escHtml(order.printedTo || 'depot')} on ${escHtml(new Date(order.printedAt).toLocaleString('en-NZ'))}">🖨 Printed at ${escHtml(order.printedTo || 'depot')}</span>`
             : '';
 
+        // Print Packing Slip is always the primary action on an open order.
+        const slipBtn = `<button id="print-slip-btn" class="btn-primary">🖨 Print Packing Slip</button>`;
         // Warehouse staff don't touch Xero — omit that button for them entirely.
         const xeroSlot = isWarehouseRole() ? '' : xeroBtn;
-        return `${printedTag}${xeroSlot}${courierBtn}${dispatchBtn}${kebab}`;
+        return `${printedTag}${slipBtn}${xeroSlot}${courierBtn}${dispatchBtn}${kebab}`;
     }
 
     function refreshActionBar(order) {
@@ -1618,8 +1623,12 @@ const Orders = (() => {
         }
 
         // Load the items catalogue so box counts (courier CTA, freight priority,
-        // courier modal) match the server's unitsPerBox-based maths.
-        await loadCatalogItemsMap().catch(() => {});
+        // courier modal) match the server's unitsPerBox-based maths; and the
+        // stores so the pickup flag can silence the missing-freight warning.
+        await Promise.all([
+            loadCatalogItemsMap().catch(() => {}),
+            loadCatalogStores().catch(() => {}),
+        ]);
 
         // Opening the detail view counts as reviewing — auto-advance new → reviewed.
         if (order.status === 'new') {
@@ -1983,10 +1992,22 @@ const Orders = (() => {
     // True when an order would invoice without freight but probably shouldn't —
     // it has product lines, no courier/freight line, and isn't a pickup or an
     // export. Orders received from PGG via the portal commonly arrive like this.
+    // True when the order ships to a Pickup store (catalogue flag) — those
+    // legitimately carry no freight, so the missing-freight warning is moot.
+    // Uses the stores cache; resolves by stored storeId, else fuzzy match.
+    function orderStoreIsPickup(order) {
+        const stores = storesCache;
+        if (!Array.isArray(stores) || !stores.length) return false;
+        const st = order?.shipTo || {};
+        const store = (st.storeId && stores.find(s => s.id === st.storeId)) || resolveStore(order, stores);
+        return !!(store && store.pickup);
+    }
+
     function orderMissingFreight(order) {
         const method = String(order?.fulfilmentMethod || 'courier').toLowerCase();
         if (method === 'pickup') return false;
         if (order?.customer?.isExport) return false;
+        if (orderStoreIsPickup(order)) return false; // pickup store → no freight expected
         const lines = order?.lines || [];
         const hasProduct = lines.some(l => !isCourierLine(l) && (Number(l.quantity) || 0) !== 0);
         const hasFreight = lines.some(l => isCourierLine(l));
