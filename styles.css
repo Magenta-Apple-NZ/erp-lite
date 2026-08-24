@@ -7207,7 +7207,9 @@ a.db-row:hover { background: #f8fafc; border-color: #e2e8f0; }
 .db-pnl-period { font-size: 0.72rem; color: #94a3b8; }
 .db-pnl-tiles {
     display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    /* Fits 3 tiles (Income/Expenses/Net) or 4 (with Cost of Sales) — wraps to
+       2 rows in a narrow column rather than overflowing. */
+    grid-template-columns: repeat(auto-fit, minmax(84px, 1fr));
     gap: 0.5rem;
     margin-bottom: 0.35rem;
 }
@@ -7221,7 +7223,7 @@ a.db-row:hover { background: #f8fafc; border-color: #e2e8f0; }
 .db-pnl-tile--pos { background: #f0fdf4; border-color: #bbf7d0; }
 .db-pnl-tile--neg { background: #fef2f2; border-color: #fecaca; }
 .db-pnl-label { font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.05em; color: #64748b; font-weight: 600; }
-.db-pnl-value { font-size: 1.05rem; font-weight: 700; color: #0f172a; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.db-pnl-value { font-size: 1rem; font-weight: 700; color: #0f172a; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .db-pnl-sub { font-size: 0.7rem; min-height: 1em; }
 .db-pnl-delta { font-weight: 600; }
 .db-pnl-delta--up { color: #15803d; }
