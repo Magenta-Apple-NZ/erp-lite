@@ -1011,6 +1011,10 @@ const Orders = (() => {
             setVal('ship-zone-courier', opt.dataset.zoneCourier);
             setVal('ship-zone-freight', opt.dataset.zoneFreight);
             if (opt.dataset.phone) setVal('ship-phone', opt.dataset.phone);
+            // Picking a store is a fresh freight decision — re-enable auto-freight
+            // even if the operator had removed it on the previous selection.
+            const _lb = document.getElementById('line-items-body');
+            if (_lb) delete _lb.dataset.freightSuppressed;
             recalcFreight(); // store zone changed → refresh the freight line
             const storeCustName = opt.dataset.customer || '';
             if (storeCustName) {
@@ -1135,7 +1139,18 @@ const Orders = (() => {
         skuEl.addEventListener('input', () => { dropAutoIfFreight(); validateRow(); });
         descEl.addEventListener('input', () => { dropAutoIfFreight(); validateRow(); });
         tr._validateRow = validateRow;
-        tr.querySelector('.line-remove-btn').addEventListener('click', () => { tr.remove(); updateFormTotal(); recalcFreight(); });
+        tr.querySelector('.line-remove-btn').addEventListener('click', () => {
+            // Removing a freight line (auto-added this session OR loaded from an
+            // inbound order) is a deliberate choice — suppress auto-freight so
+            // recalcFreight() doesn't immediately re-add it.
+            if (isCourierRow(tr)) {
+                const tb = document.getElementById('line-items-body');
+                if (tb) tb.dataset.freightSuppressed = '1';
+            }
+            tr.remove();
+            updateFormTotal();
+            recalcFreight();
+        });
 
         // Item autocomplete from catalog (shared pick logic)
         if (catalogItems.length) {
@@ -1263,6 +1278,8 @@ const Orders = (() => {
         const zone = (document.getElementById('ship-zone-courier')?.value || '').trim();
         const tbody = document.getElementById('line-items-body');
         if (!tbody) return;
+        // The operator removed the auto freight line — don't re-add it.
+        if (tbody.dataset.freightSuppressed === '1') return;
         const rows = [...tbody.querySelectorAll('.line-item-row')];
         const existingFreight = rows.filter(isCourierRow);
         // Respect a manually-entered freight line — don't fight the operator.
