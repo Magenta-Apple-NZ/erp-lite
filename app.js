@@ -91,7 +91,7 @@ function renderDashboardWidgets(config) {
             </div>
             <div class="db-col db-col--xero">
                 <section class="db-mod db-mod--chart" id="db-xero-pnl">
-                    <div class="db-mod-hd"><h3 class="db-mod-title">Profit &amp; Loss <span class="db-mod-sub">FY to date · Xero</span> <span class="chart-info" title="Income, expenses and net profit for the current NZ financial year to date (from Xero's Profit &amp; Loss report), compared with the same period last year. Bars = net profit by month for the last 12 months. Refreshed hourly.">&#9432;</span></h3><a class="db-mod-link" href="https://go.xero.com/app/!8QbL4/reports/profit-and-loss" target="_blank" rel="noopener">Open in Xero ↗</a></div>
+                    <div class="db-mod-hd"><h3 class="db-mod-title">Profit &amp; Loss <span class="db-mod-sub">FY to date · Xero</span> <span class="chart-info" title="Income, expenses and net profit for the current NZ financial year to date (from Xero's Profit &amp; Loss report), compared with the same period last year. Bars = net profit by month across the financial year to date (Apr → Mar). Refreshed hourly.">&#9432;</span></h3><a class="db-mod-link" href="https://go.xero.com/app/!8QbL4/reports/profit-and-loss" target="_blank" rel="noopener">Open in Xero ↗</a></div>
                     <div class="db-mod-body"><span class="db-mod-loading">Loading…</span></div>
                 </section>
             </div>

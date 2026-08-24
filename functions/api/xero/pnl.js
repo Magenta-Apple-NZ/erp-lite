@@ -119,9 +119,12 @@ export async function onRequestGet({ env, request }) {
         const cur = summarise(curRep), prior = summarise(priorRep), mon = summarise(monthlyRep);
         const first = a => Math.round((a[0] || 0) * 100) / 100;
 
-        // Monthly columns come back newest-first; sort by parsed header date.
+        // Monthly columns come back newest-first; keep only this financial
+        // year's months (Apr → current) and sort by parsed header date, so the
+        // bars match the "FY to date" header rather than a rolling 12 months.
+        const fyFromKey = ymd(fy.from).slice(0, 7); // 'YYYY-MM' of the FY start (April)
         const cols = mon.labels.map((lbl, i) => ({ i, parsed: parseMonthLabel(lbl), raw: lbl }))
-            .filter(c => c.parsed)
+            .filter(c => c.parsed && c.parsed.key >= fyFromKey)
             .sort((a, b) => a.parsed.key.localeCompare(b.parsed.key));
         const pick = arr => cols.map(c => Math.round((arr[c.i] || 0) * 100) / 100);
 
