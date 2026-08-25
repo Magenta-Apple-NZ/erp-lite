@@ -2483,6 +2483,8 @@ a.xero-inv-linked:hover { background: #d1fae5; border-color: #6ee7b7; }
 select.store-cell { cursor: pointer; }
 /* Zone value not in the fixed option list — auto-freight can't resolve it. */
 .store-cell--warn { color: #b45309; background: #fffbeb; border-color: #fcd34d; }
+.store-delete-btn { color: #dc2626; }
+.store-delete-btn:hover { background: #fef2f2; border-color: #fca5a5; }
 .store-check-cell { text-align: center; }
 .store-check-cell .store-check { width: auto; margin: 0; cursor: pointer; }
 .store-id-cell { white-space: nowrap; }

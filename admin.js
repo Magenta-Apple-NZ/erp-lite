@@ -380,6 +380,7 @@ const Admin = (() => {
                     ${s.archived
                         ? `<button class="btn-secondary btn-sm" data-action="restore" data-id="${escHtml(s.id)}">Restore</button>`
                         : `<button class="btn-secondary btn-sm" data-action="archive" data-id="${escHtml(s.id)}">Archive</button>`}
+                    <button class="btn-secondary btn-sm store-delete-btn" data-action="delete" data-id="${escHtml(s.id)}" title="Delete permanently">✕</button>
                 </td>
             </tr>`;
         }
@@ -547,6 +548,19 @@ const Admin = (() => {
                             await reload();
                             showToast('Restored');
                         } catch (err) { showToast('Restore failed: ' + err.message); }
+                    } else if (action === 'delete') {
+                        const store = stores.find(s => s.id === id);
+                        const nm = store ? [store.customer, store.branch].filter(Boolean).join(' — ') : id;
+                        if (!confirm(`Permanently delete ${id}${nm ? ` (${nm})` : ''}?\n\nThis removes it from KV — unlike Archive it is NOT kept. Backs up first. Historical sales rows linked by storeId are unaffected.`)) return;
+                        try {
+                            const res = await api('/api/catalog/stores', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ action: 'delete-ids', ids: [id] }),
+                            });
+                            await reload();
+                            showToast(res.removed ? 'Deleted' : 'Nothing removed');
+                        } catch (err) { showToast('Delete failed: ' + err.message); }
                     }
                 });
             });

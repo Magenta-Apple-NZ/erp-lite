@@ -3,7 +3,7 @@
 **Live:** [hub.primetie.co.nz](https://hub.primetie.co.nz) (Cloudflare Pages + Access)
 **Repo:** `Magenta-Apple-NZ/erp-lite`
 **Original sprint:** Apr 17 → Jul 17, 2026 (12 weeks · ~3 hrs/week)
-**Status (Aug 2026):** The original five-phase sprint is delivered and the platform has grown past it — orders, dispatch, imports/forecast, sales analytics, stocktake, Letter-of-Credit checking, courier (test mode), and Hub-side payroll are all live. This doc now describes what's shipped and what's still open, not a sprint in flight.
+**Status (Aug 2026):** The original five-phase sprint is delivered and the platform has grown past it — orders, dispatch, imports/forecast, sales analytics, stocktake, Letter-of-Credit checking, **live courier labels (GoSweetSpot / Post Haste)**, and **monthly Hub payroll** are all live. This doc now describes what's shipped and what's still open, not a sprint in flight.
 
 ---
 
@@ -75,17 +75,19 @@ The original five phases are delivered. Marking them against the plan:
 - **Payment reconciliation** — `/api/xero/reconcile-payments` stamps `paidAt` from Xero (auto on Orders load, throttled; manual "Sync payments" button)
 - Dispatch log view built from timestamped status events
 
-**Catalogue** — items + stores from Google Sheets; product **Type/Size** and store **zone** columns drive freight and sales classification deterministically.
+**Courier** — GoSweetSpot / Post Haste **live**. Create-label wizard (Recipient → Items → Print), box-count derived from catalogue `unitsPerBox`, two-fold label reconciliation (labels vs boxes, labels vs invoiced), address suburb from store branch, PrintNode label printing, and a label popup (PDF preview · print · download · tracking). Freight vs courier decided by the 14-box (1 m²) ceiling; **pickup stores** are flagged in the catalogue and skip auto-freight.
 
-**Sales History & analytics** — historical seed + live-order append; Sales by Month, Cumulative (Calendar/Financial page toggle), Product Type × Size, Annual Summary, Top Stores; page-level size filter (All / 10kg / 1kg); CSV round-trip + **Replace-historical** bulk import. **Stocktake** editor embedded here (snapshots, value-over-time, CSV import).
+**Catalogue** — items + stores from Google Sheets; product **Type/Size**, store **zone**, and **Pickup** columns drive freight and sales classification deterministically. Stores editor has bulk delete-by-id + a store-ID-mandatory seed guard.
+
+**Sales History & analytics** — historical seed + live-order append; Sales by Month, Cumulative (Calendar/Financial page toggle), Product Type × Size, Annual Summary, Top Stores; page-level size filter (All / 10kg / 1kg); CSV round-trip + **Replace-historical** bulk import. Rows **auto-match to the store catalogue** and carry a stable **storeId** (mapping tool + backfill) so renamed stores stay aligned. An **order audit** flags dispatched-but-untracked / pre-Xero strays. **Stocktake** editor embedded here (snapshots, value-over-time, CSV import).
 
 **Imports / forecast** — shipments with editable milestone timelines, cost breakdown, and an 18-month stock trajectory (Average / Good / Great) with shipment arrivals overlaid.
 
 **Letter of Credit checker** — upload + extract, per-document AI checks primed with real ANZ discrepancy patterns, grouped requirements, manual-accept overrides, Drive archival, and a print-ready ANZ presentation packet.
 
-**Payroll (Hub-side)** — per-employee rates × dispatched/packed boxes + hours → on-screen payslip + PDF.
+**Payroll (Hub-side)** — **monthly** cycle. Dispatch log grouped by pay month (auto-assigned by dispatch date, manual month reassignment); boxes dispatched auto-calculated per month; a consolidated payslip view with manual packed-box/hours entry, base rate + petrol from settings, and PDF.
 
-**Platform** — Google Calendar, AR unpaid/overdue dashboard alerts, role-gated views.
+**Platform** — Google Calendar, three-column dashboard (Sales/Stock · Xero P&L incl. Cost of Sales + AR, FY chart · calendar), role-gated views. Notifications surface in a dedicated view + nav badge (dashboard banners removed).
 
 ---
 
@@ -93,17 +95,18 @@ The original five phases are delivered. Marking them against the plan:
 
 What's genuinely still open, roughly by value:
 
-1. **Courier go-live.** GoSweetSpot / Post Haste integration is built and reconciles ordered-vs-invoiced labels, but runs in **mock/test mode**. To ship: set `GSS_ACCESS_KEY` / `GSS_SITE_ID`, drop `COURIER_TEST_MODE`, and re-expose the front-end control (currently hidden).
-2. **Xero Payroll API push (P1–P3, below).** The largest un-started track — push a Timesheet to Xero Payroll so Xero produces the official payslip, and eventually Jake self-submits. Pre-req: confirm Xero **Payroll** is enabled on the org.
-3. **Make / Extension cutover.** Confirm what still runs through Make and retire it; the Extension stays as the intake source.
-4. **Data hygiene.** Ongoing: customer-name normalisation (`PGG` vs `PGG Wrightson`, `Horticentre` vs `HortiCentre Ltd`), placeholder-contact cleanup, historical-seed corrections.
-5. **Polish / hardening.** Consistent Xero error handling (token/rate/network), warehouse SOP, and grooming the Q3 backlog (stock-on-hand, supplier POs, MYOB retirement).
+1. **Xero Payroll API push (P1–P3, below).** The largest un-started track — push a Timesheet to Xero Payroll so Xero produces the official payslip, and eventually Jake self-submits. Monthly Hub payroll now feeds it clean inputs. Pre-req: confirm Xero **Payroll** is enabled on the org.
+2. **Make / Extension cutover.** Confirm what still runs through Make and retire it; the Extension stays as the intake source.
+3. **Data hygiene (ongoing).** Customer/store-name consistency (`Horticentre` vs `HortiCentre Ltd`, `PGG` vs `Fruitfed`) — tools now exist (auto-match, store-mapping, order audit), the cleanup itself continues. Also placeholder-contact cleanup and historical-seed corrections. A **family-fold** safeguard for report grouping is a candidate.
+4. **Polish / hardening.** Consistent Xero error handling (token/rate/network), an order/backup search tool, GoSweetSpot void-label, warehouse SOP, and grooming the Q3 backlog (stock-on-hand, supplier POs, MYOB retirement).
+
+**Recently shipped (was backlog):** courier is **live** (real Post Haste consignments, PrintNode labels — only the depot Honeywell PrintNode id is pending); payroll moved to a **monthly** cycle with a linked dispatch log and consolidated payslip.
 
 ---
 
 ## Payroll → Xero Payroll API integration
 
-**Already shipped:** Hub-side payroll captures the inputs — boxes dispatched (from the Dispatch Log), boxes packed 10kg / 1kg, hours worked — multiplies by per-employee rates, and renders an on-screen payslip + PDF. Stored in `payroll_config`, `packing_log`, `timesheets` KV blobs. Enough to compute pay; the official payslip is still keyed into Xero Payroll by hand.
+**Already shipped:** Hub-side payroll now runs on a **monthly** cycle. Boxes dispatched auto-calculate per pay month from the Dispatch Log (auto-assigned by dispatch date, with manual month reassignment via `order.payslipMonth`); packed 10kg / 1kg and hours are a single manual monthly entry (`payroll_monthly`); base rate + petrol come from `payroll_config`. Renders an on-screen payslip + PDF. Enough to compute pay; the official payslip is still keyed into Xero Payroll by hand.
 
 **Goal:** Hub prepares the period inputs; Xero Payroll computes PAYE / KiwiSaver / ESCT / Holiday Pay and produces the official payslip. Eventually Jake submits his own numbers from a stripped-down view, dispatched boxes pre-filled from his Dispatch Log activity.
 
@@ -150,4 +153,4 @@ What's genuinely still open, roughly by value:
 4. **The manual log is gone.** ✅ Events captured automatically.
 5. **"Next container — will it cover spring?" answerable from the Hub.** ✅ Imports forecast + stock trajectory.
 
-Remaining to call the whole thing "done": courier live, Xero Payroll push, and Make fully retired.
+Remaining to call the whole thing "done": Xero Payroll push and Make fully retired. (Courier is now live.)
