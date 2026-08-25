@@ -1532,20 +1532,21 @@ const Orders = (() => {
         const boxes = physicalBoxCount(order);
         const createCourierItem = `<button class="overflow-item" id="create-courier-btn">📦 Create Courier Label${boxes ? ' (' + boxes + ')' : ''}</button>`;
         const printAddrItem   = `<button class="overflow-item" id="print-address-btn">🏷 Print Address</button>`;
-        // (Print Packing Slip is now a dedicated primary button — see below.)
+        // Print Packing Slip lives in this dropdown and is always the first item.
+        const printSlipItem   = `<button class="overflow-item" id="print-slip-btn">🖨 Print Packing Slip</button>`;
         if (hasLabel) {
             // A created label collapses to one green "Courier Label" button that
             // opens a popup (PDF preview + condensed details + actions).
             courierMain = `<button id="courier-label-btn" class="btn-primary split-btn-main" title="${escHtml(c.carrier)} ${escHtml(c.connote)} · created ${escHtml(fmtDateTime(c.createdAt))}">📦 Courier Label</button>`;
-            courierItems = printAddrItem;
+            courierItems = printSlipItem + printAddrItem;
         } else if (freight) {
             // Freight / over 14 boxes — ships on a pallet, so print the address
             // label; courier labels stay available but demoted.
             courierMain = `<button id="print-address-btn" class="btn-primary split-btn-main" title="${boxes && boxes > COURIER_MAX_BOXES ? boxes + ' boxes — over the ' + COURIER_MAX_BOXES + '-box courier limit, ships as freight' : 'Freight shipment — ships on a pallet'}">🏷 Print Address</button>`;
-            courierItems = createCourierItem;
+            courierItems = printSlipItem + createCourierItem;
         } else {
             courierMain = `<button id="create-courier-btn" class="btn-primary split-btn-main">📦 Create Courier Label</button>`;
-            courierItems = printAddrItem;
+            courierItems = printSlipItem + printAddrItem;
         }
         const courierBtn = splitButton(courierMain, courierItems, { done: hasLabel });
 
@@ -1584,11 +1585,9 @@ const Orders = (() => {
             ? `<span class="status-printed-tag" title="Slip auto-printed at ${escHtml(order.printedTo || 'depot')} on ${escHtml(new Date(order.printedAt).toLocaleString('en-NZ'))}">🖨 Printed at ${escHtml(order.printedTo || 'depot')}</span>`
             : '';
 
-        // Print Packing Slip is always the primary action on an open order.
-        const slipBtn = `<button id="print-slip-btn" class="btn-primary">🖨 Print Packing Slip</button>`;
         // Warehouse staff don't touch Xero — omit that button for them entirely.
         const xeroSlot = isWarehouseRole() ? '' : xeroBtn;
-        return `${printedTag}${slipBtn}${xeroSlot}${courierBtn}${dispatchBtn}${kebab}`;
+        return `${printedTag}${xeroSlot}${courierBtn}${dispatchBtn}${kebab}`;
     }
 
     function refreshActionBar(order) {
