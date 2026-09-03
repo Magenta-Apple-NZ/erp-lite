@@ -92,12 +92,30 @@ const Orders = (() => {
 
     // ── API helpers ──
     async function api(path, opts = {}) {
-        const resp = await fetch(path, opts);
+        // Abort a hung request instead of spinning forever. Callers can pass
+        // opts.timeout (ms); default 20s.
+        const { timeout = 20000, ...fetchOpts } = opts;
+        const ctrl = new AbortController();
+        const t = setTimeout(() => ctrl.abort(), timeout);
+        let resp;
+        try {
+            resp = await fetch(path, { ...fetchOpts, signal: ctrl.signal });
+        } catch (e) {
+            if (e.name === 'AbortError') throw new Error('Request timed out — check your connection and retry.');
+            throw new Error('Network error — could not reach the Hub. ' + (e.message || ''));
+        } finally {
+            clearTimeout(t);
+        }
         if (!resp.ok) {
             const err = await resp.json().catch(() => ({ error: resp.statusText }));
             throw new Error(err.error || resp.statusText);
         }
-        return resp.json();
+        try {
+            return await resp.json();
+        } catch {
+            // A Cloudflare Access re-auth returns an HTML login page, not JSON.
+            throw new Error('Unexpected response — you may need to reload and sign in again.');
+        }
     }
 
     async function getUser() {
@@ -267,7 +285,7 @@ const Orders = (() => {
             orders = await api('/api/orders');
         } catch (e) {
             document.getElementById('orders-list-body').innerHTML =
-                `<div class="orders-error">Could not load orders: ${e.message}</div>`;
+                `<div class="orders-error">Could not load orders: ${escHtml(e.message)} <button class="btn-secondary btn-sm" onclick="location.reload()">↻ Retry</button></div>`;
             return;
         }
 
@@ -1670,8 +1688,9 @@ const Orders = (() => {
         try {
             order = await api('/api/orders/' + orderId);
         } catch (e) {
-            document.getElementById('order-detail-body').innerHTML =
-                `<div class="orders-error">${e.message}</div>`;
+            const body = document.getElementById('order-detail-body');
+            body.innerHTML = `<div class="orders-error">${escHtml(e.message)} <button class="btn-secondary btn-sm" id="detail-retry">↻ Retry</button></div>`;
+            document.getElementById('detail-retry')?.addEventListener('click', () => renderDetail(container, orderId));
             return;
         }
 
