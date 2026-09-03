@@ -1107,14 +1107,25 @@ const Orders = (() => {
         // Flag a line red when its SKU/name doesn't correspond to the pricing
         // sheet — surfaces mismatched imports (e.g. Farmlands) to fix or alias.
         function validateRow() {
-            if (!_formCatalogItems.length) { tr.classList.remove('line-unmatched'); return; }
-            const s = skuEl.value.trim().toLowerCase();
-            const d = descEl.value.trim().toLowerCase();
-            if (!s && !d) { tr.classList.remove('line-unmatched'); return; }
-            const matched = (s && _formCatalogItems.some(i => (i.id || '').toLowerCase() === s))
-                         || (d && _formCatalogItems.some(i => (i.name || '').toLowerCase() === d));
-            tr.classList.toggle('line-unmatched', !matched);
-            const tip = matched ? '' : 'Not found in the pricing sheet — check the SKU/name or add a find/replace rule';
+            // Size mismatch (SKU vs description) — independent of the pricing sheet.
+            const ss = skuSizeFromCatalog(skuEl.value), ds = descSizeFrom(descEl.value);
+            const sizeMismatch = ss != null && ds != null && ss !== ds;
+            tr.classList.toggle('line-size-warn', sizeMismatch);
+
+            if (!_formCatalogItems.length) { tr.classList.remove('line-unmatched'); }
+            else {
+                const s = skuEl.value.trim().toLowerCase();
+                const d = descEl.value.trim().toLowerCase();
+                if (!s && !d) { tr.classList.remove('line-unmatched'); }
+                else {
+                    const matched = (s && _formCatalogItems.some(i => (i.id || '').toLowerCase() === s))
+                                 || (d && _formCatalogItems.some(i => (i.name || '').toLowerCase() === d));
+                    tr.classList.toggle('line-unmatched', !matched);
+                }
+            }
+            const tip = sizeMismatch
+                ? `⚠ SKU implies ${ss}kg but the description says ${ds}kg — sales kg is taken from the SKU. Check the SKU.`
+                : (tr.classList.contains('line-unmatched') ? 'Not found in the pricing sheet — check the SKU/name or add a find/replace rule' : '');
             skuEl.title = tip; descEl.title = tip;
         }
 
@@ -1330,6 +1341,47 @@ const Orders = (() => {
         if (elIncl) elIncl.textContent = '$' + fmt(subtotal + gst);
     }
 
+    // Size a SKU implies — catalogue kg-per-unit, else the -10 / -1B suffix.
+    // Used to catch mis-keyed lines (a 1kg SKU on a 10kg line), since sales kg
+    // is computed from the SKU, not the description.
+    function skuSizeFromCatalog(sku) {
+        const s = String(sku || '').trim().toUpperCase();
+        if (!s) return null;
+        const item = _formCatalogItems.find(i => (i.id || '').toUpperCase() === s);
+        if (item && item.kgPerUnit != null && !isNaN(Number(item.kgPerUnit))) {
+            const k = Number(item.kgPerUnit); if (k === 10 || k === 1) return k;
+        }
+        if (/-10$/.test(s)) return 10;
+        if (/-1B?$/.test(s)) return 1;
+        return null;
+    }
+    function descSizeFrom(desc) {
+        const m = String(desc || '').match(/\b(10|1)\s*kg\b/i);
+        return m ? Number(m[1]) : null;
+    }
+    // Lines whose SKU size disagrees with their description size. Returns
+    // human-readable strings for a confirm() prompt.
+    function lineSizeMismatches(lines) {
+        const out = [];
+        for (const l of lines || []) {
+            const ss = skuSizeFromCatalog(l.sku), ds = descSizeFrom(l.description);
+            if (ss != null && ds != null && ss !== ds) {
+                out.push(`• ${l.sku || '(no SKU)'} — SKU is ${ss}kg but "${l.description}" says ${ds}kg`);
+            }
+        }
+        return out;
+    }
+    // Warn (not block) before saving a mis-keyed line. Returns true to proceed.
+    function confirmSizeMismatches(lines) {
+        const m = lineSizeMismatches(lines);
+        if (!m.length) return true;
+        return confirm(
+            'Check these line SKUs — the SKU and the description disagree on size:\n\n' +
+            m.join('\n') +
+            '\n\nSales-history kg is taken from the SKU, so a 1kg SKU on a 10kg line records 10× too little.\n\nOK = save as-is · Cancel = go back and fix the SKU.'
+        );
+    }
+
     function getLineItems() {
         const lines = [];
         document.querySelectorAll('.line-item-row').forEach(tr => {
@@ -1384,6 +1436,7 @@ const Orders = (() => {
         if (!customer.name) { showFormError('Customer name is required.'); return; }
         const lines = getLineItems();
         if (!lines.length) { showFormError('Add at least one line item.'); return; }
+        if (!confirmSizeMismatches(lines)) return;
 
         const btn = document.getElementById('submit-order-btn');
         btn.disabled = true; btn.textContent = 'Creating…';
@@ -1417,6 +1470,7 @@ const Orders = (() => {
         if (!customer.name) { showFormError('Customer name is required.'); return; }
         const lines = getLineItems();
         if (!lines.length) { showFormError('Add at least one line item.'); return; }
+        if (!confirmSizeMismatches(lines)) return;
 
         const btn = document.getElementById('submit-order-btn');
         btn.disabled = true; btn.textContent = 'Saving…';

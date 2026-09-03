@@ -1583,6 +1583,12 @@ li.drag-over { background: #eff6ff; }
 }
 .line-item-row.line-unmatched .line-sku:focus,
 .line-item-row.line-unmatched .line-desc:focus { border-color: #dc2626; }
+/* SKU size disagrees with the description size (mis-keyed line) — amber warn */
+.line-item-row.line-size-warn .line-sku,
+.line-item-row.line-size-warn .line-desc {
+    border-color: #f59e0b;
+    background: #fffbeb;
+}
 .line-item-row .line-qty, .line-item-row .line-price { text-align: right; }
 .line-total { font-size: 0.87rem; font-weight: 500; color: #334155; padding: 0 0.25rem; white-space: nowrap; }
 .line-remove-btn {
