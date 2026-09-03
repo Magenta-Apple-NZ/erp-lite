@@ -9,6 +9,30 @@ import { jsonResponse, errResponse } from '../_xero.js';
 import { rowFromOrder } from '../sales-history/_writer.js';
 import { loadItemsMap } from '../catalog/items.js';
 
+// The size a line's SKU implies (from the catalogue kg-per-unit, else the
+// -10 / -1B suffix), vs the size its description implies ("10kg" / "1kg").
+// When they disagree the line is mis-keyed — sales-history kg is computed from
+// the SKU, so a 1kg SKU on a 10kg line records 10× too little.
+function skuSize(l, itemsMap) {
+    const cat = itemsMap && l?.sku ? itemsMap.get(String(l.sku).toUpperCase()) : null;
+    if (cat && cat.kgPerUnit != null && !isNaN(Number(cat.kgPerUnit))) {
+        const k = Number(cat.kgPerUnit);
+        if (k === 10 || k === 1) return k;
+    }
+    const s = String(l?.sku || '').toUpperCase();
+    if (/-10$/.test(s)) return 10;
+    if (/-1B?$/.test(s)) return 1;
+    return null;
+}
+function descSize(l) {
+    const m = String(l?.description || l?.name || '').match(/\b(10|1)\s*kg\b/i);
+    return m ? Number(m[1]) : null;
+}
+function isFreightLine(l) {
+    const sku = String(l?.sku || '').toUpperCase();
+    return /^FR-\d|COURIER|FREIGHT|CARTAGE|LABEL/.test(sku) || /courier|freight|cartage|\blabel/i.test(String(l?.description || ''));
+}
+
 export async function onRequestGet({ env }) {
     try {
         // 1) Every order key in KV (paginated).
@@ -26,7 +50,7 @@ export async function onRequestGet({ env }) {
 
         const orders = await Promise.all(keys.map(k => env.ORDERS_KV.get(k, { type: 'json' })));
 
-        const totals = { total: 0, dispatched: 0, missingSales: 0, orphanIndex: 0, noInvoice: 0, unclassified: 0, problems: 0 };
+        const totals = { total: 0, dispatched: 0, missingSales: 0, orphanIndex: 0, noInvoice: 0, unclassified: 0, sizeMismatch: 0, problems: 0 };
         const problems = [];
 
         for (const o of orders) {
@@ -43,11 +67,23 @@ export async function onRequestGet({ env }) {
 
             if (isDispatched) totals.dispatched++;
 
+            // SKU vs description size mismatch — the mis-keyed-line bug that
+            // makes sales-history kg 10× too low (e.g. 1kg SKU on a 10kg line).
+            const mismatches = [];
+            for (const l of (o.lines || [])) {
+                if (isFreightLine(l)) continue;
+                const ss = skuSize(l, itemsMap), ds = descSize(l);
+                if (ss != null && ds != null && ss !== ds) {
+                    mismatches.push(`${l.sku || '?'} says ${ss}kg but "${String(l.description || '').slice(0, 40)}"`);
+                }
+            }
+
             const issues = [];
-            if (!hasSales)       { issues.push('no-sales-row');       totals.missingSales++; }
-            if (!inIndex)        { issues.push('not-in-index');       totals.orphanIndex++; }
-            if (!hasInvoice)     { issues.push('no-xero-invoice');    totals.noInvoice++; }
-            if (wouldRow == null){ issues.push('unclassified-lines'); totals.unclassified++; }
+            if (!hasSales)        { issues.push('no-sales-row');       totals.missingSales++; }
+            if (!inIndex)         { issues.push('not-in-index');       totals.orphanIndex++; }
+            if (!hasInvoice)      { issues.push('no-xero-invoice');    totals.noInvoice++; }
+            if (wouldRow == null) { issues.push('unclassified-lines'); totals.unclassified++; }
+            if (mismatches.length){ issues.push('sku-size-mismatch');  totals.sizeMismatch++; }
 
             if (!issues.length) continue;
             totals.problems++;
@@ -62,6 +98,7 @@ export async function onRequestGet({ env }) {
                 inIndex, hasSales, hasInvoice,
                 // kg the row would carry if backfilled (helps spot mis-keyed lines).
                 kg: wouldRow ? (Number(wouldRow.bundlesKg) || 0) + (Number(wouldRow.looseKg) || 0) + (Number(wouldRow.ecoTiesKg) || 0) : 0,
+                mismatches,
                 issues,
             });
         }

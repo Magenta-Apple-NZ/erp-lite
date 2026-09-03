@@ -947,7 +947,7 @@ const Admin = (() => {
             const problems = data.problems || [];
             const strays = problems.filter(p => p.dispatched && !p.hasSales);
             const badge = (txt, cls) => `<span class="paid-badge${cls ? ' ' + cls : ''}">${escHtml(txt)}</span>`;
-            const issueLabel = { 'no-sales-row': 'no sales row', 'not-in-index': 'not indexed', 'no-xero-invoice': 'no invoice', 'unclassified-lines': 'lines don’t classify' };
+            const issueLabel = { 'no-sales-row': 'no sales row', 'not-in-index': 'not indexed', 'no-xero-invoice': 'no invoice', 'unclassified-lines': 'lines don’t classify', 'sku-size-mismatch': 'SKU ≠ size' };
 
             if (!problems.length) {
                 el.innerHTML = `<p class="cat-sub" style="margin-top:0.6rem">✓ Scanned <strong>${t.total || 0}</strong> orders — no gaps found. Nothing dispatched is missing from sales history.</p>`;
@@ -956,7 +956,7 @@ const Admin = (() => {
             el.innerHTML = `
                 <p class="cat-sub" style="margin-top:0.6rem">
                     Scanned <strong>${t.total || 0}</strong> orders · <strong style="color:#dc2626">${strays.length}</strong> dispatched but missing a sales row ·
-                    ${t.missingSales || 0} missing sales row · ${t.orphanIndex || 0} not indexed · ${t.noInvoice || 0} no Xero invoice.
+                    ${t.missingSales || 0} missing sales row · ${t.orphanIndex || 0} not indexed · ${t.noInvoice || 0} no Xero invoice · <strong style="color:#b45309">${t.sizeMismatch || 0} SKU≠size</strong>.
                 </p>
                 <div class="store-table-wrap" style="margin-top:0.5rem">
                     <table class="store-table">
@@ -969,12 +969,12 @@ const Admin = (() => {
                                 <td>${escHtml(p.invoice || '—')}</td>
                                 <td>${escHtml(p.status || '—')}${p.dispatched ? ' ' + badge('dispatched') : ''}</td>
                                 <td style="text-align:right">${p.kg || 0}</td>
-                                <td>${p.issues.map(i => badge(issueLabel[i] || i, i === 'no-sales-row' ? 'paid-badge' : '')).join(' ')}</td>
+                                <td>${p.issues.map(i => badge(issueLabel[i] || i, i === 'no-sales-row' ? 'paid-badge' : '')).join(' ')}${(p.mismatches && p.mismatches.length) ? `<div class="cat-sub" style="margin-top:0.2rem;color:#b45309">${p.mismatches.map(m => escHtml(m)).join('<br>')}</div>` : ''}</td>
                             </tr>`).join('')}
                         </tbody>
                     </table>
                 </div>
-                <p class="cat-sub" style="margin-top:0.6rem">Indexed orders missing a sales row are fixed by <strong>Backfill Hub orders</strong> above (check the line SKUs first if <em>kg</em> looks wrong). Rows flagged <em>not indexed</em> are orphaned — recover those via the round-trip CSV.</p>`;
+                <p class="cat-sub" style="margin-top:0.6rem"><strong>SKU ≠ size</strong> = a line's SKU implies a different size than its description (e.g. a 1kg SKU on a 10kg line) — sales kg is computed from the SKU, so fix the SKU on the order then it re-syncs. Indexed orders missing a sales row are fixed by <strong>Backfill Hub orders</strong>. Rows flagged <em>not indexed</em> are orphaned — recover those via the round-trip CSV.</p>`;
         });
 
         // ── Store mapping: assign a stable storeId to historical name-pairs ──
