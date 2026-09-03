@@ -6,6 +6,17 @@ import { loadItemsMap } from '../catalog/items.js';
 
 const HUB_LIVE_YM = '2026-04'; // (Reference; sales_history doesn't gate on it)
 
+// The NZ-local calendar date (YYYY-MM-DD) of a timestamp. Orders store UTC
+// ISO timestamps but the Hub is an NZ business — bucketing/reporting must use
+// the NZ day (Pacific/Auckland is UTC+12, +13 in DST).
+function nzYmd(iso) {
+    try {
+        return new Date(iso).toLocaleDateString('en-CA', { timeZone: 'Pacific/Auckland' });
+    } catch {
+        return String(iso || '').slice(0, 10);
+    }
+}
+
 // Look up an order line's SKU in the items catalogue (Map keyed by SKU).
 function catalogItem(l, itemsMap) {
     if (!itemsMap || !l?.sku) return null;
@@ -114,7 +125,10 @@ export function rowFromOrder(order, itemsMap = null) {
     if (buckets.bundles === 0 && buckets.loose === 0 && buckets.ecoTies === 0) {
         return null;
     }
-    const dateIso = (order.createdAt || '').slice(0, 10) || new Date().toISOString().slice(0, 10);
+    // Bucket by the NZ-local calendar date, not the raw UTC slice of the
+    // timestamp — otherwise an order created NZ-evening / early-morning (UTC+12/13)
+    // lands in the previous UTC day, and the month/year drift vs what the UI shows.
+    const dateIso = nzYmd(order.createdAt || new Date().toISOString());
     const [yr, mo] = dateIso.split('-').map(n => parseInt(n, 10));
     return {
         id:        order.id,
