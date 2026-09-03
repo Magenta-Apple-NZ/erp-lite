@@ -15,7 +15,10 @@ import { COURIER_ZONES, loadFreightRates } from '../_freight.js';
 
 export async function onRequestGet({ env }) {
     try {
-        const courierZones = Object.values(COURIER_ZONES).map(z => z.name.replace(/^Courier - /, ''));
+        // "None (no freight)" marks a store as exempt from auto freight
+        // (local-run deliveries) — both calculators skip it deliberately.
+        const courierZones = Object.values(COURIER_ZONES).map(z => z.name.replace(/^Courier - /, ''))
+            .concat(['None (no freight)']);
 
         let rates = [];
         try { rates = await loadFreightRates(env); } catch (_) { rates = []; }

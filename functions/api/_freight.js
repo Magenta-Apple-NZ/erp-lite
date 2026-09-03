@@ -150,6 +150,11 @@ export async function computeAutoFreightLines(env, order) {
     const stores = await getStoresWithBootstrap(env).catch(() => []);
     const store  = resolveStore(order, stores || []);
     if (!store) return [];
+
+    // Stores whose Zone (courier) is "None (no freight)" / "Free" / "Exempt"
+    // are deliberately excluded from auto freight (e.g. local-run deliveries
+    // around the depot — Te Puke / Te Puna / Tauranga).
+    if (/^(none|free|no\s*freight|exempt)/.test(norm(store.zoneCourier || ''))) return [];
     // Pickup stores collect their own product — never auto-add freight.
     if (store.pickup) return [];
 
