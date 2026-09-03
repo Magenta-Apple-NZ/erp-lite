@@ -53,6 +53,14 @@ const Warehouse = (() => {
         return (Number(l?.quantity) || 0) * kgPer;
     }
 
+    // NZ-local YYYY-MM of a UTC timestamp — orders store createdAt in UTC, but
+    // month buckets must match the NZ day the Sales History view uses (else an
+    // order created NZ-evening lands in the previous UTC month).
+    function nzYm(iso) {
+        try { return new Date(iso).toLocaleDateString('en-CA', { timeZone: 'Pacific/Auckland' }).slice(0, 7); }
+        catch { return String(iso || '').slice(0, 7); }
+    }
+
     // ── CSV parser for Enviroware stocktake format ──
     // Finds the header row automatically, handles $-formatted and comma-formatted numbers
     function parseStocktakeCsv(text) {
@@ -298,6 +306,21 @@ const Warehouse = (() => {
         }
     }
 
+    // Preset raw-product rows. Descriptions carry "(raw)" so the kg reconcile
+    // (inventory/reconcile.js isProductRow) counts them in the product pool.
+    const STK_PRODUCT_PRESETS = [
+        'Prime Tie Bundled (raw)',
+        'eco Ties (raw)',
+        'Prime Tie Loose (raw)',
+    ];
+    function addProductRow(description) {
+        // If an active row with this description already exists, don't duplicate.
+        if (editRows.some(r => r.active && r.description === description)) return;
+        editRows.push({ active: true, description, accountCode: '', units: 0, unitValue: 0, net: 0 });
+        const tbl = document.getElementById('stk-table-wrap');
+        if (tbl) { tbl.innerHTML = tableHtml(editRows); wireTable(tbl); }
+    }
+
     // ── Main render ──
     async function render(container) {
         container.innerHTML = `
@@ -367,6 +390,12 @@ const Warehouse = (() => {
                             <input type="file" id="stk-csv-file" accept=".csv" style="display:none">
                         </label>
                         <button class="btn-secondary btn-sm" id="stk-add-row-btn">+ Add row</button>
+                        <div class="overflow-menu">
+                            <button class="btn-secondary btn-sm overflow-trigger" type="button" title="Add a raw-product line" onclick="event.stopPropagation();this.closest('.overflow-menu').classList.toggle('open')">+ Add product ▾</button>
+                            <div class="overflow-dropdown">
+                                ${STK_PRODUCT_PRESETS.map(p => `<button class="overflow-item stk-add-product" data-desc="${escHtml(p)}">${escHtml(p)}</button>`).join('')}
+                            </div>
+                        </div>
                         <button class="btn-primary btn-sm" id="stk-save-btn">Save Snapshot</button>
                     </div>
                 </div>
@@ -404,6 +433,8 @@ const Warehouse = (() => {
 
         // Add blank row
         document.getElementById('stk-add-row-btn').addEventListener('click', addBlankRow);
+        document.querySelectorAll('.stk-add-product').forEach(btn =>
+            btn.addEventListener('click', () => addProductRow(btn.dataset.desc)));
 
         // Save snapshot
         document.getElementById('stk-save-btn').addEventListener('click', async () => {
@@ -1034,7 +1065,7 @@ const Warehouse = (() => {
                 ]);
                 config = configData || {};
                 for (const o of (ordersData || [])) {
-                    const ym = (o.createdAt || '').slice(0, 7);
+                    const ym = nzYm(o.createdAt);
                     if (!ym) continue;
                     // Pre-Hub-live months are sourced from the sales sheet
                     // (Sales History view); imported HST-* orders for those
@@ -1070,7 +1101,7 @@ const Warehouse = (() => {
             try {
                 const orders = await api('/api/orders');
                 for (const o of (orders || [])) {
-                    const ym = (o.createdAt || '').slice(0, 7);
+                    const ym = nzYm(o.createdAt);
                     if (!ym) continue;
                     const kg = (o.lines || []).reduce((s, l) => s + lineKg(l), 0);
                     if (kg > 0) actuals[ym] = (actuals[ym] || 0) + kg;
@@ -4014,7 +4045,7 @@ const Warehouse = (() => {
             ]);
             config = configData || {};
             for (const o of (ordersData || [])) {
-                const ym = (o.createdAt || '').slice(0, 7);
+                const ym = nzYm(o.createdAt);
                 if (!ym || ym < HUB_LIVE_YM) continue;
                 const kg = (o.lines || []).reduce((s, l) => s + lineKg(l), 0);
                 if (kg > 0) actuals[ym] = (actuals[ym] || 0) + kg;
