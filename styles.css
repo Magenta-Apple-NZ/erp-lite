@@ -1583,6 +1583,13 @@ li.drag-over { background: #eff6ff; }
 }
 .line-item-row.line-unmatched .line-sku:focus,
 .line-item-row.line-unmatched .line-desc:focus { border-color: #dc2626; }
+/* New Order header actions + PO import status */
+.view-header-actions { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
+.po-import-status { margin: 0.5rem 0 0.75rem; padding: 0.55rem 0.85rem; border-radius: 8px; font-size: 0.85rem; }
+.po-import-status--busy { background: #eff6ff; border: 1px solid #bfdbfe; color: #1e40af; }
+.po-import-status--ok   { background: #f0fdf4; border: 1px solid #bbf7d0; color: #166534; }
+.po-import-status--err  { background: #fef2f2; border: 1px solid #fecaca; color: #b91c1c; }
+
 /* SKU size disagrees with the description size (mis-keyed line) — amber warn */
 .line-item-row.line-size-warn .line-sku,
 .line-item-row.line-size-warn .line-desc {

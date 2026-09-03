@@ -664,8 +664,15 @@ const Orders = (() => {
             <div>
                 <h1 class="view-title">New Order</h1>
             </div>
-            <a href="#orders" class="btn-secondary">← Back to Orders</a>
+            <div class="view-header-actions">
+                <label class="btn-secondary" title="Extract a customer's PO PDF into this form">
+                    📄 Import PO (PDF)
+                    <input type="file" id="po-import-file" accept="application/pdf,.pdf" style="display:none">
+                </label>
+                <a href="#orders" class="btn-secondary">← Back to Orders</a>
+            </div>
         </div>
+        <div id="po-import-status" class="po-import-status" hidden></div>
         <div id="new-order-body"><div class="orders-loading">Loading…</div></div>`;
 
         await checkXeroStatus();
@@ -696,6 +703,107 @@ const Orders = (() => {
 
         wireOrderForm({ customers, catalogStores, catalogItems });
         document.getElementById('submit-order-btn').addEventListener('click', () => submitNewOrder());
+        wirePoImport({ catalogStores, catalogItems });
+    }
+
+    // ── Import a customer PO PDF → pre-fill the New Order form (review first) ──
+    function wirePoImport({ catalogStores, catalogItems }) {
+        const input = document.getElementById('po-import-file');
+        if (!input) return;
+        const status = document.getElementById('po-import-status');
+        const setStatus = (msg, cls = '') => {
+            if (!status) return;
+            status.className = 'po-import-status' + (cls ? ' ' + cls : '');
+            status.textContent = msg;
+            status.hidden = !msg;
+        };
+
+        input.addEventListener('change', async () => {
+            const file = input.files && input.files[0];
+            input.value = ''; // allow re-picking the same file
+            if (!file) return;
+            setStatus('Reading the PO with AI…', 'po-import-status--busy');
+            try {
+                const dataUrl = await new Promise((res, rej) => {
+                    const r = new FileReader();
+                    r.onload = () => res(String(r.result));
+                    r.onerror = () => rej(new Error('Could not read the file'));
+                    r.readAsDataURL(file);
+                });
+                const base64 = dataUrl.split(',')[1] || '';
+                const resp = await api('/api/orders/extract-pdf', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ data: base64, mediaType: file.type || 'application/pdf' }),
+                    timeout: 60000, // extraction can take a while
+                });
+                applyPoFields(resp.fields || {}, { catalogStores, catalogItems });
+                setStatus('Imported from PO — review every field (customer, store, SKUs) before creating.', 'po-import-status--ok');
+            } catch (e) {
+                setStatus('PO import failed: ' + e.message, 'po-import-status--err');
+            }
+        });
+    }
+
+    // Match an extracted line description to a catalogue item (so we set our
+    // SKU + kg-per-unit rather than the customer's code). Fuzzy: exact name,
+    // then type + size keywords.
+    function matchCatalogItem(desc, catalogItems) {
+        const d = String(desc || '').toLowerCase();
+        if (!d || !Array.isArray(catalogItems)) return null;
+        let m = catalogItems.find(i => (i.name || '').toLowerCase() === d);
+        if (m) return m;
+        const type = /eco/.test(d) ? 'ecoTies' : /bundl/.test(d) ? 'bundles' : /loose/.test(d) ? 'loose' : null;
+        const size = /\b10\s*kg\b/.test(d) ? 'tenKg' : /\b1\s*kg\b/.test(d) ? 'oneKg' : null;
+        if (type && size) m = catalogItems.find(i => i.type === type && i.size === size);
+        return m || null;
+    }
+
+    function applyPoFields(f, { catalogStores, catalogItems }) {
+        const set = (id, v) => { const el = document.getElementById(id); if (el != null && v != null && v !== '') el.value = v; };
+        set('customer-search', f.customerName);
+        set('po-number', f.poNumber);
+        set('ship-address', f.shipToAddress);
+        set('ship-city', f.shipToCity);
+        set('ship-postcode', f.shipToPostcode);
+        set('packing-notes', f.notes);
+        const fm = document.getElementById('fulfilment-method');
+        if (fm && (f.fulfilment === 'pickup' || f.fulfilment === 'courier')) fm.value = f.fulfilment;
+
+        // Ship-to branch + try to resolve to a store (fills storeId/zones so
+        // freight works). Fall back to the extracted branch/customer text.
+        const branchText = [f.customerName, f.branch].filter(Boolean).join(' - ') || f.branch || '';
+        set('ship-branch', branchText || f.customerName || '');
+        const store = resolveStore({ shipTo: { branch: branchText || f.branch || f.customerName || '' } }, catalogStores || []);
+        if (store) {
+            set('ship-branch', [store.customer, store.branch].filter(Boolean).join(' - '));
+            const s = id => { const el = document.getElementById(id); return el; };
+            if (s('ship-storeid')) s('ship-storeid').value = store.id || '';
+            if (store.city)     set('ship-city', store.city);
+            if (store.postcode) set('ship-postcode', store.postcode);
+            if (store.zoneCourier && s('ship-zone-courier')) s('ship-zone-courier').value = store.zoneCourier;
+            if (store.zoneFreight && s('ship-zone-freight')) s('ship-zone-freight').value = store.zoneFreight;
+            if (store.pickup && fm) fm.value = 'pickup'; // pickup store overrides
+        }
+        const isPickup = fm && fm.value === 'pickup';
+
+        // Rebuild line items from the PO. Clear existing rows first.
+        const tbody = document.getElementById('line-items-body');
+        if (tbody) tbody.innerHTML = '';
+        const lines = Array.isArray(f.lines) ? f.lines : [];
+        for (const l of lines) {
+            const item = matchCatalogItem(l.description, catalogItems);
+            addLineItem(catalogItems, {
+                sku: item ? item.id : '',
+                description: item ? item.name : (l.description || ''),
+                quantity: Number(l.quantity) || 0,
+                unitPrice: item && item.defaultPrice != null && (l.unitPrice == null) ? item.defaultPrice : (Number(l.unitPrice) || 0),
+                kgPerUnit: item && item.kgPerUnit != null ? item.kgPerUnit : undefined,
+            });
+        }
+        if (!lines.length && tbody) addLineItem(catalogItems); // keep one blank row
+        if (!isPickup) recalcFreight(); // don't auto-add freight to a pickup order
+        updateFormTotal();
     }
 
     // ── Edit order form ──
