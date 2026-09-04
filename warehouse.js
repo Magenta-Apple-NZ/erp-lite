@@ -2585,9 +2585,16 @@ const Warehouse = (() => {
                             <h2 class="cat-title">Stock Trajectory &middot; Prime Ties <span class="fcst-version">v${config.version || 1}</span>
                                 <span class="chart-info" title="Projects kg-on-hand 18 months forward from your stocktake. Each month: opening − Est. Sales (max of actual vs forecast) + incoming shipments. Three scenarios (Average / Good +10% / Great +20%) — toggle them at right; the active line is bold, the others fade for reference. Triangle markers along the X-axis are shipment arrivals. Where the line goes below zero, a red fill flags an out-of-stock month.">&#9432;</span>
                             </h2>
+                            ${config.stocktake && config.stocktake.source === 'count' ? `
+                            <p class="cat-sub">Count: <strong>${fmtFull(config.startingKg ?? 0)} kg</strong> as of <strong>${config.stocktakeDate}</strong>
+                                <span style="color:#94a3b8">· ${escHtml(config.stocktake.label)}</span>
+                                &nbsp;&middot;&nbsp; Stock now: <strong>${config.stocktake.onHandNow == null ? '—' : fmtFull(config.stocktake.onHandNow) + ' kg'}</strong>
+                                <span class="chart-info" title="Count ${fmtFull(config.startingKg ?? 0)} kg − ${fmtFull(config.stocktake.soldSince || 0)} kg sold (orders) + ${fmtFull(config.stocktake.receivedSince || 0)} kg shipments landed ${(config.stocktake.adjustedSince || 0) >= 0 ? '+' : '−'} ${fmtFull(Math.abs(config.stocktake.adjustedSince || 0))} kg adjustments, as at ${config.stocktake.asOf}">&#9432;</span>
+                                <a class="btn-link" href="#warehouse">Manage counts</a></p>` : `
                             <p class="cat-sub">Stocktake: <strong>${fmtFull(config.startingKg ?? 0)} kg</strong>
                                 ${config.stocktakeDate ? `as of <strong>${config.stocktakeDate}</strong>` : '<span style="color:#94a3b8">(no date set — assuming start of this month)</span>'}
-                                <button class="btn-link" id="imp-edit-stock-btn">Edit</button></p>
+                                <button class="btn-link" id="imp-edit-stock-btn">Edit</button>
+                                <span style="color:#94a3b8">· manual — commit a count under <a href="#warehouse">Stock → Counts</a> and this follows it automatically</span></p>`}
                         </div>
                         <div class="cat-actions">
                             <div class="imp-scenario-wrap">${scenarioBtns}</div>
