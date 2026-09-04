@@ -49,6 +49,7 @@ export function validateItemFields(body, { partial = false } = {}) {
         f.profile = {
             retailer: String(p.retailer || '').trim(), retailerUrl: String(p.retailerUrl || '').trim(),
             supplierSku: String(p.supplierSku || '').trim(), imageUrl: String(p.imageUrl || '').trim(),
+            description: String(p.description || '').trim().slice(0, 1000),
             leadTimeDays: lead, typicalCost: cost, packSize: pack, minOrderQty: moq,
             notes: String(p.notes || '').trim(),
         };

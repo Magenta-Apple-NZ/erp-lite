@@ -665,7 +665,7 @@ const Stock = (() => {
             </div>
             ${consumables.length ? `<table class="stk-table stk2-table"><thead><tr><th>Name</th><th>Unit</th><th>Retailer</th><th style="text-align:right">Unit price</th><th style="text-align:right">Qty per unit</th><th>Active</th></tr></thead>
             <tbody>${consumables.map(i => { const p = i.profile || {}; return `<tr class="stk2-rowlink" data-open="${escHtml(i.id)}">
-                <td>${p.imageUrl ? `<img class="stk2-thumb" src="${escHtml(p.imageUrl)}" alt="" loading="lazy" onerror="this.remove()">` : ''}<strong>${escHtml(i.name)}</strong></td>
+                <td>${p.imageUrl ? `<img class="stk2-thumb" src="${escHtml(p.imageUrl)}" alt="" loading="lazy" onerror="this.remove()">` : ''}<strong>${escHtml(i.name)}</strong>${p.supplierSku || p.description ? `<div class="cat-sub" style="margin:0">${[p.supplierSku, p.description].filter(Boolean).map(escHtml).join(' · ')}</div>` : ''}</td>
                 <td class="cat-sub">${escHtml(i.unitLabel || 'each')}</td>
                 <td>${p.retailerUrl ? `<a href="${escHtml(p.retailerUrl)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">${escHtml(p.retailer || 'Product')} ↗</a>` : escHtml(p.retailer || '—')}</td>
                 <td style="text-align:right;font-variant-numeric:tabular-nums">${money(p.typicalCost)}</td>
@@ -797,6 +797,8 @@ const Stock = (() => {
                     <div class="modal-field stk2-span2"><label>Image link <span class="modal-hint">URL — uploads aren't available, link to a hosted photo</span></label><input name="imageUrl" type="url" value="${escHtml(p.imageUrl || '')}" placeholder="https://…/photo.jpg"></div>
                     <div class="stk2-span2 stk2-img-preview" ${p.imageUrl ? '' : 'hidden'}><img src="${escHtml(p.imageUrl || '')}" alt=""></div>`
                     : `
+                    <div class="modal-field"><label>SKU <span class="modal-hint">supplier's code</span></label><input name="supplierSku" type="text" value="${escHtml(p.supplierSku || '')}" placeholder="e.g. PT-48-100"></div>
+                    <div class="modal-field"><label>Product description</label><input name="description" type="text" value="${escHtml(p.description || '')}" placeholder="What it is, size, colour…"></div>
                     <div class="modal-field"><label>Unit type <span class="modal-hint">what one of these is</span></label><input name="unitLabel" type="text" value="${escHtml(it.unitLabel || '')}" placeholder="box, roll, bag, sheet…" list="stk2-unit-types"><datalist id="stk2-unit-types"><option value="box"><option value="bag"><option value="roll"><option value="sheet"><option value="label"><option value="staple"><option value="pack"></datalist></div>
                     <div class="modal-field"><label>Retailer</label><input name="retailer" type="text" value="${escHtml(p.retailer || '')}" placeholder="e.g. Packaging House"></div>
                     <div class="modal-field"><label>Unit price <span class="modal-hint">$ ex GST</span></label><input name="unitPrice" type="number" step="0.0001" min="0" value="${p.typicalCost ?? ''}" placeholder="0.00"></div>
@@ -859,7 +861,8 @@ const Stock = (() => {
             } else {
                 const price = g('unitPrice');
                 payload.unitLabel = g('unitLabel');
-                payload.profile = { retailer: g('retailer'), retailerUrl: g('retailerUrl'), imageUrl: g('imageUrl'), typicalCost: price, packSize: g('packSize') };
+                payload.profile = { retailer: g('retailer'), retailerUrl: g('retailerUrl'), imageUrl: g('imageUrl'), typicalCost: price, packSize: g('packSize'),
+                                    supplierSku: g('supplierSku'), description: g('description') };
                 payload.unitValue = price; // valuation uses the purchase price
             }
             try {
