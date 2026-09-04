@@ -17,7 +17,8 @@ export const DEFAULT_SETTINGS = {
     defaultLeadTimeDays:   14,   // consumables: days from ordering to delivery
     defaultSafetyDays:     7,
     watchMultiplier:       1.25,
-    perDespatch:           [],
+    perDespatch:           [],   // pieces used once per order
+    perLabel:              [],   // pieces used per courier label (Aramex physical labels — stopgap until Posthaste)
     valuation:             { defaultAccountCode: '1440', gstBasis: 'ex' },
 };
 
@@ -104,15 +105,42 @@ export function piecesPerUnit(items) {
     return out;
 }
 
+// What ONE sales row (one order) consumes, per item: product kg from the
+// type buckets; consumables from the matrix (pieces ÷ pieces per unit), plus
+// the per-order and per-courier-label lists. Shared by consumption() and the
+// per-item ledger so both always agree.
+export function rowConsumption(r, { items, bom, settings, pieces, productBySalesKey }) {
+    const out = {};
+    const add = (id, q) => { if (id && q) out[id] = (out[id] || 0) + q; };
+    const addPieces = (id, q) => add(id, q / (pieces[id] || 1));
+    const d = String(r.date || '').slice(0, 10);
+    for (const [salesKey, field] of Object.entries(SALES_KG_FIELD)) add(productBySalesKey[salesKey], Number(r[field]) || 0);
+    const recipes = recipesFor(bom, d);
+    let hasSplit = false;
+    if (r.xkg && typeof r.xkg === 'object') {
+        hasSplit = true;
+        for (const [sku, t] of Object.entries(SKU_TABLE)) {
+            const kg = Number(r.xkg[t.xkg]) || 0;
+            if (!kg) continue;
+            const units = kg / t.kgPerUnit;
+            for (const e of recipes[sku] || []) addPieces(e.consumableId, units * (Number(e.qty) || 0));
+        }
+    }
+    for (const e of settings?.perDespatch || []) addPieces(e.consumableId, Number(e.qty) || 0);
+    const labels = Number(r.labels) || 0;
+    if (labels > 0) for (const e of settings?.perLabel || []) addPieces(e.consumableId, labels * (Number(e.qty) || 0));
+    return { byItem: out, hasSplit };
+}
+
+function consumptionContext(items, bom, settings) {
+    const productBySalesKey = {};
+    for (const it of items || []) if (it.class === 'product' && it.salesKey) productBySalesKey[it.salesKey] = it.id;
+    return { items, bom, settings, pieces: piecesPerUnit(items), productBySalesKey };
+}
+
 export function consumption({ rows, items, bom, settings, from, to }) {
     const byItem = {};
-    const pieces = piecesPerUnit(items);
-    const add = (id, q) => { if (id && q) byItem[id] = (byItem[id] || 0) + q; };
-    const addPieces = (id, q) => add(id, q / (pieces[id] || 1));
-    const productBySalesKey = {};
-    for (const it of items || []) {
-        if (it.class === 'product' && it.salesKey) productBySalesKey[it.salesKey] = it.id;
-    }
+    const ctx = consumptionContext(items, bom, settings);
     const epoch = settings?.stockEpoch;
     let rowCount = 0, rowsWithoutXkg = 0;
     for (const r of rows || []) {
@@ -120,29 +148,9 @@ export function consumption({ rows, items, bom, settings, from, to }) {
         if (!inRange(d, from, to)) continue;
         if (epoch && d < epoch) continue;
         rowCount++;
-        for (const [salesKey, field] of Object.entries(SALES_KG_FIELD)) {
-            add(productBySalesKey[salesKey], Number(r[field]) || 0);
-        }
-        const recipes = recipesFor(bom, d);
-        if (r.xkg && typeof r.xkg === 'object') {
-            for (const [sku, t] of Object.entries(SKU_TABLE)) {
-                const kg = Number(r.xkg[t.xkg]) || 0;
-                if (!kg) continue;
-                const units = kg / t.kgPerUnit;
-                for (const e of recipes[sku] || []) addPieces(e.consumableId, units * (Number(e.qty) || 0));
-            }
-        } else {
-            rowsWithoutXkg++;
-        }
-        // Courier consignments (unit counts recorded on the sales row).
-        if (r.svc && typeof r.svc === 'object') {
-            for (const sku of COURIER_SKUS) {
-                const n = Number(r.svc[sku]) || 0;
-                if (!n) continue;
-                for (const e of recipes[sku] || []) addPieces(e.consumableId, n * (Number(e.qty) || 0));
-            }
-        }
-        for (const e of settings?.perDespatch || []) addPieces(e.consumableId, Number(e.qty) || 0);
+        const rc = rowConsumption(r, ctx);
+        if (!rc.hasSplit) rowsWithoutXkg++;
+        for (const [id, q] of Object.entries(rc.byItem)) byItem[id] = (byItem[id] || 0) + q;
     }
     for (const k of Object.keys(byItem)) byItem[k] = r4(byItem[k]);
     return { byItem, rowCount, rowsWithoutXkg };
@@ -533,8 +541,7 @@ const daysInMonth = (y, m) => new Date(Date.UTC(y, m, 0)).getUTCDate(); // m is 
 // Share of kg sold by SKU, and orders per kg, over (from, to].
 export function salesMix(rows, from, to) {
     const kgBySku = {};
-    const svcUnits = {};
-    let totalKg = 0, kgWithSplit = 0, orders = 0;
+    let totalKg = 0, kgWithSplit = 0, orders = 0, labels = 0;
     for (const r of rows || []) {
         const d = String(r.date || '').slice(0, 10);
         if (!inRange(d, from, to)) continue;
@@ -547,17 +554,13 @@ export function salesMix(rows, from, to) {
                 if (kg > 0) { kgBySku[sku] = (kgBySku[sku] || 0) + kg; kgWithSplit += kg; }
             }
         }
-        if (r.svc && typeof r.svc === 'object') {
-            for (const sku of COURIER_SKUS) svcUnits[sku] = (svcUnits[sku] || 0) + (Number(r.svc[sku]) || 0);
-        }
+        labels += Number(r.labels) || 0;
     }
     const share = {};
     if (kgWithSplit > 0) for (const [sku, kg] of Object.entries(kgBySku)) share[sku] = kg / kgWithSplit;
     else share['PT-b-10'] = 1; // nothing to go on yet — assume 10 kg bundled
-    // Courier consignments per kg sold, by service.
-    const svcPerKg = {};
-    if (totalKg > 0) for (const [sku, n] of Object.entries(svcUnits)) if (n > 0) svcPerKg[sku] = n / totalKg;
-    return { share, svcPerKg, ordersPerKg: totalKg > 0 ? orders / totalKg : 0, orders, kg: r2(totalKg), from, to,
+    return { share, ordersPerKg: totalKg > 0 ? orders / totalKg : 0, labelsPerKg: totalKg > 0 ? labels / totalKg : 0,
+             orders, labels, kg: r2(totalKg), from, to,
              source: kgWithSplit > 0 ? 'sales-history' : 'assumed-10kg-bundled' };
 }
 
@@ -581,12 +584,8 @@ export function consumablesForecast(world, { monthlyAvg, today, months = 12, mix
         const unitsPerKg = sh / t.kgPerUnit;
         for (const e of recipes[sku] || []) addPerKg(e.consumableId, unitsPerKg * (Number(e.qty) || 0));
     }
-    for (const sku of COURIER_SKUS) {
-        const n = mix.svcPerKg?.[sku] || 0;
-        if (!n) continue;
-        for (const e of recipes[sku] || []) addPerKg(e.consumableId, n * (Number(e.qty) || 0));
-    }
     for (const e of s.perDespatch || []) addPerKg(e.consumableId, mix.ordersPerKg * (Number(e.qty) || 0));
+    for (const e of s.perLabel || []) addPerKg(e.consumableId, (mix.labelsPerKg || 0) * (Number(e.qty) || 0));
 
     // The next N months; the current month is pro-rated from today.
     const [ty, tm, td] = today.split('-').map(Number);
@@ -627,6 +626,49 @@ export function consumablesForecast(world, { monthlyAvg, today, months = 12, mix
     });
     return { asOf: today, stockEpoch: s.stockEpoch, monthlyAvg: avg, mix,
              months: list.map(m => ({ ym: m.ym, kgAvg: r2(m.kgAvg), fraction: Math.round(m.fraction * 1000) / 1000 })), items };
+}
+
+// ── Per-item ledger (audit trail) ────────────────────────────────────────
+// Every debit and credit behind an item's on hand since its baseline, with
+// a running balance: the count, each order (via Sales History), each
+// shipment received, each manual movement. Built from the same functions
+// the levels use, so the closing balance always equals onHand.
+export function ledgerFor(item, world, asOf) {
+    const baseline = baselineFor(item.id, world.counts, asOf);
+    if (!baseline) return { itemId: item.id, unit: item.unit, baseline: null, entries: [], closing: null };
+    const from = baseline.date, to = asOf;
+    const epoch = world.settings?.stockEpoch;
+    const ctx = consumptionContext(world.items, world.bom, world.settings);
+    const entries = [];
+    entries.push({ date: from, order: 0, kind: 'count', ref: baseline.countId, label: baseline.countLabel || 'Count', qty: baseline.qty, note: 'Baseline (physical count)' });
+    if (item.id === SHIPMENT_PRODUCT_ID) {
+        const counted = new Set((baseline.lots || []).map(l => l.shipmentId).filter(Boolean));
+        for (const r of receipts({ shipments: world.shipments, from, to, epoch })) {
+            if (counted.has(r.shipmentId)) continue;
+            entries.push({ date: r.date, order: 1, kind: 'receipt', ref: r.shipmentId, label: r.note, qty: r.qty, note: r.unitCost != null ? `Shipment landed · $${r.unitCost.toFixed(2)}/kg ${r.costBasis || ''}`.trim() : 'Shipment landed' });
+        }
+    }
+    for (const m of world.movements?.[item.id] || []) {
+        if (!inRange(m.date, from, to)) continue;
+        entries.push({ date: m.date, order: 2, kind: m.type, ref: m.id, label: m.type === 'receipt' ? 'Delivery received' : m.type[0].toUpperCase() + m.type.slice(1), qty: Number(m.qty) || 0, note: m.reason || '', by: m.createdBy || null });
+    }
+    for (const r of world.sales || []) {
+        const d = String(r.date || '').slice(0, 10);
+        if (!inRange(d, from, to) || (epoch && d < epoch)) continue;
+        const q = rowConsumption(r, ctx).byItem[item.id] || 0;
+        if (!q) continue;
+        entries.push({ date: d, order: 3, kind: 'sale', ref: r.id, label: r.id, qty: -q,
+                       note: [r.customer, r.branch].filter(Boolean).join(' · ') + (r.invoice ? ` · ${r.invoice}` : '') + (r.labels ? ` · ${r.labels} label${r.labels === 1 ? '' : 's'}` : '') });
+    }
+    entries.sort((a, b) => a.date.localeCompare(b.date) || a.order - b.order || String(a.ref).localeCompare(String(b.ref)));
+    let bal = 0;
+    for (const e of entries) {
+        bal = r4(bal + e.qty);
+        e.qty = r4(e.qty);
+        e.balance = r2(bal);
+        delete e.order;
+    }
+    return { itemId: item.id, unit: item.unit, baseline: { date: from, qty: baseline.qty, countId: baseline.countId }, asOf, entries, closing: r2(bal) };
 }
 
 // Enviroware-format valuation rows for a committed count.

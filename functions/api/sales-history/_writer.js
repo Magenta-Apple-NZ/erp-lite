@@ -115,13 +115,14 @@ export function rowFromOrder(order, itemsMap = null) {
     if (buckets.bundles === 0 && buckets.loose === 0 && buckets.ecoTies === 0) {
         return null;
     }
-    // Courier service lines (FR-01..FR-04) as unit counts, so the stock
-    // engine can burn courier consumables (labels, satchels) per consignment.
-    // Freight lines (FR-05+) are deliberately not recorded.
-    const svc = {};
-    for (const l of order.lines) {
-        const sku = String(l?.sku || '').toUpperCase();
-        if (/^FR-0[1-4]$/.test(sku)) svc[sku] = (svc[sku] || 0) + (Number(l.quantity) || 0);
+    // Courier labels this order needs — courier consumables (labels, satchels)
+    // burn per label, not per product. Labels actually created win; otherwise
+    // the labels invoiced on the courier lines (FR-01..04). Freight is not a label.
+    let labels = Number(order.courier?.boxesOrdered) || 0;
+    if (!labels) {
+        for (const l of order.lines) {
+            if (/^FR-0[1-4]$/.test(String(l?.sku || '').toUpperCase())) labels += Number(l.quantity) || 0;
+        }
     }
     // Bucket by the NZ-local calendar date, not the raw UTC slice of the
     // timestamp — otherwise an order created NZ-evening / early-morning (UTC+12/13)
@@ -146,7 +147,7 @@ export function rowFromOrder(order, itemsMap = null) {
         oneKg:     sizes.oneKg,
         tenKg:     sizes.tenKg,
         ...(hasCross ? { xkg: cross } : {}),
-        ...(Object.keys(svc).length ? { svc } : {}),
+        ...(labels > 0 ? { labels } : {}),
     };
 }
 

@@ -30,15 +30,17 @@ export async function onRequestPut({ env, request }) {
                 next[k] = n;
             }
         }
-        if (body.perDespatch !== undefined) {
-            if (!Array.isArray(body.perDespatch)) return errResponse('perDespatch must be an array', 400);
+        // Per-order and per-courier-label consumable lists (pieces).
+        for (const k of ['perDespatch', 'perLabel']) {
+            if (body[k] === undefined) continue;
+            if (!Array.isArray(body[k])) return errResponse(k + ' must be an array', 400);
             const items = await loadItems(env);
             const consumables = new Set(items.filter(i => i.class === 'consumable').map(i => i.id));
-            for (const e of body.perDespatch) {
-                if (!e || !consumables.has(e.consumableId)) return errResponse('perDespatch references unknown consumable: ' + (e && e.consumableId), 400);
-                if (!(Number(e.qty) >= 0)) return errResponse('perDespatch qty must be ≥ 0', 400);
+            for (const e of body[k]) {
+                if (!e || !consumables.has(e.consumableId)) return errResponse(k + ' references unknown consumable: ' + (e && e.consumableId), 400);
+                if (!(Number(e.qty) >= 0)) return errResponse(k + ' qty must be ≥ 0', 400);
             }
-            next.perDespatch = body.perDespatch.map(e => ({ consumableId: e.consumableId, qty: Number(e.qty) }));
+            next[k] = body[k].filter(e => Number(e.qty) > 0).map(e => ({ consumableId: e.consumableId, qty: Number(e.qty) }));
         }
         if (body.valuation !== undefined && typeof body.valuation === 'object') {
             next.valuation = { ...current.valuation, ...body.valuation };

@@ -16,6 +16,7 @@
 //           labelBase64 (or null), courier } and persists `courier` on the order.
 import { jsonResponse, errResponse } from '../_xero.js';
 import { createShipment, getLabelPdf, isMockMode } from '../_courier.js';
+import { syncSalesHistory } from '../sales-history/_writer.js';
 
 // GET /api/courier/label?orderId=PKS-0001 — refetch the label PDF for an
 // order's existing consignment (reprint). Does NOT create a new consignment.
@@ -140,6 +141,8 @@ export async function onRequestPost({ env, request }) {
                 + (invoiced != null ? `, ${invoiced} invoiced${invoiceMismatch ? ' — MISMATCH' : ''}` : ''),
         });
         await env.ORDERS_KV.put('order:' + orderId, JSON.stringify(order));
+        // Labels created feed courier-consumable usage on the sales row.
+        await syncSalesHistory(env, order);
 
         return jsonResponse({ ...courier, labelBase64, mock: isMockMode(env) });
     } catch (e) {

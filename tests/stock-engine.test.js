@@ -486,16 +486,37 @@ test('matrix cells are pieces; Quantity per unit converts to stock units (2 stap
     assert.equal(c2['staple'], 10);
 });
 
-test('courier service rows burn per consignment from the sales row; freight never does', () => {
-    const its = [...items, { id: 'label-a4', name: 'Courier label', class: 'consumable', unit: 'each', active: true, sortOrder: 150, profile: { leadTimeDays: 5 }, reorder: { mode: 'auto' } }];
-    const b = { versions: [{ effectiveFrom: '2026-10-01', recipes: { 'FR-02': [{ consumableId: 'label-a4', qty: 1 }], 'FR-05': [{ consumableId: 'label-a4', qty: 99 }] } }] };
-    const row = { ...saleLoose5, svc: { 'FR-02': 3, 'FR-05': 1 } };
-    const c = consumption({ rows: [row], items: its, bom: b, settings: { ...settings, perDespatch: [] }, from: null, to: '2026-10-31' }).byItem;
-    assert.equal(c['label-a4'], 3);
+test('courier consumables burn per label on the order (settings.perLabel), never via the product matrix', () => {
+    const its = [...items, { id: 'label-a4', name: 'Aramex label', class: 'consumable', unit: 'each', active: true, sortOrder: 150, profile: { leadTimeDays: 5 }, reorder: { mode: 'auto' } }];
+    const st = { ...settings, perDespatch: [], perLabel: [{ consumableId: 'label-a4', qty: 1 }] };
+    const row = { ...saleLoose5, labels: 4 };
+    const c = consumption({ rows: [row], items: its, bom, settings: st, from: null, to: '2026-10-31' }).byItem;
+    assert.equal(c['label-a4'], 4, 'an order needing 4 labels uses 4');
+    assert.equal(consumption({ rows: [saleLoose5], items: its, bom, settings: st, from: null, to: '2026-10-31' }).byItem['label-a4'], undefined, 'no labels → nothing');
     const m = salesMix([row], null, '2026-10-31');
-    assert.equal(m.svcPerKg['FR-02'], 3 / 50);
-    assert.equal(m.svcPerKg['FR-05'], undefined);
+    assert.equal(m.labelsPerKg, 4 / 50);
+    // Forecast picks it up: 1,000 kg/month × 0.08 labels/kg = 80 labels/month.
+    const cf = consumablesForecast({ ...world({ sales: [row], items: its, counts: [{ ...opening, lines: [...opening.lines, { itemId: 'label-a4', counted: true, countedQty: 500 }] }] }), settings: st },
+                                   { monthlyAvg: Array(12).fill(1000), today: '2026-10-31' });
+    assert.equal(cf.items.find(i => i.id === 'label-a4').scenarios.avg.months[1].usage, 80);
 });
+
+test('the item ledger lists every in and out and closes at the same figure as on hand', () => {
+    const w = world({ movements: { 'box-10kg': [{ id: 'w1', itemId: 'box-10kg', date: '2026-10-12', qty: -10, type: 'wastage', reason: 'Crushed' }, { id: 'r1', itemId: 'box-10kg', date: '2026-10-20', qty: 500, type: 'receipt', reason: 'Delivery' }] } });
+    const lg = ledgerFor(items[3], w, '2026-10-31');
+    assert.deepEqual(lg.entries.map(e => [e.date, e.kind, e.qty]), [
+        ['2026-10-01', 'count', 400], ['2026-10-03', 'sale', -5], ['2026-10-05', 'sale', -2], ['2026-10-12', 'wastage', -10], ['2026-10-20', 'receipt', 500],
+    ]);
+    assert.equal(lg.closing, 883);
+    assert.equal(lg.closing, onHandFor(items[3], w, '2026-10-31').onHand);
+    assert.equal(lg.entries[1].ref, 'PKS-0001');
+    // Bundled: opening count then a landed shipment, less sales.
+    const b = ledgerFor(items[0], world({ sales: [{ id: 'PKS-9', date: '2026-10-15', bundlesKg: 100, looseKg: 0, ecoTiesKg: 0, xkg: { b10: 100 } }] }), '2026-10-31');
+    assert.deepEqual(b.entries.map(e => e.kind), ['count', 'receipt', 'sale']);
+    assert.equal(b.closing, 5000 + 1000 - 100);
+    assert.equal(ledgerFor(items[0], world({ counts: [] }), '2026-10-31').baseline, null);
+});
+import { ledgerFor } from '../functions/api/stock/_engine.js';
 
 test('a consumables delivery is a positive receipt movement in units', () => {
     const w = world({ movements: { 'box-10kg': [{ id: 'r1', itemId: 'box-10kg', date: '2026-10-20', qty: 500, type: 'receipt' }] } });
