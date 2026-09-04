@@ -82,7 +82,7 @@ const Stock = (() => {
         <div class="view-header">
             <div>
                 <h1 class="view-title">Warehouse</h1>
-                <p class="view-subtitle">Stock on hand per item, reorder alerts, and physical counts. Items, packaging recipes and settings live in <a href="#admin">Catalogue → Stock</a>.</p>
+                <p class="view-subtitle">Stock on hand per item, reorder alerts, and physical counts. Items, packaging recipes and settings live in <a href="#admin">Settings → Stock</a>.</p>
             </div>
         </div>
         <div class="imp-tabs">
@@ -360,7 +360,7 @@ const Stock = (() => {
     }
 
     function levelsTable(items, lv) {
-        if (!items.length) return '<p class="cat-sub">No consumables yet — add them under Catalogue → Stock.</p>';
+        if (!items.length) return '<p class="cat-sub">No consumables yet — add them under Settings → Stock.</p>';
         return `<div class="stk-table-wrap"><table class="stk-table stk2-table stk2-levels">
             <thead><tr><th>Item</th><th style="min-width:160px">On hand</th><th style="text-align:right">Qty</th><th style="text-align:right">Cover</th><th style="text-align:right">Reorder at</th><th style="text-align:right">Lead</th><th>Status</th><th style="text-align:right">On order</th></tr></thead>
             <tbody>${items.map(i => `<tr class="stk2-row--${escHtml(i.status)}">
@@ -645,7 +645,7 @@ const Stock = (() => {
             <div class="cat-section-head"><div><h2 class="cat-title">Products</h2><p class="cat-sub" style="margin:0">Each depletes from its Sales History bucket. Prime Tie Bundled is costed from its shipments (FIFO); Loose and eco Ties carry their own cost per kg.</p></div></div>
             <table class="stk-table stk2-table"><thead><tr><th>Name</th><th>Sales bucket</th><th style="text-align:right">Cost $/kg</th><th>Active</th><th></th></tr></thead>
             <tbody>${products.map(i => `<tr class="stk2-rowlink" data-open="${escHtml(i.id)}">
-                <td><strong>${escHtml(i.name)}</strong></td><td class="cat-sub">${escHtml(i.salesKey || '—')}</td>
+                <td>${i.profile?.imageUrl ? `<img class="stk2-thumb" src="${escHtml(i.profile.imageUrl)}" alt="" loading="lazy" onerror="this.remove()">` : ''}<strong>${escHtml(i.name)}</strong></td><td class="cat-sub">${escHtml(i.salesKey || '—')}</td>
                 <td style="text-align:right;font-variant-numeric:tabular-nums" title="${escHtml(i.id === SHIPMENT_PRODUCT_ID ? (i.unitValueSource || 'No costed shipment yet') : 'Own cost per kg (edit in the popover)')}">${money(i.unitValue)}${i.id === SHIPMENT_PRODUCT_ID ? (i.unitValueSource ? ` <span class="cat-sub">${escHtml(i.unitValueSource.split(' · ')[0])}</span>` : '') : ' <span class="cat-sub">own</span>'}</td>
                 <td>${i.active === false ? 'No' : 'Yes'}</td>
                 <td style="text-align:right"><button class="btn-secondary btn-sm" data-open="${escHtml(i.id)}">Edit</button></td></tr>`).join('')}</tbody></table>
@@ -781,8 +781,12 @@ const Stock = (() => {
                     <div class="modal-field stk2-span2"><label>Name</label><input name="name" type="text" required value="${escHtml(it.name || '')}" autofocus></div>
                     ${prod ? `
                     ${it.id === SHIPMENT_PRODUCT_ID
-                        ? `<div class="modal-field"><label>Cost $/kg <span class="modal-hint">from shipments · FIFO</span></label><input type="text" value="${it.unitValue != null ? '$' + fmtNum(it.unitValue, 2) + (it.unitValueSource ? ' · ' + it.unitValueSource.split(' · ')[0] : '') : 'No costed shipment yet'}" disabled></div>`
-                        : `<div class="modal-field"><label>Cost $/kg <span class="modal-hint">ex GST</span></label><input name="unitValue" type="number" step="0.01" min="0" value="${it.unitValue ?? ''}" placeholder="0.00"></div>`}`
+                        ? `<div class="modal-field"><label>Weighted cost $/kg <span class="modal-hint">FIFO · from shipments</span></label><input type="text" id="stk2-bundled-cost" value="Loading…" disabled></div>
+                           <div class="modal-field"><label>Stock on hand <span class="modal-hint">count − sales + landed ± adjustments</span></label><input type="text" id="stk2-bundled-onhand" value="Loading…" disabled></div>
+                           <div class="stk2-span2" id="stk2-bundled-stock"><p class="cat-sub">Loading shipment lots…</p></div>`
+                        : `<div class="modal-field"><label>Cost $/kg <span class="modal-hint">ex GST</span></label><input name="unitValue" type="number" step="0.01" min="0" value="${it.unitValue ?? ''}" placeholder="0.00"></div>`}
+                    <div class="modal-field stk2-span2"><label>Image link <span class="modal-hint">URL — uploads aren't available, link to a hosted photo</span></label><input name="imageUrl" type="url" value="${escHtml(p.imageUrl || '')}" placeholder="https://…/photo.jpg"></div>
+                    <div class="stk2-span2 stk2-img-preview" ${p.imageUrl ? '' : 'hidden'}><img src="${escHtml(p.imageUrl || '')}" alt=""></div>`
                     : `
                     <div class="modal-field"><label>Retailer</label><input name="retailer" type="text" value="${escHtml(p.retailer || '')}" placeholder="e.g. Packaging House"></div>
                     <div class="modal-field"><label>Unit price <span class="modal-hint">$ ex GST</span></label><input name="unitPrice" type="number" step="0.0001" min="0" value="${p.typicalCost ?? ''}" placeholder="0.00"></div>
@@ -799,6 +803,29 @@ const Stock = (() => {
             </form>
         </div>`;
         document.body.appendChild(overlay);
+        // Prime Tie Bundled: live stock from the engine — on hand, weighted
+        // cost, and the breakdown by shipment lot (pulling each lot's $/kg).
+        if (it.id === SHIPMENT_PRODUCT_ID) {
+            api('/api/stock/levels').then(lv => {
+                const b = (lv.items || []).find(x => x.id === it.id);
+                const costEl = overlay.querySelector('#stk2-bundled-cost');
+                const ohEl = overlay.querySelector('#stk2-bundled-onhand');
+                const box = overlay.querySelector('#stk2-bundled-stock');
+                if (!b || lv.beforeEpoch) { costEl.value = '—'; ohEl.value = 'Before the stock epoch'; box.innerHTML = ''; return; }
+                costEl.value = b.avgCost != null ? `$${fmtNum(b.avgCost, 2)}/kg` : (it.unitValue != null ? `$${fmtNum(it.unitValue, 2)}/kg · latest shipment` : 'No costed shipment yet');
+                ohEl.value = b.onHand != null ? `${fmtNum(b.onHand)} kg · $${fmtNum(b.value || 0)}` : 'Unknown — no committed count yet';
+                const lots = (b.lots || []).filter(l => l.remaining > 0);
+                const pend = (lv.pendingShipments || []).filter(p => p.itemId === it.id);
+                box.innerHTML = `
+                    ${lots.length ? `<table class="stk2-sub-table" style="width:100%;margin:0.25rem 0 0.5rem"><thead><tr><th>Shipment</th><th style="text-align:right">On hand</th><th style="text-align:right">$/kg</th><th style="text-align:right">Value</th></tr></thead>
+                    <tbody>${lots.map(l => `<tr><td>${escHtml(l.note)}<span class="cat-sub"> · ${fmtDate(l.date)}</span></td><td style="text-align:right;font-variant-numeric:tabular-nums">${fmtNum(l.remaining)} kg</td><td style="text-align:right;font-variant-numeric:tabular-nums">${l.unitCost != null ? '$' + fmtNum(l.unitCost, 2) : '—'}${l.basis && l.basis !== 'landed' && l.basis !== 'counted' ? ` <span class="cat-sub">${escHtml(l.basis)}</span>` : ''}</td><td style="text-align:right;font-variant-numeric:tabular-nums">$${fmtNum(l.value)}</td></tr>`).join('')}</tbody></table>`
+                    : `<p class="cat-sub" style="margin:0.25rem 0 0.5rem">${b.onHand == null ? 'Commit a count (sub-counted by shipment) to see the breakdown.' : 'No shipment lots remaining.'}</p>`}
+                    ${pend.length ? `<p class="cat-sub" style="margin:0 0 0.5rem">On order (not in on hand): ${pend.map(p => `<strong>${escHtml(p.note)}</strong> ${fmtNum(p.kg)} kg${p.unitCost != null ? ' @ $' + fmtNum(p.unitCost, 2) : ''} · ${escHtml(p.status)} · due ${fmtDate(p.eta)}`).join(' · ')}. A shipment counts as arrived only once its final milestone (Arrived in Tauranga) is ticked.</p>` : ''}
+                    <p class="cat-sub" style="margin:0">Stock on hand isn't typed here — it moves through a <a href="#warehouse" onclick="document.querySelector('.modal-overlay')?.remove()">count</a> (sets the baseline per shipment) or an <a href="#warehouse" onclick="document.querySelector('.modal-overlay')?.remove()">adjustment / wastage</a> entry. ${b.baselineDate ? `Last count ${fmtDate(b.baselineDate)}.` : ''}</p>`;
+            }).catch(e => {
+                overlay.querySelector('#stk2-bundled-stock').innerHTML = `<p class="cat-sub">${escHtml(e.message)}</p>`;
+            });
+        }
         const close = () => { overlay.remove(); document.removeEventListener('keydown', onKey); };
         const onKey = e => { if (e.key === 'Escape') close(); };
         document.addEventListener('keydown', onKey);
@@ -818,6 +845,7 @@ const Stock = (() => {
             if (!isNew) payload.active = g('active') !== 'false';
             if (prod) {
                 if (it.id !== SHIPMENT_PRODUCT_ID) payload.unitValue = g('unitValue'); // own cost per kg
+                payload.profile = { ...(it.profile || {}), imageUrl: g('imageUrl') };
             } else {
                 const price = g('unitPrice');
                 payload.profile = { retailer: g('retailer'), retailerUrl: g('retailerUrl'), imageUrl: g('imageUrl'), typicalCost: price, packSize: g('packSize') };

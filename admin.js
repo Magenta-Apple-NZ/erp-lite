@@ -729,8 +729,8 @@ const Admin = (() => {
         container.innerHTML = `
         <div class="view-header">
             <div>
-                <h1 class="view-title">Catalogue</h1>
-                <p class="view-subtitle">Manage product pricing, store locations, printers, sales data exports, and stock items.</p>
+                <h1 class="view-title">Settings</h1>
+                <p class="view-subtitle">Pricing, stores, printers, sales data, payroll and stock.</p>
             </div>
         </div>
         <div class="imp-tabs">

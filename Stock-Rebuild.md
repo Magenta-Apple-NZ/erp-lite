@@ -246,3 +246,6 @@ Steps 1–4 ship before 1 October so the opening count has somewhere to go.
 - **Consumables matrix** replaces "packaging recipes": rows are the items-sheet products minus freight (`/api/stock/bom` → `products`), keyed by SKU. Only SKUs with a type×size mapping (`SKU_TABLE`) actually consume; others are shown as "no sales mapping yet".
 - **Consumable fields** stripped to Retailer, Unit price, Quantity per unit, Image link, Link to product (+ name, active). Lead time is a single engine setting (`defaultLeadTimeDays`, default 14).
 - **Stock nav item** added (Warehouse → Dashboard / Counts had no link before).
+- **Testing from 1 Sep 2026.** Default `stockEpoch` is now `2026-09-01` (editable under Settings → Stock → Engine settings). Go-live count stays 1 Oct.
+- **Counted shipments never double up.** `stockAnchor()` returns `countedShipmentIds`; the forecast flags those shipments `inCount` and `computeForecast` skips them as incoming, and the engine skips their receipt. "Arrived" = final milestone (Arrived in Tauranga) ticked.
+- **Catalogue renamed Settings.** Prime Tie Bundled's popover shows on hand, weighted FIFO cost, the per-shipment lot breakdown and on-order shipments; stock changes only via a count or an adjustment. Products can carry an image link (URL only — no blob storage).

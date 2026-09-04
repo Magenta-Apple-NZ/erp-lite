@@ -12,7 +12,7 @@
 import { addDays } from '../_dates.js';
 
 export const DEFAULT_SETTINGS = {
-    stockEpoch:            '2026-10-01',
+    stockEpoch:            '2026-09-01',   // testing from 1 Sep 2026; go-live count 1 Oct
     consumptionWindowDays: 28,
     defaultLeadTimeDays:   14,   // consumables: days from ordering to delivery
     defaultSafetyDays:     7,
@@ -469,6 +469,27 @@ export function commitCount(count, world, { committedAt, committedBy } = {}) {
                  unitValue, accountCode: item.accountCode || world.settings?.valuation?.defaultAccountCode || '' };
     });
     return { ...count, lines, status: 'committed', committedAt: committedAt || null, committedBy: committedBy || null };
+}
+
+// The single anchor every stock view shares (Warehouse dashboard, Stock
+// Trajectory, Monthly Forecast): the latest committed count for the
+// shipment-fed product, plus on hand now and the shipments that count
+// already contains (so nothing adds them a second time). Null before the
+// first committed count.
+export function stockAnchor(world, today) {
+    const item = (world.items || []).find(i => i.id === SHIPMENT_PRODUCT_ID);
+    if (!item) return null;
+    const base = baselineFor(item.id, world.counts, today);
+    if (!base) return null;
+    const now = onHandFor(item, world, today);
+    const fifo = fifoFor(item, world, today);
+    return {
+        source: 'count', kg: base.qty, date: base.date, countId: base.countId, label: base.countLabel || 'Stock count',
+        countedShipmentIds: (base.lots || []).map(l => l.shipmentId).filter(Boolean),
+        onHandNow: now.onHand, asOf: today,
+        soldSince: now.consumed, receivedSince: now.receipts, adjustedSince: now.movements,
+        value: fifo ? fifo.value : null, avgCost: fifo ? fifo.avgCost : null,
+    };
 }
 
 // Enviroware-format valuation rows for a committed count.

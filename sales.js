@@ -209,7 +209,7 @@ const SalesView = (() => {
         if (!sd.hasData) {
             return `<p style="color:#94a3b8;font-size:0.85rem;padding:1rem 0;line-height:1.5">
                 No size data yet. Add <strong>1kg</strong> and <strong>10kg</strong> volume columns to the
-                sales-history seed (see <a href="#admin">Catalogue → Sales History</a>) and re-seed, and this
+                sales-history seed (see <a href="#admin">Settings → Sales History</a>) and re-seed, and this
                 chart will populate.</p>`;
         }
         const id = 'product-size-chart';
@@ -401,7 +401,7 @@ const SalesView = (() => {
             bodyEl.innerHTML = `
             <div class="cat-section" style="text-align:center;padding:2rem">
                 <p class="cat-sub">Sales history is empty.</p>
-                <p class="cat-sub">Seed the table from <a href="#admin">Catalogue → Sales History</a> with the historical CSV.</p>
+                <p class="cat-sub">Seed the table from <a href="#admin">Settings → Sales History</a> with the historical CSV.</p>
             </div>`;
             return;
         }
@@ -791,7 +791,7 @@ const SalesView = (() => {
         <div class="view-header">
             <div>
                 <h1 class="view-title">Sales History</h1>
-                <p class="view-subtitle">Historical sales by month and year. Seeded from the legacy CSV; live Hub orders append on Xero push. Manage from <a href="#admin">Catalogue → Sales Data</a>. Stock levels and counts are in <a href="#warehouse">Warehouse</a>.</p>
+                <p class="view-subtitle">Historical sales by month and year. Seeded from the legacy CSV; live Hub orders append on Xero push. Manage from <a href="#admin">Settings → Sales Data</a>. Stock levels and counts are in <a href="#warehouse">Warehouse</a>.</p>
             </div>
         </div>
         <div id="sales-body"></div>`;

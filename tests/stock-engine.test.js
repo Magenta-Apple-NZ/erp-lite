@@ -406,6 +406,28 @@ test('committing a sub-counted line sums the lots, snapshots each $/kg and value
     assert.equal(line.unitValue, Math.round(((1500 * 9.5 + 500 * 8.98) / 2000) * 10000) / 10000);
 });
 
+// ── One anchor for every stock view (§ addendum) ─────────────────────────
+import { stockAnchor } from '../functions/api/stock/_engine.js';
+
+test('stockAnchor hands the forecast the committed count, on hand now, and the shipments already inside the count', () => {
+    assert.equal(stockAnchor(world({ counts: [] }), '2026-10-31'), null, 'no committed count → no anchor (manual fallback)');
+    const ship41 = { ...shipArrived, unitCost: 9.5, costBasis: 'landed' };
+    const count = { id: 'cnt_sub', label: 'Opening', date: '2026-10-01', status: 'committed', committedAt: '2026-10-01T05:00:00Z', lines: [
+        { itemId: 'prime-tie-bundled', counted: true, countedQty: 1500, lots: [{ shipmentId: 'ship-41', label: 'Shipment #41', kg: 1500, unitCost: null }] },
+    ] };
+    const sale = { id: 's', date: '2026-10-10', bundlesKg: 100, looseKg: 0, ecoTiesKg: 0, xkg: { b10: 100 } };
+    const a = stockAnchor(world({ counts: [count], shipments: [ship41, shipInTransit], sales: [sale] }), '2026-10-31');
+    assert.equal(a.source, 'count');
+    assert.equal(a.kg, 1500);
+    assert.equal(a.date, '2026-10-01');
+    assert.deepEqual(a.countedShipmentIds, ['ship-41']);
+    assert.equal(a.receivedSince, 0, '#41 "arrived" on 10 Oct but was already in the 1 Oct count');
+    assert.equal(a.soldSince, 100);
+    assert.equal(a.onHandNow, 1400);
+    assert.equal(a.avgCost, 9.5);
+    assert.equal(a.value, 1400 * 9.5);
+});
+
 test('renaming an item changes nothing about its stock', () => {
     const renamed = items.map(i => i.id === 'box-10kg' ? { ...i, name: 'Carton (10 kilo)' } : i);
     const a = computeLevels(world(), '2026-10-31').items.find(i => i.id === 'box-10kg');

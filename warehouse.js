@@ -196,6 +196,7 @@ const Warehouse = (() => {
             const incomingShips = shipments.filter(s => {
                 const d = shipArrivalDate(s);
                 if (!d || d.slice(0, 7) !== ym) return false;
+                if (s.inCount) return false; // already on the shelf in the committed count
                 if (isStkMonth && d < stocktake) return false;
                 return true;
             });
