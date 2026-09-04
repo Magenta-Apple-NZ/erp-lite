@@ -7,26 +7,28 @@
 import { jsonResponse, errResponse } from '../_xero.js';
 import { isYmd } from '../_dates.js';
 import { loadBom, saveBom, loadItems } from './_store.js';
-import { SKU_TABLE } from './_engine.js';
+import { SKU_TABLE, COURIER_SKUS } from './_engine.js';
 import { loadItemsMap } from '../catalog/items.js';
 
-const isFreight = id => /^FR-/i.test(String(id || ''));
+// Courier services (FR-01..04) are matrix rows; freight (FR-05+) never is.
+const courier = new Set(COURIER_SKUS.map(s => s.toUpperCase()));
+const isFreight = id => /^FR-/i.test(String(id || '')) && !courier.has(String(id).toUpperCase());
 
-// Sellable products from the sheet. `tracked` = the engine can expand this
-// SKU's recipe from sales (it has a type×size mapping); others are shown but
-// never consume anything until they're mapped.
+// Sellable products from the sheet (+ courier services). `tracked` = the
+// engine can expand this row from sales (type×size mapping, or a courier
+// count on the sales row); others are shown but never consume anything.
 async function loadProducts(env) {
-    const tracked = new Set(Object.keys(SKU_TABLE).map(s => s.toUpperCase()));
+    const tracked = new Set([...Object.keys(SKU_TABLE), ...COURIER_SKUS].map(s => s.toUpperCase()));
     let products = [];
     try {
         const map = await loadItemsMap(env);
         products = [...map.values()]
             .filter(i => i.id && !isFreight(i.id))
-            .map(i => ({ sku: i.id, name: i.name || i.id, tracked: tracked.has(i.id.toUpperCase()) }));
+            .map(i => ({ sku: i.id, name: i.name || i.id, tracked: tracked.has(i.id.toUpperCase()), courier: courier.has(i.id.toUpperCase()) }));
     } catch { /* sheet unreachable — fall back to the mapped SKUs */ }
-    if (!products.length) products = Object.keys(SKU_TABLE).map(sku => ({ sku, name: sku, tracked: true }));
-    // Mapped SKUs first, in table order; the rest alphabetical.
-    const order = Object.keys(SKU_TABLE).map(s => s.toUpperCase());
+    if (!products.length) products = [...Object.keys(SKU_TABLE).map(sku => ({ sku, name: sku, tracked: true })), ...COURIER_SKUS.map(sku => ({ sku, name: sku, tracked: true, courier: true }))];
+    // Mapped SKUs first, in table order, then courier services, then the rest.
+    const order = [...Object.keys(SKU_TABLE), ...COURIER_SKUS].map(s => s.toUpperCase());
     products.sort((a, b) => {
         const ia = order.indexOf(a.sku.toUpperCase()), ib = order.indexOf(b.sku.toUpperCase());
         if (ia >= 0 || ib >= 0) return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib);

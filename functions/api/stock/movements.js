@@ -7,7 +7,8 @@ import { jsonResponse, errResponse } from '../_xero.js';
 import { isYmd, nzToday } from '../_dates.js';
 import { loadMovements, appendMovement, loadItem, loadSettings, whoami, newId } from './_store.js';
 
-const TYPES = ['adjustment', 'wastage', 'correction'];
+// receipt = a consumables delivery arrived (always +); wastage always −.
+const TYPES = ['receipt', 'adjustment', 'wastage', 'correction'];
 
 export async function onRequestGet({ env, request }) {
     try {
@@ -39,6 +40,7 @@ export async function onRequestPost({ env, request }) {
         let qty = Number(body.qty);
         if (!isFinite(qty) || qty === 0) return errResponse('qty must be a non-zero number', 400);
         if (type === 'wastage') qty = -Math.abs(qty); // wastage always reduces stock
+        if (type === 'receipt') qty = Math.abs(qty);  // a delivery always adds
         const mov = {
             id: newId('mov'),
             itemId: item.id, unit: item.unit,

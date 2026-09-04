@@ -474,6 +474,34 @@ test('order-now fires when the buffer has already passed', () => {
     assert.ok(box.scenarios.avg.reorderBy <= '2026-10-31');
 });
 
+// ── Pieces vs units, courier rows, receipts ──────────────────────────────
+test('matrix cells are pieces; Quantity per unit converts to stock units (2 staples from a 1,000 box = 0.002 boxes)', () => {
+    const its = items.map(i => i.id === 'staple' ? { ...i, unitLabel: 'box', profile: { ...i.profile, packSize: 1000 } } : i);
+    const b = { versions: [{ effectiveFrom: '2026-10-01', recipes: { 'PT-l-10': [{ consumableId: 'staple', qty: 2 }] } }] };
+    // 5 × PT-l-10 → 10 staples → 0.01 boxes
+    const c = consumption({ rows: [saleLoose5], items: its, bom: b, settings: { ...settings, perDespatch: [] }, from: null, to: '2026-10-31' }).byItem;
+    assert.equal(c['staple'], 0.01);
+    // Without a pack size a piece is a unit.
+    const c2 = consumption({ rows: [saleLoose5], items, bom: b, settings: { ...settings, perDespatch: [] }, from: null, to: '2026-10-31' }).byItem;
+    assert.equal(c2['staple'], 10);
+});
+
+test('courier service rows burn per consignment from the sales row; freight never does', () => {
+    const its = [...items, { id: 'label-a4', name: 'Courier label', class: 'consumable', unit: 'each', active: true, sortOrder: 150, profile: { leadTimeDays: 5 }, reorder: { mode: 'auto' } }];
+    const b = { versions: [{ effectiveFrom: '2026-10-01', recipes: { 'FR-02': [{ consumableId: 'label-a4', qty: 1 }], 'FR-05': [{ consumableId: 'label-a4', qty: 99 }] } }] };
+    const row = { ...saleLoose5, svc: { 'FR-02': 3, 'FR-05': 1 } };
+    const c = consumption({ rows: [row], items: its, bom: b, settings: { ...settings, perDespatch: [] }, from: null, to: '2026-10-31' }).byItem;
+    assert.equal(c['label-a4'], 3);
+    const m = salesMix([row], null, '2026-10-31');
+    assert.equal(m.svcPerKg['FR-02'], 3 / 50);
+    assert.equal(m.svcPerKg['FR-05'], undefined);
+});
+
+test('a consumables delivery is a positive receipt movement in units', () => {
+    const w = world({ movements: { 'box-10kg': [{ id: 'r1', itemId: 'box-10kg', date: '2026-10-20', qty: 500, type: 'receipt' }] } });
+    assert.equal(onHandFor(items[3], w, '2026-10-31').onHand, 400 - 5 - 2 + 500);
+});
+
 test('renaming an item changes nothing about its stock', () => {
     const renamed = items.map(i => i.id === 'box-10kg' ? { ...i, name: 'Carton (10 kilo)' } : i);
     const a = computeLevels(world(), '2026-10-31').items.find(i => i.id === 'box-10kg');

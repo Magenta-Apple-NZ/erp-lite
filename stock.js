@@ -185,13 +185,13 @@ const Stock = (() => {
         <div class="cat-section stk2-section">
             <div class="cat-section-head">
                 <div>
-                    <h2 class="cat-title">Adjustments &amp; wastage</h2>
-                    <p class="cat-sub" style="margin:0">Append-only ledger. To undo one, post a correction that offsets it.</p>
+                    <h2 class="cat-title">Receipts, adjustments &amp; wastage</h2>
+                    <p class="cat-sub" style="margin:0">Consumable deliveries arrive here (<em>Receive delivery</em>, in units — boxes, rolls…). Append-only ledger: to undo one, post a correction that offsets it.</p>
                 </div>
             </div>
             <form id="stk2-mov-form" class="stk2-form-row">
                 <select name="itemId" required>${lv.items.map(i => `<option value="${escHtml(i.id)}">${escHtml(i.name)} (${i.unit})</option>`).join('')}</select>
-                <select name="type"><option value="wastage">Wastage (−)</option><option value="adjustment">Adjustment (±)</option><option value="correction">Correction (±)</option></select>
+                <select name="type"><option value="receipt">Receive delivery (+)</option><option value="wastage">Wastage (−)</option><option value="adjustment">Adjustment (±)</option><option value="correction">Correction (±)</option></select>
                 <input name="qty" type="number" step="any" placeholder="Qty" required style="width:110px">
                 <input name="date" type="date" value="${nzToday()}" min="${escHtml(lv.stockEpoch)}" required>
                 <input name="reason" type="text" placeholder="Reason" style="flex:1;min-width:160px">
@@ -249,6 +249,13 @@ const Stock = (() => {
         };
         loadMovs();
         renderConsumablesForecast(body.querySelector('#stk2-cf'));
+        // "Receive" on a consumable row → the ledger form, prefilled as a delivery.
+        body.querySelectorAll('[data-receive]').forEach(b => b.addEventListener('click', () => {
+            const f = body.querySelector('#stk2-mov-form');
+            f.itemId.value = b.dataset.receive; f.type.value = 'receipt'; f.qty.value = ''; f.reason.value = 'Delivery';
+            f.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            f.qty.focus();
+        }));
         body.querySelector('#stk2-mov-form').addEventListener('submit', async e => {
             e.preventDefault();
             const f = e.currentTarget;
@@ -453,7 +460,7 @@ const Stock = (() => {
     function levelsTable(items, lv) {
         if (!items.length) return '<p class="cat-sub">No consumables yet — add them under Settings → Stock.</p>';
         return `<div class="stk-table-wrap"><table class="stk-table stk2-table stk2-levels">
-            <thead><tr><th>Item</th><th style="min-width:160px">On hand</th><th style="text-align:right">Qty</th><th style="text-align:right">Cover</th><th style="text-align:right">Reorder at</th><th style="text-align:right">Lead</th><th>Status</th><th style="text-align:right">On order</th></tr></thead>
+            <thead><tr><th>Item</th><th style="min-width:160px">On hand</th><th style="text-align:right">Qty</th><th style="text-align:right">Cover</th><th style="text-align:right">Reorder at</th><th style="text-align:right">Lead</th><th>Status</th><th style="text-align:right">On order</th><th></th></tr></thead>
             <tbody>${items.map(i => `<tr class="stk2-row--${escHtml(i.status)}">
                 <td><strong>${escHtml(i.name)}</strong><div class="cat-sub" style="margin:0">${i.baselineDate ? 'counted ' + fmtDate(i.baselineDate) : 'not counted'}</div></td>
                 <td>${meter(i)}</td>
@@ -463,6 +470,7 @@ const Stock = (() => {
                 <td style="text-align:right">${i.leadTimeDays ? i.leadTimeDays + ' d' : '—'}</td>
                 <td>${statusChip(i)}</td>
                 <td style="text-align:right;font-variant-numeric:tabular-nums">${i.onOrder ? fmtQty(i.onOrder, i.unit) : '—'}</td>
+                <td style="text-align:right">${i.class === 'consumable' ? `<button class="btn-secondary btn-sm" data-receive="${escHtml(i.id)}" title="A delivery of ${escHtml(i.name)} arrived">Receive</button>` : ''}</td>
             </tr>`).join('')}</tbody></table></div>`;
     }
 
@@ -763,7 +771,7 @@ const Stock = (() => {
 
         <div class="cat-section stk2-section" id="stk2-bom">
             <div class="cat-section-head">
-                <div><h2 class="cat-title">Consumables matrix</h2><p class="cat-sub" style="margin:0">Products we sell (from the items sheet, freight excluded) × consumables: how many of each one sales unit uses. Fractions are fine (a 1kg bag uses 0.1 of a box). <em>Per order</em> is used once per despatch.</p></div>
+                <div><h2 class="cat-title">Consumables matrix</h2><p class="cat-sub" style="margin:0">Products we sell (from the items sheet) and the four courier services × consumables. Cells are in <strong>pieces</strong> — what one sale uses (2 staples, 1 label, 0.1 of a box). Stock stays in <strong>units</strong> (boxes, rolls); <em>Quantity per unit</em> on the consumable does the conversion, so 2 staples from a 1,000-staple box is 0.002 boxes. <em>Per order</em> is used once per despatch. Freight is never a row.</p></div>
                 <button class="btn-primary btn-sm" id="stk2-bom-save">Save matrix</button>
             </div>
             <div id="stk2-bom-grid"></div>
@@ -806,9 +814,9 @@ const Stock = (() => {
         const drawGrid = () => {
             if (!activeCons.length) { grid.innerHTML = '<p class="cat-sub">Add consumables first, then fill in what each product uses.</p>'; return; }
             const prods = (bom.products && bom.products.length) ? bom.products : bom.skus.map(x => ({ sku: x, name: x, tracked: true }));
-            const rows = prods.map(pr => `<tr class="${pr.tracked ? '' : 'stk2-bom-untracked'}"><td><strong>${escHtml(pr.name)}</strong><div class="cat-sub" style="margin:0">${escHtml(pr.sku)}${pr.tracked ? '' : ' · no sales mapping yet'}</div></td>${activeCons.map(c => `<td><input type="number" step="any" min="0" data-sku="${escHtml(pr.sku)}" data-cid="${escHtml(c.id)}" value="${qtyOf(matrix[pr.sku], c.id)}" title="${escHtml(pr.name)} × ${escHtml(c.name)}"></td>`).join('')}</tr>`).join('');
+            const rows = prods.map(pr => `<tr class="${pr.tracked ? '' : 'stk2-bom-untracked'}"><td><strong>${escHtml(pr.name)}</strong><div class="cat-sub" style="margin:0">${escHtml(pr.sku)}${pr.courier ? ' · per consignment' : ''}${pr.tracked ? '' : ' · no sales mapping yet'}</div></td>${activeCons.map(c => `<td><input type="number" step="any" min="0" data-sku="${escHtml(pr.sku)}" data-cid="${escHtml(c.id)}" value="${qtyOf(matrix[pr.sku], c.id)}" title="${escHtml(pr.name)} × ${escHtml(c.name)}"></td>`).join('')}</tr>`).join('');
             const per = `<tr class="stk2-bom-per"><td><strong>Per order</strong><div class="cat-sub" style="margin:0">once per despatch</div></td>${activeCons.map(c => `<td><input type="number" step="any" min="0" data-per="1" data-cid="${escHtml(c.id)}" value="${qtyOf(perDespatch, c.id)}"></td>`).join('')}</tr>`;
-            const colHead = c => `<th class="stk2-bom-col">${c.profile?.imageUrl ? `<img class="stk2-bom-img" src="${escHtml(c.profile.imageUrl)}" alt="" loading="lazy" onerror="this.remove()">` : ''}<div>${escHtml(c.name)}</div><div class="cat-sub" style="margin:0;font-weight:400;text-transform:none;letter-spacing:0">per ${escHtml(c.unitLabel || 'unit')}</div></th>`;
+            const colHead = c => { const n = Number(c.profile?.packSize) || 1; return `<th class="stk2-bom-col">${c.profile?.imageUrl ? `<img class="stk2-bom-img" src="${escHtml(c.profile.imageUrl)}" alt="" loading="lazy" onerror="this.remove()">` : ''}<div>${escHtml(c.name)}</div><div class="cat-sub" style="margin:0;font-weight:400;text-transform:none;letter-spacing:0" title="Enter pieces per sale; ${n > 1 ? `1 ${escHtml(c.unitLabel || 'unit')} = ${fmtNum(n)} pieces` : 'one piece is one ' + escHtml(c.unitLabel || 'unit')}">${n > 1 ? `pieces · ${fmtNum(n)} per ${escHtml(c.unitLabel || 'unit')}` : `per ${escHtml(c.unitLabel || 'unit')}`}</div></th>`; };
             grid.innerHTML = `<div class="stk-table-wrap"><table class="stk-table stk2-table stk2-bom-table"><thead><tr><th>Product</th>${activeCons.map(colHead).join('')}</tr></thead><tbody>${rows}${per}</tbody></table></div>`;
             grid.querySelectorAll('input[data-sku]').forEach(inp => inp.addEventListener('input', () => {
                 matrix[inp.dataset.sku] = matrix[inp.dataset.sku] || [];
@@ -881,7 +889,7 @@ const Stock = (() => {
                     <div class="modal-field"><label>Unit type <span class="modal-hint">what one of these is</span></label><input name="unitLabel" type="text" value="${escHtml(it.unitLabel || '')}" placeholder="box, roll, bag, sheet…" list="stk2-unit-types"><datalist id="stk2-unit-types"><option value="box"><option value="bag"><option value="roll"><option value="sheet"><option value="label"><option value="staple"><option value="pack"></datalist></div>
                     <div class="modal-field"><label>Retailer</label><input name="retailer" type="text" value="${escHtml(p.retailer || '')}" placeholder="e.g. Packaging House"></div>
                     <div class="modal-field"><label>Unit price <span class="modal-hint">$ ex GST</span></label><input name="unitPrice" type="number" step="0.0001" min="0" value="${p.typicalCost ?? ''}" placeholder="0.00"></div>
-                    <div class="modal-field"><label>Quantity per unit</label><input name="packSize" type="number" step="any" min="0" value="${p.packSize ?? ''}" placeholder="e.g. 500"></div>
+                    <div class="modal-field"><label>Quantity per unit <span class="modal-hint">pieces in one unit, e.g. 1,000 staples per box</span></label><input name="packSize" type="number" step="any" min="0" value="${p.packSize ?? ''}" placeholder="1"></div>
                     <div class="modal-field"><label>Lead time <span class="modal-hint">days from ordering to delivery</span></label><input name="leadTimeDays" type="number" min="0" step="1" value="${p.leadTimeDays ?? ''}" placeholder="default ${settings.defaultLeadTimeDays ?? 14}"></div>
                     <div class="modal-field"><label>Link to product</label><input name="retailerUrl" type="url" value="${escHtml(p.retailerUrl || '')}" placeholder="https://…"></div>
                     ${imageFields()}`}

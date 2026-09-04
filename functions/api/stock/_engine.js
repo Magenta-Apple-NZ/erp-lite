@@ -87,9 +87,28 @@ export function recipesFor(bom, date) {
 // Returns { byItem: {itemId: qty}, rowCount, rowsWithoutXkg }. Product qty is
 // kg; consumable qty is each, expanded through the recipe in force on the
 // row's date. Rows before stockEpoch are ignored.
+// Courier service SKUs — matrix rows so labels/satchels burn per consignment.
+// Freight (FR-05+) is never a matrix row.
+export const COURIER_SKUS = ['FR-01', 'FR-02', 'FR-03', 'FR-04'];
+
+// Matrix cells are in PIECES (staples, labels…); stock is in UNITS (boxes,
+// rolls). "Quantity per unit" (profile.packSize) converts: a 1,000-staple box
+// with 2 staples per sale = 0.002 boxes per sale.
+export function piecesPerUnit(items) {
+    const out = {};
+    for (const it of items || []) {
+        if (it.class !== 'consumable') continue;
+        const n = Number(it.profile?.packSize);
+        out[it.id] = n > 0 ? n : 1;
+    }
+    return out;
+}
+
 export function consumption({ rows, items, bom, settings, from, to }) {
     const byItem = {};
+    const pieces = piecesPerUnit(items);
     const add = (id, q) => { if (id && q) byItem[id] = (byItem[id] || 0) + q; };
+    const addPieces = (id, q) => add(id, q / (pieces[id] || 1));
     const productBySalesKey = {};
     for (const it of items || []) {
         if (it.class === 'product' && it.salesKey) productBySalesKey[it.salesKey] = it.id;
@@ -110,12 +129,20 @@ export function consumption({ rows, items, bom, settings, from, to }) {
                 const kg = Number(r.xkg[t.xkg]) || 0;
                 if (!kg) continue;
                 const units = kg / t.kgPerUnit;
-                for (const e of recipes[sku] || []) add(e.consumableId, units * (Number(e.qty) || 0));
+                for (const e of recipes[sku] || []) addPieces(e.consumableId, units * (Number(e.qty) || 0));
             }
         } else {
             rowsWithoutXkg++;
         }
-        for (const e of settings?.perDespatch || []) add(e.consumableId, Number(e.qty) || 0);
+        // Courier consignments (unit counts recorded on the sales row).
+        if (r.svc && typeof r.svc === 'object') {
+            for (const sku of COURIER_SKUS) {
+                const n = Number(r.svc[sku]) || 0;
+                if (!n) continue;
+                for (const e of recipes[sku] || []) addPieces(e.consumableId, n * (Number(e.qty) || 0));
+            }
+        }
+        for (const e of settings?.perDespatch || []) addPieces(e.consumableId, Number(e.qty) || 0);
     }
     for (const k of Object.keys(byItem)) byItem[k] = r4(byItem[k]);
     return { byItem, rowCount, rowsWithoutXkg };
@@ -506,6 +533,7 @@ const daysInMonth = (y, m) => new Date(Date.UTC(y, m, 0)).getUTCDate(); // m is 
 // Share of kg sold by SKU, and orders per kg, over (from, to].
 export function salesMix(rows, from, to) {
     const kgBySku = {};
+    const svcUnits = {};
     let totalKg = 0, kgWithSplit = 0, orders = 0;
     for (const r of rows || []) {
         const d = String(r.date || '').slice(0, 10);
@@ -519,11 +547,17 @@ export function salesMix(rows, from, to) {
                 if (kg > 0) { kgBySku[sku] = (kgBySku[sku] || 0) + kg; kgWithSplit += kg; }
             }
         }
+        if (r.svc && typeof r.svc === 'object') {
+            for (const sku of COURIER_SKUS) svcUnits[sku] = (svcUnits[sku] || 0) + (Number(r.svc[sku]) || 0);
+        }
     }
     const share = {};
     if (kgWithSplit > 0) for (const [sku, kg] of Object.entries(kgBySku)) share[sku] = kg / kgWithSplit;
     else share['PT-b-10'] = 1; // nothing to go on yet — assume 10 kg bundled
-    return { share, ordersPerKg: totalKg > 0 ? orders / totalKg : 0, orders, kg: r2(totalKg), from, to,
+    // Courier consignments per kg sold, by service.
+    const svcPerKg = {};
+    if (totalKg > 0) for (const [sku, n] of Object.entries(svcUnits)) if (n > 0) svcPerKg[sku] = n / totalKg;
+    return { share, svcPerKg, ordersPerKg: totalKg > 0 ? orders / totalKg : 0, orders, kg: r2(totalKg), from, to,
              source: kgWithSplit > 0 ? 'sales-history' : 'assumed-10kg-bundled' };
 }
 
@@ -536,15 +570,23 @@ export function consumablesForecast(world, { monthlyAvg, today, months = 12, mix
     const mix = salesMix(world.sales, addDays(today, -mixDays), today);
     const recipes = recipesFor(world.bom, today);
 
-    // Consumable units used per 1 kg sold (matrix × mix, plus per-order lines).
+    // Consumable UNITS used per 1 kg sold: matrix pieces × mix ÷ pieces per
+    // unit, plus courier consignments and per-order lines.
+    const pieces = piecesPerUnit(world.items);
     const perKg = {};
+    const addPerKg = (id, piecesPerKg) => { perKg[id] = (perKg[id] || 0) + piecesPerKg / (pieces[id] || 1); };
     for (const [sku, t] of Object.entries(SKU_TABLE)) {
         const sh = mix.share[sku] || 0;
         if (!sh) continue;
         const unitsPerKg = sh / t.kgPerUnit;
-        for (const e of recipes[sku] || []) perKg[e.consumableId] = (perKg[e.consumableId] || 0) + unitsPerKg * (Number(e.qty) || 0);
+        for (const e of recipes[sku] || []) addPerKg(e.consumableId, unitsPerKg * (Number(e.qty) || 0));
     }
-    for (const e of s.perDespatch || []) perKg[e.consumableId] = (perKg[e.consumableId] || 0) + mix.ordersPerKg * (Number(e.qty) || 0);
+    for (const sku of COURIER_SKUS) {
+        const n = mix.svcPerKg?.[sku] || 0;
+        if (!n) continue;
+        for (const e of recipes[sku] || []) addPerKg(e.consumableId, n * (Number(e.qty) || 0));
+    }
+    for (const e of s.perDespatch || []) addPerKg(e.consumableId, mix.ordersPerKg * (Number(e.qty) || 0));
 
     // The next N months; the current month is pro-rated from today.
     const [ty, tm, td] = today.split('-').map(Number);
