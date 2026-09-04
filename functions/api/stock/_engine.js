@@ -492,6 +492,101 @@ export function stockAnchor(world, today) {
     };
 }
 
+// ── Consumables forecast ─────────────────────────────────────────────────
+// Shares the Imports seasonal sales forecast (kg per calendar month, Jan→Dec)
+// and its three scenarios. kg → sales units via the trailing product mix from
+// Sales History, units → consumables via the matrix, then each consumable's
+// on hand is walked month by month to find when it runs out and, less lead
+// time + safety days, when it must be ordered.
+export const SCENARIOS = { avg: 1, good: 1.1, great: 1.2 };
+export const FORECAST_MONTHLY_AVG_DEFAULT = [2000, 750, 1000, 2000, 3000, 5500, 7000, 5000, 1000, 200, 50, 400];
+const pad2 = n => String(n).padStart(2, '0');
+const daysInMonth = (y, m) => new Date(Date.UTC(y, m, 0)).getUTCDate(); // m is 1-based
+
+// Share of kg sold by SKU, and orders per kg, over (from, to].
+export function salesMix(rows, from, to) {
+    const kgBySku = {};
+    let totalKg = 0, kgWithSplit = 0, orders = 0;
+    for (const r of rows || []) {
+        const d = String(r.date || '').slice(0, 10);
+        if (!inRange(d, from, to)) continue;
+        const rowKg = (Number(r.bundlesKg) || 0) + (Number(r.looseKg) || 0) + (Number(r.ecoTiesKg) || 0);
+        if (rowKg <= 0) continue;
+        orders++; totalKg += rowKg;
+        if (r.xkg && typeof r.xkg === 'object') {
+            for (const [sku, t] of Object.entries(SKU_TABLE)) {
+                const kg = Number(r.xkg[t.xkg]) || 0;
+                if (kg > 0) { kgBySku[sku] = (kgBySku[sku] || 0) + kg; kgWithSplit += kg; }
+            }
+        }
+    }
+    const share = {};
+    if (kgWithSplit > 0) for (const [sku, kg] of Object.entries(kgBySku)) share[sku] = kg / kgWithSplit;
+    else share['PT-b-10'] = 1; // nothing to go on yet — assume 10 kg bundled
+    return { share, ordersPerKg: totalKg > 0 ? orders / totalKg : 0, orders, kg: r2(totalKg), from, to,
+             source: kgWithSplit > 0 ? 'sales-history' : 'assumed-10kg-bundled' };
+}
+
+export function consumablesForecast(world, { monthlyAvg, today, months = 12, mixDays = 365 } = {}) {
+    const s = { ...DEFAULT_SETTINGS, ...(world.settings || {}) };
+    const levels = computeLevels(world, today);
+    if (levels.beforeEpoch) return { beforeEpoch: true, stockEpoch: s.stockEpoch, asOf: today };
+    const avg = Array.isArray(monthlyAvg) && monthlyAvg.length === 12 && monthlyAvg.some(v => Number(v) > 0)
+        ? monthlyAvg.map(v => Number(v) || 0) : FORECAST_MONTHLY_AVG_DEFAULT;
+    const mix = salesMix(world.sales, addDays(today, -mixDays), today);
+    const recipes = recipesFor(world.bom, today);
+
+    // Consumable units used per 1 kg sold (matrix × mix, plus per-order lines).
+    const perKg = {};
+    for (const [sku, t] of Object.entries(SKU_TABLE)) {
+        const sh = mix.share[sku] || 0;
+        if (!sh) continue;
+        const unitsPerKg = sh / t.kgPerUnit;
+        for (const e of recipes[sku] || []) perKg[e.consumableId] = (perKg[e.consumableId] || 0) + unitsPerKg * (Number(e.qty) || 0);
+    }
+    for (const e of s.perDespatch || []) perKg[e.consumableId] = (perKg[e.consumableId] || 0) + mix.ordersPerKg * (Number(e.qty) || 0);
+
+    // The next N months; the current month is pro-rated from today.
+    const [ty, tm, td] = today.split('-').map(Number);
+    const list = [];
+    for (let i = 0; i < months; i++) {
+        const idx = (tm - 1 + i), y = ty + Math.floor(idx / 12), m = (idx % 12) + 1;
+        const dim = daysInMonth(y, m);
+        const startDay = i === 0 ? td : 1;
+        list.push({ ym: `${y}-${pad2(m)}`, y, m, dim, startDay, fraction: (dim - startDay + 1) / dim, kgAvg: avg[m - 1] * ((dim - startDay + 1) / dim) });
+    }
+
+    const items = levels.items.filter(i => i.class === 'consumable').map(c => {
+        const usagePerKg = perKg[c.id] || 0;
+        const scenarios = {};
+        for (const [key, mult] of Object.entries(SCENARIOS)) {
+            let bal = c.onHand, runOut = null;
+            const ms = [];
+            for (const mo of list) {
+                const usage = r2(mo.kgAvg * mult * usagePerKg);
+                const opening = bal;
+                if (bal != null) {
+                    bal = r2(bal - usage);
+                    if (runOut == null && bal <= 0 && usage > 0) {
+                        const frac = Math.max(0, Math.min(1, opening / usage));
+                        const span = mo.dim - mo.startDay + 1;
+                        runOut = `${mo.y}-${pad2(mo.m)}-${pad2(Math.min(mo.dim, mo.startDay + Math.floor(frac * span)))}`;
+                    }
+                }
+                ms.push({ ym: mo.ym, kg: r2(mo.kgAvg * mult), usage, closing: bal });
+            }
+            const buffer = (c.leadTimeDays || 0) + (c.safetyDays || 0);
+            const reorderBy = runOut ? addDays(runOut, -buffer) : null;
+            scenarios[key] = { months: ms, runOutDate: runOut, reorderBy, orderNow: reorderBy != null && reorderBy <= today,
+                               usage12: r2(ms.reduce((a, x) => a + x.usage, 0)) };
+        }
+        return { id: c.id, name: c.name, unit: c.unit, unitLabel: c.unitLabel || null, onHand: c.onHand, onOrder: c.onOrder, status: c.status,
+                 baselineDate: c.baselineDate, leadTimeDays: c.leadTimeDays, safetyDays: c.safetyDays, usagePerKg: r4(usagePerKg), scenarios };
+    });
+    return { asOf: today, stockEpoch: s.stockEpoch, monthlyAvg: avg, mix,
+             months: list.map(m => ({ ym: m.ym, kgAvg: r2(m.kgAvg), fraction: Math.round(m.fraction * 1000) / 1000 })), items };
+}
+
 // Enviroware-format valuation rows for a committed count.
 export function valuationRows(count, items) {
     const byId = Object.fromEntries((items || []).map(i => [i.id, i]));

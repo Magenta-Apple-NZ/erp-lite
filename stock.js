@@ -154,6 +154,8 @@ const Stock = (() => {
             ${levelsTable(consumables.concat(products), lv)}
         </div>
 
+        <div id="stk2-cf"></div>
+
         ${key.filter(k => Array.isArray(k.lots)).map(lotsSection).join('')}
 
         <div class="cat-section stk2-section">
@@ -222,6 +224,7 @@ const Stock = (() => {
             } catch (e) { wrap.innerHTML = `<p class="cat-sub">${escHtml(e.message)}</p>`; }
         };
         loadMovs();
+        renderConsumablesForecast(body.querySelector('#stk2-cf'));
         body.querySelector('#stk2-mov-form').addEventListener('submit', async e => {
             e.preventDefault();
             const f = e.currentTarget;
@@ -349,6 +352,66 @@ const Stock = (() => {
             : '<p class="cat-sub">No lots yet — commit the opening count, then received shipments appear here.</p>'}
             ${(lv.onOrder ? `<p class="cat-sub" style="margin-top:0.5rem">${fmtNum(lv.onOrder)} kg on order (not in on hand).</p>` : '')}
         </div>`;
+    }
+
+    // Consumables forecast — next 12 months on the shared seasonal sales
+    // forecast; when each consumable runs out and when it must be ordered.
+    async function renderConsumablesForecast(el) {
+        if (!el) return;
+        el.innerHTML = '<div class="cat-section stk2-section"><div class="orders-loading">Forecasting consumables…</div></div>';
+        let cf;
+        try { cf = await api('/api/stock/consumables-forecast?months=12'); }
+        catch (e) { el.innerHTML = `<div class="cat-section stk2-section"><p class="cat-sub">Consumables forecast unavailable: ${escHtml(e.message)}</p></div>`; return; }
+        if (cf.beforeEpoch || !cf.items) { el.innerHTML = ''; return; }
+        let scenario = 'avg';
+        const SC = { avg: 'Average', good: 'Good +10%', great: 'Great +20%' };
+        const monthLabel = ym => { const [y, m] = ym.split('-').map(Number); return new Date(Date.UTC(y, m - 1, 1)).toLocaleDateString('en-NZ', { month: 'short', timeZone: 'UTC' }) + (m === 1 ? ` '${String(y).slice(2)}` : ''); };
+        const draw = () => {
+            const rows = cf.items.map(it => ({ it, sc: it.scenarios[scenario] }))
+                .sort((a, b) => {
+                    const ra = a.sc.reorderBy || (a.it.onHand == null ? '0000' : '9999'), rb = b.sc.reorderBy || (b.it.onHand == null ? '0000' : '9999');
+                    return ra.localeCompare(rb) || a.it.name.localeCompare(b.it.name);
+                });
+            const orderNow = rows.filter(r => r.sc.orderNow).length;
+            el.innerHTML = `
+            <div class="cat-section stk2-section">
+                <div class="cat-section-head">
+                    <div>
+                        <h2 class="cat-title">Consumables forecast <span class="cat-sub" style="font-weight:400">· next 12 months</span></h2>
+                        <p class="cat-sub" style="margin:0">Same seasonal sales curve as the Stock Trajectory, turned into units through the last year's product mix and the matrix. <strong>Order by</strong> = run-out less lead time and safety days.${cf.mix.source !== 'sales-history' ? ' <span class="stk2-var--neg">No type×size sales split yet — assuming 10 kg bundled.</span>' : ''}</p>
+                    </div>
+                    <div class="stk2-traj-ctl">${Object.entries(SC).map(([k, l]) => `<button class="imp-view-btn${k === scenario ? ' active' : ''}" data-cf-sc="${k}">${l}</button>`).join('')}</div>
+                </div>
+                ${orderNow ? `<div class="stk2-notice stk2-notice--warn">${orderNow} consumable${orderNow === 1 ? '' : 's'} should be ordered now to land before running out (${SC[scenario]}).</div>` : ''}
+                <div class="stk-table-wrap"><table class="stk-table stk2-table stk2-cf-table">
+                    <thead><tr><th>Consumable</th><th style="text-align:right">On hand</th><th style="text-align:right">12-mo usage</th><th>Runs out</th><th>Order by</th><th style="text-align:right">Lead</th><th>${cf.months.map(m => `<span class="stk2-cf-m">${monthLabel(m.ym)}</span>`).join('')}</th></tr></thead>
+                    <tbody>${rows.map(({ it, sc }) => {
+                        const unknown = it.onHand == null;
+                        const orderCell = unknown ? '<span class="cat-sub">no count</span>'
+                            : !sc.reorderBy ? '<span class="stk2-chip stk2-chip--ok"><span class="stk2-chip-ico">✓</span>12 months+</span>'
+                            : sc.orderNow ? `<span class="stk2-chip stk2-chip--critical"><span class="stk2-chip-ico">‼</span>Order now</span> <span class="cat-sub">(by ${fmtDate(sc.reorderBy)})</span>`
+                            : `<strong>${fmtDate(sc.reorderBy)}</strong>`;
+                        const maxAbs = Math.max(1, ...sc.months.map(m => Math.abs(m.closing ?? 0)), it.onHand || 0);
+                        const strip = sc.months.map(m => {
+                            const v = m.closing;
+                            const h = v == null ? 0 : Math.max(2, Math.round((Math.min(Math.abs(v), maxAbs) / maxAbs) * 22));
+                            return `<span class="stk2-cf-bar ${v != null && v <= 0 ? 'stk2-cf-bar--out' : ''}" style="height:${h}px" title="${monthLabel(m.ym)}: use ${fmtQty(m.usage, it.unit, null, it.unitLabel)} → ${v == null ? '—' : fmtQty(v, it.unit, null, it.unitLabel)} left"></span>`;
+                        }).join('');
+                        return `<tr class="${sc.orderNow ? 'stk2-row--critical' : ''}">
+                            <td><strong>${escHtml(it.name)}</strong>${it.usagePerKg ? '' : '<div class="cat-sub" style="margin:0">not in the matrix — no usage</div>'}</td>
+                            <td style="text-align:right;font-variant-numeric:tabular-nums">${fmtQty(it.onHand, it.unit, null, it.unitLabel)}${it.onOrder ? ` <span class="cat-sub">+${fmtNum(it.onOrder)} on order</span>` : ''}</td>
+                            <td style="text-align:right;font-variant-numeric:tabular-nums">${fmtQty(sc.usage12, it.unit, 0, it.unitLabel)}</td>
+                            <td>${unknown ? '<span class="cat-sub">—</span>' : sc.runOutDate ? `<span class="${sc.orderNow ? 'stk2-var--neg' : ''}">${fmtDate(sc.runOutDate)}</span>` : '<span class="cat-sub">not within 12 months</span>'}</td>
+                            <td>${orderCell}</td>
+                            <td style="text-align:right">${it.leadTimeDays ? it.leadTimeDays + ' d' : '—'}${it.safetyDays ? ` <span class="cat-sub">+${it.safetyDays}</span>` : ''}</td>
+                            <td><div class="stk2-cf-strip">${strip}</div></td>
+                        </tr>`; }).join('')}</tbody>
+                </table></div>
+                <p class="cat-sub" style="margin-top:0.5rem">Mix from ${fmtDate(cf.mix.from)} → ${fmtDate(cf.mix.to)}: ${Object.entries(cf.mix.share).map(([sku, sh]) => `${escHtml(sku)} ${Math.round(sh * 100)}%`).join(' · ')}${cf.mix.ordersPerKg ? ` · ${fmtNum(1 / cf.mix.ordersPerKg)} kg per order` : ''}. Bars show month-end stock; red = out.</p>
+            </div>`;
+            el.querySelectorAll('[data-cf-sc]').forEach(b => b.addEventListener('click', () => { scenario = b.dataset.cfSc; draw(); }));
+        };
+        draw();
     }
 
     function meter(lv) {
@@ -663,13 +726,14 @@ const Stock = (() => {
                 <div><h2 class="cat-title">Consumables</h2><p class="cat-sub" style="margin:0">Packaging counted in units. Click a row for its details.</p></div>
                 <button class="btn-primary btn-sm" id="stk2-add-consumable">+ Add consumable</button>
             </div>
-            ${consumables.length ? `<table class="stk-table stk2-table"><thead><tr><th>Name</th><th>Unit</th><th>Retailer</th><th style="text-align:right">Unit price</th><th style="text-align:right">Qty per unit</th><th>Active</th></tr></thead>
+            ${consumables.length ? `<table class="stk-table stk2-table"><thead><tr><th>Name</th><th>Unit</th><th>Retailer</th><th style="text-align:right">Unit price</th><th style="text-align:right">Qty per unit</th><th style="text-align:right">Lead</th><th>Active</th></tr></thead>
             <tbody>${consumables.map(i => { const p = i.profile || {}; return `<tr class="stk2-rowlink" data-open="${escHtml(i.id)}">
                 <td>${p.imageUrl ? `<img class="stk2-thumb" src="${escHtml(p.imageUrl)}" alt="" loading="lazy" onerror="this.remove()">` : ''}<strong>${escHtml(i.name)}</strong>${p.supplierSku || p.description ? `<div class="cat-sub" style="margin:0">${[p.supplierSku, p.description].filter(Boolean).map(escHtml).join(' · ')}</div>` : ''}</td>
                 <td class="cat-sub">${escHtml(i.unitLabel || 'each')}</td>
                 <td>${p.retailerUrl ? `<a href="${escHtml(p.retailerUrl)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">${escHtml(p.retailer || 'Product')} ↗</a>` : escHtml(p.retailer || '—')}</td>
                 <td style="text-align:right;font-variant-numeric:tabular-nums">${money(p.typicalCost)}</td>
                 <td style="text-align:right;font-variant-numeric:tabular-nums">${p.packSize != null ? fmtNum(p.packSize) : '—'}</td>
+                <td style="text-align:right;font-variant-numeric:tabular-nums">${p.leadTimeDays != null && p.leadTimeDays !== '' ? p.leadTimeDays + ' d' : `<span class="cat-sub">${settings.defaultLeadTimeDays ?? 14} d</span>`}</td>
                 <td>${i.active === false ? 'No' : 'Yes'}</td></tr>`; }).join('')}</tbody></table>` : '<p class="cat-sub">None yet. Add boxes, bags, labels, staples, tape…</p>'}
         </div>
 
@@ -785,6 +849,7 @@ const Stock = (() => {
                     <div class="modal-field"><label>Retailer</label><input name="retailer" type="text" value="${escHtml(p.retailer || '')}" placeholder="e.g. Packaging House"></div>
                     <div class="modal-field"><label>Unit price <span class="modal-hint">$ ex GST</span></label><input name="unitPrice" type="number" step="0.0001" min="0" value="${p.typicalCost ?? ''}" placeholder="0.00"></div>
                     <div class="modal-field"><label>Quantity per unit</label><input name="packSize" type="number" step="any" min="0" value="${p.packSize ?? ''}" placeholder="e.g. 500"></div>
+                    <div class="modal-field"><label>Lead time <span class="modal-hint">days from ordering to delivery</span></label><input name="leadTimeDays" type="number" min="0" step="1" value="${p.leadTimeDays ?? ''}" placeholder="default ${settings.defaultLeadTimeDays ?? 14}"></div>
                     <div class="modal-field"><label>Link to product</label><input name="retailerUrl" type="url" value="${escHtml(p.retailerUrl || '')}" placeholder="https://…"></div>
                     <div class="modal-field stk2-span2"><label>Image link</label><input name="imageUrl" type="url" value="${escHtml(p.imageUrl || '')}" placeholder="https://…/photo.jpg"></div>
                     <div class="stk2-span2 stk2-img-preview" ${p.imageUrl ? '' : 'hidden'}><img src="${escHtml(p.imageUrl || '')}" alt=""></div>`}
@@ -844,7 +909,7 @@ const Stock = (() => {
                 const price = g('unitPrice');
                 payload.unitLabel = g('unitLabel');
                 payload.profile = { retailer: g('retailer'), retailerUrl: g('retailerUrl'), imageUrl: g('imageUrl'), typicalCost: price, packSize: g('packSize'),
-                                    supplierSku: g('supplierSku'), description: g('description') };
+                                    supplierSku: g('supplierSku'), description: g('description'), leadTimeDays: g('leadTimeDays') };
                 payload.unitValue = price; // valuation uses the purchase price
             }
             try {

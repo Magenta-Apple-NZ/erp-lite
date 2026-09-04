@@ -428,6 +428,52 @@ test('stockAnchor hands the forecast the committed count, on hand now, and the s
     assert.equal(a.value, 1400 * 9.5);
 });
 
+// ── Consumables forecast on the shared seasonal curve ────────────────────
+import { consumablesForecast, salesMix } from '../functions/api/stock/_engine.js';
+
+test('product mix comes from the type×size sales split; falls back to 10 kg bundled', () => {
+    const m = salesMix([saleLoose5, saleEco2], '2026-09-30', '2026-10-31');
+    assert.equal(Math.round(m.share['PT-l-10'] * 1000) / 1000, Math.round((50 / 70) * 1000) / 1000);
+    assert.equal(Math.round(m.share['ET-b-10'] * 1000) / 1000, Math.round((20 / 70) * 1000) / 1000);
+    assert.equal(m.orders, 2);
+    assert.equal(m.source, 'sales-history');
+    assert.deepEqual(salesMix([], null, null).share, { 'PT-b-10': 1 });
+});
+
+test('a consumable runs out when the forecast burns through on hand; order-by = run-out less lead + safety', () => {
+    // Flat 1,000 kg/month. Mix: 5/7 loose 10 kg, 2/7 eco 10 kg; both use 1 box → 0.1 box per kg → 100 boxes/month.
+    // box-10kg on hand at 31 Oct = 400 − 5 − 2 = 393.
+    const cf = consumablesForecast(world(), { monthlyAvg: Array(12).fill(1000), today: '2026-10-31', months: 12 });
+    const box = cf.items.find(i => i.id === 'box-10kg');
+    assert.equal(box.onHand, 393);
+    assert.equal(Math.round(box.usagePerKg * 1000) / 1000, 0.1);
+    const a = box.scenarios.avg;
+    assert.equal(a.months[0].ym, '2026-10');
+    assert.equal(a.months[0].usage, Math.round(1000 * (1 / 31) * 0.1 * 100) / 100, 'current month pro-rated from today');
+    assert.equal(a.months[1].usage, 100);
+    // 393 − 3.23 − 100 − 100 − 100 = 89.8 left entering Feb → runs out ~26 Feb 2027.
+    assert.ok(a.runOutDate.startsWith('2027-02'), a.runOutDate);
+    assert.equal(a.reorderBy, addDays(a.runOutDate, -(14 + 7)), 'lead 14 + safety 7');
+    assert.equal(a.orderNow, false);
+    // Great (+20%) runs out earlier than Average.
+    assert.ok(box.scenarios.great.runOutDate < a.runOutDate);
+    assert.equal(box.scenarios.great.months[1].usage, 120);
+    // Something with no count is unknown throughout.
+    const lbl = cf.items.find(i => i.id === 'label-courier');
+    assert.equal(lbl.onHand, null);
+    assert.equal(lbl.scenarios.avg.runOutDate, null);
+    assert.ok(lbl.scenarios.avg.months.every(m => m.closing === null));
+});
+
+test('order-now fires when the buffer has already passed', () => {
+    const w = world({ items: items.map(i => i.id === 'box-10kg' ? { ...i, profile: { leadTimeDays: 120 } } : i) });
+    const cf = consumablesForecast(w, { monthlyAvg: Array(12).fill(1000), today: '2026-10-31' });
+    const box = cf.items.find(i => i.id === 'box-10kg');
+    assert.equal(box.leadTimeDays, 120);
+    assert.equal(box.scenarios.avg.orderNow, true);
+    assert.ok(box.scenarios.avg.reorderBy <= '2026-10-31');
+});
+
 test('renaming an item changes nothing about its stock', () => {
     const renamed = items.map(i => i.id === 'box-10kg' ? { ...i, name: 'Carton (10 kilo)' } : i);
     const a = computeLevels(world(), '2026-10-31').items.find(i => i.id === 'box-10kg');

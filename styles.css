@@ -7399,3 +7399,10 @@ a.db-row:hover { background: #f8fafc; border-color: #e2e8f0; }
 .stk2-sub-total { border-top: 1px solid var(--stk-line); margin-top: 0.2rem; padding-top: 0.3rem; }
 .stk2-bom-col { vertical-align: bottom; text-align: center !important; min-width: 96px; }
 .stk2-bom-img { width: 44px; height: 44px; object-fit: cover; border-radius: 6px; border: 1px solid var(--stk-line); display: block; margin: 0 auto 0.3rem; }
+
+/* Consumables forecast — 12-month closing-stock strip */
+.stk2-cf-table th:last-child, .stk2-cf-table td:last-child { min-width: 190px; }
+.stk2-cf-m { display: inline-block; width: 14px; font-size: 0.55rem; letter-spacing: 0; text-transform: none; color: var(--stk-muted); overflow: hidden; white-space: nowrap; }
+.stk2-cf-strip { display: flex; align-items: flex-end; gap: 2px; height: 24px; }
+.stk2-cf-bar { display: inline-block; width: 12px; background: var(--stk-accent); border-radius: 2px 2px 0 0; opacity: 0.8; }
+.stk2-cf-bar--out { background: var(--stk-critical); opacity: 1; }
