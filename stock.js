@@ -847,7 +847,7 @@ const Stock = (() => {
             </div>
             ${consumables.length ? `<table class="stk-table stk2-table"><thead><tr><th>Name</th><th>Unit</th><th>Retailer</th><th style="text-align:right">Unit price</th><th style="text-align:right">Qty per unit</th><th style="text-align:right">Lead</th><th>Active</th></tr></thead>
             <tbody>${consumables.map(i => { const p = i.profile || {}; return `<tr class="stk2-rowlink" data-open="${escHtml(i.id)}">
-                <td>${p.imageUrl ? `<img class="stk2-thumb" src="${escHtml(p.imageUrl)}" alt="" loading="lazy" onerror="this.remove()">` : ''}<strong>${escHtml(i.name)}</strong>${i.courierLabel ? ' <span class="stk2-chip stk2-chip--unknown" title="Depletes by the labels invoiced on each order"><span class="stk2-chip-ico">🏷</span>courier labels</span>' : ''}${p.supplierSku || p.description ? `<div class="cat-sub" style="margin:0">${[p.supplierSku, p.description].filter(Boolean).map(escHtml).join(' · ')}</div>` : ''}</td>
+                <td>${p.imageUrl ? `<img class="stk2-thumb" src="${escHtml(p.imageUrl)}" alt="" loading="lazy" onerror="this.remove()">` : ''}<strong>${escHtml(i.name)}</strong>${i.courierSku ? ` <span class="stk2-chip stk2-chip--unknown" title="Depletes by ${escHtml(i.courierSku)} labels invoiced on each order"><span class="stk2-chip-ico">🏷</span>${escHtml(i.courierSku)}</span>` : i.courierLabel ? ' <span class="stk2-chip stk2-chip--unknown" title="Depletes by every courier label invoiced"><span class="stk2-chip-ico">🏷</span>any courier</span>' : ''}${p.supplierSku || p.description ? `<div class="cat-sub" style="margin:0">${[p.supplierSku, p.description].filter(Boolean).map(escHtml).join(' · ')}</div>` : ''}</td>
                 <td class="cat-sub">${escHtml(i.unitLabel || 'each')}</td>
                 <td>${p.retailerUrl ? `<a href="${escHtml(p.retailerUrl)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">${escHtml(p.retailer || 'Product')} ↗</a>` : escHtml(p.retailer || '—')}</td>
                 <td style="text-align:right;font-variant-numeric:tabular-nums">${money(p.typicalCost)}</td>
@@ -974,7 +974,15 @@ const Stock = (() => {
                     <div class="modal-field"><label>SKU <span class="modal-hint">supplier's code</span></label><input name="supplierSku" type="text" value="${escHtml(p.supplierSku || '')}" placeholder="e.g. PT-48-100"></div>
                     <div class="modal-field"><label>Product description</label><input name="description" type="text" value="${escHtml(p.description || '')}" placeholder="What it is, size, colour…"></div>
                     <div class="modal-field"><label>Unit type <span class="modal-hint">what one of these is</span></label><input name="unitLabel" type="text" value="${escHtml(it.unitLabel || '')}" placeholder="box, roll, bag, sheet…" list="stk2-unit-types"><datalist id="stk2-unit-types"><option value="box"><option value="bag"><option value="roll"><option value="sheet"><option value="label"><option value="staple"><option value="pack"></datalist></div>
-                    <div class="modal-field stk2-span2 stk2-check"><label style="display:flex;align-items:center;gap:0.5rem;text-transform:none;letter-spacing:0;font-size:0.85rem;font-weight:500"><input type="checkbox" name="courierLabel" ${it.courierLabel ? 'checked' : ''} style="width:auto"> Courier label stock <span class="modal-hint">depletes by the labels invoiced on each order (courier lines), one per label — no matrix cell needed</span></label></div>
+                    <div class="modal-field stk2-span2"><label>Courier service <span class="modal-hint">a label book tied to a courier SKU depletes by that service's invoiced labels — no matrix cell</span></label>
+                        <select name="courierSku">
+                            <option value="" ${!it.courierSku && !it.courierLabel ? 'selected' : ''}>Not a courier label</option>
+                            <option value="FR-01" ${it.courierSku === 'FR-01' ? 'selected' : ''}>FR-01 · Courier - Local</option>
+                            <option value="FR-02" ${it.courierSku === 'FR-02' ? 'selected' : ''}>FR-02 · Courier - Inner Island</option>
+                            <option value="FR-03" ${it.courierSku === 'FR-03' ? 'selected' : ''}>FR-03 · Courier - Outer Island</option>
+                            <option value="FR-04" ${it.courierSku === 'FR-04' ? 'selected' : ''}>FR-04 · Courier - Inter Island</option>
+                            <option value="any" ${!it.courierSku && it.courierLabel ? 'selected' : ''}>Any courier label (all four services)</option>
+                        </select></div>
                     <div class="modal-field"><label>Retailer</label><input name="retailer" type="text" value="${escHtml(p.retailer || '')}" placeholder="e.g. Packaging House"></div>
                     <div class="modal-field"><label>Unit price <span class="modal-hint">$ ex GST</span></label><input name="unitPrice" type="number" step="0.0001" min="0" value="${p.typicalCost ?? ''}" placeholder="0.00"></div>
                     <div class="modal-field"><label>Quantity per unit <span class="modal-hint">pieces in one unit, e.g. 1,000 staples per box</span></label><input name="packSize" type="number" step="any" min="0" value="${p.packSize ?? ''}" placeholder="1"></div>
@@ -1055,7 +1063,9 @@ const Stock = (() => {
             } else {
                 const price = g('unitPrice');
                 payload.unitLabel = g('unitLabel');
-                payload.courierLabel = f.get('courierLabel') === 'on';
+                const cs = String(f.get('courierSku') || '');
+                payload.courierSku = /^FR-0[1-4]$/.test(cs) ? cs : null;
+                payload.courierLabel = cs === 'any';
                 payload.profile = { retailer: g('retailer'), retailerUrl: g('retailerUrl'), imageUrl: g('imageUrl'), typicalCost: price, packSize: g('packSize'),
                                     supplierSku: g('supplierSku'), description: g('description'), leadTimeDays: g('leadTimeDays') };
                 payload.unitValue = price; // valuation uses the purchase price

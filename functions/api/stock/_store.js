@@ -69,7 +69,21 @@ export const PRODUCT_SEED = [
     { id: 'eco-ties',          name: 'eco Ties',          class: 'product', unit: 'kg', active: false, key: false, sortOrder: 30, salesKey: 'ecoTies', aliases: [], accountCode: '1440', unitValue: null, unitValueAsAt: null, reorder: { mode: 'auto', manualPoint: null, safetyDays: null, reorderQty: null } },
 ];
 const ITEMS_SCHEMA_KEY = 'stock:items:schema';
-const ITEMS_SCHEMA = 2;
+const ITEMS_SCHEMA = 3;
+
+// Courier label books — one per Aramex service, tied to its courier SKU so
+// each depletes only by that service's invoiced labels. Seeded once (v3).
+export const LABEL_SEED = [
+    { id: 'labels-fr-01', name: 'Aramex labels · Local',        courierSku: 'FR-01' },
+    { id: 'labels-fr-02', name: 'Aramex labels · Inner Island', courierSku: 'FR-02' },
+    { id: 'labels-fr-03', name: 'Aramex labels · Outer Island', courierSku: 'FR-03' },
+    { id: 'labels-fr-04', name: 'Aramex labels · Inter Island', courierSku: 'FR-04' },
+].map((l, i) => ({
+    ...l, class: 'consumable', unit: 'each', unitLabel: 'label', active: true, key: false, sortOrder: 900 + i, aliases: [],
+    accountCode: '', unitValue: null, unitValueAsAt: null, salesKey: null,
+    profile: { retailer: 'Aramex', retailerUrl: '', supplierSku: '', imageUrl: '', description: 'Book of physical courier labels', leadTimeDays: null, typicalCost: null, packSize: 1, minOrderQty: null, notes: '' },
+    reorder: { mode: 'auto', manualPoint: null, safetyDays: null, reorderQty: null },
+}));
 
 export async function loadItems(env) {
     let index = await getJson(env, K.itemsIndex, null);
@@ -79,15 +93,24 @@ export async function loadItems(env) {
         await putJson(env, K.itemsIndex, index);
         await putJson(env, ITEMS_SCHEMA_KEY, ITEMS_SCHEMA);
     }
-    // One-time: v2 parks Loose + eco Ties (decision 4 Sep 2026).
+    // One-time migrations. v2 parks Loose + eco Ties (decision 4 Sep 2026);
+    // v3 seeds the four Aramex label books, each tied to its courier SKU.
     const schema = await getJson(env, ITEMS_SCHEMA_KEY, 1);
     if (schema < 2) {
         for (const id of ['prime-tie-loose', 'eco-ties']) {
             const it = await getJson(env, K.item(id), null);
             if (it) await putJson(env, K.item(id), { ...it, active: false, key: false });
         }
-        await putJson(env, ITEMS_SCHEMA_KEY, ITEMS_SCHEMA);
     }
+    if (schema < 3) {
+        for (const l of LABEL_SEED) {
+            if (await getJson(env, K.item(l.id), null)) continue;
+            await putJson(env, K.item(l.id), { ...l, createdAt: new Date().toISOString() });
+            if (!index.includes(l.id)) index.push(l.id);
+        }
+        await putJson(env, K.itemsIndex, index);
+    }
+    if (schema < ITEMS_SCHEMA) await putJson(env, ITEMS_SCHEMA_KEY, ITEMS_SCHEMA);
     const [items, shipments] = await Promise.all([
         Promise.all(index.map(id => getJson(env, K.item(id), null))),
         loadShipments(env),

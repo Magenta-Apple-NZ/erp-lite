@@ -120,9 +120,13 @@ export function rowFromOrder(order, itemsMap = null) {
     // consumable: opening count − labels invoiced = on hand. Falls back to
     // labels created on the courier record if none were invoiced. Freight is
     // never a label.
+    // Per service too (svc), so a label book tied to one courier SKU depletes
+    // only by that service's invoiced labels.
     let labels = 0;
+    const svc = {};
     for (const l of order.lines) {
-        if (/^FR-0[1-4]$/.test(String(l?.sku || '').toUpperCase())) labels += Number(l.quantity) || 0;
+        const sku = String(l?.sku || '').toUpperCase();
+        if (/^FR-0[1-4]$/.test(sku)) { const n = Number(l.quantity) || 0; labels += n; if (n) svc[sku] = (svc[sku] || 0) + n; }
     }
     if (!labels) labels = Number(order.courier?.boxesOrdered) || 0;
     // Bucket by the NZ-local calendar date, not the raw UTC slice of the
@@ -149,6 +153,7 @@ export function rowFromOrder(order, itemsMap = null) {
         tenKg:     sizes.tenKg,
         ...(hasCross ? { xkg: cross } : {}),
         ...(labels > 0 ? { labels } : {}),
+        ...(Object.keys(svc).length ? { svc } : {}),
     };
 }
 

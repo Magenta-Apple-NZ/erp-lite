@@ -29,6 +29,13 @@ export function validateItemFields(body, { partial = false } = {}) {
     // Courier label stock: depletes by the labels invoiced on orders (courier
     // lines FR-01..04), one piece per label. No matrix cell involved.
     if (body.courierLabel !== undefined) f.courierLabel = !!body.courierLabel;
+    // Tied to ONE courier service (FR-01..04): depletes only by that SKU's
+    // invoiced quantity. 'any' = every courier label (courierLabel).
+    if (body.courierSku !== undefined) {
+        const v = String(body.courierSku || '').trim().toUpperCase();
+        if (v && !/^FR-0[1-4]$/.test(v)) return { error: 'courierSku must be FR-01, FR-02, FR-03 or FR-04' };
+        f.courierSku = v || null;
+    }
     if (body.key !== undefined) f.key = !!body.key;
     if (body.sortOrder !== undefined) { const n = num(body.sortOrder); if (isNaN(n)) return { error: 'sortOrder must be a number' }; f.sortOrder = n ?? 0; }
     if (body.aliases !== undefined) {

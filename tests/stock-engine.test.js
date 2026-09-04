@@ -505,6 +505,27 @@ test('courier label stock depletes by the labels invoiced on each order — open
     assert.equal(cf.items.find(i => i.id === 'label-book').scenarios.avg.months[1].usage, 80);
 });
 
+test('a label book tied to one courier SKU depletes only by that service; the four books split an order by service', () => {
+    const books = ['FR-01', 'FR-02', 'FR-03', 'FR-04'].map((sku, i) => ({ id: 'labels-' + sku.toLowerCase(), name: 'Aramex ' + sku, class: 'consumable', unit: 'each', unitLabel: 'label', courierSku: sku, active: true, sortOrder: 900 + i, profile: { packSize: 1 }, reorder: { mode: 'auto' } }));
+    const its = [...items, ...books];
+    const st = { ...settings, perDespatch: [] };
+    // One order: 3 Inner Island labels + 1 Inter Island label invoiced.
+    const row = { ...saleLoose5, labels: 4, svc: { 'FR-02': 3, 'FR-04': 1 } };
+    const c = consumption({ rows: [row], items: its, bom, settings: st, from: null, to: '2026-10-31' }).byItem;
+    assert.equal(c['labels-fr-02'], 3);
+    assert.equal(c['labels-fr-04'], 1);
+    assert.equal(c['labels-fr-01'], undefined);
+    assert.equal(c['labels-fr-03'], undefined);
+    const m = salesMix([row], null, '2026-10-31');
+    assert.equal(m.svcPerKg['FR-02'], 3 / 50);
+    const w = world({ sales: [row], items: its, settings: st, counts: [{ ...opening, lines: [...opening.lines, ...books.map(b => ({ itemId: b.id, counted: true, countedQty: 20 }))] }] });
+    assert.equal(onHandFor(books[1], w, '2026-10-31').onHand, 17);
+    assert.equal(onHandFor(books[0], w, '2026-10-31').onHand, 20);
+    const cf = consumablesForecast(w, { monthlyAvg: Array(12).fill(1000), today: '2026-10-31' });
+    assert.equal(cf.items.find(i => i.id === 'labels-fr-02').scenarios.avg.months[1].usage, 60); // 1,000 kg × 3/50
+    assert.equal(cf.items.find(i => i.id === 'labels-fr-01').scenarios.avg.months[1].usage, 0);
+});
+
 test('the item ledger lists every in and out and closes at the same figure as on hand', () => {
     const w = world({ movements: { 'box-10kg': [{ id: 'w1', itemId: 'box-10kg', date: '2026-10-12', qty: -10, type: 'wastage', reason: 'Crushed' }, { id: 'r1', itemId: 'box-10kg', date: '2026-10-20', qty: 500, type: 'receipt', reason: 'Delivery' }] } });
     const lg = ledgerFor(items[3], w, '2026-10-31');

@@ -109,7 +109,7 @@ export function piecesPerUnit(items) {
 // type buckets; consumables from the matrix (pieces ÷ pieces per unit), plus
 // the per-order and per-courier-label lists. Shared by consumption() and the
 // per-item ledger so both always agree.
-export function rowConsumption(r, { items, bom, settings, pieces, productBySalesKey, courierLabelIds }) {
+export function rowConsumption(r, { items, bom, settings, pieces, productBySalesKey, courierLabelIds, courierSkuItems }) {
     const out = {};
     const add = (id, q) => { if (id && q) out[id] = (out[id] || 0) + q; };
     const addPieces = (id, q) => add(id, q / (pieces[id] || 1));
@@ -134,17 +134,28 @@ export function rowConsumption(r, { items, bom, settings, pieces, productBySales
         for (const id of courierLabelIds || []) addPieces(id, labels);
         for (const e of settings?.perLabel || []) addPieces(e.consumableId, labels * (Number(e.qty) || 0));
     }
+    // Label books tied to one courier service deplete only by that SKU's
+    // invoiced quantity (svc on the sales row).
+    if (r.svc && typeof r.svc === 'object') {
+        for (const [sku, ids] of Object.entries(courierSkuItems || {})) {
+            const n = Number(r.svc[sku]) || 0;
+            if (n > 0) for (const id of ids) addPieces(id, n);
+        }
+    }
     return { byItem: out, hasSplit };
 }
 
 function consumptionContext(items, bom, settings) {
     const productBySalesKey = {};
     const courierLabelIds = [];
+    const courierSkuItems = {};
     for (const it of items || []) {
         if (it.class === 'product' && it.salesKey) productBySalesKey[it.salesKey] = it.id;
-        if (it.class === 'consumable' && it.courierLabel) courierLabelIds.push(it.id);
+        if (it.class !== 'consumable') continue;
+        if (it.courierSku) (courierSkuItems[String(it.courierSku).toUpperCase()] = courierSkuItems[String(it.courierSku).toUpperCase()] || []).push(it.id);
+        else if (it.courierLabel) courierLabelIds.push(it.id);
     }
-    return { items, bom, settings, pieces: piecesPerUnit(items), productBySalesKey, courierLabelIds };
+    return { items, bom, settings, pieces: piecesPerUnit(items), productBySalesKey, courierLabelIds, courierSkuItems };
 }
 
 export function consumption({ rows, items, bom, settings, from, to }) {
@@ -550,6 +561,7 @@ const daysInMonth = (y, m) => new Date(Date.UTC(y, m, 0)).getUTCDate(); // m is 
 // Share of kg sold by SKU, and orders per kg, over (from, to].
 export function salesMix(rows, from, to) {
     const kgBySku = {};
+    const svcUnits = {};
     let totalKg = 0, kgWithSplit = 0, orders = 0, labels = 0;
     for (const r of rows || []) {
         const d = String(r.date || '').slice(0, 10);
@@ -564,11 +576,14 @@ export function salesMix(rows, from, to) {
             }
         }
         labels += Number(r.labels) || 0;
+        if (r.svc && typeof r.svc === 'object') for (const sku of COURIER_SKUS) svcUnits[sku] = (svcUnits[sku] || 0) + (Number(r.svc[sku]) || 0);
     }
     const share = {};
     if (kgWithSplit > 0) for (const [sku, kg] of Object.entries(kgBySku)) share[sku] = kg / kgWithSplit;
     else share['PT-b-10'] = 1; // nothing to go on yet — assume 10 kg bundled
-    return { share, ordersPerKg: totalKg > 0 ? orders / totalKg : 0, labelsPerKg: totalKg > 0 ? labels / totalKg : 0,
+    const svcPerKg = {};
+    if (totalKg > 0) for (const [sku, n] of Object.entries(svcUnits)) if (n > 0) svcPerKg[sku] = n / totalKg;
+    return { share, ordersPerKg: totalKg > 0 ? orders / totalKg : 0, labelsPerKg: totalKg > 0 ? labels / totalKg : 0, svcPerKg,
              orders, labels, kg: r2(totalKg), from, to,
              source: kgWithSplit > 0 ? 'sales-history' : 'assumed-10kg-bundled' };
 }
@@ -595,7 +610,11 @@ export function consumablesForecast(world, { monthlyAvg, today, months = 12, mix
     }
     for (const e of s.perDespatch || []) addPerKg(e.consumableId, mix.ordersPerKg * (Number(e.qty) || 0));
     for (const e of s.perLabel || []) addPerKg(e.consumableId, (mix.labelsPerKg || 0) * (Number(e.qty) || 0));
-    for (const it of world.items || []) if (it.class === 'consumable' && it.courierLabel) addPerKg(it.id, mix.labelsPerKg || 0);
+    for (const it of world.items || []) {
+        if (it.class !== 'consumable') continue;
+        if (it.courierSku) addPerKg(it.id, mix.svcPerKg?.[String(it.courierSku).toUpperCase()] || 0);
+        else if (it.courierLabel) addPerKg(it.id, mix.labelsPerKg || 0);
+    }
 
     // The next N months; the current month is pro-rated from today.
     const [ty, tm, td] = today.split('-').map(Number);
