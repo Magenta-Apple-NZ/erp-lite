@@ -59,11 +59,16 @@ export async function saveSettings(env, settings) {
 // ── Items ──
 // The three key products are seeded on first read so the engine always has
 // its product buckets. Consumables are added by hand in Admin → Stock.
+// Only Prime Tie Bundled is tracked for now (fed by shipments, FIFO-costed).
+// Loose and eco Ties exist so their sales buckets resolve, but stay inactive
+// until they are wanted — reactivate from Catalogue → Stock.
 export const PRODUCT_SEED = [
-    { id: 'prime-tie-bundled', name: 'Prime Tie Bundled', class: 'product', unit: 'kg', active: true, key: true, sortOrder: 10, salesKey: 'bundles', aliases: [], accountCode: '1440', unitValue: null, unitValueAsAt: null, reorder: { mode: 'manual', manualPoint: null, safetyDays: null, reorderQty: null } },
-    { id: 'prime-tie-loose',   name: 'Prime Tie Loose',   class: 'product', unit: 'kg', active: true, key: true, sortOrder: 20, salesKey: 'loose',   aliases: [], accountCode: '1440', unitValue: null, unitValueAsAt: null, reorder: { mode: 'manual', manualPoint: null, safetyDays: null, reorderQty: null } },
-    { id: 'eco-ties',          name: 'eco Ties',          class: 'product', unit: 'kg', active: true, key: true, sortOrder: 30, salesKey: 'ecoTies', aliases: [], accountCode: '1440', unitValue: null, unitValueAsAt: null, reorder: { mode: 'manual', manualPoint: null, safetyDays: null, reorderQty: null } },
+    { id: 'prime-tie-bundled', name: 'Prime Tie Bundled', class: 'product', unit: 'kg', active: true,  key: true,  sortOrder: 10, salesKey: 'bundles', aliases: [], accountCode: '1440', unitValue: null, unitValueAsAt: null, reorder: { mode: 'auto', manualPoint: null, safetyDays: null, reorderQty: null } },
+    { id: 'prime-tie-loose',   name: 'Prime Tie Loose',   class: 'product', unit: 'kg', active: false, key: false, sortOrder: 20, salesKey: 'loose',   aliases: [], accountCode: '1440', unitValue: null, unitValueAsAt: null, reorder: { mode: 'auto', manualPoint: null, safetyDays: null, reorderQty: null } },
+    { id: 'eco-ties',          name: 'eco Ties',          class: 'product', unit: 'kg', active: false, key: false, sortOrder: 30, salesKey: 'ecoTies', aliases: [], accountCode: '1440', unitValue: null, unitValueAsAt: null, reorder: { mode: 'auto', manualPoint: null, safetyDays: null, reorderQty: null } },
 ];
+const ITEMS_SCHEMA_KEY = 'stock:items:schema';
+const ITEMS_SCHEMA = 2;
 
 export async function loadItems(env) {
     let index = await getJson(env, K.itemsIndex, null);
@@ -71,6 +76,16 @@ export async function loadItems(env) {
         for (const p of PRODUCT_SEED) await putJson(env, K.item(p.id), p);
         index = PRODUCT_SEED.map(p => p.id);
         await putJson(env, K.itemsIndex, index);
+        await putJson(env, ITEMS_SCHEMA_KEY, ITEMS_SCHEMA);
+    }
+    // One-time: v2 parks Loose + eco Ties (decision 4 Sep 2026).
+    const schema = await getJson(env, ITEMS_SCHEMA_KEY, 1);
+    if (schema < 2) {
+        for (const id of ['prime-tie-loose', 'eco-ties']) {
+            const it = await getJson(env, K.item(id), null);
+            if (it) await putJson(env, K.item(id), { ...it, active: false, key: false });
+        }
+        await putJson(env, ITEMS_SCHEMA_KEY, ITEMS_SCHEMA);
     }
     const [items, shipments] = await Promise.all([
         Promise.all(index.map(id => getJson(env, K.item(id), null))),

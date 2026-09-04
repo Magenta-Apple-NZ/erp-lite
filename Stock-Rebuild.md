@@ -236,3 +236,13 @@ Status colours use one reserved palette (ok / watch / low / critical / out / unk
 6. Valuation export; delete `/api/inventory/*`
 
 Steps 1–4 ship before 1 October so the opening count has somewhere to go.
+
+---
+
+## 11. Addendum — 4 Sep 2026 (after first review)
+
+- **Only Prime Tie Bundled is tracked.** Loose and eco Ties are seeded/migrated to `active:false`; reactivate from Catalogue → Stock if ever needed.
+- **FIFO cost lots.** `fifoFor()` in the engine: every received shipment is a lot (kg at its listed `pricePerKg`); the opening count is the first lot, costed at the latest priced shipment on or before the count date. Sales and wastage take from the oldest lot first; positive adjustments become a lot at the latest cost. `levels` returns `value`, `avgCost`, `lots`, `shortfall` for the shipment-fed product, and a committed count values it at FIFO average cost as at the count date. Shipments only record a *listed* $/kg — landed cost is a follow-up.
+- **Consumables matrix** replaces "packaging recipes": rows are the items-sheet products minus freight (`/api/stock/bom` → `products`), keyed by SKU. Only SKUs with a type×size mapping (`SKU_TABLE`) actually consume; others are shown as "no sales mapping yet".
+- **Consumable fields** stripped to Retailer, Unit price, Quantity per unit, Image link, Link to product (+ name, active). Lead time is a single engine setting (`defaultLeadTimeDays`, default 14).
+- **Stock nav item** added (Warehouse → Dashboard / Counts had no link before).

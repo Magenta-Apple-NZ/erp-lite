@@ -148,6 +148,8 @@ const Stock = (() => {
             ${levelsTable(consumables.concat(products), lv)}
         </div>
 
+        ${key.filter(k => Array.isArray(k.lots)).map(lotsSection).join('')}
+
         <div class="cat-section stk2-section">
             <div class="cat-section-head">
                 <div>
@@ -235,6 +237,7 @@ const Stock = (() => {
             <div class="stk2-tile-value">${unknown ? '<span class="stk2-tile-unknown">—</span>' : `${fmtNum(lv.onHand)}<span class="stk2-tile-unit">${lv.unit}</span>`}</div>
             <div class="stk2-tile-sub">${escHtml(cover)}${lv.onOrder ? ` · <span title="On order — not included in on hand">${fmtNum(lv.onOrder)} ${lv.unit} on order</span>` : ''}</div>
             <div class="stk2-tile-foot">${statusChip(lv)}<div class="stk2-spark" aria-hidden="true"></div></div>
+            ${lv.value != null ? `<div class="stk2-tile-sub" title="FIFO: oldest shipment lot sold first">Value <strong>$${fmtNum(lv.value)}</strong>${lv.avgCost != null ? ` · avg $${fmtNum(lv.avgCost, 2)}/kg` : ''} <span class="cat-sub">FIFO</span></div>` : ''}
             ${lv.baselineDate ? `<div class="stk2-tile-base">Counted ${fmtDate(lv.baselineDate)}${lv.reorderPoint != null ? ` · reorder at ${fmtNum(lv.reorderPoint)}` : ''}</div>` : ''}
         </div>`;
     }
@@ -309,6 +312,37 @@ const Stock = (() => {
         const rows = dates.filter((_, i) => i % step === 0 || i === dates.length - 1);
         return `<div class="stk-table-wrap"><table class="stk-table stk2-table"><thead><tr><th>Date</th>${key.map(k => `<th style="text-align:right">${escHtml(k.name)} (${k.unit})</th>`).join('')}</tr></thead>
         <tbody>${rows.map(d => `<tr><td>${fmtDate(d)}</td>${key.map(k => `<td style="text-align:right;font-variant-numeric:tabular-nums">${fmtNum(histories[k.id]?.series?.find(s => s.date === d)?.onHand)}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`;
+    }
+
+    // FIFO cost lots for the shipment-fed product (Prime Tie Bundled).
+    function lotsSection(lv) {
+        const lots = lv.lots || [];
+        return `
+        <div class="cat-section stk2-section">
+            <div class="cat-section-head">
+                <div>
+                    <h2 class="cat-title">${escHtml(lv.name)} · shipment lots <span class="cat-sub" style="font-weight:400">· FIFO</span></h2>
+                    <p class="cat-sub" style="margin:0">Each received shipment is a lot at its $/kg. Sales and wastage take from the oldest lot first, so on-hand value is what's left in the newest lots.</p>
+                </div>
+                <div style="text-align:right">
+                    <div class="cat-sub" style="margin:0">On hand value</div>
+                    <strong style="font-size:1.15rem">${lv.value != null ? '$' + fmtNum(lv.value) : '—'}</strong>
+                    ${lv.avgCost != null ? `<div class="cat-sub" style="margin:0">avg $${fmtNum(lv.avgCost, 2)}/kg</div>` : ''}
+                </div>
+            </div>
+            ${lots.length ? `<div class="stk-table-wrap"><table class="stk-table stk2-table">
+                <thead><tr><th>Lot</th><th>Received</th><th style="text-align:right">Received kg</th><th style="text-align:right">Remaining kg</th><th style="text-align:right">$/kg</th><th style="text-align:right">Value</th></tr></thead>
+                <tbody>${lots.map(l => `<tr class="${l.remaining <= 0 ? 'stk2-lot--done' : ''}">
+                    <td><strong>${escHtml(l.note)}</strong></td><td>${fmtDate(l.date)}</td>
+                    <td style="text-align:right;font-variant-numeric:tabular-nums">${fmtNum(l.qty)}</td>
+                    <td style="text-align:right;font-variant-numeric:tabular-nums">${fmtNum(l.remaining)}</td>
+                    <td style="text-align:right;font-variant-numeric:tabular-nums">${l.unitCost != null ? '$' + fmtNum(l.unitCost, 2) : '—'}</td>
+                    <td style="text-align:right;font-variant-numeric:tabular-nums">${l.remaining > 0 ? '$' + fmtNum(l.value) : '—'}</td></tr>`).join('')}</tbody>
+            </table></div>
+            ${lv.shortfall ? `<p class="cat-sub stk2-var--neg" style="margin-top:0.5rem">${fmtNum(lv.shortfall)} kg sold beyond what the lots hold — the next shipment to land covers it first.</p>` : ''}`
+            : '<p class="cat-sub">No lots yet — commit the opening count, then received shipments appear here.</p>'}
+            ${(lv.onOrder ? `<p class="cat-sub" style="margin-top:0.5rem">${fmtNum(lv.onOrder)} kg on order (not in on hand).</p>` : '')}
+        </div>`;
     }
 
     function meter(lv) {
@@ -539,7 +573,7 @@ const Stock = (() => {
 
         <div class="cat-section stk2-section" id="stk2-bom">
             <div class="cat-section-head">
-                <div><h2 class="cat-title">Packaging recipes</h2><p class="cat-sub" style="margin:0">What one sales unit of each SKU consumes. Fractions are fine (a 1kg bag uses 0.1 of a box). The <em>Per order</em> row is consumed once per despatch. Versions apply from their effective date.</p></div>
+                <div><h2 class="cat-title">Consumables matrix</h2><p class="cat-sub" style="margin:0">Products we sell (from the items sheet, freight excluded) × consumables: how many of each one sales unit uses. Fractions are fine (a 1kg bag uses 0.1 of a box). <em>Per order</em> is consumed once per despatch. Versions apply from their effective date.</p></div>
                 <div class="stk2-form-row">
                     <select id="stk2-bom-version">${bom.versions.map((v, i) => `<option value="${i}">From ${fmtDate(v.effectiveFrom)}</option>`).join('')}</select>
                     <input type="date" id="stk2-bom-newdate" value="${escHtml(settings.stockEpoch)}" title="Effective date for a new version">
@@ -588,9 +622,10 @@ const Stock = (() => {
             if (!activeCons.length) { grid.innerHTML = '<p class="cat-sub">Add consumables first, then define what each SKU uses.</p>'; return; }
             if (!versions.length) { grid.innerHTML = '<p class="cat-sub">No recipe version yet — pick an effective date and click <strong>New version</strong>.</p>'; return; }
             const v = versions[vi];
-            const rows = bom.skus.map(sku => `<tr><td><strong>${escHtml(sku)}</strong></td>${activeCons.map(c => `<td><input type="number" step="any" min="0" data-sku="${escHtml(sku)}" data-cid="${escHtml(c.id)}" value="${qtyOf(v.recipes[sku], c.id)}"></td>`).join('')}</tr>`).join('');
+            const prods = (bom.products && bom.products.length) ? bom.products : bom.skus.map(s => ({ sku: s, name: s, tracked: true }));
+            const rows = prods.map(pr => `<tr class="${pr.tracked ? '' : 'stk2-bom-untracked'}"><td><strong>${escHtml(pr.name)}</strong><div class="cat-sub" style="margin:0">${escHtml(pr.sku)}${pr.tracked ? '' : ' · no sales mapping yet'}</div></td>${activeCons.map(c => `<td><input type="number" step="any" min="0" data-sku="${escHtml(pr.sku)}" data-cid="${escHtml(c.id)}" value="${qtyOf(v.recipes[pr.sku], c.id)}" title="${escHtml(pr.name)} × ${escHtml(c.name)}"></td>`).join('')}</tr>`).join('');
             const per = `<tr class="stk2-bom-per"><td><strong>Per order</strong><div class="cat-sub" style="margin:0">once per despatch</div></td>${activeCons.map(c => `<td><input type="number" step="any" min="0" data-per="1" data-cid="${escHtml(c.id)}" value="${qtyOf(perDespatch, c.id)}"></td>`).join('')}</tr>`;
-            grid.innerHTML = `<div class="stk-table-wrap"><table class="stk-table stk2-table stk2-bom-table"><thead><tr><th>SKU</th>${activeCons.map(c => `<th>${escHtml(c.name)}</th>`).join('')}</tr></thead><tbody>${rows}${per}</tbody></table></div>`;
+            grid.innerHTML = `<div class="stk-table-wrap"><table class="stk-table stk2-table stk2-bom-table"><thead><tr><th>Product</th>${activeCons.map(c => `<th>${escHtml(c.name)}</th>`).join('')}</tr></thead><tbody>${rows}${per}</tbody></table></div>`;
             grid.querySelectorAll('input[data-sku]').forEach(inp => inp.addEventListener('input', () => {
                 v.recipes[inp.dataset.sku] = v.recipes[inp.dataset.sku] || [];
                 setQty(v.recipes[inp.dataset.sku], inp.dataset.cid, inp.value);

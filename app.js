@@ -882,17 +882,10 @@ if (ordersNavItem) {
     });
 }
 
-// Make Warehouse nav item active (it was nav-item--soon Phase 2)
-const warehouseNavItem = document.querySelector('.nav-item--soon[data-phase="Phase 2"]');
-if (warehouseNavItem) {
-    warehouseNavItem.classList.remove('nav-item--soon');
-    warehouseNavItem.id = 'nav-warehouse';
-    warehouseNavItem.querySelector('.nav-soon-badge')?.remove();
-    warehouseNavItem.addEventListener('click', e => {
-        e.preventDefault();
-        location.hash = 'warehouse';
-    });
-}
+document.getElementById('nav-warehouse')?.addEventListener('click', e => {
+    e.preventDefault();
+    location.hash = 'warehouse';
+});
 
 document.getElementById('nav-admin')?.addEventListener('click', e => {
     e.preventDefault();

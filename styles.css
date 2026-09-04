@@ -7390,3 +7390,5 @@ a.db-row:hover { background: #f8fafc; border-color: #e2e8f0; }
 .stk2-rowlink { cursor: pointer; }
 .stk2-rowlink:hover td { background: var(--stk-notice); }
 .stk2-modal input:disabled { color: var(--stk-ink-2); background: var(--stk-notice); }
+.stk2-lot--done td { opacity: 0.5; }
+.stk2-bom-untracked td { opacity: 0.6; }

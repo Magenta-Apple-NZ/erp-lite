@@ -53,7 +53,7 @@ const opening = {
     ],
 };
 
-const shipArrived = { id: 'ship-41', ym: '2026-10', kg: 1000, note: 'Shipment 41', milestones: [
+const shipArrived = { id: 'ship-41', ym: '2026-10', kg: 1000, note: 'Shipment 41', pricePerKg: 4.5, milestones: [
     { label: 'Request for documents', date: '2026-08-01', done: true },
     { label: 'Left Italy',            date: '2026-08-10', done: true },
     { label: 'Arrived in Bangladesh', date: '2026-09-01', done: true },
@@ -271,6 +271,65 @@ test('valuation uses snapshotted values and excludes not-counted lines; the engi
     assert.equal(rows[0].net, 1100);
     assert.equal(total, 1100);
     assert.equal(rows[0].description, 'Prime Tie Loose');
+});
+
+// ── FIFO cost lots (Prime Tie Bundled ↔ shipments) ───────────────────────
+import { fifoFor } from '../functions/api/stock/_engine.js';
+
+test('received shipments are FIFO lots at their $/kg; sales take the oldest lot first', () => {
+    // Opening 5000 kg (no priced shipment before 1 Oct → item.unitValue 12.5),
+    // ship-41 lands 10 Oct: 1000 kg @ $4.50. Sell 5200 kg on 15 Oct.
+    const sale = { id: 'big', date: '2026-10-15', bundlesKg: 5200, looseKg: 0, ecoTiesKg: 0, xkg: { b10: 5200 } };
+    const f = fifoFor(items[0], world({ sales: [sale] }), '2026-10-31');
+    assert.equal(f.lots.length, 2);
+    assert.equal(f.lots[0].id, 'opening');
+    assert.equal(f.lots[0].remaining, 0);
+    assert.equal(f.lots[1].id, 'ship-41');
+    assert.equal(f.lots[1].remaining, 800);
+    assert.equal(f.lots[1].unitCost, 4.5);
+    assert.equal(f.value, 3600);
+    assert.equal(f.onHand, 800);
+    assert.equal(f.avgCost, 4.5);
+    // Matches the plain on-hand arithmetic.
+    assert.equal(onHandFor(items[0], world({ sales: [sale] }), '2026-10-31').onHand, 800);
+});
+
+test('a sale before any lot can cover it is a shortfall, taken from the next shipment to land', () => {
+    const early = { id: 'e', date: '2026-10-05', bundlesKg: 5300, looseKg: 0, ecoTiesKg: 0, xkg: { b10: 5300 } };
+    const f = fifoFor(items[0], world({ sales: [early] }), '2026-10-31');
+    assert.equal(f.lots[0].remaining, 0);
+    assert.equal(f.lots[1].remaining, 700, '300 kg shortfall came off ship-41 when it landed');
+    assert.equal(f.shortfall, 0);
+    assert.equal(f.onHand, 700);
+    const f2 = fifoFor(items[0], world({ sales: [early] }), '2026-10-08'); // before ship-41 lands
+    assert.equal(f2.shortfall, 300);
+    assert.equal(f2.onHand, -300);
+});
+
+test('wastage depletes lots FIFO; positive adjustments become a lot at the latest cost', () => {
+    const w = world({ sales: [], movements: { 'prime-tie-bundled': [
+        { id: 'w1', itemId: 'prime-tie-bundled', date: '2026-10-12', qty: -100, type: 'wastage' },
+        { id: 'a1', itemId: 'prime-tie-bundled', date: '2026-10-20', qty: 50, type: 'adjustment' },
+    ] } });
+    const f = fifoFor(items[0], w, '2026-10-31');
+    assert.equal(f.lots[0].remaining, 4900);
+    assert.equal(f.lots[2].unitCost, 4.5, 'adjustment lot takes the latest lot cost');
+    assert.equal(f.onHand, 5950);
+});
+
+test('levels carry FIFO value for the shipment-fed product only; a count is valued at FIFO average cost', () => {
+    const sale = { id: 'big', date: '2026-10-15', bundlesKg: 5200, looseKg: 0, ecoTiesKg: 0, xkg: { b10: 5200 } };
+    const w = world({ sales: [sale] });
+    const lv = computeLevels(w, '2026-10-31');
+    const b = lv.items.find(i => i.id === SHIPMENT_PRODUCT_ID);
+    assert.equal(b.value, 3600);
+    assert.equal(b.avgCost, 4.5);
+    assert.equal(lv.items.find(i => i.id === 'prime-tie-loose').value, null);
+    const committed = commitCount({ id: 'c', label: 'Nov', date: '2026-11-01', status: 'draft', lines: [
+        { itemId: 'prime-tie-bundled', counted: true, countedQty: 790 },
+    ] }, w);
+    assert.equal(committed.lines[0].unitValue, 4.5, 'FIFO average cost, not the item unitValue');
+    assert.equal(committed.lines[0].expectedQty, 800);
 });
 
 test('renaming an item changes nothing about its stock', () => {

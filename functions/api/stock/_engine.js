@@ -130,7 +130,8 @@ export function receipts({ shipments, from, to, epoch }) {
         const date = shipmentEta(s);
         if (!date || !inRange(date, from, to)) continue;
         if (epoch && date < epoch) continue;
-        out.push({ date, qty: r2(s.kg), shipmentId: s.id, note: s.note || s.id, itemId: SHIPMENT_PRODUCT_ID });
+        out.push({ date, qty: r2(s.kg), shipmentId: s.id, note: s.note || s.id, itemId: SHIPMENT_PRODUCT_ID,
+                   unitCost: Number(s.pricePerKg) > 0 ? Number(s.pricePerKg) : null });
     }
     return out;
 }
@@ -152,6 +153,73 @@ export function productValueFromShipments(shipments) {
     const s = priced[0];
     if (!s) return null;
     return { unitValue: Number(s.pricePerKg), source: `${s.note || s.id} · $${Number(s.pricePerKg).toFixed(2)}/kg listed` };
+}
+
+// ── FIFO cost lots (the shipment-fed product) ────────────────────────────
+// Every received shipment is a lot: kg at that shipment's $/kg. Sales and
+// wastage take from the oldest lot first. The opening count is the first lot,
+// costed at the latest priced shipment on or before the count date (else the
+// item's unitValue). Returns null when there is no baseline.
+export function fifoFor(item, world, asOf) {
+    const baseline = baselineFor(item.id, world.counts, asOf);
+    if (!baseline) return null;
+    const from = baseline.date, to = asOf;
+    const epoch = world.settings?.stockEpoch;
+    const shipments = world.shipments || [];
+    const pricedBefore = shipments
+        .filter(s => Number(s.pricePerKg) > 0 && (shipmentEta(s) || `${s.ym || ''}-01`) <= from)
+        .sort((a, b) => String(shipmentEta(b) || b.ym).localeCompare(String(shipmentEta(a) || a.ym)))[0];
+    const openingCost = pricedBefore ? Number(pricedBefore.pricePerKg) : (Number(item.unitValue) || 0);
+
+    // Chronological events. On the same day: receipts land, then movements,
+    // then sales — so a shipment can be sold the day it arrives.
+    const events = [];
+    events.push({ date: from, order: 0, kind: 'lot', id: 'opening', note: baseline.countLabel || 'Opening count', qty: baseline.qty, unitCost: openingCost });
+    for (const r of receipts({ shipments, from, to, epoch })) {
+        events.push({ date: r.date, order: 0, kind: 'lot', id: r.shipmentId, note: r.note, qty: r.qty, unitCost: r.unitCost });
+    }
+    for (const m of (world.movements?.[item.id] || [])) {
+        if (!inRange(m.date, from, to)) continue;
+        const q = Number(m.qty) || 0;
+        if (q > 0) events.push({ date: m.date, order: 1, kind: 'lot', id: m.id, note: m.reason || m.type, qty: q, unitCost: null });
+        else if (q < 0) events.push({ date: m.date, order: 1, kind: 'take', qty: -q });
+    }
+    const field = SALES_KG_FIELD[item.salesKey];
+    if (field) {
+        for (const r of world.sales || []) {
+            const d = String(r.date || '').slice(0, 10);
+            if (!inRange(d, from, to) || (epoch && d < epoch)) continue;
+            const kg = Number(r[field]) || 0;
+            if (kg > 0) events.push({ date: d, order: 2, kind: 'take', qty: kg });
+        }
+    }
+    events.sort((a, b) => a.date.localeCompare(b.date) || a.order - b.order);
+
+    const lots = [];
+    let shortfall = 0; // sold before any lot could cover it — taken from the next lot to land
+    const take = qty => {
+        let left = qty;
+        for (const l of lots) {
+            if (left <= 0) break;
+            const t = Math.min(l.remaining, left);
+            l.remaining -= t; left -= t;
+        }
+        if (left > 0) shortfall += left;
+    };
+    for (const ev of events) {
+        if (ev.kind === 'lot') {
+            const cost = ev.unitCost != null ? ev.unitCost : (lots.length ? lots[lots.length - 1].unitCost : openingCost);
+            lots.push({ id: ev.id, note: ev.note, date: ev.date, qty: r2(ev.qty), remaining: ev.qty, unitCost: cost });
+            if (shortfall > 0) { const t = Math.min(shortfall, ev.qty); lots[lots.length - 1].remaining -= t; shortfall -= t; }
+        } else {
+            take(ev.qty);
+        }
+    }
+    const out = lots.map(l => ({ ...l, remaining: r2(l.remaining), value: r2(l.remaining * l.unitCost) }));
+    const onHand = r2(out.reduce((s, l) => s + l.remaining, 0) - shortfall);
+    const value = r2(out.reduce((s, l) => s + l.value, 0));
+    const held = out.reduce((s, l) => s + l.remaining, 0);
+    return { lots: out, onHand, value, avgCost: held > 0 ? Math.round((value / held) * 10000) / 10000 : null, shortfall: r2(shortfall), openingCost };
 }
 
 // ── Baseline & on hand ───────────────────────────────────────────────────
@@ -240,9 +308,12 @@ export function computeLevels(world, asOf) {
             const ship = pending.find(p => p.itemId === item.id && p.eta && p.eta <= stockout);
             if (ship) { covered = true; coveredBy = ship; }
         }
+        // FIFO cost lots for the shipment-fed product: value on hand + lots.
+        const fifo = item.id === SHIPMENT_PRODUCT_ID ? fifoFor(item, { ...world, settings: s }, asOf) : null;
         return {
             id: item.id, name: item.name, class: item.class, unit: item.unit, key: !!item.key, sortOrder: item.sortOrder ?? 0,
             onHand, onOrder,
+            value: fifo ? fifo.value : null, avgCost: fifo ? fifo.avgCost : null, lots: fifo ? fifo.lots : undefined, shortfall: fifo ? fifo.shortfall : undefined,
             baselineDate: oh.baseline?.date || null, baselineQty: oh.baseline?.qty ?? null, baselineCount: oh.baseline?.countId || null,
             consumedSinceBaseline: oh.consumed, movementsSinceBaseline: oh.movements, receiptsSinceBaseline: oh.receipts,
             avgDaily, daysCover, reorderPoint, reorderMode: mode, leadTimeDays, safetyDays,
@@ -304,8 +375,17 @@ export function commitCount(count, world, { committedAt, committedBy } = {}) {
         throw err;
     }
     const expected = expectedForCount(count, world);
+    // The shipment-fed product is valued at its FIFO average cost as at the
+    // count date; everything else at the item's unitValue.
+    const fifoCost = {};
+    for (const it of world.items || []) {
+        if (it.id !== SHIPMENT_PRODUCT_ID) continue;
+        const f = fifoFor(it, world, count.date);
+        if (f && f.avgCost != null) fifoCost[it.id] = f.avgCost;
+    }
     const lines = (count.lines || []).map(l => {
-        const item = (world.items || []).find(i => i.id === l.itemId) || {};
+        const raw = (world.items || []).find(i => i.id === l.itemId) || {};
+        const item = fifoCost[l.itemId] != null ? { ...raw, unitValue: fifoCost[l.itemId] } : raw;
         if (l.counted === false) {
             return { ...l, counted: false, countedQty: null, expectedQty: expected[l.itemId] ?? null, varianceQty: null, variancePct: null,
                      unitValue: item.unitValue ?? null, accountCode: item.accountCode || world.settings?.valuation?.defaultAccountCode || '' };
