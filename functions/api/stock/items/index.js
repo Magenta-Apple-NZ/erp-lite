@@ -24,6 +24,8 @@ export function validateItemFields(body, { partial = false } = {}) {
         f.class = body.class; f.unit = body.unit;
     }
     if (body.active !== undefined) f.active = body.active !== false;
+    // Unit type for "each" items — box, roll, bag, sheet… (display only)
+    if (body.unitLabel !== undefined) f.unitLabel = String(body.unitLabel || '').trim().toLowerCase().slice(0, 30) || null;
     if (body.key !== undefined) f.key = !!body.key;
     if (body.sortOrder !== undefined) { const n = num(body.sortOrder); if (isNaN(n)) return { error: 'sortOrder must be a number' }; f.sortOrder = n ?? 0; }
     if (body.aliases !== undefined) {

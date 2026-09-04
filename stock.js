@@ -40,11 +40,15 @@ const Stock = (() => {
         if (n == null || n === '' || isNaN(Number(n))) return '—';
         return Number(n).toLocaleString('en-NZ', { maximumFractionDigits: dp, minimumFractionDigits: 0 });
     }
-    function fmtQty(n, unit, dp) {
+    // "1,250 kg" / "500 boxes" / "1 roll" — label is the item's unit type for
+    // "each" items (box, roll, bag…), pluralised naively.
+    function fmtQty(n, unit, dp, label) {
         if (n == null) return '—';
         const v = Number(n);
         const d = dp != null ? dp : (Number.isInteger(v) ? 0 : 1);
-        return fmtNum(v, d) + (unit === 'kg' ? ' kg' : '');
+        if (unit === 'kg') return fmtNum(v, d) + ' kg';
+        if (label) return fmtNum(v, d) + ' ' + (Math.abs(v) === 1 || /s$/.test(label) ? label : label + (/(x|ch|sh)$/.test(label) ? 'es' : 's'));
+        return fmtNum(v, d);
     }
     const unitWord = (u, n) => u === 'kg' ? 'kg' : (Math.abs(Number(n)) === 1 ? 'unit' : 'units');
 
@@ -366,7 +370,7 @@ const Stock = (() => {
             <tbody>${items.map(i => `<tr class="stk2-row--${escHtml(i.status)}">
                 <td><strong>${escHtml(i.name)}</strong><div class="cat-sub" style="margin:0">${i.baselineDate ? 'counted ' + fmtDate(i.baselineDate) : 'not counted'}</div></td>
                 <td>${meter(i)}</td>
-                <td style="text-align:right;font-variant-numeric:tabular-nums">${fmtQty(i.onHand, i.unit)}</td>
+                <td style="text-align:right;font-variant-numeric:tabular-nums">${fmtQty(i.onHand, i.unit, null, i.unitLabel)}</td>
                 <td style="text-align:right;font-variant-numeric:tabular-nums">${i.daysCover == null ? '—' : fmtNum(i.daysCover) + ' d'}</td>
                 <td style="text-align:right;font-variant-numeric:tabular-nums" title="${i.reorderMode === 'manual' ? 'Manual reorder point' : 'Auto: avg daily × (lead time + safety days)'}">${i.reorderPoint == null ? '—' : fmtNum(i.reorderPoint)}${i.reorderMode === 'manual' ? '' : ' <span class="cat-sub">auto</span>'}</td>
                 <td style="text-align:right">${i.leadTimeDays ? i.leadTimeDays + ' d' : '—'}</td>
@@ -511,11 +515,13 @@ const Stock = (() => {
                     const exp = committed ? l.expectedQty : expected[l.itemId];
                     return `<tr data-item="${escHtml(l.itemId)}" class="${l.counted === false ? 'stk2-line--skip' : ''}">
                         <td><strong>${escHtml(item.name)}</strong>${item.key ? ' <span class="cat-sub">key</span>' : ''}</td>
-                        <td class="cat-sub">${escHtml(item.unit)}</td>
-                        <td style="text-align:right;font-variant-numeric:tabular-nums" title="${exp == null ? 'No earlier committed count for this item' : ''}">${exp == null ? '<span class="cat-sub">—</span>' : fmtQty(exp, item.unit)}</td>
-                        <td style="text-align:right">${committed ? `<span style="font-variant-numeric:tabular-nums">${l.counted === false ? '—' : fmtQty(l.countedQty, item.unit)}</span>` : `<input type="number" step="any" min="0" class="stk2-counted" value="${l.countedQty ?? ''}" ${l.counted === false ? 'disabled' : ''} style="width:110px;text-align:right">`}</td>
+                        <td class="cat-sub">${escHtml(item.unit === 'kg' ? 'kg' : (item.unitLabel || 'each'))}</td>
+                        <td style="text-align:right;font-variant-numeric:tabular-nums" title="${exp == null ? 'No earlier committed count for this item — this line sets its baseline' : ''}">${exp == null ? '<span class="cat-sub">—</span>' : fmtQty(exp, item.unit, null, item.unitLabel)}</td>
+                        <td style="text-align:right">${committed ? `<span style="font-variant-numeric:tabular-nums">${l.counted === false ? '—' : fmtQty(l.countedQty, item.unit, null, item.unitLabel)}</span>` : `<input type="number" step="any" min="0" class="stk2-counted" value="${l.countedQty ?? ''}" ${l.counted === false ? 'disabled' : ''} style="width:110px;text-align:right">`}</td>
                         <td style="text-align:right;font-variant-numeric:tabular-nums" class="stk2-var">${varianceCell(l, item)}</td>
-                        <td>${committed ? escHtml(l.varianceReason || '') : `<input type="text" class="stk2-reason" value="${escHtml(l.varianceReason || '')}" placeholder="e.g. yield loss" style="width:100%">`}</td>
+                        <td>${exp == null
+                            ? `<span class="cat-sub" title="Nothing to explain — there is no expected figure to vary from">—</span><input type="hidden" class="stk2-reason" value="${escHtml(l.varianceReason || '')}">`
+                            : (committed ? escHtml(l.varianceReason || '') : `<input type="text" class="stk2-reason" value="${escHtml(l.varianceReason || '')}" placeholder="e.g. yield loss" style="width:100%">`)}</td>
                         <td style="text-align:center">${committed ? (l.counted === false ? '✓' : '') : `<input type="checkbox" class="stk2-skip" ${l.counted === false ? 'checked' : ''}>`}</td>
                     </tr>${subcountRow(l, item)}`; }).join('')}</tbody>
             </table></div>
@@ -657,9 +663,10 @@ const Stock = (() => {
                 <div><h2 class="cat-title">Consumables</h2><p class="cat-sub" style="margin:0">Packaging counted in units. Click a row for its details.</p></div>
                 <button class="btn-primary btn-sm" id="stk2-add-consumable">+ Add consumable</button>
             </div>
-            ${consumables.length ? `<table class="stk-table stk2-table"><thead><tr><th>Name</th><th>Retailer</th><th style="text-align:right">Unit price</th><th style="text-align:right">Qty per unit</th><th>Active</th></tr></thead>
+            ${consumables.length ? `<table class="stk-table stk2-table"><thead><tr><th>Name</th><th>Unit</th><th>Retailer</th><th style="text-align:right">Unit price</th><th style="text-align:right">Qty per unit</th><th>Active</th></tr></thead>
             <tbody>${consumables.map(i => { const p = i.profile || {}; return `<tr class="stk2-rowlink" data-open="${escHtml(i.id)}">
                 <td>${p.imageUrl ? `<img class="stk2-thumb" src="${escHtml(p.imageUrl)}" alt="" loading="lazy" onerror="this.remove()">` : ''}<strong>${escHtml(i.name)}</strong></td>
+                <td class="cat-sub">${escHtml(i.unitLabel || 'each')}</td>
                 <td>${p.retailerUrl ? `<a href="${escHtml(p.retailerUrl)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">${escHtml(p.retailer || 'Product')} ↗</a>` : escHtml(p.retailer || '—')}</td>
                 <td style="text-align:right;font-variant-numeric:tabular-nums">${money(p.typicalCost)}</td>
                 <td style="text-align:right;font-variant-numeric:tabular-nums">${p.packSize != null ? fmtNum(p.packSize) : '—'}</td>
@@ -720,7 +727,8 @@ const Stock = (() => {
             const prods = (bom.products && bom.products.length) ? bom.products : bom.skus.map(s => ({ sku: s, name: s, tracked: true }));
             const rows = prods.map(pr => `<tr class="${pr.tracked ? '' : 'stk2-bom-untracked'}"><td><strong>${escHtml(pr.name)}</strong><div class="cat-sub" style="margin:0">${escHtml(pr.sku)}${pr.tracked ? '' : ' · no sales mapping yet'}</div></td>${activeCons.map(c => `<td><input type="number" step="any" min="0" data-sku="${escHtml(pr.sku)}" data-cid="${escHtml(c.id)}" value="${qtyOf(v.recipes[pr.sku], c.id)}" title="${escHtml(pr.name)} × ${escHtml(c.name)}"></td>`).join('')}</tr>`).join('');
             const per = `<tr class="stk2-bom-per"><td><strong>Per order</strong><div class="cat-sub" style="margin:0">once per despatch</div></td>${activeCons.map(c => `<td><input type="number" step="any" min="0" data-per="1" data-cid="${escHtml(c.id)}" value="${qtyOf(perDespatch, c.id)}"></td>`).join('')}</tr>`;
-            grid.innerHTML = `<div class="stk-table-wrap"><table class="stk-table stk2-table stk2-bom-table"><thead><tr><th>Product</th>${activeCons.map(c => `<th>${escHtml(c.name)}</th>`).join('')}</tr></thead><tbody>${rows}${per}</tbody></table></div>`;
+            const colHead = c => `<th class="stk2-bom-col">${c.profile?.imageUrl ? `<img class="stk2-bom-img" src="${escHtml(c.profile.imageUrl)}" alt="" loading="lazy" onerror="this.remove()">` : ''}<div>${escHtml(c.name)}</div><div class="cat-sub" style="margin:0;font-weight:400;text-transform:none;letter-spacing:0">per ${escHtml(c.unitLabel || 'unit')}</div></th>`;
+            grid.innerHTML = `<div class="stk-table-wrap"><table class="stk-table stk2-table stk2-bom-table"><thead><tr><th>Product</th>${activeCons.map(colHead).join('')}</tr></thead><tbody>${rows}${per}</tbody></table></div>`;
             grid.querySelectorAll('input[data-sku]').forEach(inp => inp.addEventListener('input', () => {
                 v.recipes[inp.dataset.sku] = v.recipes[inp.dataset.sku] || [];
                 setQty(v.recipes[inp.dataset.sku], inp.dataset.cid, inp.value);
@@ -789,6 +797,7 @@ const Stock = (() => {
                     <div class="modal-field stk2-span2"><label>Image link <span class="modal-hint">URL — uploads aren't available, link to a hosted photo</span></label><input name="imageUrl" type="url" value="${escHtml(p.imageUrl || '')}" placeholder="https://…/photo.jpg"></div>
                     <div class="stk2-span2 stk2-img-preview" ${p.imageUrl ? '' : 'hidden'}><img src="${escHtml(p.imageUrl || '')}" alt=""></div>`
                     : `
+                    <div class="modal-field"><label>Unit type <span class="modal-hint">what one of these is</span></label><input name="unitLabel" type="text" value="${escHtml(it.unitLabel || '')}" placeholder="box, roll, bag, sheet…" list="stk2-unit-types"><datalist id="stk2-unit-types"><option value="box"><option value="bag"><option value="roll"><option value="sheet"><option value="label"><option value="staple"><option value="pack"></datalist></div>
                     <div class="modal-field"><label>Retailer</label><input name="retailer" type="text" value="${escHtml(p.retailer || '')}" placeholder="e.g. Packaging House"></div>
                     <div class="modal-field"><label>Unit price <span class="modal-hint">$ ex GST</span></label><input name="unitPrice" type="number" step="0.0001" min="0" value="${p.typicalCost ?? ''}" placeholder="0.00"></div>
                     <div class="modal-field"><label>Quantity per unit</label><input name="packSize" type="number" step="any" min="0" value="${p.packSize ?? ''}" placeholder="e.g. 500"></div>
@@ -849,6 +858,7 @@ const Stock = (() => {
                 payload.profile = { ...(it.profile || {}), imageUrl: g('imageUrl') };
             } else {
                 const price = g('unitPrice');
+                payload.unitLabel = g('unitLabel');
                 payload.profile = { retailer: g('retailer'), retailerUrl: g('retailerUrl'), imageUrl: g('imageUrl'), typicalCost: price, packSize: g('packSize') };
                 payload.unitValue = price; // valuation uses the purchase price
             }

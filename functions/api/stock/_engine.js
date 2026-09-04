@@ -362,7 +362,7 @@ export function computeLevels(world, asOf) {
         // FIFO cost lots for the shipment-fed product: value on hand + lots.
         const fifo = item.id === SHIPMENT_PRODUCT_ID ? fifoFor(item, { ...world, settings: s }, asOf) : null;
         return {
-            id: item.id, name: item.name, class: item.class, unit: item.unit, key: !!item.key, sortOrder: item.sortOrder ?? 0,
+            id: item.id, name: item.name, class: item.class, unit: item.unit, unitLabel: item.unitLabel || null, key: !!item.key, sortOrder: item.sortOrder ?? 0,
             onHand, onOrder,
             value: fifo ? fifo.value : null, avgCost: fifo ? fifo.avgCost : null, lots: fifo ? fifo.lots : undefined, shortfall: fifo ? fifo.shortfall : undefined,
             baselineDate: oh.baseline?.date || null, baselineQty: oh.baseline?.qty ?? null, baselineCount: oh.baseline?.countId || null,

@@ -7397,3 +7397,5 @@ a.db-row:hover { background: #f8fafc; border-color: #e2e8f0; }
 .stk2-sub-del:hover { color: #b91c1c; }
 .stk2-sub-line { display: flex; justify-content: space-between; gap: 1rem; font-size: 0.85rem; padding: 0.1rem 0; }
 .stk2-sub-total { border-top: 1px solid var(--stk-line); margin-top: 0.2rem; padding-top: 0.3rem; }
+.stk2-bom-col { vertical-align: bottom; text-align: center !important; min-width: 96px; }
+.stk2-bom-img { width: 44px; height: 44px; object-fit: cover; border-radius: 6px; border: 1px solid var(--stk-line); display: block; margin: 0 auto 0.3rem; }
