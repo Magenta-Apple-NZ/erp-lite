@@ -791,39 +791,12 @@ const SalesView = (() => {
         <div class="view-header">
             <div>
                 <h1 class="view-title">Sales History</h1>
-                <p class="view-subtitle">Historical sales by month and year. Seeded from the legacy CSV; live Hub orders append on Xero push. Manage from <a href="#admin">Catalogue → Sales History</a>.</p>
+                <p class="view-subtitle">Historical sales by month and year. Seeded from the legacy CSV; live Hub orders append on Xero push. Manage from <a href="#admin">Catalogue → Sales Data</a>. Stock levels and counts are in <a href="#warehouse">Warehouse</a>.</p>
             </div>
         </div>
-        <div class="order-detail-tabs no-print" role="tablist">
-            <button class="order-detail-tab order-detail-tab--active" data-panel="sales" role="tab">Sales</button>
-            <button class="order-detail-tab" data-panel="stocktake" role="tab">Stocktake</button>
-        </div>
-        <div id="sales-body"></div>
-        <div id="sales-stocktake" hidden></div>`;
+        <div id="sales-body"></div>`;
 
         await renderBody(document.getElementById('sales-body'));
-
-        // Sales charts vs the Stocktake editor (embedded from the Warehouse
-        // module). Stocktake renders lazily the first time it's opened.
-        let stocktakeLoaded = false;
-        container.querySelectorAll('.order-detail-tab').forEach(tab => {
-            tab.addEventListener('click', () => {
-                const showStk = tab.dataset.panel === 'stocktake';
-                container.querySelectorAll('.order-detail-tab').forEach(t =>
-                    t.classList.toggle('order-detail-tab--active', t === tab));
-                document.getElementById('sales-body').hidden = showStk;
-                const stkEl = document.getElementById('sales-stocktake');
-                stkEl.hidden = !showStk;
-                if (showStk && !stocktakeLoaded) {
-                    stocktakeLoaded = true;
-                    if (typeof Warehouse !== 'undefined' && Warehouse.renderStocktakeInto) {
-                        Warehouse.renderStocktakeInto(stkEl);
-                    } else {
-                        stkEl.innerHTML = '<p class="cat-sub" style="padding:1rem">Stocktake module unavailable.</p>';
-                    }
-                }
-            });
-        });
     }
 
     // ── Public: render the same Cumulative Sales chart shown on the

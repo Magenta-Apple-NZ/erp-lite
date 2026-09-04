@@ -730,7 +730,7 @@ const Admin = (() => {
         <div class="view-header">
             <div>
                 <h1 class="view-title">Catalogue</h1>
-                <p class="view-subtitle">Manage product pricing, store locations, printers, and sales data exports.</p>
+                <p class="view-subtitle">Manage product pricing, store locations, printers, sales data exports, and stock items.</p>
             </div>
         </div>
         <div class="imp-tabs">
@@ -739,6 +739,7 @@ const Admin = (() => {
             <button class="imp-view-btn" id="cat-tab-printers">Printers</button>
             <button class="imp-view-btn" id="cat-tab-salesdata">Sales Data</button>
             <button class="imp-view-btn" id="cat-tab-payroll">Payroll</button>
+            <button class="imp-view-btn" id="cat-tab-stock">Stock</button>
         </div>
         <div id="admin-body"><div class="orders-loading">Loading…</div></div>`;
 
@@ -758,11 +759,13 @@ const Admin = (() => {
             document.getElementById('cat-tab-printers').classList.toggle('active', tab === 'printers');
             document.getElementById('cat-tab-salesdata').classList.toggle('active', tab === 'salesdata');
             document.getElementById('cat-tab-payroll').classList.toggle('active', tab === 'payroll');
+            document.getElementById('cat-tab-stock').classList.toggle('active', tab === 'stock');
             if (tab === 'prices')         renderPricesTab(body, items, updated => { items = updated; });
             else if (tab === 'stores')    renderStoresTab(body, stores, updated => { stores = updated; });
             else if (tab === 'printers')  renderPrintersTab(body);
             else if (tab === 'salesdata') renderSalesDataTab(body);
             else if (tab === 'payroll')   renderPayrollTab(body);
+            else if (tab === 'stock')     Stock.renderSettingsTab(body);
         }
 
         document.getElementById('cat-tab-prices').addEventListener('click',     () => switchTab('prices'));
@@ -770,6 +773,7 @@ const Admin = (() => {
         document.getElementById('cat-tab-printers').addEventListener('click',   () => switchTab('printers'));
         document.getElementById('cat-tab-salesdata').addEventListener('click',  () => switchTab('salesdata'));
         document.getElementById('cat-tab-payroll').addEventListener('click',    () => switchTab('payroll'));
+        document.getElementById('cat-tab-stock').addEventListener('click',      () => switchTab('stock'));
 
         switchTab('prices');
     }
