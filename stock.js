@@ -29,6 +29,8 @@ const Stock = (() => {
         setTimeout(() => t.classList.remove('show'), 3000);
     }
     const nzToday = () => new Date().toLocaleDateString('en-CA', { timeZone: 'Pacific/Auckland' });
+    // The product fed by shipments (FIFO lots, per-shipment sub-count).
+    const SHIPMENT_PRODUCT_ID = 'prime-tie-bundled';
     function fmtDate(ymd) {
         if (!ymd) return '—';
         const [y, m, d] = String(ymd).split('-').map(Number);
@@ -439,12 +441,44 @@ const Stock = (() => {
     async function openCount(body, id) {
         const wrap = body.querySelector('#stk2-count-editor');
         wrap.innerHTML = '<div class="orders-loading">Loading count…</div>';
-        let c, items;
-        try { [c, items] = await Promise.all([api('/api/stock/counts/' + encodeURIComponent(id)), api('/api/stock/items')]); }
+        let c, items, ships = [];
+        try { [c, items, ships] = await Promise.all([api('/api/stock/counts/' + encodeURIComponent(id)), api('/api/stock/items'), api('/api/stock/shipments').catch(() => [])]); }
         catch (e) { wrap.innerHTML = `<p class="cat-sub">${escHtml(e.message)}</p>`; return; }
         const byId = Object.fromEntries(items.map(i => [i.id, i]));
         const committed = c.status === 'committed';
         const expected = c.expected || {};
+        const shipById = Object.fromEntries(ships.map(s => [s.id, s]));
+
+        // Sub-count by shipment (Prime Tie Bundled): kg on hand from each
+        // shipment at its $/kg. Each line becomes an opening FIFO lot.
+        const subcountRow = (l, item) => {
+            if (item.id !== SHIPMENT_PRODUCT_ID) return '';
+            const lots = Array.isArray(l.lots) ? l.lots : [];
+            const total = lots.reduce((s, x) => s + (Number(x.kg) || 0), 0);
+            const value = lots.reduce((s, x) => { const cost = x.unitCost != null ? Number(x.unitCost) : (shipById[x.shipmentId]?.unitCost ?? null); return s + (cost != null ? (Number(x.kg) || 0) * cost : 0); }, 0);
+            if (committed) {
+                if (!lots.length) return '';
+                return `<tr class="stk2-sublot" data-parent="${escHtml(item.id)}"><td colspan="7"><div class="stk2-sub">
+                    ${lots.map(x => `<div class="stk2-sub-line"><span>${fmtNum(x.kg)} kg of <strong>${escHtml(x.label || shipById[x.shipmentId]?.label || 'Shipment')}</strong></span><span>${x.unitCost != null ? '@ $' + fmtNum(x.unitCost, 2) + '/kg = $' + fmtNum(x.kg * x.unitCost) : ''}</span></div>`).join('')}
+                    <div class="stk2-sub-line stk2-sub-total"><span>Total</span><span><strong>${fmtNum(total)} kg</strong> · $${fmtNum(value)}</span></div>
+                </div></td></tr>`;
+            }
+            const shipOpts = sel => ships.map(s => `<option value="${escHtml(s.id)}" data-cost="${s.unitCost ?? ''}" ${s.id === sel ? 'selected' : ''}>${escHtml(s.label)}${s.unitCost != null ? ` · $${fmtNum(s.unitCost, 2)}/kg ${s.costBasis || ''}` : ' · no cost yet'} · ${escHtml(s.status)}</option>`).join('');
+            const row = x => `<tr class="stk2-sub-row">
+                <td><select class="stk2-sub-ship">${shipOpts(x.shipmentId)}</select></td>
+                <td><input type="number" step="any" min="0" class="stk2-sub-kg" value="${x.kg ?? ''}" placeholder="kg" style="width:100px;text-align:right"></td>
+                <td><input type="number" step="0.01" min="0" class="stk2-sub-cost" value="${x.unitCost ?? ''}" placeholder="${x.shipmentId && shipById[x.shipmentId]?.unitCost != null ? fmtNum(shipById[x.shipmentId].unitCost, 2) : 'derived'}" ${x.unitCost == null ? 'data-auto="1"' : ''} style="width:90px;text-align:right"></td>
+                <td><button type="button" class="stk2-sub-del" title="Remove">×</button></td></tr>`;
+            return `<tr class="stk2-sublot" data-parent="${escHtml(item.id)}"><td colspan="7"><div class="stk2-sub">
+                <div class="cat-sub" style="margin:0 0 0.35rem">Sub-count by shipment — kg on hand from each shipment at its $/kg (leave $/kg blank to use the shipment's landed cost). The total feeds <em>Counted</em>.</div>
+                <table class="stk2-sub-table"><thead><tr><th>Shipment</th><th style="text-align:right">kg</th><th style="text-align:right">$/kg</th><th></th></tr></thead>
+                <tbody>${lots.map(row).join('')}</tbody></table>
+                <div class="stk2-form-row" style="margin-top:0.4rem">
+                    <button type="button" class="btn-secondary btn-sm stk2-sub-add">+ Add shipment</button>
+                    <span class="cat-sub stk2-sub-total-live">Total <strong>${fmtNum(total)} kg</strong>${value ? ` · $${fmtNum(value)}` : ''}</span>
+                </div>
+            </div></td></tr>`;
+        };
 
         const varianceCell = (l, item) => {
             const exp = committed ? l.expectedQty : expected[l.itemId];
@@ -482,7 +516,7 @@ const Stock = (() => {
                         <td style="text-align:right;font-variant-numeric:tabular-nums" class="stk2-var">${varianceCell(l, item)}</td>
                         <td>${committed ? escHtml(l.varianceReason || '') : `<input type="text" class="stk2-reason" value="${escHtml(l.varianceReason || '')}" placeholder="e.g. yield loss" style="width:100%">`}</td>
                         <td style="text-align:center">${committed ? (l.counted === false ? '✓' : '') : `<input type="checkbox" class="stk2-skip" ${l.counted === false ? 'checked' : ''}>`}</td>
-                    </tr>`; }).join('')}</tbody>
+                    </tr>${subcountRow(l, item)}`; }).join('')}</tbody>
             </table></div>
             <div id="stk2-count-msg" class="cat-sub" style="margin-top:0.5rem"></div>
         </div>`;
@@ -490,12 +524,73 @@ const Stock = (() => {
         wrap.querySelector('#stk2-close-count').addEventListener('click', () => { wrap.innerHTML = ''; });
         if (committed) return;
 
-        const readLines = () => [...wrap.querySelectorAll('tr[data-item]')].map(tr => ({
-            itemId: tr.dataset.item,
-            counted: !tr.querySelector('.stk2-skip').checked,
-            countedQty: tr.querySelector('.stk2-counted').value === '' ? null : Number(tr.querySelector('.stk2-counted').value),
-            varianceReason: tr.querySelector('.stk2-reason').value,
-        }));
+        const readSub = itemId => {
+            const sub = wrap.querySelector(`tr.stk2-sublot[data-parent="${CSS.escape(itemId)}"]`);
+            if (!sub) return null;
+            return [...sub.querySelectorAll('tr.stk2-sub-row')].map(r => {
+                const sel = r.querySelector('.stk2-sub-ship');
+                const costEl = r.querySelector('.stk2-sub-cost');
+                return {
+                    shipmentId: sel.value || null,
+                    label: sel.selectedOptions[0] ? sel.selectedOptions[0].textContent.split(' · ')[0].trim() : '',
+                    kg: r.querySelector('.stk2-sub-kg').value === '' ? 0 : Number(r.querySelector('.stk2-sub-kg').value),
+                    unitCost: costEl.value === '' ? null : Number(costEl.value),
+                };
+            });
+        };
+        const readLines = () => [...wrap.querySelectorAll('tr[data-item]')].map(tr => {
+            const lots = readSub(tr.dataset.item);
+            const hasLots = lots && lots.length;
+            return {
+                itemId: tr.dataset.item,
+                counted: !tr.querySelector('.stk2-skip').checked,
+                countedQty: hasLots ? Math.round(lots.reduce((s, x) => s + x.kg, 0) * 100) / 100
+                          : (tr.querySelector('.stk2-counted').value === '' ? null : Number(tr.querySelector('.stk2-counted').value)),
+                varianceReason: tr.querySelector('.stk2-reason').value,
+                lots: hasLots ? lots : null,
+            };
+        });
+        // Sub-count wiring: add/remove rows, auto-fill $/kg from the shipment,
+        // and push the total into the parent line's Counted box.
+        wrap.querySelectorAll('tr.stk2-sublot').forEach(sub => {
+            const parent = wrap.querySelector(`tr[data-item="${CSS.escape(sub.dataset.parent)}"]`);
+            const countedInp = parent.querySelector('.stk2-counted');
+            const tbody = sub.querySelector('tbody');
+            const sync = () => {
+                const lots = readSub(sub.dataset.parent) || [];
+                const total = lots.reduce((s, x) => s + x.kg, 0);
+                const value = lots.reduce((s, x) => { const cost = x.unitCost != null ? x.unitCost : (shipById[x.shipmentId]?.unitCost ?? null); return s + (cost != null ? x.kg * cost : 0); }, 0);
+                sub.querySelector('.stk2-sub-total-live').innerHTML = `Total <strong>${fmtNum(total)} kg</strong>${value ? ` · $${fmtNum(value)}` : ''}`;
+                if (lots.length) { countedInp.value = Math.round(total * 100) / 100; countedInp.readOnly = true; countedInp.title = 'From the sub-count below'; }
+                else { countedInp.readOnly = false; countedInp.title = ''; }
+                countedInp.dispatchEvent(new Event('input'));
+            };
+            const wireRow = r => {
+                const sel = r.querySelector('.stk2-sub-ship'), cost = r.querySelector('.stk2-sub-cost');
+                const fillCost = () => {
+                    const derived = sel.selectedOptions[0]?.dataset.cost;
+                    cost.placeholder = derived ? fmtNum(derived, 2) : 'derived';
+                    if (cost.dataset.auto === '1') cost.value = '';
+                };
+                sel.addEventListener('change', () => { fillCost(); sync(); });
+                cost.addEventListener('input', () => { delete cost.dataset.auto; sync(); });
+                r.querySelector('.stk2-sub-kg').addEventListener('input', sync);
+                r.querySelector('.stk2-sub-del').addEventListener('click', () => { r.remove(); sync(); });
+            };
+            tbody.querySelectorAll('tr.stk2-sub-row').forEach(wireRow);
+            sub.querySelector('.stk2-sub-add').addEventListener('click', () => {
+                const tpl = document.createElement('tbody');
+                const first = ships[0];
+                tpl.innerHTML = `<tr class="stk2-sub-row">
+                    <td><select class="stk2-sub-ship">${ships.map(s => `<option value="${escHtml(s.id)}" data-cost="${s.unitCost ?? ''}">${escHtml(s.label)}${s.unitCost != null ? ` · $${fmtNum(s.unitCost, 2)}/kg ${s.costBasis || ''}` : ' · no cost yet'} · ${escHtml(s.status)}</option>`).join('')}</select></td>
+                    <td><input type="number" step="any" min="0" class="stk2-sub-kg" placeholder="kg" style="width:100px;text-align:right"></td>
+                    <td><input type="number" step="0.01" min="0" class="stk2-sub-cost" placeholder="${first && first.unitCost != null ? fmtNum(first.unitCost, 2) : 'derived'}" data-auto="1" style="width:90px;text-align:right"></td>
+                    <td><button type="button" class="stk2-sub-del" title="Remove">×</button></td></tr>`;
+                const r = tpl.firstElementChild;
+                tbody.appendChild(r); wireRow(r); r.querySelector('.stk2-sub-kg').focus(); sync();
+            });
+            if (readSub(sub.dataset.parent)?.length) sync();
+        });
         wrap.querySelectorAll('tr[data-item]').forEach(tr => {
             const refresh = () => {
                 const l = { itemId: tr.dataset.item, counted: !tr.querySelector('.stk2-skip').checked, countedQty: tr.querySelector('.stk2-counted').value };
@@ -551,7 +646,7 @@ const Stock = (() => {
             <table class="stk-table stk2-table"><thead><tr><th>Name</th><th>Sales bucket</th><th style="text-align:right">Value $/kg</th><th>Account</th><th>Active</th><th></th></tr></thead>
             <tbody>${products.map(i => `<tr class="stk2-rowlink" data-open="${escHtml(i.id)}">
                 <td><strong>${escHtml(i.name)}</strong></td><td class="cat-sub">${escHtml(i.salesKey || '—')}</td>
-                <td style="text-align:right;font-variant-numeric:tabular-nums" title="${escHtml(i.unitValueSource || 'No priced shipment yet')}">${money(i.unitValue)}${i.unitValueSource ? ` <span class="cat-sub">${escHtml(i.unitValueSource.split(' · ')[0])}</span>` : ''}</td>
+                <td style="text-align:right;font-variant-numeric:tabular-nums" title="${escHtml(i.id === SHIPMENT_PRODUCT_ID ? (i.unitValueSource || 'No costed shipment yet') : 'Own cost per kg (edit in the popover)')}">${money(i.unitValue)}${i.id === SHIPMENT_PRODUCT_ID ? (i.unitValueSource ? ` <span class="cat-sub">${escHtml(i.unitValueSource.split(' · ')[0])}</span>` : '') : ' <span class="cat-sub">own</span>'}</td>
                 <td>${escHtml(i.accountCode || '')}</td>
                 <td>${i.active === false ? 'No' : 'Yes'}</td>
                 <td style="text-align:right"><button class="btn-secondary btn-sm" data-open="${escHtml(i.id)}">Edit</button></td></tr>`).join('')}</tbody></table>
@@ -687,7 +782,9 @@ const Stock = (() => {
                     <div class="modal-field stk2-span2"><label>Name</label><input name="name" type="text" required value="${escHtml(it.name || '')}" autofocus></div>
                     ${prod ? `
                     <div class="modal-field"><label>Account code</label><input name="accountCode" type="text" value="${escHtml(it.accountCode || '')}"></div>
-                    <div class="modal-field"><label>Value $/kg <span class="modal-hint">from shipments</span></label><input type="text" value="${it.unitValue != null ? '$' + fmtNum(it.unitValue, 2) + (it.unitValueSource ? ' · ' + it.unitValueSource.split(' · ')[0] : '') : 'No priced shipment yet'}" disabled></div>`
+                    ${it.id === SHIPMENT_PRODUCT_ID
+                        ? `<div class="modal-field"><label>Cost $/kg <span class="modal-hint">from shipments · FIFO</span></label><input type="text" value="${it.unitValue != null ? '$' + fmtNum(it.unitValue, 2) + (it.unitValueSource ? ' · ' + it.unitValueSource.split(' · ')[0] : '') : 'No costed shipment yet'}" disabled></div>`
+                        : `<div class="modal-field"><label>Cost $/kg <span class="modal-hint">ex GST</span></label><input name="unitValue" type="number" step="0.01" min="0" value="${it.unitValue ?? ''}" placeholder="0.00"></div>`}`
                     : `
                     <div class="modal-field"><label>Retailer</label><input name="retailer" type="text" value="${escHtml(p.retailer || '')}" placeholder="e.g. Packaging House"></div>
                     <div class="modal-field"><label>Unit price <span class="modal-hint">$ ex GST</span></label><input name="unitPrice" type="number" step="0.0001" min="0" value="${p.typicalCost ?? ''}" placeholder="0.00"></div>
@@ -723,6 +820,7 @@ const Stock = (() => {
             if (!isNew) payload.active = g('active') !== 'false';
             if (prod) {
                 payload.accountCode = g('accountCode') || '';
+                if (it.id !== SHIPMENT_PRODUCT_ID) payload.unitValue = g('unitValue'); // own cost per kg
             } else {
                 const price = g('unitPrice');
                 payload.profile = { retailer: g('retailer'), retailerUrl: g('retailerUrl'), imageUrl: g('imageUrl'), typicalCost: price, packSize: g('packSize') };

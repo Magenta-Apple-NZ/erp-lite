@@ -46,6 +46,25 @@ export async function onRequestPatch({ env, params, request }) {
                     else { const n = Number(l.countedQty); if (!isFinite(n)) return errResponse('countedQty must be a number for ' + l.itemId, 400); cur.countedQty = n; }
                 }
                 if (l.varianceReason !== undefined) cur.varianceReason = String(l.varianceReason || '');
+                // Sub-count by shipment: [{ shipmentId, label, kg, unitCost|null }].
+                // countedQty follows the sum while lots are present.
+                if (l.lots !== undefined) {
+                    if (l.lots === null || (Array.isArray(l.lots) && !l.lots.length)) {
+                        delete cur.lots;
+                    } else {
+                        if (!Array.isArray(l.lots)) return errResponse('lots must be an array for ' + l.itemId, 400);
+                        const lots = [];
+                        for (const x of l.lots) {
+                            const kg = Number(x?.kg);
+                            if (!isFinite(kg) || kg < 0) return errResponse('lot kg must be a number ≥ 0 for ' + l.itemId, 400);
+                            const cost = x.unitCost == null || x.unitCost === '' ? null : Number(x.unitCost);
+                            if (cost != null && !isFinite(cost)) return errResponse('lot $/kg must be a number for ' + l.itemId, 400);
+                            lots.push({ shipmentId: x.shipmentId || null, label: String(x.label || ''), kg, unitCost: cost });
+                        }
+                        cur.lots = lots;
+                        cur.countedQty = Math.round(lots.reduce((s, x) => s + x.kg, 0) * 100) / 100;
+                    }
+                }
                 byId[l.itemId] = cur;
             }
             // Keep the original line order; append any new items at the end.

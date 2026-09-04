@@ -10,7 +10,7 @@
 //   stock:movements:index     [itemId]
 //   stock:movements:<itemId>  [Movement]   (append-only)
 
-import { DEFAULT_SETTINGS, productValueFromShipments } from './_engine.js';
+import { DEFAULT_SETTINGS, productValueFromShipments, SHIPMENT_PRODUCT_ID } from './_engine.js';
 import { costShipments } from '../import/_cost.js';
 
 export const K = {
@@ -92,10 +92,11 @@ export async function loadItems(env) {
         Promise.all(index.map(id => getJson(env, K.item(id), null))),
         loadShipments(env),
     ]);
-    // Products are valued from the latest priced shipment, not typed by hand.
+    // Only the shipment-fed product (Prime Tie Bundled) is valued from
+    // shipments; Loose and eco Ties keep their own hand-entered cost per kg.
     const pv = productValueFromShipments(shipments);
     return items.filter(Boolean)
-        .map(it => it.class === 'product' && pv
+        .map(it => it.id === SHIPMENT_PRODUCT_ID && pv
             ? { ...it, unitValue: pv.unitValue, unitValueSource: pv.source }
             : it)
         .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0) || String(a.name).localeCompare(String(b.name)));

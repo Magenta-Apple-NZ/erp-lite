@@ -364,6 +364,48 @@ test('the engine prefers the stamped landed unitCost over the listed price', () 
     assert.equal(f.lots[1].basis, 'landed');
 });
 
+// ── Sub-count by shipment → opening FIFO lots ────────────────────────────
+test('a sub-counted opening count becomes one lot per shipment at its own $/kg, oldest first', () => {
+    const ship40 = { id: 'ship-40', ym: '2026-05', kg: 5000, note: 'Shipment 40', unitCost: 8.98, costBasis: 'landed', milestones: [
+        { label: 'a', date: '2026-05-01', done: true }, { label: 'Arrived in New Zealand', date: '2026-06-01', done: true }] };
+    const ship41 = { ...shipArrived, unitCost: 9.5, costBasis: 'landed', milestones: shipArrived.milestones.map(m => ({ ...m, done: true, date: m.date || '2026-09-20' })) };
+    // Count on 1 Oct: 450 kg of #40 and 1500 kg of #41 on the shelf (entered newest first).
+    const count = { id: 'cnt_sub', label: 'Opening', date: '2026-10-01', status: 'committed', committedAt: '2026-10-01T05:00:00Z', lines: [
+        { itemId: 'prime-tie-bundled', counted: true, countedQty: 1950, lots: [
+            { shipmentId: 'ship-41', label: 'Shipment #41', kg: 1500, unitCost: null },
+            { shipmentId: 'ship-40', label: 'Shipment #40', kg: 450,  unitCost: 8.98 },
+        ] },
+    ] };
+    const w = world({ counts: [count], shipments: [ship40, ship41, shipInTransit], sales: [] });
+    const f = fifoFor(items[0], w, '2026-10-31');
+    assert.deepEqual(f.lots.map(l => [l.id, l.qty, l.unitCost, l.basis]), [['ship-40', 450, 8.98, 'counted'], ['ship-41', 1500, 9.5, 'counted']]);
+    assert.equal(f.onHand, 1950);
+    assert.equal(f.value, 450 * 8.98 + 1500 * 9.5);
+    // #41's "Arrived" milestone is after the count date yet it must NOT be received again.
+    assert.equal(onHandFor(items[0], w, '2026-10-31').onHand, 1950);
+    // Selling 600 kg takes all of #40 first, then 150 of #41.
+    const sale = { id: 's', date: '2026-10-10', bundlesKg: 600, looseKg: 0, ecoTiesKg: 0, xkg: { b10: 600 } };
+    const f2 = fifoFor(items[0], { ...w, sales: [sale] }, '2026-10-31');
+    assert.equal(f2.lots[0].remaining, 0);
+    assert.equal(f2.lots[1].remaining, 1350);
+    assert.equal(f2.value, 1350 * 9.5);
+});
+
+test('committing a sub-counted line sums the lots, snapshots each $/kg and values at the weighted average', () => {
+    const ship41 = { ...shipArrived, unitCost: 9.5, costBasis: 'landed' };
+    const draft = { id: 'd', label: 'Opening', date: '2026-11-01', status: 'draft', lines: [
+        { itemId: 'prime-tie-bundled', counted: true, countedQty: null, lots: [
+            { shipmentId: 'ship-41', kg: 1500, unitCost: null }, { shipmentId: null, label: 'Shipment #40', kg: 500, unitCost: 8.98 },
+        ] },
+    ] };
+    const c = commitCount(draft, world({ shipments: [ship41, shipInTransit], sales: [] }));
+    const line = c.lines[0];
+    assert.equal(line.countedQty, 2000);
+    assert.equal(line.lots[0].unitCost, 9.5, 'snapshotted from the shipment');
+    assert.equal(line.lots[0].label, 'Shipment #41');
+    assert.equal(line.unitValue, Math.round(((1500 * 9.5 + 500 * 8.98) / 2000) * 10000) / 10000);
+});
+
 test('renaming an item changes nothing about its stock', () => {
     const renamed = items.map(i => i.id === 'box-10kg' ? { ...i, name: 'Carton (10 kilo)' } : i);
     const a = computeLevels(world(), '2026-10-31').items.find(i => i.id === 'box-10kg');

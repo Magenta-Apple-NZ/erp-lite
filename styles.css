@@ -7385,3 +7385,15 @@ a.db-row:hover { background: #f8fafc; border-color: #e2e8f0; }
 .stk2-modal input:disabled { color: var(--stk-ink-2); background: var(--stk-notice); }
 .stk2-lot--done td { opacity: 0.5; }
 .stk2-bom-untracked td { opacity: 0.6; }
+
+/* Count editor — sub-count by shipment */
+.stk2-sublot > td { background: var(--stk-notice); padding: 0.5rem 0.75rem 0.65rem 2rem !important; }
+.stk2-sub-table { border-collapse: collapse; }
+.stk2-sub-table th { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--stk-muted); padding: 0.2rem 0.5rem; text-align: left; }
+.stk2-sub-table td { padding: 0.2rem 0.5rem; }
+.stk2-sub-table select, .stk2-sub-table input { border: 1px solid var(--stk-line); border-radius: 5px; padding: 0.25rem 0.4rem; font: inherit; font-size: 0.85rem; background: var(--stk-surface); color: var(--stk-ink); }
+.stk2-sub-table select { max-width: 340px; }
+.stk2-sub-del { border: none; background: none; color: var(--stk-muted); font-size: 1rem; cursor: pointer; padding: 0 0.3rem; }
+.stk2-sub-del:hover { color: #b91c1c; }
+.stk2-sub-line { display: flex; justify-content: space-between; gap: 1rem; font-size: 0.85rem; padding: 0.1rem 0; }
+.stk2-sub-total { border-top: 1px solid var(--stk-line); margin-top: 0.2rem; padding-top: 0.3rem; }

@@ -49,6 +49,16 @@ export function shipUnitCost(s) {
     if (Number(s?.pricePerKg) > 0) return Number(s.pricePerKg);
     return null;
 }
+// "#41" — the shipment number people use, from seq or the note/id.
+export function shipNumber(s) {
+    if (Number(s?.seq) > 0) return Number(s.seq);
+    const m = String(s?.note || s?.id || '').match(/(\d+)/);
+    return m ? Number(m[1]) : null;
+}
+export function shipLabel(s) {
+    const n = shipNumber(s);
+    return n != null ? `Shipment #${n}` : String(s?.note || s?.id || 'Shipment');
+}
 
 export const STATUS_ORDER = ['out', 'critical', 'low', 'watch', 'unknown', 'ok'];
 
@@ -189,8 +199,28 @@ export function fifoFor(item, world, asOf) {
     // Chronological events. On the same day: receipts land, then movements,
     // then sales — so a shipment can be sold the day it arrives.
     const events = [];
-    events.push({ date: from, order: 0, kind: 'lot', id: 'opening', note: baseline.countLabel || 'Opening count', qty: baseline.qty, unitCost: openingCost });
+    const countedShips = new Set();
+    if (baseline.lots) {
+        // Sub-count by shipment: one opening lot per shipment, oldest number
+        // first, each at its own $/kg (typed on the count, else the shipment's
+        // landed/listed cost, else the opening cost).
+        const subs = baseline.lots.map((l, i) => {
+            const ship = shipments.find(s => s.id === l.shipmentId) || null;
+            const typed = l.unitCost != null && l.unitCost !== '' ? Number(l.unitCost) : null;
+            const cost = typed != null ? typed : (ship ? shipUnitCost(ship) : null);
+            return { i, ship, l, cost, num: ship ? shipNumber(ship) : (Number(String(l.label || '').match(/(\d+)/)?.[1]) || null) };
+        }).sort((a, b) => (a.num ?? 1e9) - (b.num ?? 1e9) || a.i - b.i);
+        for (const s of subs) {
+            if (s.l.shipmentId) countedShips.add(s.l.shipmentId);
+            events.push({ date: from, order: 0, kind: 'lot', id: s.l.shipmentId || 'opening-' + s.i,
+                          note: s.l.label || (s.ship ? shipLabel(s.ship) : baseline.countLabel || 'Opening count'),
+                          qty: Number(s.l.kg) || 0, unitCost: s.cost != null ? s.cost : openingCost, basis: 'counted' });
+        }
+    } else {
+        events.push({ date: from, order: 0, kind: 'lot', id: 'opening', note: baseline.countLabel || 'Opening count', qty: baseline.qty, unitCost: openingCost });
+    }
     for (const r of receipts({ shipments, from, to, epoch })) {
+        if (countedShips.has(r.shipmentId)) continue; // already on the shelf at the count
         events.push({ date: r.date, order: 0, kind: 'lot', id: r.shipmentId, note: r.note, qty: r.qty, unitCost: r.unitCost, basis: r.costBasis });
     }
     for (const m of (world.movements?.[item.id] || [])) {
@@ -247,7 +277,9 @@ export function baselineFor(itemId, counts, asOf) {
         const line = (c.lines || []).find(l => l.itemId === itemId && l.counted !== false && l.countedQty != null && l.countedQty !== '');
         if (!line) continue;
         const later = !best || c.date > best.date || (c.date === best.date && String(c.committedAt || '') > String(best.committedAt || ''));
-        if (later) best = { date: c.date, qty: Number(line.countedQty), countId: c.id, countLabel: c.label, committedAt: c.committedAt || null };
+        if (later) best = { date: c.date, qty: Number(line.countedQty), countId: c.id, countLabel: c.label, committedAt: c.committedAt || null,
+                            // Sub-count by shipment (kg on hand per shipment at the count) → opening FIFO lots.
+                            lots: Array.isArray(line.lots) && line.lots.length ? line.lots : null };
     }
     return best;
 }
@@ -260,8 +292,12 @@ export function onHandFor(item, world, asOf) {
     const movements = (world.movements?.[item.id] || [])
         .filter(m => inRange(m.date, from, to))
         .reduce((s, m) => s + (Number(m.qty) || 0), 0);
+    // Shipments already sub-counted in the baseline are on the shelf — never
+    // add them again when their final milestone is ticked later.
+    const countedShips = new Set((baseline.lots || []).map(l => l.shipmentId).filter(Boolean));
     const recd = item.id === SHIPMENT_PRODUCT_ID
-        ? receipts({ shipments: world.shipments, from, to, epoch: world.settings?.stockEpoch }).reduce((s, x) => s + x.qty, 0)
+        ? receipts({ shipments: world.shipments, from, to, epoch: world.settings?.stockEpoch })
+            .filter(x => !countedShips.has(x.shipmentId)).reduce((s, x) => s + x.qty, 0)
         : 0;
     return {
         baseline,
@@ -383,7 +419,19 @@ export function expectedForCount(count, world) {
 export function commitCount(count, world, { committedAt, committedBy } = {}) {
     if (count.status === 'committed') throw new Error('Count is already committed');
     if (!count.date) throw new Error('Count needs a date');
-    const missing = (count.lines || []).filter(l => l.counted !== false && (l.countedQty == null || l.countedQty === '' || isNaN(Number(l.countedQty))));
+    // Sub-counted lines (kg per shipment) total up to their countedQty; the
+    // $/kg of each lot is snapshotted here (typed, else the shipment's cost).
+    const cleanLots = l => {
+        if (!Array.isArray(l.lots) || !l.lots.length) return null;
+        return l.lots.map(x => {
+            const ship = (world.shipments || []).find(s => s.id === x.shipmentId) || null;
+            const typed = x.unitCost != null && x.unitCost !== '' ? Number(x.unitCost) : null;
+            return { shipmentId: x.shipmentId || null, label: x.label || (ship ? shipLabel(ship) : ''), kg: r2(x.kg),
+                     unitCost: typed != null ? typed : (ship ? shipUnitCost(ship) : null) };
+        }).filter(x => x.kg > 0);
+    };
+    const qtyOf = l => { const lots = cleanLots(l); return lots && lots.length ? r2(lots.reduce((s, x) => s + x.kg, 0)) : l.countedQty; };
+    const missing = (count.lines || []).filter(l => l.counted !== false && (qtyOf(l) == null || qtyOf(l) === '' || isNaN(Number(qtyOf(l)))));
     if (missing.length) {
         const err = new Error('Every line needs a counted quantity, or mark it "not counted"');
         err.missing = missing.map(l => l.itemId);
@@ -405,12 +453,20 @@ export function commitCount(count, world, { committedAt, committedBy } = {}) {
             return { ...l, counted: false, countedQty: null, expectedQty: expected[l.itemId] ?? null, varianceQty: null, variancePct: null,
                      unitValue: item.unitValue ?? null, accountCode: item.accountCode || world.settings?.valuation?.defaultAccountCode || '' };
         }
-        const countedQty = r2(l.countedQty);
+        const lots = cleanLots(l);
+        const countedQty = lots && lots.length ? r2(lots.reduce((s, x) => s + x.kg, 0)) : r2(l.countedQty);
         const exp = expected[l.itemId];
         const varianceQty = exp == null ? null : r2(countedQty - exp);
         const variancePct = exp == null || exp === 0 ? null : Math.round((varianceQty / exp) * 10000) / 100;
-        return { ...l, counted: true, countedQty, expectedQty: exp ?? null, varianceQty, variancePct,
-                 unitValue: item.unitValue ?? null, accountCode: item.accountCode || world.settings?.valuation?.defaultAccountCode || '' };
+        // Sub-counted: value = kg-weighted average of the lots' $/kg.
+        let unitValue = item.unitValue ?? null;
+        if (lots && lots.length) {
+            const priced = lots.filter(x => x.unitCost != null);
+            const kg = priced.reduce((s, x) => s + x.kg, 0);
+            if (kg > 0) unitValue = Math.round((priced.reduce((s, x) => s + x.kg * x.unitCost, 0) / kg) * 10000) / 10000;
+        }
+        return { ...l, counted: true, countedQty, ...(lots ? { lots } : {}), expectedQty: exp ?? null, varianceQty, variancePct,
+                 unitValue, accountCode: item.accountCode || world.settings?.valuation?.defaultAccountCode || '' };
     });
     return { ...count, lines, status: 'committed', committedAt: committedAt || null, committedBy: committedBy || null };
 }
