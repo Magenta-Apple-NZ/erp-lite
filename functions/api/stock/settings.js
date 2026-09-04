@@ -23,10 +23,10 @@ export async function onRequestPut({ env, request }) {
             if (!isYmd(body.stockEpoch)) return errResponse('stockEpoch must be YYYY-MM-DD', 400);
             next.stockEpoch = body.stockEpoch;
         }
-        for (const k of ['consumptionWindowDays', 'defaultSafetyDays', 'watchMultiplier']) {
+        for (const k of ['consumptionWindowDays', 'defaultLeadTimeDays', 'defaultSafetyDays', 'watchMultiplier']) {
             if (body[k] !== undefined) {
                 const n = Number(body[k]);
-                if (!isFinite(n) || n <= 0) return errResponse(`${k} must be a positive number`, 400);
+                if (!isFinite(n) || n < 0 || (n === 0 && k !== 'defaultSafetyDays')) return errResponse(`${k} must be a positive number`, 400);
                 next[k] = n;
             }
         }

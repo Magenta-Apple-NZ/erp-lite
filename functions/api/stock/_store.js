@@ -10,7 +10,7 @@
 //   stock:movements:index     [itemId]
 //   stock:movements:<itemId>  [Movement]   (append-only)
 
-import { DEFAULT_SETTINGS } from './_engine.js';
+import { DEFAULT_SETTINGS, productValueFromShipments } from './_engine.js';
 
 export const K = {
     settings:    'stock:settings',
@@ -72,8 +72,17 @@ export async function loadItems(env) {
         index = PRODUCT_SEED.map(p => p.id);
         await putJson(env, K.itemsIndex, index);
     }
-    const items = await Promise.all(index.map(id => getJson(env, K.item(id), null)));
-    return items.filter(Boolean).sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0) || String(a.name).localeCompare(String(b.name)));
+    const [items, shipments] = await Promise.all([
+        Promise.all(index.map(id => getJson(env, K.item(id), null))),
+        loadShipments(env),
+    ]);
+    // Products are valued from the latest priced shipment, not typed by hand.
+    const pv = productValueFromShipments(shipments);
+    return items.filter(Boolean)
+        .map(it => it.class === 'product' && pv
+            ? { ...it, unitValue: pv.unitValue, unitValueSource: pv.source }
+            : it)
+        .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0) || String(a.name).localeCompare(String(b.name)));
 }
 export async function loadItem(env, id) {
     return getJson(env, K.item(id), null);

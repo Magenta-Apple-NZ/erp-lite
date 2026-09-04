@@ -509,35 +509,33 @@ const Stock = (() => {
         catch (e) { body.innerHTML = `<p class="cat-sub" style="padding:1rem">${escHtml(e.message)}</p>`; return; }
         const products = items.filter(i => i.class === 'product');
         const consumables = items.filter(i => i.class === 'consumable');
+        const money = v => v == null || v === '' ? '—' : '$' + fmtNum(v, 2);
 
         body.innerHTML = `
         <div class="cat-section stk2-section">
-            <div class="cat-section-head"><div><h2 class="cat-title">Products</h2><p class="cat-sub" style="margin:0">The three key lines. Each depletes from its Sales History bucket. Set a manual reorder point in kg — shipment lead times are months, so auto mode isn't meaningful here.</p></div></div>
-            <table class="stk-table stk2-table"><thead><tr><th>Name</th><th>Sales bucket</th><th style="text-align:right">Reorder at (kg)</th><th style="text-align:right">Unit value $</th><th>Account</th><th>Active</th><th></th></tr></thead>
-            <tbody>${products.map(i => `<tr>
-                <td><strong>${escHtml(i.name)}</strong>${i.key ? ' <span class="cat-sub">key</span>' : ''}</td><td class="cat-sub">${escHtml(i.salesKey || '—')}</td>
-                <td style="text-align:right">${i.reorder?.manualPoint != null ? fmtNum(i.reorder.manualPoint) : '—'}</td>
-                <td style="text-align:right">${i.unitValue != null ? fmtNum(i.unitValue, 2) : '—'}</td><td>${escHtml(i.accountCode || '')}</td>
+            <div class="cat-section-head"><div><h2 class="cat-title">Products</h2><p class="cat-sub" style="margin:0">The three key lines. Each depletes from its Sales History bucket. Value per kg is taken from the latest priced shipment.</p></div></div>
+            <table class="stk-table stk2-table"><thead><tr><th>Name</th><th>Sales bucket</th><th style="text-align:right">Value $/kg</th><th>Account</th><th>Active</th><th></th></tr></thead>
+            <tbody>${products.map(i => `<tr class="stk2-rowlink" data-open="${escHtml(i.id)}">
+                <td><strong>${escHtml(i.name)}</strong></td><td class="cat-sub">${escHtml(i.salesKey || '—')}</td>
+                <td style="text-align:right;font-variant-numeric:tabular-nums" title="${escHtml(i.unitValueSource || 'No priced shipment yet')}">${money(i.unitValue)}${i.unitValueSource ? ` <span class="cat-sub">${escHtml(i.unitValueSource.split(' · ')[0])}</span>` : ''}</td>
+                <td>${escHtml(i.accountCode || '')}</td>
                 <td>${i.active === false ? 'No' : 'Yes'}</td>
-                <td style="text-align:right"><button class="btn-secondary btn-sm" data-edit="${escHtml(i.id)}">Edit</button></td></tr>`).join('')}</tbody></table>
+                <td style="text-align:right"><button class="btn-secondary btn-sm" data-open="${escHtml(i.id)}">Edit</button></td></tr>`).join('')}</tbody></table>
         </div>
 
         <div class="cat-section stk2-section">
             <div class="cat-section-head">
-                <div><h2 class="cat-title">Consumables</h2><p class="cat-sub" style="margin:0">Packaging counted in units. Lead time drives the reorder point; the profile is reference for whoever places the order.</p></div>
+                <div><h2 class="cat-title">Consumables</h2><p class="cat-sub" style="margin:0">Packaging counted in units. Click a row for its details.</p></div>
                 <button class="btn-primary btn-sm" id="stk2-add-consumable">+ Add consumable</button>
             </div>
-            ${consumables.length ? `<table class="stk-table stk2-table"><thead><tr><th>Name</th><th>Retailer</th><th style="text-align:right">Lead (d)</th><th>Reorder</th><th style="text-align:right">Unit value $</th><th>Active</th><th></th></tr></thead>
-            <tbody>${consumables.map(i => `<tr>
-                <td><strong>${escHtml(i.name)}</strong>${i.profile?.supplierSku ? ` <span class="cat-sub">${escHtml(i.profile.supplierSku)}</span>` : ''}</td>
-                <td>${i.profile?.retailerUrl ? `<a href="${escHtml(i.profile.retailerUrl)}" target="_blank" rel="noopener">${escHtml(i.profile.retailer || 'link')} ↗</a>` : escHtml(i.profile?.retailer || '—')}</td>
-                <td style="text-align:right">${i.profile?.leadTimeDays ?? '—'}</td>
-                <td>${i.reorder?.mode === 'manual' ? 'Manual · ' + (i.reorder.manualPoint != null ? fmtNum(i.reorder.manualPoint) : '—') : 'Auto · +' + (i.reorder?.safetyDays ?? settings.defaultSafetyDays) + 'd safety'}</td>
-                <td style="text-align:right">${i.unitValue != null ? fmtNum(i.unitValue, 2) : '—'}</td>
-                <td>${i.active === false ? 'No' : 'Yes'}</td>
-                <td style="text-align:right"><button class="btn-secondary btn-sm" data-edit="${escHtml(i.id)}">Edit</button></td></tr>`).join('')}</tbody></table>` : '<p class="cat-sub">None yet. Add boxes, bags, labels, staples, tape…</p>'}
+            ${consumables.length ? `<table class="stk-table stk2-table"><thead><tr><th>Name</th><th>Retailer</th><th style="text-align:right">Unit price</th><th style="text-align:right">Qty per unit</th><th>Active</th></tr></thead>
+            <tbody>${consumables.map(i => { const p = i.profile || {}; return `<tr class="stk2-rowlink" data-open="${escHtml(i.id)}">
+                <td>${p.imageUrl ? `<img class="stk2-thumb" src="${escHtml(p.imageUrl)}" alt="" loading="lazy" onerror="this.remove()">` : ''}<strong>${escHtml(i.name)}</strong></td>
+                <td>${p.retailerUrl ? `<a href="${escHtml(p.retailerUrl)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">${escHtml(p.retailer || 'Product')} ↗</a>` : escHtml(p.retailer || '—')}</td>
+                <td style="text-align:right;font-variant-numeric:tabular-nums">${money(p.typicalCost)}</td>
+                <td style="text-align:right;font-variant-numeric:tabular-nums">${p.packSize != null ? fmtNum(p.packSize) : '—'}</td>
+                <td>${i.active === false ? 'No' : 'Yes'}</td></tr>`; }).join('')}</tbody></table>` : '<p class="cat-sub">None yet. Add boxes, bags, labels, staples, tape…</p>'}
         </div>
-        <div id="stk2-item-editor"></div>
 
         <div class="cat-section stk2-section" id="stk2-bom">
             <div class="cat-section-head">
@@ -557,74 +555,20 @@ const Stock = (() => {
             <form id="stk2-settings" class="stk2-grid-form">
                 <label>Stock epoch<input name="stockEpoch" type="date" value="${escHtml(settings.stockEpoch)}"><small>Opening count date. Nothing is computed before it.</small></label>
                 <label>Usage window (days)<input name="consumptionWindowDays" type="number" min="1" value="${settings.consumptionWindowDays}"><small>Trailing window for average daily usage (from Sales History).</small></label>
-                <label>Default safety days<input name="defaultSafetyDays" type="number" min="0" value="${settings.defaultSafetyDays}"><small>Added to lead time for auto reorder points.</small></label>
+                <label>Lead time (days)<input name="defaultLeadTimeDays" type="number" min="1" value="${settings.defaultLeadTimeDays ?? 14}"><small>Order-to-delivery for consumables. Reorder point = daily usage × (lead + safety).</small></label>
+                <label>Safety days<input name="defaultSafetyDays" type="number" min="0" value="${settings.defaultSafetyDays}"><small>Buffer added to lead time.</small></label>
                 <label>Watch multiplier<input name="watchMultiplier" type="number" min="1" step="0.05" value="${settings.watchMultiplier}"><small>"Watch" when on hand ≤ reorder point × this.</small></label>
                 <label>Default account code<input name="defaultAccountCode" type="text" value="${escHtml(settings.valuation?.defaultAccountCode || '')}"><small>Used on valuation rows when an item has none.</small></label>
                 <div style="align-self:end"><button class="btn-primary btn-sm" type="submit">Save settings</button></div>
             </form>
         </div>`;
 
-        // Item editor
-        const editorEl = body.querySelector('#stk2-item-editor');
-        const openEditor = (item) => {
-            const isNew = !item;
-            const it = item || { class: 'consumable', unit: 'each', active: true, profile: {}, reorder: { mode: 'auto' } };
-            const p = it.profile || {}, r = it.reorder || {};
-            const prod = it.class === 'product';
-            editorEl.innerHTML = `
-            <div class="cat-section stk2-section" id="stk2-item-form-wrap">
-                <div class="cat-section-head"><div><h2 class="cat-title">${isNew ? 'New consumable' : 'Edit · ' + escHtml(it.name)}</h2>${!isNew ? `<p class="cat-sub" style="margin:0">id <code>${escHtml(it.id)}</code> · ${escHtml(it.class)} · ${escHtml(it.unit)}</p>` : ''}</div>
-                    <button class="btn-secondary btn-sm" id="stk2-item-cancel">Cancel</button></div>
-                <form id="stk2-item-form" class="stk2-grid-form">
-                    <label>Name<input name="name" type="text" required value="${escHtml(it.name || '')}"></label>
-                    ${isNew ? `<label>Unit<select name="unit"><option value="each">each</option><option value="kg">kg</option></select><small>Locked once counted.</small></label>` : ''}
-                    <label>Sort order<input name="sortOrder" type="number" value="${it.sortOrder ?? 100}"></label>
-                    <label>Active<select name="active"><option value="true" ${it.active !== false ? 'selected' : ''}>Yes</option><option value="false" ${it.active === false ? 'selected' : ''}>No (hidden)</option></select></label>
-                    <label>Account code<input name="accountCode" type="text" value="${escHtml(it.accountCode || '')}"></label>
-                    <label>Unit value $ (ex GST)<input name="unitValue" type="number" step="0.01" value="${it.unitValue ?? ''}"><small>Valuation report only.</small></label>
-                    <label>Valued as at<input name="unitValueAsAt" type="date" value="${escHtml(it.unitValueAsAt || '')}"></label>
-                    <label>Reorder mode<select name="reorderMode"><option value="auto" ${r.mode !== 'manual' ? 'selected' : ''}>Auto (usage × lead + safety)</option><option value="manual" ${r.mode === 'manual' ? 'selected' : ''}>Manual point</option></select></label>
-                    <label>Manual reorder point<input name="manualPoint" type="number" step="any" value="${r.manualPoint ?? ''}"></label>
-                    <label>Safety days<input name="safetyDays" type="number" value="${r.safetyDays ?? ''}" placeholder="${settings.defaultSafetyDays}"></label>
-                    <label>Suggested order qty<input name="reorderQty" type="number" step="any" value="${r.reorderQty ?? ''}"><small>Informational.</small></label>
-                    <label>Aliases<input name="aliases" type="text" value="${escHtml((it.aliases || []).join(', '))}"><small>Comma-separated names a CSV import may use for this item.</small></label>
-                    ${prod ? '' : `
-                    <div class="stk2-grid-span"><h3 class="cat-sub" style="margin:0.5rem 0 0"><strong>Supplier profile</strong></h3></div>
-                    <label>Retailer<input name="retailer" type="text" value="${escHtml(p.retailer || '')}"></label>
-                    <label>Product URL<input name="retailerUrl" type="url" value="${escHtml(p.retailerUrl || '')}"></label>
-                    <label>Supplier SKU<input name="supplierSku" type="text" value="${escHtml(p.supplierSku || '')}"></label>
-                    <label>Image URL<input name="imageUrl" type="url" value="${escHtml(p.imageUrl || '')}"><small>Link to the supplier's photo.</small></label>
-                    <label>Lead time (days)<input name="leadTimeDays" type="number" min="0" value="${p.leadTimeDays ?? ''}"><small>Drives the reorder point.</small></label>
-                    <label>Typical cost $ / unit<input name="typicalCost" type="number" step="0.0001" value="${p.typicalCost ?? ''}"></label>
-                    <label>Pack size<input name="packSize" type="number" value="${p.packSize ?? ''}"><small>Units per supplier pack.</small></label>
-                    <label>Min order (packs)<input name="minOrderQty" type="number" value="${p.minOrderQty ?? ''}"></label>
-                    <label class="stk2-grid-span">Notes<input name="notes" type="text" value="${escHtml(p.notes || '')}"></label>`}
-                    <div class="stk2-grid-span"><button class="btn-primary btn-sm" type="submit">${isNew ? 'Create' : 'Save'}</button></div>
-                </form>
-            </div>`;
-            editorEl.querySelector('#stk2-item-form-wrap').scrollIntoView({ behavior: 'smooth', block: 'start' });
-            editorEl.querySelector('#stk2-item-cancel').addEventListener('click', () => { editorEl.innerHTML = ''; });
-            editorEl.querySelector('#stk2-item-form').addEventListener('submit', async e => {
-                e.preventDefault();
-                const f = new FormData(e.currentTarget);
-                const g = k => { const v = f.get(k); return v == null || v === '' ? null : v; };
-                const payload = {
-                    name: g('name'), sortOrder: g('sortOrder'), active: g('active') !== 'false',
-                    accountCode: g('accountCode') || '', unitValue: g('unitValue'), unitValueAsAt: g('unitValueAsAt'),
-                    aliases: String(g('aliases') || '').split(',').map(s => s.trim()).filter(Boolean),
-                    reorder: { mode: g('reorderMode'), manualPoint: g('manualPoint'), safetyDays: g('safetyDays'), reorderQty: g('reorderQty') },
-                };
-                if (!prod) payload.profile = { retailer: g('retailer'), retailerUrl: g('retailerUrl'), supplierSku: g('supplierSku'), imageUrl: g('imageUrl'), leadTimeDays: g('leadTimeDays'), typicalCost: g('typicalCost'), packSize: g('packSize'), minOrderQty: g('minOrderQty'), notes: g('notes') };
-                try {
-                    if (isNew) await api('/api/stock/items', { method: 'POST', body: JSON.stringify({ ...payload, class: 'consumable', unit: g('unit') || 'each' }) });
-                    else await api('/api/stock/items/' + encodeURIComponent(it.id), { method: 'PATCH', body: JSON.stringify(payload) });
-                    showToast(isNew ? 'Consumable added' : 'Saved');
-                    renderSettingsTab(body);
-                } catch (err) { showToast('Could not save: ' + err.message); }
-            });
-        };
-        body.querySelectorAll('[data-edit]').forEach(b => b.addEventListener('click', () => openEditor(items.find(i => i.id === b.dataset.edit))));
-        body.querySelector('#stk2-add-consumable').addEventListener('click', () => openEditor(null));
+        const reload = () => renderSettingsTab(body);
+        body.querySelectorAll('[data-open]').forEach(el => el.addEventListener('click', e => {
+            e.stopPropagation();
+            openItemModal({ item: items.find(i => i.id === el.dataset.open), settings, onSaved: reload });
+        }));
+        body.querySelector('#stk2-add-consumable').addEventListener('click', () => openItemModal({ item: null, settings, onSaved: reload }));
 
         // BOM grid — rows: SKUs + per-order; columns: active consumables.
         const activeCons = consumables.filter(c => c.active !== false);
@@ -680,10 +624,81 @@ const Stock = (() => {
             try {
                 await api('/api/stock/settings', { method: 'PUT', body: JSON.stringify({
                     stockEpoch: f.stockEpoch.value, consumptionWindowDays: Number(f.consumptionWindowDays.value),
+                    defaultLeadTimeDays: Number(f.defaultLeadTimeDays.value),
                     defaultSafetyDays: Number(f.defaultSafetyDays.value), watchMultiplier: Number(f.watchMultiplier.value),
                     valuation: { defaultAccountCode: f.defaultAccountCode.value.trim() },
                 }) });
                 showToast('Settings saved');
+            } catch (err) { showToast('Could not save: ' + err.message); }
+        });
+    }
+
+    // Item popover — add a consumable, or open any item's details to edit.
+    // Consumables carry just: Retailer, Unit price, Quantity per unit, Image
+    // link, Link to product. Products: name + account code (value comes from
+    // shipments, reorder from usage).
+    function openItemModal({ item, settings, onSaved }) {
+        const isNew = !item;
+        const it = item || { class: 'consumable', unit: 'each', active: true, profile: {} };
+        const prod = it.class === 'product';
+        const p = it.profile || {};
+        const overlay = document.createElement('div');
+        overlay.className = 'modal-overlay';
+        overlay.innerHTML = `
+        <div class="modal-box modal-box--wide stk2-modal" role="dialog" aria-modal="true">
+            <h3 class="modal-title">${isNew ? 'Add consumable' : escHtml(it.name)}${!isNew ? ` <span class="modal-hint">${escHtml(it.class)} · ${escHtml(it.unit)}</span>` : ''}</h3>
+            <form id="stk2-item-form">
+                <div class="stk2-modal-grid">
+                    <div class="modal-field stk2-span2"><label>Name</label><input name="name" type="text" required value="${escHtml(it.name || '')}" autofocus></div>
+                    ${prod ? `
+                    <div class="modal-field"><label>Account code</label><input name="accountCode" type="text" value="${escHtml(it.accountCode || '')}"></div>
+                    <div class="modal-field"><label>Value $/kg <span class="modal-hint">from shipments</span></label><input type="text" value="${it.unitValue != null ? '$' + fmtNum(it.unitValue, 2) + (it.unitValueSource ? ' · ' + it.unitValueSource.split(' · ')[0] : '') : 'No priced shipment yet'}" disabled></div>`
+                    : `
+                    <div class="modal-field"><label>Retailer</label><input name="retailer" type="text" value="${escHtml(p.retailer || '')}" placeholder="e.g. Packaging House"></div>
+                    <div class="modal-field"><label>Unit price <span class="modal-hint">$ ex GST</span></label><input name="unitPrice" type="number" step="0.0001" min="0" value="${p.typicalCost ?? ''}" placeholder="0.00"></div>
+                    <div class="modal-field"><label>Quantity per unit</label><input name="packSize" type="number" step="any" min="0" value="${p.packSize ?? ''}" placeholder="e.g. 500"></div>
+                    <div class="modal-field"><label>Link to product</label><input name="retailerUrl" type="url" value="${escHtml(p.retailerUrl || '')}" placeholder="https://…"></div>
+                    <div class="modal-field stk2-span2"><label>Image link</label><input name="imageUrl" type="url" value="${escHtml(p.imageUrl || '')}" placeholder="https://…/photo.jpg"></div>
+                    <div class="stk2-span2 stk2-img-preview" ${p.imageUrl ? '' : 'hidden'}><img src="${escHtml(p.imageUrl || '')}" alt=""></div>`}
+                    ${!isNew ? `<div class="modal-field"><label>Active</label><select name="active"><option value="true" ${it.active !== false ? 'selected' : ''}>Yes</option><option value="false" ${it.active === false ? 'selected' : ''}>No — hide from counts and dashboard</option></select></div>` : ''}
+                </div>
+                <div class="modal-actions">
+                    <button type="button" class="btn-secondary" id="stk2-modal-cancel">Cancel</button>
+                    <button type="submit" class="btn-primary">${isNew ? 'Add' : 'Save'}</button>
+                </div>
+            </form>
+        </div>`;
+        document.body.appendChild(overlay);
+        const close = () => { overlay.remove(); document.removeEventListener('keydown', onKey); };
+        const onKey = e => { if (e.key === 'Escape') close(); };
+        document.addEventListener('keydown', onKey);
+        overlay.addEventListener('click', e => { if (e.target === overlay) close(); });
+        overlay.querySelector('#stk2-modal-cancel').addEventListener('click', close);
+        const imgInp = overlay.querySelector('input[name="imageUrl"]');
+        if (imgInp) imgInp.addEventListener('input', () => {
+            const box = overlay.querySelector('.stk2-img-preview');
+            const v = imgInp.value.trim();
+            box.hidden = !v; box.querySelector('img').src = v || '';
+        });
+        overlay.querySelector('#stk2-item-form').addEventListener('submit', async e => {
+            e.preventDefault();
+            const f = new FormData(e.currentTarget);
+            const g = k => { const v = f.get(k); return v == null || String(v).trim() === '' ? null : String(v).trim(); };
+            const payload = { name: g('name') };
+            if (!isNew) payload.active = g('active') !== 'false';
+            if (prod) {
+                payload.accountCode = g('accountCode') || '';
+            } else {
+                const price = g('unitPrice');
+                payload.profile = { retailer: g('retailer'), retailerUrl: g('retailerUrl'), imageUrl: g('imageUrl'), typicalCost: price, packSize: g('packSize') };
+                payload.unitValue = price; // valuation uses the purchase price
+            }
+            try {
+                if (isNew) await api('/api/stock/items', { method: 'POST', body: JSON.stringify({ ...payload, class: 'consumable', unit: 'each' }) });
+                else await api('/api/stock/items/' + encodeURIComponent(it.id), { method: 'PATCH', body: JSON.stringify(payload) });
+                showToast(isNew ? 'Consumable added' : 'Saved');
+                close();
+                onSaved && onSaved();
             } catch (err) { showToast('Could not save: ' + err.message); }
         });
     }

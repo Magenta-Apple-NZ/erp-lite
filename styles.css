@@ -7379,3 +7379,14 @@ a.db-row:hover { background: #f8fafc; border-color: #e2e8f0; }
 /* Trajectory */
 .stk2-traj-ctl { display: flex; flex-wrap: wrap; gap: 0.35rem; }
 .stk2-traj-wrap { position: relative; height: 240px; margin-top: 0.75rem; }
+
+/* Stock item popover */
+.stk2-modal { max-width: 640px; }
+.stk2-modal-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 0.85rem; }
+.stk2-span2 { grid-column: 1 / -1; }
+.stk2-img-preview { margin: -0.25rem 0 0.85rem; }
+.stk2-img-preview img { max-height: 140px; max-width: 100%; border-radius: 6px; border: 1px solid var(--stk-line); background: var(--stk-surface); }
+.stk2-thumb { width: 28px; height: 28px; object-fit: cover; border-radius: 4px; vertical-align: middle; margin-right: 0.45rem; border: 1px solid var(--stk-line); }
+.stk2-rowlink { cursor: pointer; }
+.stk2-rowlink:hover td { background: var(--stk-notice); }
+.stk2-modal input:disabled { color: var(--stk-ink-2); background: var(--stk-notice); }

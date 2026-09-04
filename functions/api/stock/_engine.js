@@ -14,6 +14,7 @@ import { addDays } from '../_dates.js';
 export const DEFAULT_SETTINGS = {
     stockEpoch:            '2026-10-01',
     consumptionWindowDays: 28,
+    defaultLeadTimeDays:   14,   // consumables: days from ordering to delivery
     defaultSafetyDays:     7,
     watchMultiplier:       1.25,
     perDespatch:           [],
@@ -141,6 +142,18 @@ export function pendingShipments(shipments) {
         .sort((a, b) => String(a.eta || '9999').localeCompare(String(b.eta || '9999')));
 }
 
+// Product valuation ($/kg) auto-derived from the most recent shipment that
+// carries a listed price per kg (the only per-kg price shipments record).
+// Returns { unitValue, source } or null.
+export function productValueFromShipments(shipments) {
+    const priced = (shipments || [])
+        .filter(s => Number(s.pricePerKg) > 0)
+        .sort((a, b) => String(b.ym || '').localeCompare(String(a.ym || '')));
+    const s = priced[0];
+    if (!s) return null;
+    return { unitValue: Number(s.pricePerKg), source: `${s.note || s.id} · $${Number(s.pricePerKg).toFixed(2)}/kg listed` };
+}
+
 // ── Baseline & on hand ───────────────────────────────────────────────────
 // Latest committed count line for the item dated ≤ asOf. Per item — a recount
 // of boxes rebases boxes only.
@@ -204,9 +217,13 @@ export function computeLevels(world, asOf) {
     const items = (world.items || []).filter(i => i.active !== false).map(item => {
         const oh = onHandFor(item, { ...world, settings: s }, asOf);
         const avgDaily = r4((win.byItem[item.id] || 0) / windowDays);
-        const leadTimeDays = Number(item.profile?.leadTimeDays) || 0;
+        // Lead time is a global setting for consumables (a per-item override
+        // is honoured if present). Products have no supplier lead time here.
+        const leadTimeDays = Number(item.profile?.leadTimeDays) || (item.class === 'consumable' ? Number(s.defaultLeadTimeDays) || 0 : 0);
         const safetyDays = item.reorder?.safetyDays != null ? Number(item.reorder.safetyDays) : Number(s.defaultSafetyDays) || 0;
-        const mode = item.reorder?.mode === 'manual' ? 'manual' : 'auto';
+        // "manual" without a point is just auto.
+        const hasManual = item.reorder?.manualPoint != null && item.reorder.manualPoint !== '';
+        const mode = item.reorder?.mode === 'manual' && hasManual ? 'manual' : 'auto';
         const reorderPoint = mode === 'manual'
             ? (item.reorder?.manualPoint != null && item.reorder.manualPoint !== '' ? Number(item.reorder.manualPoint) : null)
             : r2(avgDaily * (leadTimeDays + safetyDays));
