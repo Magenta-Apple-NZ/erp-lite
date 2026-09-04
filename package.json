@@ -1,0 +1,9 @@
+{
+  "name": "business-hub",
+  "private": true,
+  "type": "module",
+  "description": "Prime Ties Business Hub — no build step; package.json exists only to run the stock engine tests.",
+  "scripts": {
+    "test": "TZ=UTC node --test tests/*.test.js && TZ=Pacific/Auckland node --test tests/*.test.js"
+  }
+}

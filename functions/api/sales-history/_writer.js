@@ -3,19 +3,9 @@
 // an underscore-prefixed file so Pages doesn't treat it as a route.
 
 import { loadItemsMap } from '../catalog/items.js';
+import { nzYmd } from '../_dates.js';
 
 const HUB_LIVE_YM = '2026-04'; // (Reference; sales_history doesn't gate on it)
-
-// The NZ-local calendar date (YYYY-MM-DD) of a timestamp. Orders store UTC
-// ISO timestamps but the Hub is an NZ business — bucketing/reporting must use
-// the NZ day (Pacific/Auckland is UTC+12, +13 in DST).
-function nzYmd(iso) {
-    try {
-        return new Date(iso).toLocaleDateString('en-CA', { timeZone: 'Pacific/Auckland' });
-    } catch {
-        return String(iso || '').slice(0, 10);
-    }
-}
 
 // Look up an order line's SKU in the items catalogue (Map keyed by SKU).
 function catalogItem(l, itemsMap) {
