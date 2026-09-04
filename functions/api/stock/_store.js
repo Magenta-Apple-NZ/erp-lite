@@ -11,6 +11,7 @@
 //   stock:movements:<itemId>  [Movement]   (append-only)
 
 import { DEFAULT_SETTINGS, productValueFromShipments } from './_engine.js';
+import { costShipments } from '../import/_cost.js';
 
 export const K = {
     settings:    'stock:settings',
@@ -166,9 +167,13 @@ export async function loadSales(env) {
     const raw = await env.ORDERS_KV.get('sales_history');
     return raw ? JSON.parse(raw) : [];
 }
+// Shipments come back stamped with kgIn (yield kg for V3), unitCost (landed
+// $/kg from their cost lines, else listed $/kg) and costBasis — see
+// import/_cost.js. The engine reads those, never the raw cost lines.
 export async function loadShipments(env) {
     const fc = await getJson(env, 'import:forecast', null);
-    return fc && Array.isArray(fc.shipments) ? fc.shipments : [];
+    const list = fc && Array.isArray(fc.shipments) ? fc.shipments : [];
+    return costShipments(env, list);
 }
 
 // Everything the engine needs, loaded in parallel.

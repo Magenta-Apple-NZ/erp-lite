@@ -336,7 +336,7 @@ const Stock = (() => {
                     <td><strong>${escHtml(l.note)}</strong></td><td>${fmtDate(l.date)}</td>
                     <td style="text-align:right;font-variant-numeric:tabular-nums">${fmtNum(l.qty)}</td>
                     <td style="text-align:right;font-variant-numeric:tabular-nums">${fmtNum(l.remaining)}</td>
-                    <td style="text-align:right;font-variant-numeric:tabular-nums">${l.unitCost != null ? '$' + fmtNum(l.unitCost, 2) : '—'}</td>
+                    <td style="text-align:right;font-variant-numeric:tabular-nums" title="${l.basis === 'landed' ? 'Landed cost: all cost lines ÷ yield kg' : l.basis === 'listed' ? 'Listed $/kg on the shipment (no cost lines yet)' : 'Carried from the previous lot'}">${l.unitCost != null ? '$' + fmtNum(l.unitCost, 2) : '—'}${l.basis && l.basis !== 'landed' ? ` <span class="cat-sub">${escHtml(l.basis)}</span>` : ''}</td>
                     <td style="text-align:right;font-variant-numeric:tabular-nums">${l.remaining > 0 ? '$' + fmtNum(l.value) : '—'}</td></tr>`).join('')}</tbody>
             </table></div>
             ${lv.shortfall ? `<p class="cat-sub stk2-var--neg" style="margin-top:0.5rem">${fmtNum(lv.shortfall)} kg sold beyond what the lots hold — the next shipment to land covers it first.</p>` : ''}`

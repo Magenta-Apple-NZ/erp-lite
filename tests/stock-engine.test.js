@@ -332,6 +332,38 @@ test('levels carry FIFO value for the shipment-fed product only; a count is valu
     assert.equal(committed.lines[0].expectedQty, 800);
 });
 
+// ── Landed cost per kg from shipment cost lines (import/_cost.js) ─────────
+import { shipmentCost, shipmentKgIn } from '../functions/api/import/_cost.js';
+
+test('a V3 shipment is costed at landed NZD ÷ yield kg; listed price is the fallback', () => {
+    const forex = { EUR: 0.5, USD: 0.6, BDT: 70 }; // NZD base: 1 NZD = 0.5 EUR …
+    const v3 = { id: 'ship-42', schema: 3, whiteRawKg: 6000, colourRawKg: 4000, wastePct: 10, fixedLines: {
+        rawWhite:       { rate: 1.5, ccy: 'EUR' },   // 9,000 EUR → 18,000 NZD
+        rawColour:      { rate: 0.75, ccy: 'EUR' },  // 3,000 EUR → 6,000 NZD
+        freightBdNz:    { amount: 34000, ccy: 'NZD' },
+        bundling:       { rate: 70, ccy: 'BDT' },    // 9,000 yield kg × 70 BDT = 630,000 BDT → 9,000 NZD
+    } };
+    assert.equal(shipmentKgIn(v3), 9000);
+    const c = shipmentCost(v3, forex);
+    assert.equal(c.basis, 'landed');
+    assert.equal(c.total, 67000);
+    assert.equal(c.unitCost, Math.round((67000 / 9000) * 10000) / 10000);
+    // No cost lines → listed $/kg.
+    assert.deepEqual(shipmentCost({ id: 'x', kg: 1000, pricePerKg: 4.5 }, forex), { unitCost: 4.5, basis: 'listed', total: null, kg: 1000 });
+    assert.equal(shipmentCost({ id: 'y', kg: 1000 }, forex), null);
+});
+
+test('the engine prefers the stamped landed unitCost over the listed price', () => {
+    const stamped = { ...shipArrived, unitCost: 7.25, costBasis: 'landed', kgIn: 950 };
+    const r = receipts({ shipments: [stamped], from: '2026-10-01', to: '2026-10-31' })[0];
+    assert.equal(r.qty, 950);
+    assert.equal(r.unitCost, 7.25);
+    assert.equal(r.costBasis, 'landed');
+    const f = fifoFor(items[0], world({ sales: [], shipments: [stamped, shipInTransit] }), '2026-10-31');
+    assert.equal(f.lots[1].unitCost, 7.25);
+    assert.equal(f.lots[1].basis, 'landed');
+});
+
 test('renaming an item changes nothing about its stock', () => {
     const renamed = items.map(i => i.id === 'box-10kg' ? { ...i, name: 'Carton (10 kilo)' } : i);
     const a = computeLevels(world(), '2026-10-31').items.find(i => i.id === 'box-10kg');
