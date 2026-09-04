@@ -15,6 +15,24 @@ export async function onRequestGet({ env, params }) {
         if (!count) return errResponse('Count not found', 404);
         if (count.status === 'committed') return jsonResponse(count);
         const world = await loadWorld(env);
+
+        // Keep a draft in step with Settings → Stock: items added since the
+        // draft was created are appended (so nothing is silently omitted),
+        // and untouched lines for items since deactivated are dropped.
+        const active = world.items.filter(i => i.active !== false);
+        const have = new Set((count.lines || []).map(l => l.itemId));
+        const blankLine = i => ({ itemId: i.id, counted: true, countedQty: null, expectedQty: null, varianceQty: null, variancePct: null, varianceReason: '', unitValue: null, accountCode: null });
+        const added = active.filter(i => !have.has(i.id)).map(blankLine);
+        const activeIds = new Set(active.map(i => i.id));
+        const touched = l => l.countedQty != null || l.counted === false || (Array.isArray(l.lots) && l.lots.length) || (l.varianceReason || '').trim();
+        const kept = (count.lines || []).filter(l => activeIds.has(l.itemId) || touched(l));
+        if (added.length || kept.length !== (count.lines || []).length) {
+            const order = Object.fromEntries(world.items.map((i, idx) => [i.id, idx]));
+            count.lines = kept.concat(added).sort((a, b) => (order[a.itemId] ?? 999) - (order[b.itemId] ?? 999));
+            count.updatedAt = new Date().toISOString();
+            await saveCount(env, count);
+        }
+
         const expected = count.date < world.settings.stockEpoch ? {} : expectedForCount(count, world);
         const units = Object.fromEntries(world.items.map(i => [i.id, i.unit]));
         return jsonResponse({ ...count, expected, units });
