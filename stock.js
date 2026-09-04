@@ -66,8 +66,8 @@ const Stock = (() => {
         return `<span class="stk2-chip stk2-chip--${escHtml(lv.status)}" title="${escHtml(why)}"><span class="stk2-chip-ico" aria-hidden="true">${s.icon}</span>${s.label}</span>${covered}`;
     }
 
-    const isDark = () => document.documentElement.dataset.theme === 'dark'
-        || (!document.documentElement.dataset.theme && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+    // The Hub is light-only; only an explicit data-theme="dark" flips the chart palette.
+    const isDark = () => document.documentElement.dataset.theme === 'dark';
     const palette = () => isDark()
         ? { accent: '#3987e5', dim: '#5a5a57', ink: '#c3c2b7', grid: '#2c2c2a', base: '#383835', warn: '#fab219', annot: '#9085e9' }
         : { accent: '#2a78d6', dim: '#c3c2b7', ink: '#52514e', grid: '#e1e0d9', base: '#c3c2b7', warn: '#fab219', annot: '#4a3aa7' };
