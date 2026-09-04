@@ -736,15 +736,6 @@ const Stock = (() => {
             } catch (e) { showToast('Could not save: ' + e.message); }
         });
         drawGrid();
-        });
-        body.querySelector('#stk2-bom-save').addEventListener('click', async () => {
-            try {
-                await api('/api/stock/bom', { method: 'PUT', body: JSON.stringify({ versions }) });
-                await api('/api/stock/settings', { method: 'PUT', body: JSON.stringify({ perDespatch }) });
-                showToast('Recipes saved');
-            } catch (e) { showToast('Could not save: ' + e.message); }
-        });
-        drawGrid();
 
         // Settings
         body.querySelector('#stk2-settings').addEventListener('submit', async e => {
