@@ -31,6 +31,30 @@ const Stock = (() => {
     const nzToday = () => new Date().toLocaleDateString('en-CA', { timeZone: 'Pacific/Auckland' });
     // The product fed by shipments (FIFO lots, per-shipment sub-count).
     const SHIPMENT_PRODUCT_ID = 'prime-tie-bundled';
+
+    // Shrink a photo to a thumbnail before upload (stored in KV, no blob
+    // storage here). Returns { data: base64, mediaType } or throws.
+    function resizeImage(file, max = 320, quality = 0.82) {
+        return new Promise((resolve, reject) => {
+            if (!/^image\//.test(file.type)) return reject(new Error('Choose an image file'));
+            const url = URL.createObjectURL(file);
+            const img = new Image();
+            img.onload = () => {
+                const scale = Math.min(1, max / Math.max(img.width, img.height));
+                const w = Math.max(1, Math.round(img.width * scale)), h = Math.max(1, Math.round(img.height * scale));
+                const canvas = document.createElement('canvas');
+                canvas.width = w; canvas.height = h;
+                const ctx = canvas.getContext('2d');
+                ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, w, h); // flatten transparency
+                ctx.drawImage(img, 0, 0, w, h);
+                URL.revokeObjectURL(url);
+                const dataUrl = canvas.toDataURL('image/jpeg', quality);
+                resolve({ data: dataUrl.split(',')[1], mediaType: 'image/jpeg', dataUrl });
+            };
+            img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('Could not read that image')); };
+            img.src = url;
+        });
+    }
     function fmtDate(ymd) {
         if (!ymd) return '—';
         const [y, m, d] = String(ymd).split('-').map(Number);
@@ -826,6 +850,16 @@ const Stock = (() => {
         const it = item || { class: 'consumable', unit: 'each', active: true, profile: {} };
         const prod = it.class === 'product';
         const p = it.profile || {};
+        // Image: upload a photo (resized in the browser, stored in KV) or link one.
+        const imageFields = () => `
+                    <div class="modal-field stk2-span2"><label>Image <span class="modal-hint">upload a photo, or paste a link</span></label>
+                        <div class="stk2-form-row">
+                            <label class="btn-secondary btn-sm" style="cursor:pointer">Upload photo<input type="file" id="stk2-img-file" accept="image/*" hidden></label>
+                            <input name="imageUrl" type="url" value="${escHtml(p.imageUrl || '')}" placeholder="or https://…/photo.jpg" style="flex:1;min-width:200px">
+                            <button type="button" class="btn-secondary btn-sm" id="stk2-img-remove" ${p.imageUrl ? '' : 'hidden'}>Remove</button>
+                        </div>
+                    </div>
+                    <div class="stk2-span2 stk2-img-preview" ${p.imageUrl ? '' : 'hidden'}><img src="${escHtml(p.imageUrl || '')}" alt=""><span class="cat-sub" id="stk2-img-note"></span></div>`;
         const overlay = document.createElement('div');
         overlay.className = 'modal-overlay';
         overlay.innerHTML = `
@@ -840,8 +874,7 @@ const Stock = (() => {
                            <div class="modal-field"><label>Stock on hand <span class="modal-hint">count − sales + landed ± adjustments</span></label><input type="text" id="stk2-bundled-onhand" value="Loading…" disabled></div>
                            <div class="stk2-span2" id="stk2-bundled-stock"><p class="cat-sub">Loading shipment lots…</p></div>`
                         : `<div class="modal-field"><label>Cost $/kg <span class="modal-hint">ex GST</span></label><input name="unitValue" type="number" step="0.01" min="0" value="${it.unitValue ?? ''}" placeholder="0.00"></div>`}
-                    <div class="modal-field stk2-span2"><label>Image link <span class="modal-hint">URL — uploads aren't available, link to a hosted photo</span></label><input name="imageUrl" type="url" value="${escHtml(p.imageUrl || '')}" placeholder="https://…/photo.jpg"></div>
-                    <div class="stk2-span2 stk2-img-preview" ${p.imageUrl ? '' : 'hidden'}><img src="${escHtml(p.imageUrl || '')}" alt=""></div>`
+                    ${imageFields()}`
                     : `
                     <div class="modal-field"><label>SKU <span class="modal-hint">supplier's code</span></label><input name="supplierSku" type="text" value="${escHtml(p.supplierSku || '')}" placeholder="e.g. PT-48-100"></div>
                     <div class="modal-field"><label>Product description</label><input name="description" type="text" value="${escHtml(p.description || '')}" placeholder="What it is, size, colour…"></div>
@@ -851,8 +884,7 @@ const Stock = (() => {
                     <div class="modal-field"><label>Quantity per unit</label><input name="packSize" type="number" step="any" min="0" value="${p.packSize ?? ''}" placeholder="e.g. 500"></div>
                     <div class="modal-field"><label>Lead time <span class="modal-hint">days from ordering to delivery</span></label><input name="leadTimeDays" type="number" min="0" step="1" value="${p.leadTimeDays ?? ''}" placeholder="default ${settings.defaultLeadTimeDays ?? 14}"></div>
                     <div class="modal-field"><label>Link to product</label><input name="retailerUrl" type="url" value="${escHtml(p.retailerUrl || '')}" placeholder="https://…"></div>
-                    <div class="modal-field stk2-span2"><label>Image link</label><input name="imageUrl" type="url" value="${escHtml(p.imageUrl || '')}" placeholder="https://…/photo.jpg"></div>
-                    <div class="stk2-span2 stk2-img-preview" ${p.imageUrl ? '' : 'hidden'}><img src="${escHtml(p.imageUrl || '')}" alt=""></div>`}
+                    ${imageFields()}`}
                     ${!isNew ? `<div class="modal-field"><label>Active</label><select name="active"><option value="true" ${it.active !== false ? 'selected' : ''}>Yes</option><option value="false" ${it.active === false ? 'selected' : ''}>No — hide from counts and dashboard</option></select></div>` : ''}
                 </div>
                 <div class="modal-actions">
@@ -890,11 +922,30 @@ const Stock = (() => {
         document.addEventListener('keydown', onKey);
         overlay.addEventListener('click', e => { if (e.target === overlay) close(); });
         overlay.querySelector('#stk2-modal-cancel').addEventListener('click', close);
+        // Image: link, upload (resized in the browser, sent after save), or remove.
+        let pendingImage = null, removeImage = false;
         const imgInp = overlay.querySelector('input[name="imageUrl"]');
-        if (imgInp) imgInp.addEventListener('input', () => {
-            const box = overlay.querySelector('.stk2-img-preview');
-            const v = imgInp.value.trim();
-            box.hidden = !v; box.querySelector('img').src = v || '';
+        const imgBox = overlay.querySelector('.stk2-img-preview');
+        const imgNote = overlay.querySelector('#stk2-img-note');
+        const imgRemove = overlay.querySelector('#stk2-img-remove');
+        const showPreview = (src, note) => { imgBox.hidden = !src; imgBox.querySelector('img').src = src || ''; if (imgNote) imgNote.textContent = note || ''; if (imgRemove) imgRemove.hidden = !src; };
+        if (imgInp) imgInp.addEventListener('input', () => { pendingImage = null; removeImage = false; showPreview(imgInp.value.trim(), ''); });
+        const fileInp = overlay.querySelector('#stk2-img-file');
+        if (fileInp) fileInp.addEventListener('change', async () => {
+            const file = fileInp.files && fileInp.files[0];
+            if (!file) return;
+            try {
+                pendingImage = await resizeImage(file);
+                removeImage = false;
+                if (imgInp) imgInp.value = '';
+                showPreview(pendingImage.dataUrl, `${file.name} · resized, saved on Save (${Math.round(pendingImage.data.length * 0.75 / 1024)} KB)`);
+            } catch (e) { showToast(e.message); }
+            fileInp.value = '';
+        });
+        if (imgRemove) imgRemove.addEventListener('click', () => {
+            pendingImage = null; removeImage = true;
+            if (imgInp) imgInp.value = '';
+            showPreview('', '');
         });
         overlay.querySelector('#stk2-item-form').addEventListener('submit', async e => {
             e.preventDefault();
@@ -913,8 +964,12 @@ const Stock = (() => {
                 payload.unitValue = price; // valuation uses the purchase price
             }
             try {
-                if (isNew) await api('/api/stock/items', { method: 'POST', body: JSON.stringify({ ...payload, class: 'consumable', unit: 'each' }) });
-                else await api('/api/stock/items/' + encodeURIComponent(it.id), { method: 'PATCH', body: JSON.stringify(payload) });
+                const saved = isNew
+                    ? await api('/api/stock/items', { method: 'POST', body: JSON.stringify({ ...payload, class: 'consumable', unit: 'each' }) })
+                    : await api('/api/stock/items/' + encodeURIComponent(it.id), { method: 'PATCH', body: JSON.stringify(payload) });
+                const imgPath = '/api/stock/items/' + encodeURIComponent(saved.id || it.id) + '/image';
+                if (pendingImage) await api(imgPath, { method: 'POST', body: JSON.stringify({ data: pendingImage.data, mediaType: pendingImage.mediaType }) });
+                else if (removeImage) await api(imgPath, { method: 'DELETE' }).catch(() => {});
                 showToast(isNew ? 'Consumable added' : 'Saved');
                 close();
                 onSaved && onSaved();
