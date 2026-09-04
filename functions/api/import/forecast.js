@@ -1,7 +1,17 @@
 // GET  /api/import/forecast — retrieve Prime Ties stock forecast config
 // POST /api/import/forecast — patch forecast config (startingKg, monthlyAvg, shipments)
+//
+// One number, one source: when a committed stock count exists for Prime Tie
+// Bundled, GET overrides the hand-typed startingKg / stocktakeDate with that
+// count (and reports the engine's on-hand now), so the Stock Trajectory, the
+// Monthly Forecast and the Warehouse dashboard all run from the same figure:
+//   count − sales (orders) + shipments landed ± adjustments = stock now
+// The manual pair is kept as a fallback until the first count is committed.
 
 import { jsonResponse, errResponse } from '../_xero.js';
+import { nzToday } from '../_dates.js';
+import { loadWorld } from '../stock/_store.js';
+import { baselineFor, onHandFor, SHIPMENT_PRODUCT_ID } from '../stock/_engine.js';
 
 const KEY = 'import:forecast';
 
@@ -29,10 +39,42 @@ const DEFAULTS = {
     ],
 };
 
+// The stock engine's anchor for Prime Tie Bundled, or null before the first
+// committed count. Never lets an engine error break the forecast.
+async function stockAnchor(env) {
+    try {
+        const world = await loadWorld(env);
+        const item = world.items.find(i => i.id === SHIPMENT_PRODUCT_ID);
+        if (!item) return null;
+        const today = nzToday();
+        const base = baselineFor(item.id, world.counts, today);
+        if (!base) return null;
+        const now = onHandFor(item, world, today);
+        return {
+            source: 'count', kg: base.qty, date: base.date, countId: base.countId, label: base.countLabel || 'Stock count',
+            onHandNow: now.onHand, asOf: today,
+            soldSince: now.consumed, receivedSince: now.receipts, adjustedSince: now.movements,
+        };
+    } catch {
+        return null;
+    }
+}
+
 export async function onRequestGet({ env }) {
     try {
         const raw = await env.ORDERS_KV.get(KEY);
-        return jsonResponse(raw ? JSON.parse(raw) : DEFAULTS);
+        const config = raw ? JSON.parse(raw) : { ...DEFAULTS };
+        const anchor = await stockAnchor(env);
+        if (anchor) {
+            config.manualStartingKg    = config.startingKg;
+            config.manualStocktakeDate = config.stocktakeDate;
+            config.startingKg    = anchor.kg;
+            config.stocktakeDate = anchor.date;
+            config.stocktake     = anchor;
+        } else {
+            config.stocktake = { source: 'manual', kg: config.startingKg ?? 0, date: config.stocktakeDate || null };
+        }
+        return jsonResponse(config);
     } catch (e) {
         return errResponse(e.message);
     }
