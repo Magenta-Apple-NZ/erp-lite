@@ -6,7 +6,7 @@
 
 import { jsonResponse, errResponse } from '../../../_xero.js';
 import { isYmd } from '../../../_dates.js';
-import { loadCount, saveCount, loadWorld, getJson, putJson, K } from '../../_store.js';
+import { loadCount, saveCount, loadWorld, loadSettings, getJson, putJson, K } from '../../_store.js';
 import { expectedForCount } from '../../_engine.js';
 
 export async function onRequestGet({ env, params }) {
@@ -45,11 +45,18 @@ export async function onRequestPatch({ env, params, request }) {
     try {
         const count = await loadCount(env, params.id);
         if (!count) return errResponse('Count not found', 404);
-        if (count.status === 'committed') return errResponse('Committed counts are frozen', 409);
         const body = await request.json();
+        if (count.status === 'committed') {
+            // Frozen figures stay frozen; only the label and the effective date
+            // may change (the date moves the baseline, so it's a real change).
+            const extra = Object.keys(body).filter(k => !['label', 'date'].includes(k));
+            if (extra.length) return errResponse('Committed counts are frozen — only label and date can change', 409);
+        }
         if (body.label !== undefined) count.label = String(body.label).trim() || count.label;
         if (body.date !== undefined) {
             if (!isYmd(body.date)) return errResponse('date must be YYYY-MM-DD', 400);
+            const settings = await loadSettings(env);
+            if (body.date < settings.stockEpoch) return errResponse(`Counts start at the stock epoch (${settings.stockEpoch})`, 400);
             count.date = body.date;
         }
         if (body.lines !== undefined) {

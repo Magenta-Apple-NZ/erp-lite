@@ -115,15 +115,16 @@ export function rowFromOrder(order, itemsMap = null) {
     if (buckets.bundles === 0 && buckets.loose === 0 && buckets.ecoTies === 0) {
         return null;
     }
-    // Courier labels this order needs — courier consumables (labels, satchels)
-    // burn per label, not per product. Labels actually created win; otherwise
-    // the labels invoiced on the courier lines (FR-01..04). Freight is not a label.
-    let labels = Number(order.courier?.boxesOrdered) || 0;
-    if (!labels) {
-        for (const l of order.lines) {
-            if (/^FR-0[1-4]$/.test(String(l?.sku || '').toUpperCase())) labels += Number(l.quantity) || 0;
-        }
+    // Courier labels used = labels INVOICED on the order (courier lines
+    // FR-01..04, quantity each). That is the "sold" figure for the label
+    // consumable: opening count − labels invoiced = on hand. Falls back to
+    // labels created on the courier record if none were invoiced. Freight is
+    // never a label.
+    let labels = 0;
+    for (const l of order.lines) {
+        if (/^FR-0[1-4]$/.test(String(l?.sku || '').toUpperCase())) labels += Number(l.quantity) || 0;
     }
+    if (!labels) labels = Number(order.courier?.boxesOrdered) || 0;
     // Bucket by the NZ-local calendar date, not the raw UTC slice of the
     // timestamp — otherwise an order created NZ-evening / early-morning (UTC+12/13)
     // lands in the previous UTC day, and the month/year drift vs what the UI shows.

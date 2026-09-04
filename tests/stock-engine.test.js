@@ -486,19 +486,23 @@ test('matrix cells are pieces; Quantity per unit converts to stock units (2 stap
     assert.equal(c2['staple'], 10);
 });
 
-test('courier consumables burn per label on the order (settings.perLabel), never via the product matrix', () => {
-    const its = [...items, { id: 'label-a4', name: 'Aramex label', class: 'consumable', unit: 'each', active: true, sortOrder: 150, profile: { leadTimeDays: 5 }, reorder: { mode: 'auto' } }];
-    const st = { ...settings, perDespatch: [], perLabel: [{ consumableId: 'label-a4', qty: 1 }] };
-    const row = { ...saleLoose5, labels: 4 };
+test('courier label stock depletes by the labels invoiced on each order — opening count less labels sold', () => {
+    // A book of labels is an ordinary consumable flagged courierLabel; no matrix cell.
+    const its = [...items, { id: 'label-book', name: 'Aramex labels', class: 'consumable', unit: 'each', unitLabel: 'label', courierLabel: true, active: true, sortOrder: 150, profile: { leadTimeDays: 5 }, reorder: { mode: 'auto' } }];
+    const st = { ...settings, perDespatch: [] };
+    const row = { ...saleLoose5, labels: 4 }; // 4 courier labels invoiced on the order
     const c = consumption({ rows: [row], items: its, bom, settings: st, from: null, to: '2026-10-31' }).byItem;
-    assert.equal(c['label-a4'], 4, 'an order needing 4 labels uses 4');
-    assert.equal(consumption({ rows: [saleLoose5], items: its, bom, settings: st, from: null, to: '2026-10-31' }).byItem['label-a4'], undefined, 'no labels → nothing');
-    const m = salesMix([row], null, '2026-10-31');
-    assert.equal(m.labelsPerKg, 4 / 50);
-    // Forecast picks it up: 1,000 kg/month × 0.08 labels/kg = 80 labels/month.
-    const cf = consumablesForecast({ ...world({ sales: [row], items: its, counts: [{ ...opening, lines: [...opening.lines, { itemId: 'label-a4', counted: true, countedQty: 500 }] }] }), settings: st },
-                                   { monthlyAvg: Array(12).fill(1000), today: '2026-10-31' });
-    assert.equal(cf.items.find(i => i.id === 'label-a4').scenarios.avg.months[1].usage, 80);
+    assert.equal(c['label-book'], 4, 'an order invoicing 4 labels uses 4');
+    assert.equal(consumption({ rows: [saleLoose5], items: its, bom, settings: st, from: null, to: '2026-10-31' }).byItem['label-book'], undefined, 'no labels → nothing');
+    // Opening 20 (a book) − 4 = 16 on hand.
+    const w = world({ sales: [row], items: its, settings: st, counts: [{ ...opening, lines: [...opening.lines, { itemId: 'label-book', counted: true, countedQty: 20 }] }] });
+    assert.equal(onHandFor(its[its.length - 1], w, '2026-10-31').onHand, 16);
+    const lg = ledgerFor(its[its.length - 1], w, '2026-10-31');
+    assert.deepEqual(lg.entries.map(e => [e.kind, e.qty]), [['count', 20], ['sale', -4]]);
+    // Forecast: 1,000 kg/month × (4 labels / 50 kg) = 80 labels/month.
+    assert.equal(salesMix([row], null, '2026-10-31').labelsPerKg, 4 / 50);
+    const cf = consumablesForecast(w, { monthlyAvg: Array(12).fill(1000), today: '2026-10-31' });
+    assert.equal(cf.items.find(i => i.id === 'label-book').scenarios.avg.months[1].usage, 80);
 });
 
 test('the item ledger lists every in and out and closes at the same figure as on hand', () => {

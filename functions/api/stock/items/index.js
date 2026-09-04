@@ -26,6 +26,9 @@ export function validateItemFields(body, { partial = false } = {}) {
     if (body.active !== undefined) f.active = body.active !== false;
     // Unit type for "each" items — box, roll, bag, sheet… (display only)
     if (body.unitLabel !== undefined) f.unitLabel = String(body.unitLabel || '').trim().toLowerCase().slice(0, 30) || null;
+    // Courier label stock: depletes by the labels invoiced on orders (courier
+    // lines FR-01..04), one piece per label. No matrix cell involved.
+    if (body.courierLabel !== undefined) f.courierLabel = !!body.courierLabel;
     if (body.key !== undefined) f.key = !!body.key;
     if (body.sortOrder !== undefined) { const n = num(body.sortOrder); if (isNaN(n)) return { error: 'sortOrder must be a number' }; f.sortOrder = n ?? 0; }
     if (body.aliases !== undefined) {

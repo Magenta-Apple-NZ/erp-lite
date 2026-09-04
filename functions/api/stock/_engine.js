@@ -109,7 +109,7 @@ export function piecesPerUnit(items) {
 // type buckets; consumables from the matrix (pieces ÷ pieces per unit), plus
 // the per-order and per-courier-label lists. Shared by consumption() and the
 // per-item ledger so both always agree.
-export function rowConsumption(r, { items, bom, settings, pieces, productBySalesKey }) {
+export function rowConsumption(r, { items, bom, settings, pieces, productBySalesKey, courierLabelIds }) {
     const out = {};
     const add = (id, q) => { if (id && q) out[id] = (out[id] || 0) + q; };
     const addPieces = (id, q) => add(id, q / (pieces[id] || 1));
@@ -127,15 +127,24 @@ export function rowConsumption(r, { items, bom, settings, pieces, productBySales
         }
     }
     for (const e of settings?.perDespatch || []) addPieces(e.consumableId, Number(e.qty) || 0);
+    // Courier labels: the labels invoiced on the order deplete every
+    // courier-label consumable one piece per label (plus any legacy perLabel).
     const labels = Number(r.labels) || 0;
-    if (labels > 0) for (const e of settings?.perLabel || []) addPieces(e.consumableId, labels * (Number(e.qty) || 0));
+    if (labels > 0) {
+        for (const id of courierLabelIds || []) addPieces(id, labels);
+        for (const e of settings?.perLabel || []) addPieces(e.consumableId, labels * (Number(e.qty) || 0));
+    }
     return { byItem: out, hasSplit };
 }
 
 function consumptionContext(items, bom, settings) {
     const productBySalesKey = {};
-    for (const it of items || []) if (it.class === 'product' && it.salesKey) productBySalesKey[it.salesKey] = it.id;
-    return { items, bom, settings, pieces: piecesPerUnit(items), productBySalesKey };
+    const courierLabelIds = [];
+    for (const it of items || []) {
+        if (it.class === 'product' && it.salesKey) productBySalesKey[it.salesKey] = it.id;
+        if (it.class === 'consumable' && it.courierLabel) courierLabelIds.push(it.id);
+    }
+    return { items, bom, settings, pieces: piecesPerUnit(items), productBySalesKey, courierLabelIds };
 }
 
 export function consumption({ rows, items, bom, settings, from, to }) {
@@ -586,6 +595,7 @@ export function consumablesForecast(world, { monthlyAvg, today, months = 12, mix
     }
     for (const e of s.perDespatch || []) addPerKg(e.consumableId, mix.ordersPerKg * (Number(e.qty) || 0));
     for (const e of s.perLabel || []) addPerKg(e.consumableId, (mix.labelsPerKg || 0) * (Number(e.qty) || 0));
+    for (const it of world.items || []) if (it.class === 'consumable' && it.courierLabel) addPerKg(it.id, mix.labelsPerKg || 0);
 
     // The next N months; the current month is pro-rated from today.
     const [ty, tm, td] = today.split('-').map(Number);

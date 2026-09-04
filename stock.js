@@ -185,18 +185,10 @@ const Stock = (() => {
         <div class="cat-section stk2-section">
             <div class="cat-section-head">
                 <div>
-                    <h2 class="cat-title">Receipts, adjustments &amp; wastage</h2>
-                    <p class="cat-sub" style="margin:0">Consumable deliveries arrive here (<em>Receive delivery</em>, in units — boxes, rolls…). Append-only ledger: to undo one, post a correction that offsets it.</p>
+                    <h2 class="cat-title">Recent movements</h2>
+                    <p class="cat-sub" style="margin:0">Use <strong>In</strong> (stock arrived), <strong>Out</strong> (used, wasted, removed) or <strong>Adjust</strong> (set on hand to what's actually there) on any item above. Append-only: a mistake is undone by an opposite entry, never by editing.</p>
                 </div>
             </div>
-            <form id="stk2-mov-form" class="stk2-form-row">
-                <select name="itemId" required>${lv.items.map(i => `<option value="${escHtml(i.id)}">${escHtml(i.name)} (${i.unit})</option>`).join('')}</select>
-                <select name="type"><option value="receipt">Receive delivery (+)</option><option value="wastage">Wastage (−)</option><option value="adjustment">Adjustment (±)</option><option value="correction">Correction (±)</option></select>
-                <input name="qty" type="number" step="any" placeholder="Qty" required style="width:110px">
-                <input name="date" type="date" value="${nzToday()}" min="${escHtml(lv.stockEpoch)}" required>
-                <input name="reason" type="text" placeholder="Reason" style="flex:1;min-width:160px">
-                <button class="btn-primary btn-sm" type="submit">Post</button>
-            </form>
             <div id="stk2-movs"></div>
         </div>`;
 
@@ -249,25 +241,13 @@ const Stock = (() => {
         };
         loadMovs();
         renderConsumablesForecast(body.querySelector('#stk2-cf'));
-        // "Receive" on a consumable row → the ledger form, prefilled as a delivery.
-        body.querySelectorAll('[data-receive]').forEach(b => b.addEventListener('click', () => {
-            const f = body.querySelector('#stk2-mov-form');
-            f.itemId.value = b.dataset.receive; f.type.value = 'receipt'; f.qty.value = ''; f.reason.value = 'Delivery';
-            f.scrollIntoView({ behavior: 'smooth', block: 'center' });
-            f.qty.focus();
+        // In / Out / Adjust on any item → a small popover that posts the movement.
+        body.querySelectorAll('[data-move]').forEach(b => b.addEventListener('click', () => {
+            const item = lv.items.find(i => i.id === b.dataset.item);
+            if (item) openMovement({ item, mode: b.dataset.move, stockEpoch: lv.stockEpoch, onDone: () => renderDashboard(body) });
         }));
         // Item name → its ledger (audit trail with running balance).
         body.querySelectorAll('[data-ledger]').forEach(a => a.addEventListener('click', e => { e.preventDefault(); openLedger(a.dataset.ledger); }));
-        body.querySelector('#stk2-mov-form').addEventListener('submit', async e => {
-            e.preventDefault();
-            const f = e.currentTarget;
-            const payload = { itemId: f.itemId.value, type: f.type.value, qty: Number(f.qty.value), date: f.date.value, reason: f.reason.value };
-            try {
-                await api('/api/stock/movements', { method: 'POST', body: JSON.stringify(payload) });
-                showToast('Movement posted');
-                renderDashboard(body);
-            } catch (err) { showToast('Could not post: ' + err.message); }
-        });
     }
 
     function kpiTile(lv) {
@@ -281,6 +261,7 @@ const Stock = (() => {
             <div class="stk2-tile-foot">${statusChip(lv)}<div class="stk2-spark" aria-hidden="true"></div></div>
             ${lv.value != null ? `<div class="stk2-tile-sub" title="FIFO: oldest shipment lot sold first">Value <strong>$${fmtNum(lv.value)}</strong>${lv.avgCost != null ? ` · avg $${fmtNum(lv.avgCost, 2)}/kg` : ''} <span class="cat-sub">FIFO</span></div>` : ''}
             ${lv.baselineDate ? `<div class="stk2-tile-base">Counted ${fmtDate(lv.baselineDate)}${lv.reorderPoint != null ? ` · reorder at ${fmtNum(lv.reorderPoint)}` : ''}</div>` : ''}
+            <div class="stk2-io stk2-tile-io"><button class="btn-secondary btn-sm" data-move="in" data-item="${escHtml(lv.id)}" title="Stock arrived (a landed shipment is added automatically)">In</button><button class="btn-secondary btn-sm" data-move="out" data-item="${escHtml(lv.id)}" title="Wasted or removed">Out</button><button class="btn-secondary btn-sm" data-move="adjust" data-item="${escHtml(lv.id)}" title="Set on hand to what's actually there">Adjust</button></div>
         </div>`;
     }
 
@@ -484,6 +465,58 @@ const Stock = (() => {
         overlay.querySelector('#stk2-ledger-close').addEventListener('click', close);
     }
 
+    // In / Out / Adjust for one item — posts a movement without a full count.
+    //   in     → receipt (+qty)      out → wastage (−qty)
+    //   adjust → adjustment of (target − on hand), i.e. "set on hand to X"
+    function openMovement({ item, mode, stockEpoch, onDone }) {
+        const TITLE = { in: 'In', out: 'Out', adjust: 'Adjust' }[mode] || 'Movement';
+        const unitTxt = item.unit === 'kg' ? 'kg' : (item.unitLabel || 'units');
+        const overlay = document.createElement('div');
+        overlay.className = 'modal-overlay';
+        overlay.innerHTML = `
+        <div class="modal-box stk2-move" role="dialog" aria-modal="true">
+            <h3 class="modal-title">${TITLE} · ${escHtml(item.name)} <span class="modal-hint">on hand ${item.onHand == null ? 'unknown' : fmtQty(item.onHand, item.unit, null, item.unitLabel)}</span></h3>
+            <form id="stk2-move-form">
+                ${mode === 'adjust'
+                    ? `<div class="modal-field"><label>Set on hand to <span class="modal-hint">${escHtml(unitTxt)} actually there</span></label><input name="target" type="number" step="any" min="0" required autofocus value="${item.onHand ?? ''}"><span class="cat-sub" id="stk2-move-delta" style="display:block;margin-top:0.3rem"></span></div>`
+                    : `<div class="modal-field"><label>${mode === 'in' ? 'Quantity arrived' : 'Quantity out'} <span class="modal-hint">${escHtml(unitTxt)}</span></label><input name="qty" type="number" step="any" min="0" required autofocus placeholder="0"></div>`}
+                <div class="modal-field"><label>Date</label><input name="date" type="date" value="${nzToday()}" min="${escHtml(stockEpoch || '')}" required></div>
+                <div class="modal-field"><label>Note <span class="modal-hint">optional</span></label><input name="reason" type="text" placeholder="${mode === 'in' ? 'e.g. Delivery from Attwoods' : mode === 'out' ? 'e.g. Damaged / used for samples' : 'e.g. Recount'}"></div>
+                <div class="modal-actions"><button type="button" class="btn-secondary" id="stk2-move-cancel">Cancel</button><button type="submit" class="btn-primary">${mode === 'adjust' ? 'Set on hand' : 'Post ' + TITLE.toLowerCase()}</button></div>
+            </form>
+        </div>`;
+        document.body.appendChild(overlay);
+        const close = () => { overlay.remove(); document.removeEventListener('keydown', onKey); };
+        const onKey = e => { if (e.key === 'Escape') close(); };
+        document.addEventListener('keydown', onKey);
+        overlay.addEventListener('click', e => { if (e.target === overlay) close(); });
+        overlay.querySelector('#stk2-move-cancel').addEventListener('click', close);
+        const form = overlay.querySelector('#stk2-move-form');
+        if (mode === 'adjust') {
+            const tgt = form.querySelector('input[name="target"]'), delta = overlay.querySelector('#stk2-move-delta');
+            const upd = () => { const v = Number(tgt.value); if (tgt.value === '' || item.onHand == null || isNaN(v)) { delta.textContent = item.onHand == null ? 'No count yet — this will be the first figure (post via a count instead).' : ''; return; } const d = Math.round((v - item.onHand) * 100) / 100; delta.textContent = d === 0 ? 'No change' : `${d > 0 ? '+' : '−'}${fmtQty(Math.abs(d), item.unit, null, item.unitLabel)} adjustment`; };
+            tgt.addEventListener('input', upd); upd();
+        }
+        form.addEventListener('submit', async e => {
+            e.preventDefault();
+            const fd = new FormData(form);
+            let type, qty;
+            if (mode === 'adjust') {
+                if (item.onHand == null) { showToast('No count yet — commit a count first'); return; }
+                type = 'adjustment'; qty = Math.round((Number(fd.get('target')) - item.onHand) * 100) / 100;
+                if (qty === 0) { showToast('No change'); close(); return; }
+            } else {
+                type = mode === 'in' ? 'receipt' : 'wastage'; qty = Number(fd.get('qty'));
+                if (!(qty > 0)) { showToast('Enter a quantity'); return; }
+            }
+            try {
+                await api('/api/stock/movements', { method: 'POST', body: JSON.stringify({ itemId: item.id, type, qty, date: fd.get('date'), reason: String(fd.get('reason') || '').trim() || (mode === 'adjust' ? 'Set on hand' : '') }) });
+                showToast(mode === 'adjust' ? 'On hand set' : TITLE + ' posted');
+                close(); onDone && onDone();
+            } catch (err) { showToast('Could not post: ' + err.message); }
+        });
+    }
+
     function meter(lv) {
         if (lv.onHand == null) return '<div class="stk2-meter stk2-meter--na" title="No count yet"></div>';
         const rp = lv.reorderPoint;
@@ -509,7 +542,7 @@ const Stock = (() => {
                 <td style="text-align:right">${i.leadTimeDays ? i.leadTimeDays + ' d' : '—'}</td>
                 <td>${statusChip(i)}</td>
                 <td style="text-align:right;font-variant-numeric:tabular-nums">${i.onOrder ? fmtQty(i.onOrder, i.unit) : '—'}</td>
-                <td style="text-align:right">${i.class === 'consumable' ? `<button class="btn-secondary btn-sm" data-receive="${escHtml(i.id)}" title="A delivery of ${escHtml(i.name)} arrived">Receive</button>` : ''}</td>
+                <td style="text-align:right;white-space:nowrap"><span class="stk2-io"><button class="btn-secondary btn-sm" data-move="in" data-item="${escHtml(i.id)}" title="Stock arrived">In</button><button class="btn-secondary btn-sm" data-move="out" data-item="${escHtml(i.id)}" title="Used, wasted or removed">Out</button><button class="btn-secondary btn-sm" data-move="adjust" data-item="${escHtml(i.id)}" title="Set on hand to what's actually there">Adjust</button></span></td>
             </tr>`).join('')}</tbody></table></div>`;
     }
 
@@ -636,6 +669,7 @@ const Stock = (() => {
                     <p class="cat-sub" style="margin:0">${committed ? 'Frozen: expected, variance and valuation were snapshotted at commit.' : 'Expected is the engine\'s figure at end of this date. Enter what you physically counted; tick <em>Not counted</em> for anything skipped (it keeps its old baseline).'}</p>
                 </div>
                 <div class="stk2-form-row">
+                    <label class="cat-sub" style="margin:0;display:flex;align-items:center;gap:0.35rem" title="${committed ? 'Move this count to another date. Frozen figures stay as committed; the baseline moves with the date.' : 'Count date (as at end of day)'}">Date <input type="date" id="stk2-count-date" value="${escHtml(c.date)}"></label>
                     ${committed
                         ? `<a class="btn-secondary btn-sm" href="/api/stock/counts/${encodeURIComponent(c.id)}/valuation?format=csv" download>Valuation CSV</a>`
                         : `<button class="btn-secondary btn-sm" id="stk2-save-draft">Save draft</button><button class="btn-primary btn-sm" id="stk2-commit">Commit count</button>`}
@@ -663,7 +697,21 @@ const Stock = (() => {
         </div>`;
         wrap.querySelector('#stk2-count').scrollIntoView({ behavior: 'smooth', block: 'start' });
         wrap.querySelector('#stk2-close-count').addEventListener('click', () => { wrap.innerHTML = ''; });
-        if (committed) return;
+        if (committed) {
+            // Only the date (and label) can change on a committed count.
+            wrap.querySelector('#stk2-count-date').addEventListener('change', async e => {
+                const date = e.target.value;
+                if (!date || date === c.date) return;
+                if (!confirm(`Move "${c.label}" from ${fmtDate(c.date)} to ${fmtDate(date)}? The baseline moves with it; the frozen figures stay as committed.`)) { e.target.value = c.date; return; }
+                try {
+                    await api('/api/stock/counts/' + encodeURIComponent(c.id), { method: 'PATCH', body: JSON.stringify({ date }) });
+                    showToast('Count date changed');
+                    await renderCounts(body);
+                    openCount(body, c.id);
+                } catch (err) { showToast('Could not change date: ' + err.message); e.target.value = c.date; }
+            });
+            return;
+        }
 
         const readSub = itemId => {
             const sub = wrap.querySelector(`tr.stk2-sublot[data-parent="${CSS.escape(itemId)}"]`);
@@ -744,7 +792,7 @@ const Stock = (() => {
                 refresh();
             });
         });
-        const save = async () => api('/api/stock/counts/' + encodeURIComponent(c.id), { method: 'PATCH', body: JSON.stringify({ lines: readLines() }) });
+        const save = async () => api('/api/stock/counts/' + encodeURIComponent(c.id), { method: 'PATCH', body: JSON.stringify({ lines: readLines(), date: wrap.querySelector('#stk2-count-date').value }) });
         wrap.querySelector('#stk2-save-draft').addEventListener('click', async () => {
             try { await save(); showToast('Draft saved'); } catch (e) { showToast('Could not save: ' + e.message); }
         });
@@ -799,7 +847,7 @@ const Stock = (() => {
             </div>
             ${consumables.length ? `<table class="stk-table stk2-table"><thead><tr><th>Name</th><th>Unit</th><th>Retailer</th><th style="text-align:right">Unit price</th><th style="text-align:right">Qty per unit</th><th style="text-align:right">Lead</th><th>Active</th></tr></thead>
             <tbody>${consumables.map(i => { const p = i.profile || {}; return `<tr class="stk2-rowlink" data-open="${escHtml(i.id)}">
-                <td>${p.imageUrl ? `<img class="stk2-thumb" src="${escHtml(p.imageUrl)}" alt="" loading="lazy" onerror="this.remove()">` : ''}<strong>${escHtml(i.name)}</strong>${p.supplierSku || p.description ? `<div class="cat-sub" style="margin:0">${[p.supplierSku, p.description].filter(Boolean).map(escHtml).join(' · ')}</div>` : ''}</td>
+                <td>${p.imageUrl ? `<img class="stk2-thumb" src="${escHtml(p.imageUrl)}" alt="" loading="lazy" onerror="this.remove()">` : ''}<strong>${escHtml(i.name)}</strong>${i.courierLabel ? ' <span class="stk2-chip stk2-chip--unknown" title="Depletes by the labels invoiced on each order"><span class="stk2-chip-ico">🏷</span>courier labels</span>' : ''}${p.supplierSku || p.description ? `<div class="cat-sub" style="margin:0">${[p.supplierSku, p.description].filter(Boolean).map(escHtml).join(' · ')}</div>` : ''}</td>
                 <td class="cat-sub">${escHtml(i.unitLabel || 'each')}</td>
                 <td>${p.retailerUrl ? `<a href="${escHtml(p.retailerUrl)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">${escHtml(p.retailer || 'Product')} ↗</a>` : escHtml(p.retailer || '—')}</td>
                 <td style="text-align:right;font-variant-numeric:tabular-nums">${money(p.typicalCost)}</td>
@@ -810,7 +858,7 @@ const Stock = (() => {
 
         <div class="cat-section stk2-section" id="stk2-bom">
             <div class="cat-section-head">
-                <div><h2 class="cat-title">Consumables matrix</h2><p class="cat-sub" style="margin:0">Products we sell (from the items sheet) × consumables. Cells are in <strong>pieces</strong> — what one sale uses (2 staples, 0.1 of a box). Stock stays in <strong>units</strong> (boxes, rolls); <em>Quantity per unit</em> on the consumable does the conversion, so 2 staples from a 1,000-staple box is 0.002 boxes. <em>Per order</em> is used once per despatch; <em>Per courier label</em> is used for every label an order needs (Aramex physical labels — clear it once you're on Posthaste). Courier and freight are never rows.</p></div>
+                <div><h2 class="cat-title">Consumables matrix</h2><p class="cat-sub" style="margin:0">Products we sell (from the items sheet) × consumables. Cells are in <strong>pieces</strong> — what one sale uses (2 staples, 0.1 of a box). Stock stays in <strong>units</strong> (boxes, rolls); <em>Quantity per unit</em> on the consumable does the conversion, so 2 staples from a 1,000-staple box is 0.002 boxes. <em>Per order</em> is used once per despatch. Courier labels aren't a row: tick <em>Courier label stock</em> on that consumable and it depletes by the labels invoiced on each order.</p></div>
                 <button class="btn-primary btn-sm" id="stk2-bom-save">Save matrix</button>
             </div>
             <div id="stk2-bom-grid"></div>
@@ -843,7 +891,6 @@ const Stock = (() => {
         const latest = (bom.versions || []).slice().sort((a, b) => String(a.effectiveFrom).localeCompare(String(b.effectiveFrom))).pop();
         const matrix = JSON.parse(JSON.stringify(latest?.recipes || {}));
         let perDespatch = (settings.perDespatch || []).map(e => ({ ...e }));
-        let perLabel = (settings.perLabel || []).map(e => ({ ...e }));
         const grid = body.querySelector('#stk2-bom-grid');
         const qtyOf = (list, cid) => { const e = (list || []).find(x => x.consumableId === cid); return e ? e.qty : ''; };
         const setQty = (list, cid, qty) => {
@@ -855,8 +902,7 @@ const Stock = (() => {
             if (!activeCons.length) { grid.innerHTML = '<p class="cat-sub">Add consumables first, then fill in what each product uses.</p>'; return; }
             const prods = (bom.products && bom.products.length) ? bom.products : bom.skus.map(x => ({ sku: x, name: x, tracked: true }));
             const rows = prods.map(pr => `<tr class="${pr.tracked ? '' : 'stk2-bom-untracked'}"><td><strong>${escHtml(pr.name)}</strong><div class="cat-sub" style="margin:0">${escHtml(pr.sku)}${pr.tracked ? '' : ' · no sales mapping yet'}</div></td>${activeCons.map(c => `<td><input type="number" step="any" min="0" data-sku="${escHtml(pr.sku)}" data-cid="${escHtml(c.id)}" value="${qtyOf(matrix[pr.sku], c.id)}" title="${escHtml(pr.name)} × ${escHtml(c.name)}"></td>`).join('')}</tr>`).join('');
-            const per = `<tr class="stk2-bom-per"><td><strong>Per order</strong><div class="cat-sub" style="margin:0">once per despatch</div></td>${activeCons.map(c => `<td><input type="number" step="any" min="0" data-per="1" data-cid="${escHtml(c.id)}" value="${qtyOf(perDespatch, c.id)}"></td>`).join('')}</tr>
-                <tr class="stk2-bom-per"><td><strong>Per courier label</strong><div class="cat-sub" style="margin:0">for each label an order needs</div></td>${activeCons.map(c => `<td><input type="number" step="any" min="0" data-label="1" data-cid="${escHtml(c.id)}" value="${qtyOf(perLabel, c.id)}"></td>`).join('')}</tr>`;
+            const per = `<tr class="stk2-bom-per"><td><strong>Per order</strong><div class="cat-sub" style="margin:0">once per despatch</div></td>${activeCons.map(c => `<td><input type="number" step="any" min="0" data-per="1" data-cid="${escHtml(c.id)}" value="${qtyOf(perDespatch, c.id)}"></td>`).join('')}</tr>`;
             const colHead = c => { const n = Number(c.profile?.packSize) || 1; return `<th class="stk2-bom-col">${c.profile?.imageUrl ? `<img class="stk2-bom-img" src="${escHtml(c.profile.imageUrl)}" alt="" loading="lazy" onerror="this.remove()">` : ''}<div>${escHtml(c.name)}</div><div class="cat-sub" style="margin:0;font-weight:400;text-transform:none;letter-spacing:0" title="Enter pieces per sale; ${n > 1 ? `1 ${escHtml(c.unitLabel || 'unit')} = ${fmtNum(n)} pieces` : 'one piece is one ' + escHtml(c.unitLabel || 'unit')}">${n > 1 ? `pieces · ${fmtNum(n)} per ${escHtml(c.unitLabel || 'unit')}` : `per ${escHtml(c.unitLabel || 'unit')}`}</div></th>`; };
             grid.innerHTML = `<div class="stk-table-wrap"><table class="stk-table stk2-table stk2-bom-table"><thead><tr><th>Product</th>${activeCons.map(colHead).join('')}</tr></thead><tbody>${rows}${per}</tbody></table></div>`;
             grid.querySelectorAll('input[data-sku]').forEach(inp => inp.addEventListener('input', () => {
@@ -864,12 +910,11 @@ const Stock = (() => {
                 setQty(matrix[inp.dataset.sku], inp.dataset.cid, inp.value);
             }));
             grid.querySelectorAll('input[data-per]').forEach(inp => inp.addEventListener('input', () => setQty(perDespatch, inp.dataset.cid, inp.value)));
-            grid.querySelectorAll('input[data-label]').forEach(inp => inp.addEventListener('input', () => setQty(perLabel, inp.dataset.cid, inp.value)));
         };
         body.querySelector('#stk2-bom-save').addEventListener('click', async () => {
             try {
                 await api('/api/stock/bom', { method: 'PUT', body: JSON.stringify({ versions: [{ effectiveFrom: '2020-01-01', recipes: matrix }] }) });
-                await api('/api/stock/settings', { method: 'PUT', body: JSON.stringify({ perDespatch, perLabel }) });
+                await api('/api/stock/settings', { method: 'PUT', body: JSON.stringify({ perDespatch, perLabel: [] }) });
                 showToast('Matrix saved');
             } catch (e) { showToast('Could not save: ' + e.message); }
         });
@@ -929,6 +974,7 @@ const Stock = (() => {
                     <div class="modal-field"><label>SKU <span class="modal-hint">supplier's code</span></label><input name="supplierSku" type="text" value="${escHtml(p.supplierSku || '')}" placeholder="e.g. PT-48-100"></div>
                     <div class="modal-field"><label>Product description</label><input name="description" type="text" value="${escHtml(p.description || '')}" placeholder="What it is, size, colour…"></div>
                     <div class="modal-field"><label>Unit type <span class="modal-hint">what one of these is</span></label><input name="unitLabel" type="text" value="${escHtml(it.unitLabel || '')}" placeholder="box, roll, bag, sheet…" list="stk2-unit-types"><datalist id="stk2-unit-types"><option value="box"><option value="bag"><option value="roll"><option value="sheet"><option value="label"><option value="staple"><option value="pack"></datalist></div>
+                    <div class="modal-field stk2-span2 stk2-check"><label style="display:flex;align-items:center;gap:0.5rem;text-transform:none;letter-spacing:0;font-size:0.85rem;font-weight:500"><input type="checkbox" name="courierLabel" ${it.courierLabel ? 'checked' : ''} style="width:auto"> Courier label stock <span class="modal-hint">depletes by the labels invoiced on each order (courier lines), one per label — no matrix cell needed</span></label></div>
                     <div class="modal-field"><label>Retailer</label><input name="retailer" type="text" value="${escHtml(p.retailer || '')}" placeholder="e.g. Packaging House"></div>
                     <div class="modal-field"><label>Unit price <span class="modal-hint">$ ex GST</span></label><input name="unitPrice" type="number" step="0.0001" min="0" value="${p.typicalCost ?? ''}" placeholder="0.00"></div>
                     <div class="modal-field"><label>Quantity per unit <span class="modal-hint">pieces in one unit, e.g. 1,000 staples per box</span></label><input name="packSize" type="number" step="any" min="0" value="${p.packSize ?? ''}" placeholder="1"></div>
@@ -1009,6 +1055,7 @@ const Stock = (() => {
             } else {
                 const price = g('unitPrice');
                 payload.unitLabel = g('unitLabel');
+                payload.courierLabel = f.get('courierLabel') === 'on';
                 payload.profile = { retailer: g('retailer'), retailerUrl: g('retailerUrl'), imageUrl: g('imageUrl'), typicalCost: price, packSize: g('packSize'),
                                     supplierSku: g('supplierSku'), description: g('description'), leadTimeDays: g('leadTimeDays') };
                 payload.unitValue = price; // valuation uses the purchase price

@@ -7414,3 +7414,10 @@ a.db-row:hover { background: #f8fafc; border-color: #e2e8f0; }
 .stk2-ledger-link { color: inherit; text-decoration: none; border-bottom: 1px dotted var(--stk-muted); }
 .stk2-ledger-link:hover { color: var(--stk-accent); border-bottom-color: var(--stk-accent); }
 .stk2-ledger--count td { background: var(--stk-notice); }
+
+/* In / Out / Adjust buttons + movement popover */
+.stk2-io { display: inline-flex; gap: 0.25rem; }
+.stk2-io .btn-sm { padding: 0.15rem 0.5rem; font-size: 0.72rem; }
+.stk2-tile-io { margin-top: 0.4rem; }
+.stk2-move { max-width: 420px; }
+.stk2-check input[type="checkbox"] { width: auto; margin: 0; }
