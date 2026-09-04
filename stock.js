@@ -675,13 +675,8 @@ const Stock = (() => {
 
         <div class="cat-section stk2-section" id="stk2-bom">
             <div class="cat-section-head">
-                <div><h2 class="cat-title">Consumables matrix</h2><p class="cat-sub" style="margin:0">Products we sell (from the items sheet, freight excluded) × consumables: how many of each one sales unit uses. Fractions are fine (a 1kg bag uses 0.1 of a box). <em>Per order</em> is consumed once per despatch. Versions apply from their effective date.</p></div>
-                <div class="stk2-form-row">
-                    <select id="stk2-bom-version">${bom.versions.map((v, i) => `<option value="${i}">From ${fmtDate(v.effectiveFrom)}</option>`).join('')}</select>
-                    <input type="date" id="stk2-bom-newdate" value="${escHtml(settings.stockEpoch)}" title="Effective date for a new version">
-                    <button class="btn-secondary btn-sm" id="stk2-bom-addver">+ New version</button>
-                    <button class="btn-primary btn-sm" id="stk2-bom-save">Save recipes</button>
-                </div>
+                <div><h2 class="cat-title">Consumables matrix</h2><p class="cat-sub" style="margin:0">Products we sell (from the items sheet, freight excluded) × consumables: how many of each one sales unit uses. Fractions are fine (a 1kg bag uses 0.1 of a box). <em>Per order</em> is used once per despatch.</p></div>
+                <button class="btn-primary btn-sm" id="stk2-bom-save">Save matrix</button>
             </div>
             <div id="stk2-bom-grid"></div>
         </div>
@@ -706,13 +701,14 @@ const Stock = (() => {
         }));
         body.querySelector('#stk2-add-consumable').addEventListener('click', () => openItemModal({ item: null, settings, onSaved: reload }));
 
-        // BOM grid — rows: SKUs + per-order; columns: active consumables.
+        // Consumables matrix — rows: products we sell (+ per-order); columns:
+        // active consumables. One matrix, no versioning: it applies to every
+        // sale from the beginning of time.
         const activeCons = consumables.filter(c => c.active !== false);
-        const versions = bom.versions.map(v => ({ effectiveFrom: v.effectiveFrom, recipes: JSON.parse(JSON.stringify(v.recipes || {})) }));
+        const latest = (bom.versions || []).slice().sort((a, b) => String(a.effectiveFrom).localeCompare(String(b.effectiveFrom))).pop();
+        const matrix = JSON.parse(JSON.stringify(latest?.recipes || {}));
         let perDespatch = (settings.perDespatch || []).map(e => ({ ...e }));
-        let vi = Math.max(0, versions.length - 1);
         const grid = body.querySelector('#stk2-bom-grid');
-        const verSel = body.querySelector('#stk2-bom-version');
         const qtyOf = (list, cid) => { const e = (list || []).find(x => x.consumableId === cid); return e ? e.qty : ''; };
         const setQty = (list, cid, qty) => {
             const i = list.findIndex(x => x.consumableId === cid);
@@ -720,31 +716,26 @@ const Stock = (() => {
             else if (i >= 0) list[i].qty = Number(qty); else list.push({ consumableId: cid, qty: Number(qty) });
         };
         const drawGrid = () => {
-            verSel.innerHTML = versions.map((v, i) => `<option value="${i}" ${i === vi ? 'selected' : ''}>From ${fmtDate(v.effectiveFrom)}</option>`).join('') || '<option>No versions</option>';
-            if (!activeCons.length) { grid.innerHTML = '<p class="cat-sub">Add consumables first, then define what each SKU uses.</p>'; return; }
-            if (!versions.length) { grid.innerHTML = '<p class="cat-sub">No recipe version yet — pick an effective date and click <strong>New version</strong>.</p>'; return; }
-            const v = versions[vi];
-            const prods = (bom.products && bom.products.length) ? bom.products : bom.skus.map(s => ({ sku: s, name: s, tracked: true }));
-            const rows = prods.map(pr => `<tr class="${pr.tracked ? '' : 'stk2-bom-untracked'}"><td><strong>${escHtml(pr.name)}</strong><div class="cat-sub" style="margin:0">${escHtml(pr.sku)}${pr.tracked ? '' : ' · no sales mapping yet'}</div></td>${activeCons.map(c => `<td><input type="number" step="any" min="0" data-sku="${escHtml(pr.sku)}" data-cid="${escHtml(c.id)}" value="${qtyOf(v.recipes[pr.sku], c.id)}" title="${escHtml(pr.name)} × ${escHtml(c.name)}"></td>`).join('')}</tr>`).join('');
+            if (!activeCons.length) { grid.innerHTML = '<p class="cat-sub">Add consumables first, then fill in what each product uses.</p>'; return; }
+            const prods = (bom.products && bom.products.length) ? bom.products : bom.skus.map(x => ({ sku: x, name: x, tracked: true }));
+            const rows = prods.map(pr => `<tr class="${pr.tracked ? '' : 'stk2-bom-untracked'}"><td><strong>${escHtml(pr.name)}</strong><div class="cat-sub" style="margin:0">${escHtml(pr.sku)}${pr.tracked ? '' : ' · no sales mapping yet'}</div></td>${activeCons.map(c => `<td><input type="number" step="any" min="0" data-sku="${escHtml(pr.sku)}" data-cid="${escHtml(c.id)}" value="${qtyOf(matrix[pr.sku], c.id)}" title="${escHtml(pr.name)} × ${escHtml(c.name)}"></td>`).join('')}</tr>`).join('');
             const per = `<tr class="stk2-bom-per"><td><strong>Per order</strong><div class="cat-sub" style="margin:0">once per despatch</div></td>${activeCons.map(c => `<td><input type="number" step="any" min="0" data-per="1" data-cid="${escHtml(c.id)}" value="${qtyOf(perDespatch, c.id)}"></td>`).join('')}</tr>`;
             const colHead = c => `<th class="stk2-bom-col">${c.profile?.imageUrl ? `<img class="stk2-bom-img" src="${escHtml(c.profile.imageUrl)}" alt="" loading="lazy" onerror="this.remove()">` : ''}<div>${escHtml(c.name)}</div><div class="cat-sub" style="margin:0;font-weight:400;text-transform:none;letter-spacing:0">per ${escHtml(c.unitLabel || 'unit')}</div></th>`;
             grid.innerHTML = `<div class="stk-table-wrap"><table class="stk-table stk2-table stk2-bom-table"><thead><tr><th>Product</th>${activeCons.map(colHead).join('')}</tr></thead><tbody>${rows}${per}</tbody></table></div>`;
             grid.querySelectorAll('input[data-sku]').forEach(inp => inp.addEventListener('input', () => {
-                v.recipes[inp.dataset.sku] = v.recipes[inp.dataset.sku] || [];
-                setQty(v.recipes[inp.dataset.sku], inp.dataset.cid, inp.value);
+                matrix[inp.dataset.sku] = matrix[inp.dataset.sku] || [];
+                setQty(matrix[inp.dataset.sku], inp.dataset.cid, inp.value);
             }));
             grid.querySelectorAll('input[data-per]').forEach(inp => inp.addEventListener('input', () => setQty(perDespatch, inp.dataset.cid, inp.value)));
         };
-        verSel.addEventListener('change', () => { vi = Number(verSel.value); drawGrid(); });
-        body.querySelector('#stk2-bom-addver').addEventListener('click', () => {
-            const d = body.querySelector('#stk2-bom-newdate').value;
-            if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) { showToast('Pick an effective date'); return; }
-            if (versions.some(v => v.effectiveFrom === d)) { showToast('A version already starts on that date'); return; }
-            const src = versions[vi] ? JSON.parse(JSON.stringify(versions[vi].recipes)) : {};
-            versions.push({ effectiveFrom: d, recipes: src });
-            versions.sort((a, b) => a.effectiveFrom.localeCompare(b.effectiveFrom));
-            vi = versions.findIndex(v => v.effectiveFrom === d);
-            drawGrid();
+        body.querySelector('#stk2-bom-save').addEventListener('click', async () => {
+            try {
+                await api('/api/stock/bom', { method: 'PUT', body: JSON.stringify({ versions: [{ effectiveFrom: '2020-01-01', recipes: matrix }] }) });
+                await api('/api/stock/settings', { method: 'PUT', body: JSON.stringify({ perDespatch }) });
+                showToast('Matrix saved');
+            } catch (e) { showToast('Could not save: ' + e.message); }
+        });
+        drawGrid();
         });
         body.querySelector('#stk2-bom-save').addEventListener('click', async () => {
             try {
