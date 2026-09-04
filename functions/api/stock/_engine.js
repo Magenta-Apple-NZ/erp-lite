@@ -153,7 +153,7 @@ export function receipts({ shipments, from, to, epoch }) {
         const date = shipmentEta(s);
         if (!date || !inRange(date, from, to)) continue;
         if (epoch && date < epoch) continue;
-        out.push({ date, qty: r2(shipKg(s)), shipmentId: s.id, note: s.note || s.id, itemId: SHIPMENT_PRODUCT_ID,
+        out.push({ date, qty: r2(shipKg(s)), shipmentId: s.id, note: shipLabel(s), itemId: SHIPMENT_PRODUCT_ID,
                    unitCost: shipUnitCost(s), costBasis: s.costBasis || (Number(s.pricePerKg) > 0 ? 'listed' : null) });
     }
     return out;
@@ -162,7 +162,7 @@ export function receipts({ shipments, from, to, epoch }) {
 export function pendingShipments(shipments) {
     return (shipments || [])
         .filter(s => ON_ORDER_STATUSES.includes(deriveShipStatus(s)))
-        .map(s => ({ id: s.id, note: s.note || s.id, kg: r2(shipKg(s)), unitCost: shipUnitCost(s), eta: shipmentEta(s), status: deriveShipStatus(s), itemId: SHIPMENT_PRODUCT_ID }))
+        .map(s => ({ id: s.id, note: shipLabel(s), kg: r2(shipKg(s)), unitCost: shipUnitCost(s), eta: shipmentEta(s), status: deriveShipStatus(s), itemId: SHIPMENT_PRODUCT_ID }))
         .sort((a, b) => String(a.eta || '9999').localeCompare(String(b.eta || '9999')));
 }
 
@@ -177,7 +177,7 @@ export function productValueFromShipments(shipments) {
     if (!s) return null;
     const cost = shipUnitCost(s);
     const basis = s.costBasis === 'landed' ? 'landed' : 'listed';
-    return { unitValue: cost, basis, source: `${s.note || s.id} · $${cost.toFixed(2)}/kg ${basis}` };
+    return { unitValue: cost, basis, source: `${shipLabel(s)} · $${cost.toFixed(2)}/kg ${basis}` };
 }
 
 // ── FIFO cost lots (the shipment-fed product) ────────────────────────────

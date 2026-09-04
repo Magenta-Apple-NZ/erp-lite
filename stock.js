@@ -642,12 +642,11 @@ const Stock = (() => {
 
         body.innerHTML = `
         <div class="cat-section stk2-section">
-            <div class="cat-section-head"><div><h2 class="cat-title">Products</h2><p class="cat-sub" style="margin:0">The three key lines. Each depletes from its Sales History bucket. Value per kg is taken from the latest priced shipment.</p></div></div>
-            <table class="stk-table stk2-table"><thead><tr><th>Name</th><th>Sales bucket</th><th style="text-align:right">Value $/kg</th><th>Account</th><th>Active</th><th></th></tr></thead>
+            <div class="cat-section-head"><div><h2 class="cat-title">Products</h2><p class="cat-sub" style="margin:0">Each depletes from its Sales History bucket. Prime Tie Bundled is costed from its shipments (FIFO); Loose and eco Ties carry their own cost per kg.</p></div></div>
+            <table class="stk-table stk2-table"><thead><tr><th>Name</th><th>Sales bucket</th><th style="text-align:right">Cost $/kg</th><th>Active</th><th></th></tr></thead>
             <tbody>${products.map(i => `<tr class="stk2-rowlink" data-open="${escHtml(i.id)}">
                 <td><strong>${escHtml(i.name)}</strong></td><td class="cat-sub">${escHtml(i.salesKey || '—')}</td>
                 <td style="text-align:right;font-variant-numeric:tabular-nums" title="${escHtml(i.id === SHIPMENT_PRODUCT_ID ? (i.unitValueSource || 'No costed shipment yet') : 'Own cost per kg (edit in the popover)')}">${money(i.unitValue)}${i.id === SHIPMENT_PRODUCT_ID ? (i.unitValueSource ? ` <span class="cat-sub">${escHtml(i.unitValueSource.split(' · ')[0])}</span>` : '') : ' <span class="cat-sub">own</span>'}</td>
-                <td>${escHtml(i.accountCode || '')}</td>
                 <td>${i.active === false ? 'No' : 'Yes'}</td>
                 <td style="text-align:right"><button class="btn-secondary btn-sm" data-open="${escHtml(i.id)}">Edit</button></td></tr>`).join('')}</tbody></table>
         </div>
@@ -781,7 +780,6 @@ const Stock = (() => {
                 <div class="stk2-modal-grid">
                     <div class="modal-field stk2-span2"><label>Name</label><input name="name" type="text" required value="${escHtml(it.name || '')}" autofocus></div>
                     ${prod ? `
-                    <div class="modal-field"><label>Account code</label><input name="accountCode" type="text" value="${escHtml(it.accountCode || '')}"></div>
                     ${it.id === SHIPMENT_PRODUCT_ID
                         ? `<div class="modal-field"><label>Cost $/kg <span class="modal-hint">from shipments · FIFO</span></label><input type="text" value="${it.unitValue != null ? '$' + fmtNum(it.unitValue, 2) + (it.unitValueSource ? ' · ' + it.unitValueSource.split(' · ')[0] : '') : 'No costed shipment yet'}" disabled></div>`
                         : `<div class="modal-field"><label>Cost $/kg <span class="modal-hint">ex GST</span></label><input name="unitValue" type="number" step="0.01" min="0" value="${it.unitValue ?? ''}" placeholder="0.00"></div>`}`
@@ -819,7 +817,6 @@ const Stock = (() => {
             const payload = { name: g('name') };
             if (!isNew) payload.active = g('active') !== 'false';
             if (prod) {
-                payload.accountCode = g('accountCode') || '';
                 if (it.id !== SHIPMENT_PRODUCT_ID) payload.unitValue = g('unitValue'); // own cost per kg
             } else {
                 const price = g('unitPrice');
