@@ -116,12 +116,15 @@ const Stock = (() => {
         <div class="imp-tabs">
             <button class="imp-view-btn" data-stk-tab="dashboard">Dashboard</button>
             <button class="imp-view-btn" data-stk-tab="counts">Counts</button>
+            <button class="imp-view-btn" data-stk-tab="settings" title="Items, consumables matrix, engine settings (same as Settings → Stock)">Settings</button>
         </div>
         <div id="stk2-body"><div class="orders-loading">Loading…</div></div>`;
         const body = container.querySelector('#stk2-body');
         const switchTab = tab => {
             container.querySelectorAll('[data-stk-tab]').forEach(b => b.classList.toggle('active', b.dataset.stkTab === tab));
-            if (tab === 'counts') renderCounts(body); else renderDashboard(body);
+            if (tab === 'counts') renderCounts(body);
+            else if (tab === 'settings') renderSettingsTab(body);
+            else renderDashboard(body);
         };
         container.querySelectorAll('[data-stk-tab]').forEach(b => b.addEventListener('click', () => switchTab(b.dataset.stkTab)));
         switchTab(initialTab);
@@ -154,8 +157,8 @@ const Stock = (() => {
         <div class="cat-section stk2-section">
             <div class="cat-section-head">
                 <div>
-                    <h2 class="cat-title">Trajectory <span class="cat-sub" style="font-weight:400">· on hand, last 90 days</span></h2>
-                    <p class="cat-sub" style="margin:0">Selected product in blue; others dimmed. Dashed line is the reorder point. Incoming shipments are listed, not stacked.</p>
+                    <h2 class="cat-title">Trajectory <span class="cat-sub" style="font-weight:400">· actual since the count, projected 12 months ahead</span></h2>
+                    <p class="cat-sub" style="margin:0">Solid = actual on hand; dashed = month-end projection on the same seasonal curve as the Imports forecast (Average), with shipments landing in their ETA month. Amber dashed line is the reorder point.</p>
                 </div>
                 <div class="stk2-traj-ctl">
                     ${key.map((k, i) => `<button class="imp-view-btn${i === 0 ? ' active' : ''}" data-traj="${escHtml(k.id)}">${escHtml(k.name)}</button>`).join('')}
@@ -195,7 +198,7 @@ const Stock = (() => {
         // KPI sparklines + trajectory: one history call per key product.
         const histories = {};
         await Promise.all(key.map(async k => {
-            try { histories[k.id] = await api(`/api/stock/items/${encodeURIComponent(k.id)}/history`); } catch { histories[k.id] = null; }
+            try { histories[k.id] = await api(`/api/stock/items/${encodeURIComponent(k.id)}/history?project=12`); } catch { histories[k.id] = null; }
         }));
         for (const k of key) {
             const el = body.querySelector(`.stk2-tile[data-item="${CSS.escape(k.id)}"] .stk2-spark`);
@@ -280,24 +283,55 @@ const Stock = (() => {
         return `<svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}"><path d="${d}" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" opacity="0.45"/><circle cx="${x(pts.length - 1).toFixed(1)}" cy="${y(last.onHand).toFixed(1)}" r="3" class="stk2-spark-dot"/></svg>`;
     }
 
+    // Month-end date for a 'YYYY-MM'.
+    const monthEnd = ym => { const [y, m] = ym.split('-').map(Number); return `${ym}-${String(new Date(Date.UTC(y, m, 0)).getUTCDate()).padStart(2, '0')}`; };
+
     function drawTrajectory(canvas, key, histories, selectedId, lv) {
         if (!canvas || typeof Chart === 'undefined') return;
         const p = palette();
-        const base = histories[selectedId]?.series || Object.values(histories).find(h => h?.series)?.series || [];
-        const labels = base.map(s => s.date);
+        const hSel = histories[selectedId] || Object.values(histories).find(h => h?.series);
+        const actualDates = (hSel?.series || []).map(s => s.date);
+        const proj = hSel?.projection && !hSel.projection.beforeEpoch ? hSel.projection : null;
+        const projDates = proj ? proj.months.map(monthEnd) : [];
+        const labels = actualDates.concat(projDates);
+        const today = actualDates[actualDates.length - 1];
         const sel = lv.items.find(i => i.id === selectedId);
-        const datasets = key.map(k => {
+        const datasets = [];
+        for (const k of key) {
             const h = histories[k.id];
             const on = k.id === selectedId;
-            return {
+            datasets.push({
                 label: k.name,
                 data: labels.map(d => h?.series?.find(s => s.date === d)?.onHand ?? null),
                 borderColor: on ? p.accent : p.dim, borderWidth: on ? 2 : 1.5,
                 pointRadius: 0, pointHoverRadius: 4, pointHoverBackgroundColor: on ? p.accent : p.dim,
                 tension: 0, spanGaps: false, order: on ? 0 : 1,
-            };
-        });
+            });
+            const pj = h?.projection && !h.projection.beforeEpoch ? h.projection : null;
+            if (pj) {
+                const lastActual = h.series[h.series.length - 1]?.onHand ?? null;
+                const byDate = Object.fromEntries(pj.scenarios.avg.map(m => [monthEnd(m.ym), m.closing]));
+                datasets.push({
+                    label: k.name + ' · projected (Average)',
+                    data: labels.map(d => d === today ? lastActual : (byDate[d] ?? null)),
+                    borderColor: on ? p.accent : p.dim, borderWidth: on ? 2 : 1.5, borderDash: [6, 4],
+                    pointRadius: labels.map(d => byDate[d] != null ? 2.5 : 0), pointHoverRadius: 4, pointBackgroundColor: on ? p.accent : p.dim,
+                    tension: 0, spanGaps: true, order: on ? 0 : 1,
+                });
+            }
+        }
         const annotations = {};
+        if (today) {
+            annotations.today = { type: 'line', xMin: today, xMax: today, borderColor: p.base, borderWidth: 1,
+                label: { display: true, content: 'Today', position: 'start', backgroundColor: 'transparent', color: p.ink, font: { size: 10 } } };
+        }
+        if (proj && sel && sel.id === SHIPMENT_PRODUCT_ID) {
+            proj.scenarios.avg.forEach((m, i) => {
+                if (!m.incoming) return;
+                annotations['in' + i] = { type: 'line', xMin: monthEnd(m.ym), xMax: monthEnd(m.ym), borderColor: p.annot, borderWidth: 1, borderDash: [2, 3],
+                    label: { display: true, content: `+${fmtNum(m.incoming)} landing`, position: 'end', backgroundColor: 'transparent', color: p.ink, font: { size: 10 }, rotation: -90 } };
+            });
+        }
         if (sel && sel.reorderPoint != null && sel.reorderPoint > 0) {
             annotations.reorder = { type: 'line', yMin: sel.reorderPoint, yMax: sel.reorderPoint, borderColor: p.warn, borderDash: [6, 4], borderWidth: 1.5,
                 label: { display: true, content: 'Reorder ' + fmtNum(sel.reorderPoint), position: 'start', backgroundColor: 'transparent', color: p.ink, font: { size: 11 } } };
@@ -331,10 +365,13 @@ const Stock = (() => {
         const any = Object.values(histories).find(h => h?.series);
         if (!any) return '';
         const dates = any.series.map(s => s.date);
-        const step = Math.max(1, Math.floor(dates.length / 15));
+        const step = Math.max(1, Math.floor(dates.length / 12));
         const rows = dates.filter((_, i) => i % step === 0 || i === dates.length - 1);
+        const proj = any.projection && !any.projection.beforeEpoch ? any.projection : null;
+        const cell = v => `<td style="text-align:right;font-variant-numeric:tabular-nums">${fmtNum(v)}</td>`;
         return `<div class="stk-table-wrap"><table class="stk-table stk2-table"><thead><tr><th>Date</th>${key.map(k => `<th style="text-align:right">${escHtml(k.name)} (${k.unit})</th>`).join('')}</tr></thead>
-        <tbody>${rows.map(d => `<tr><td>${fmtDate(d)}</td>${key.map(k => `<td style="text-align:right;font-variant-numeric:tabular-nums">${fmtNum(histories[k.id]?.series?.find(s => s.date === d)?.onHand)}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`;
+        <tbody>${rows.map(d => `<tr><td>${fmtDate(d)}</td>${key.map(k => cell(histories[k.id]?.series?.find(s => s.date === d)?.onHand)).join('')}</tr>`).join('')}
+        ${proj ? `<tr><td colspan="${key.length + 1}" class="cat-sub"><strong>Projected</strong> · month-end, Average scenario (usage − incoming)</td></tr>` + proj.months.map((ym, i) => `<tr><td>${fmtDate(monthEnd(ym))}</td>${key.map(k => { const m = histories[k.id]?.projection?.scenarios?.avg?.[i]; return cell(m ? m.closing : null); }).join('')}</tr>`).join('') : ''}</tbody></table></div>`;
     }
 
     // FIFO cost lots for the shipment-fed product (Prime Tie Bundled).
@@ -412,7 +449,7 @@ const Stock = (() => {
                             return `<span class="stk2-cf-bar ${v != null && v <= 0 ? 'stk2-cf-bar--out' : ''}" style="height:${h}px" title="${monthLabel(m.ym)}: use ${fmtQty(m.usage, it.unit, null, it.unitLabel)} → ${v == null ? '—' : fmtQty(v, it.unit, null, it.unitLabel)} left"></span>`;
                         }).join('');
                         return `<tr class="${sc.orderNow ? 'stk2-row--critical' : ''}">
-                            <td><strong>${escHtml(it.name)}</strong>${it.usagePerKg ? '' : '<div class="cat-sub" style="margin:0">not in the matrix — no usage</div>'}</td>
+                            <td><strong>${escHtml(it.name)}</strong>${it.usagePerKg ? '' : `<div class="cat-sub" style="margin:0">${it.courierSku || it.courierLabel ? 'no courier labels on last year\'s orders yet — run Backfill orders in Settings → Sales Data' : 'not in the matrix — no usage'}</div>`}</td>
                             <td style="text-align:right;font-variant-numeric:tabular-nums">${fmtQty(it.onHand, it.unit, null, it.unitLabel)}${it.onOrder ? ` <span class="cat-sub">+${fmtNum(it.onOrder)} on order</span>` : ''}</td>
                             <td style="text-align:right;font-variant-numeric:tabular-nums">${fmtQty(sc.usage12, it.unit, 0, it.unitLabel)}</td>
                             <td>${unknown ? '<span class="cat-sub">—</span>' : sc.runOutDate ? `<span class="${sc.orderNow ? 'stk2-var--neg' : ''}">${fmtDate(sc.runOutDate)}</span>` : '<span class="cat-sub">not within 12 months</span>'}</td>

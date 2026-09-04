@@ -134,7 +134,10 @@ test('BOM versions apply by effective date; a SKU with no recipe consumes nothin
     ] };
     assert.equal(recipesFor(v2, '2026-10-15')['PT-l-10'][0].qty, 4);
     assert.equal(recipesFor(v2, '2026-11-01')['PT-l-10'][0].qty, 2);
-    assert.deepEqual(recipesFor(v2, '2026-09-01'), {});
+    // Before any version is "in force" the earliest applies — a matrix saved
+    // with a future stamp must not silently zero every consumable.
+    assert.equal(recipesFor(v2, '2026-09-01')['PT-l-10'][0].qty, 4);
+    assert.deepEqual(recipesFor({ versions: [] }, '2026-09-01'), {});
     const c = consumption({ rows: [saleEco2], items, bom: v2, settings: { ...settings, perDespatch: [] }, from: null, to: '2026-12-31' }).byItem;
     assert.equal(c['box-10kg'], undefined);
 });
@@ -546,6 +549,30 @@ import { ledgerFor } from '../functions/api/stock/_engine.js';
 test('a consumables delivery is a positive receipt movement in units', () => {
     const w = world({ movements: { 'box-10kg': [{ id: 'r1', itemId: 'box-10kg', date: '2026-10-20', qty: 500, type: 'receipt' }] } });
     assert.equal(onHandFor(items[3], w, '2026-10-31').onHand, 400 - 5 - 2 + 500);
+});
+
+// ── 12-month projection on the shared curve ──────────────────────────────
+import { projectionFor } from '../functions/api/stock/_engine.js';
+
+test('a product projects month-end on hand from its share of the seasonal kg, with shipments landing in their ETA month', () => {
+    // Mix: only bundled 10 kg sold → bundled share 1.0. Flat 1,000 kg/month.
+    const sale = { id: 's', date: '2026-10-20', bundlesKg: 100, looseKg: 0, ecoTiesKg: 0, xkg: { b10: 100 } };
+    const w = world({ sales: [sale] });
+    const pj = projectionFor(items[0], w, { monthlyAvg: Array(12).fill(1000), today: '2026-10-31', months: 12 });
+    assert.equal(pj.share, 1);
+    const a = pj.scenarios.avg;
+    assert.equal(a[0].ym, '2026-10');
+    assert.equal(a[0].usage, Math.round(1000 * (1 / 31) * 100) / 100);
+    const onHand = onHandFor(items[0], w, '2026-10-31').onHand; // 5000 + 1000 − 100
+    assert.equal(a[0].closing, Math.round((onHand - a[0].usage) * 100) / 100);
+    // ship-42 (1,500 kg) lands in November → November closing rises by it.
+    assert.equal(a[1].incoming, 1500);
+    assert.equal(a[1].closing, Math.round((a[0].closing - 1000 + 1500) * 100) / 100);
+    assert.equal(pj.scenarios.great[1].usage, 1200);
+    // Consumables reuse the consumables forecast.
+    const pc = projectionFor(items[3], w, { monthlyAvg: Array(12).fill(1000), today: '2026-10-31', months: 3 });
+    assert.equal(pc.scenarios.avg.length, 3);
+    assert.equal(pc.scenarios.avg[1].usage, 100, '1,000 kg × 0.1 box per kg');
 });
 
 test('renaming an item changes nothing about its stock', () => {

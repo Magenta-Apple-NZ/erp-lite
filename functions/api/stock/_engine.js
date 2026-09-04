@@ -78,10 +78,12 @@ export function inRange(date, from, to) {
 // ── Packaging recipes (BOM) ──────────────────────────────────────────────
 // Latest version whose effectiveFrom ≤ date. No version → nothing consumes.
 export function recipesFor(bom, date) {
-    const versions = (bom?.versions || [])
-        .filter(v => v && v.effectiveFrom && v.effectiveFrom <= date)
-        .sort((a, b) => (a.effectiveFrom < b.effectiveFrom ? 1 : -1));
-    return versions[0]?.recipes || {};
+    const all = (bom?.versions || []).filter(v => v && v.effectiveFrom).sort((a, b) => a.effectiveFrom.localeCompare(b.effectiveFrom));
+    if (!all.length) return {};
+    const inForce = all.filter(v => v.effectiveFrom <= date);
+    // The matrix is timeless in practice: if nothing is "in force" yet (a
+    // version stamped with a future date), use the earliest rather than nothing.
+    return (inForce.length ? inForce[inForce.length - 1] : all[0]).recipes || {};
 }
 
 // ── Consumption (derived from sales_history) ─────────────────────────────
@@ -650,11 +652,57 @@ export function consumablesForecast(world, { monthlyAvg, today, months = 12, mix
             scenarios[key] = { months: ms, runOutDate: runOut, reorderBy, orderNow: reorderBy != null && reorderBy <= today,
                                usage12: r2(ms.reduce((a, x) => a + x.usage, 0)) };
         }
+        const src = (world.items || []).find(i => i.id === c.id) || {};
         return { id: c.id, name: c.name, unit: c.unit, unitLabel: c.unitLabel || null, onHand: c.onHand, onOrder: c.onOrder, status: c.status,
-                 baselineDate: c.baselineDate, leadTimeDays: c.leadTimeDays, safetyDays: c.safetyDays, usagePerKg: r4(usagePerKg), scenarios };
+                 baselineDate: c.baselineDate, leadTimeDays: c.leadTimeDays, safetyDays: c.safetyDays, usagePerKg: r4(usagePerKg),
+                 courierSku: src.courierSku || null, courierLabel: !!src.courierLabel, scenarios };
     });
     return { asOf: today, stockEpoch: s.stockEpoch, monthlyAvg: avg, mix,
              months: list.map(m => ({ ym: m.ym, kgAvg: r2(m.kgAvg), fraction: Math.round(m.fraction * 1000) / 1000 })), items };
+}
+
+// ── 12-month projection for one item ─────────────────────────────────────
+// Month-end on hand from today on the shared seasonal curve. Consumables
+// reuse consumablesForecast; a product takes its share of forecast kg (its
+// SKUs' share of the trailing mix) and, for the shipment-fed product, adds
+// pending shipments in the month they land. Three scenarios.
+export function projectionFor(item, world, { monthlyAvg, today, months = 12 } = {}) {
+    if (item.class === 'consumable') {
+        const cf = consumablesForecast(world, { monthlyAvg, today, months });
+        if (cf.beforeEpoch) return { beforeEpoch: true };
+        const it = cf.items.find(i => i.id === item.id);
+        const out = {};
+        for (const key of Object.keys(SCENARIOS)) out[key] = (it?.scenarios[key]?.months || []).map(m => ({ ym: m.ym, usage: m.usage, incoming: 0, closing: m.closing }));
+        return { asOf: today, scenarios: out, months: cf.months.map(m => m.ym) };
+    }
+    const s = { ...DEFAULT_SETTINGS, ...(world.settings || {}) };
+    const levels = computeLevels(world, today);
+    if (levels.beforeEpoch) return { beforeEpoch: true };
+    const lv = levels.items.find(i => i.id === item.id);
+    const avg = Array.isArray(monthlyAvg) && monthlyAvg.length === 12 && monthlyAvg.some(v => Number(v) > 0)
+        ? monthlyAvg.map(v => Number(v) || 0) : FORECAST_MONTHLY_AVG_DEFAULT;
+    const mix = salesMix(world.sales, addDays(today, -365), today);
+    const share = Object.entries(SKU_TABLE).filter(([, t]) => t.salesKey === item.salesKey).reduce((sum, [sku]) => sum + (mix.share[sku] || 0), 0);
+    const pending = item.id === SHIPMENT_PRODUCT_ID ? pendingShipments(world.shipments) : [];
+    const [ty, tm, td] = today.split('-').map(Number);
+    const list = [];
+    for (let i = 0; i < months; i++) {
+        const idx = tm - 1 + i, y = ty + Math.floor(idx / 12), m = (idx % 12) + 1;
+        const dim = daysInMonth(y, m), startDay = i === 0 ? td : 1;
+        const ym = `${y}-${pad2(m)}`;
+        const incoming = r2(pending.filter(p => p.eta && p.eta.slice(0, 7) === ym && (i > 0 || p.eta >= today)).reduce((a, p) => a + p.kg, 0));
+        list.push({ ym, kgAvg: avg[m - 1] * ((dim - startDay + 1) / dim) * share, incoming });
+    }
+    const scenarios = {};
+    for (const [key, mult] of Object.entries(SCENARIOS)) {
+        let bal = lv ? lv.onHand : null;
+        scenarios[key] = list.map(mo => {
+            const usage = r2(mo.kgAvg * mult);
+            if (bal != null) bal = r2(bal - usage + mo.incoming);
+            return { ym: mo.ym, usage, incoming: mo.incoming, closing: bal };
+        });
+    }
+    return { asOf: today, share: r4(share), scenarios, months: list.map(m => m.ym) };
 }
 
 // ── Per-item ledger (audit trail) ────────────────────────────────────────
