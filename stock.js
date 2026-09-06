@@ -189,7 +189,7 @@ const Stock = (() => {
             <div class="cat-section-head">
                 <div>
                     <h2 class="cat-title">Recent movements</h2>
-                    <p class="cat-sub" style="margin:0">Use <strong>In</strong> (stock arrived), <strong>Out</strong> (used, wasted, removed) or <strong>Adjust</strong> (set on hand to what's actually there) on any item above. Append-only: a mistake is undone by an opposite entry, never by editing.</p>
+                    <p class="cat-sub" style="margin:0">Use <strong>Receive</strong> (a delivery arrived) or <strong>Adjust</strong> (set on hand to what's actually there) on any item above; orders take stock out automatically. Append-only: a mistake is undone by an opposite entry, never by editing.</p>
                 </div>
             </div>
             <div id="stk2-movs"></div>
@@ -264,7 +264,7 @@ const Stock = (() => {
             <div class="stk2-tile-foot">${statusChip(lv)}<div class="stk2-spark" aria-hidden="true"></div></div>
             ${lv.value != null ? `<div class="stk2-tile-sub" title="FIFO: oldest shipment lot sold first">Value <strong>$${fmtNum(lv.value)}</strong>${lv.avgCost != null ? ` · avg $${fmtNum(lv.avgCost, 2)}/kg` : ''} <span class="cat-sub">FIFO</span></div>` : ''}
             ${lv.baselineDate ? `<div class="stk2-tile-base">Counted ${fmtDate(lv.baselineDate)}${lv.reorderPoint != null ? ` · reorder at ${fmtNum(lv.reorderPoint)}` : ''}</div>` : ''}
-            <div class="stk2-io stk2-tile-io"><button class="btn-secondary btn-sm" data-move="in" data-item="${escHtml(lv.id)}" title="Stock arrived (a landed shipment is added automatically)">In</button><button class="btn-secondary btn-sm" data-move="out" data-item="${escHtml(lv.id)}" title="Wasted or removed">Out</button><button class="btn-secondary btn-sm" data-move="adjust" data-item="${escHtml(lv.id)}" title="Set on hand to what's actually there">Adjust</button></div>
+            <div class="stk2-io stk2-tile-io"><button class="btn-secondary btn-sm" data-move="in" data-item="${escHtml(lv.id)}" title="A delivery arrived (a landed shipment is added automatically)">Receive</button><button class="btn-secondary btn-sm" data-move="adjust" data-item="${escHtml(lv.id)}" title="Set on hand to what's actually there">Adjust</button></div>
         </div>`;
     }
 
@@ -506,7 +506,7 @@ const Stock = (() => {
     //   in     → receipt (+qty)      out → wastage (−qty)
     //   adjust → adjustment of (target − on hand), i.e. "set on hand to X"
     function openMovement({ item, mode, stockEpoch, onDone }) {
-        const TITLE = { in: 'In', out: 'Out', adjust: 'Adjust' }[mode] || 'Movement';
+        const TITLE = { in: 'Receive', out: 'Out', adjust: 'Adjust' }[mode] || 'Movement';
         const unitTxt = item.unit === 'kg' ? 'kg' : (item.unitLabel || 'units');
         const overlay = document.createElement('div');
         overlay.className = 'modal-overlay';
@@ -579,7 +579,7 @@ const Stock = (() => {
                 <td style="text-align:right">${i.leadTimeDays ? i.leadTimeDays + ' d' : '—'}</td>
                 <td>${statusChip(i)}</td>
                 <td style="text-align:right;font-variant-numeric:tabular-nums">${i.onOrder ? fmtQty(i.onOrder, i.unit) : '—'}</td>
-                <td style="text-align:right;white-space:nowrap"><span class="stk2-io"><button class="btn-secondary btn-sm" data-move="in" data-item="${escHtml(i.id)}" title="Stock arrived">In</button><button class="btn-secondary btn-sm" data-move="out" data-item="${escHtml(i.id)}" title="Used, wasted or removed">Out</button><button class="btn-secondary btn-sm" data-move="adjust" data-item="${escHtml(i.id)}" title="Set on hand to what's actually there">Adjust</button></span></td>
+                <td style="text-align:right;white-space:nowrap"><span class="stk2-io"><button class="btn-secondary btn-sm" data-move="in" data-item="${escHtml(i.id)}" title="A delivery arrived">Receive</button><button class="btn-secondary btn-sm" data-move="adjust" data-item="${escHtml(i.id)}" title="Set on hand to what's actually there">Adjust</button></span></td>
             </tr>`).join('')}</tbody></table></div>`;
     }
 
