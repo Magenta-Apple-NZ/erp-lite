@@ -406,7 +406,12 @@ export function computeLevels(world, asOf) {
         const onHand = oh.onHand;
         const daysCover = onHand != null && avgDaily > 0 ? Math.round((onHand / avgDaily) * 10) / 10 : null;
         const onOrder = item.id === SHIPMENT_PRODUCT_ID ? onOrderBundled : 0;
-        const status = statusFor({ onHand, avgDaily, daysCover, reorderPoint, leadTimeDays, mode, watchMultiplier: s.watchMultiplier });
+        // Products (the hero lines) carry no reorder point — replenishment is
+        // a shipment decision made on the trajectory, not a threshold.
+        const isProduct = item.class === 'product';
+        const status = isProduct
+            ? (onHand == null ? 'unknown' : onHand <= 0 ? 'out' : 'ok')
+            : statusFor({ onHand, avgDaily, daysCover, reorderPoint, leadTimeDays, mode, watchMultiplier: s.watchMultiplier });
 
         // Incoming cover: low/critical but a pending shipment lands before the
         // projected stock-out → flag covered so it isn't reordered twice.
@@ -424,7 +429,7 @@ export function computeLevels(world, asOf) {
             value: fifo ? fifo.value : null, avgCost: fifo ? fifo.avgCost : null, lots: fifo ? fifo.lots : undefined, shortfall: fifo ? fifo.shortfall : undefined,
             baselineDate: oh.baseline?.date || null, baselineQty: oh.baseline?.qty ?? null, baselineCount: oh.baseline?.countId || null,
             consumedSinceBaseline: oh.consumed, movementsSinceBaseline: oh.movements, receiptsSinceBaseline: oh.receipts,
-            avgDaily, daysCover, reorderPoint, reorderMode: mode, leadTimeDays, safetyDays,
+            avgDaily, daysCover, reorderPoint: isProduct ? null : reorderPoint, reorderMode: isProduct ? 'none' : mode, leadTimeDays, safetyDays,
             status, covered, coveredBy,
         };
     });

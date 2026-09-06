@@ -158,10 +158,12 @@ const Stock = (() => {
             <div class="cat-section-head">
                 <div>
                     <h2 class="cat-title">Trajectory <span class="cat-sub" style="font-weight:400">· actual since the count, projected 12 months ahead</span></h2>
-                    <p class="cat-sub" style="margin:0">Solid = actual on hand; dashed = month-end projection on the same seasonal curve as the Imports forecast (Average), with shipments landing in their ETA month. Amber dashed line is the reorder point.</p>
+                    <p class="cat-sub" style="margin:0">Solid = actual on hand; dashed = month-end projection on the same seasonal curve and scenarios as the Imports forecast, with shipments landing in their ETA month.</p>
                 </div>
                 <div class="stk2-traj-ctl">
-                    ${key.map((k, i) => `<button class="imp-view-btn${i === 0 ? ' active' : ''}" data-traj="${escHtml(k.id)}">${escHtml(k.name)}</button>`).join('')}
+                    ${key.length > 1 ? key.map((k, i) => `<button class="imp-view-btn${i === 0 ? ' active' : ''}" data-traj="${escHtml(k.id)}">${escHtml(k.name)}</button>`).join('') : ''}
+                    <select id="stk2-traj-sc" class="stk2-select" title="Sales scenario — same as the Imports forecast"><option value="avg">Average</option><option value="good">Good +10%</option><option value="great">Great +20%</option></select>
+                    <select id="stk2-traj-range" class="stk2-select" title="How far ahead to project"><option value="12">Rolling 12 months</option><option value="13">Rolling 13 months</option></select>
                     <button class="imp-view-btn" id="stk2-traj-table-btn" title="Show the numbers">Table</button>
                 </div>
             </div>
@@ -195,31 +197,37 @@ const Stock = (() => {
             <div id="stk2-movs"></div>
         </div>`;
 
-        // KPI sparklines + trajectory: one history call per key product.
+        // KPI sparklines + trajectory: one history call per key product, with
+        // a projection N months ahead (the view range) in the chosen scenario.
         const histories = {};
-        await Promise.all(key.map(async k => {
-            try { histories[k.id] = await api(`/api/stock/items/${encodeURIComponent(k.id)}/history?project=12`); } catch { histories[k.id] = null; }
-        }));
+        let selected = key[0]?.id || null, scenario = 'avg', months = 12;
+        const loadHistories = async () => {
+            await Promise.all(key.map(async k => {
+                try { histories[k.id] = await api(`/api/stock/items/${encodeURIComponent(k.id)}/history?project=${months}`); } catch { histories[k.id] = null; }
+            }));
+        };
+        await loadHistories();
         for (const k of key) {
             const el = body.querySelector(`.stk2-tile[data-item="${CSS.escape(k.id)}"] .stk2-spark`);
             if (el && histories[k.id]?.series) el.innerHTML = sparklineSvg(histories[k.id].series);
         }
-        let selected = key[0]?.id || null;
         const drawTraj = () => {
             const k = key.find(x => x.id === selected);
-            drawTrajectory(body.querySelector('#stk2-traj'), key, histories, selected, lv);
+            drawTrajectory(body.querySelector('#stk2-traj'), key, histories, selected, lv, scenario);
             const foot = body.querySelector('#stk2-traj-foot');
             const pend = lv.pendingShipments.filter(p => p.itemId === selected);
             foot.innerHTML = pend.length
                 ? `Incoming for ${escHtml(k?.name || '')}: ` + pend.map(p => `<strong>${escHtml(p.note)}</strong> ${fmtQty(p.kg, 'kg')} · ${escHtml(p.status)} · due ${fmtDate(p.eta)}`).join(' &nbsp;·&nbsp; ')
                 : (k ? `No shipments on order for ${escHtml(k.name)}.` : '');
-            body.querySelector('#stk2-traj-table').innerHTML = trajectoryTable(key, histories);
+            body.querySelector('#stk2-traj-table').innerHTML = trajectoryTable(key, histories, scenario);
         };
         body.querySelectorAll('[data-traj]').forEach(b => b.addEventListener('click', () => {
             selected = b.dataset.traj;
             body.querySelectorAll('[data-traj]').forEach(x => x.classList.toggle('active', x === b));
             drawTraj();
         }));
+        body.querySelector('#stk2-traj-sc').addEventListener('change', e => { scenario = e.target.value; drawTraj(); });
+        body.querySelector('#stk2-traj-range').addEventListener('change', async e => { months = Number(e.target.value) || 12; await loadHistories(); drawTraj(); });
         body.querySelector('#stk2-traj-table-btn').addEventListener('click', e => {
             const t = body.querySelector('#stk2-traj-table');
             t.hidden = !t.hidden; e.currentTarget.classList.toggle('active', !t.hidden);
@@ -263,7 +271,7 @@ const Stock = (() => {
             <div class="stk2-tile-sub">${escHtml(cover)}${lv.onOrder ? ` · <span title="On order — not included in on hand">${fmtNum(lv.onOrder)} ${lv.unit} on order</span>` : ''}</div>
             <div class="stk2-tile-foot">${statusChip(lv)}<div class="stk2-spark" aria-hidden="true"></div></div>
             ${lv.value != null ? `<div class="stk2-tile-sub" title="FIFO: oldest shipment lot sold first">Value <strong>$${fmtNum(lv.value)}</strong>${lv.avgCost != null ? ` · avg $${fmtNum(lv.avgCost, 2)}/kg` : ''} <span class="cat-sub">FIFO</span></div>` : ''}
-            ${lv.baselineDate ? `<div class="stk2-tile-base">Counted ${fmtDate(lv.baselineDate)}${lv.reorderPoint != null ? ` · reorder at ${fmtNum(lv.reorderPoint)}` : ''}</div>` : ''}
+            ${lv.baselineDate ? `<div class="stk2-tile-base">Counted ${fmtDate(lv.baselineDate)}</div>` : ''}
             <div class="stk2-io stk2-tile-io"><button class="btn-secondary btn-sm" data-move="in" data-item="${escHtml(lv.id)}" title="A delivery arrived (a landed shipment is added automatically)">Receive</button><button class="btn-secondary btn-sm" data-move="adjust" data-item="${escHtml(lv.id)}" title="Set on hand to what's actually there">Adjust</button></div>
         </div>`;
     }
@@ -286,9 +294,10 @@ const Stock = (() => {
     // Month-end date for a 'YYYY-MM'.
     const monthEnd = ym => { const [y, m] = ym.split('-').map(Number); return `${ym}-${String(new Date(Date.UTC(y, m, 0)).getUTCDate()).padStart(2, '0')}`; };
 
-    function drawTrajectory(canvas, key, histories, selectedId, lv) {
+    function drawTrajectory(canvas, key, histories, selectedId, lv, scenario = 'avg') {
         if (!canvas || typeof Chart === 'undefined') return;
         const p = palette();
+        const SC_LABEL = { avg: 'Average', good: 'Good +10%', great: 'Great +20%' }[scenario] || 'Average';
         const hSel = histories[selectedId] || Object.values(histories).find(h => h?.series);
         const actualDates = (hSel?.series || []).map(s => s.date);
         const proj = hSel?.projection && !hSel.projection.beforeEpoch ? hSel.projection : null;
@@ -310,9 +319,9 @@ const Stock = (() => {
             const pj = h?.projection && !h.projection.beforeEpoch ? h.projection : null;
             if (pj) {
                 const lastActual = h.series[h.series.length - 1]?.onHand ?? null;
-                const byDate = Object.fromEntries(pj.scenarios.avg.map(m => [monthEnd(m.ym), m.closing]));
+                const byDate = Object.fromEntries((pj.scenarios[scenario] || pj.scenarios.avg).map(m => [monthEnd(m.ym), m.closing]));
                 datasets.push({
-                    label: k.name + ' · projected (Average)',
+                    label: k.name + ' · projected (' + SC_LABEL + ')',
                     data: labels.map(d => d === today ? lastActual : (byDate[d] ?? null)),
                     borderColor: on ? p.accent : p.dim, borderWidth: on ? 2 : 1.5, borderDash: [6, 4],
                     pointRadius: labels.map(d => byDate[d] != null ? 2.5 : 0), pointHoverRadius: 4, pointBackgroundColor: on ? p.accent : p.dim,
@@ -326,15 +335,11 @@ const Stock = (() => {
                 label: { display: true, content: 'Today', position: 'start', backgroundColor: 'transparent', color: p.ink, font: { size: 10 } } };
         }
         if (proj && sel && sel.id === SHIPMENT_PRODUCT_ID) {
-            proj.scenarios.avg.forEach((m, i) => {
+            (proj.scenarios[scenario] || proj.scenarios.avg).forEach((m, i) => {
                 if (!m.incoming) return;
                 annotations['in' + i] = { type: 'line', xMin: monthEnd(m.ym), xMax: monthEnd(m.ym), borderColor: p.annot, borderWidth: 1, borderDash: [2, 3],
                     label: { display: true, content: `+${fmtNum(m.incoming)} landing`, position: 'end', backgroundColor: 'transparent', color: p.ink, font: { size: 10 }, rotation: -90 } };
             });
-        }
-        if (sel && sel.reorderPoint != null && sel.reorderPoint > 0) {
-            annotations.reorder = { type: 'line', yMin: sel.reorderPoint, yMax: sel.reorderPoint, borderColor: p.warn, borderDash: [6, 4], borderWidth: 1.5,
-                label: { display: true, content: 'Reorder ' + fmtNum(sel.reorderPoint), position: 'start', backgroundColor: 'transparent', color: p.ink, font: { size: 11 } } };
         }
         (histories[selectedId]?.events || []).forEach((ev, i) => {
             if (!labels.includes(ev.date) || ev.kind === 'count') return;
@@ -361,9 +366,10 @@ const Stock = (() => {
         });
     }
 
-    function trajectoryTable(key, histories) {
+    function trajectoryTable(key, histories, scenario = 'avg') {
         const any = Object.values(histories).find(h => h?.series);
         if (!any) return '';
+        const SC_LABEL = { avg: 'Average', good: 'Good +10%', great: 'Great +20%' }[scenario] || 'Average';
         const dates = any.series.map(s => s.date);
         const step = Math.max(1, Math.floor(dates.length / 12));
         const rows = dates.filter((_, i) => i % step === 0 || i === dates.length - 1);
@@ -371,7 +377,7 @@ const Stock = (() => {
         const cell = v => `<td style="text-align:right;font-variant-numeric:tabular-nums">${fmtNum(v)}</td>`;
         return `<div class="stk-table-wrap"><table class="stk-table stk2-table"><thead><tr><th>Date</th>${key.map(k => `<th style="text-align:right">${escHtml(k.name)} (${k.unit})</th>`).join('')}</tr></thead>
         <tbody>${rows.map(d => `<tr><td>${fmtDate(d)}</td>${key.map(k => cell(histories[k.id]?.series?.find(s => s.date === d)?.onHand)).join('')}</tr>`).join('')}
-        ${proj ? `<tr><td colspan="${key.length + 1}" class="cat-sub"><strong>Projected</strong> · month-end, Average scenario (usage − incoming)</td></tr>` + proj.months.map((ym, i) => `<tr><td>${fmtDate(monthEnd(ym))}</td>${key.map(k => { const m = histories[k.id]?.projection?.scenarios?.avg?.[i]; return cell(m ? m.closing : null); }).join('')}</tr>`).join('') : ''}</tbody></table></div>`;
+        ${proj ? `<tr><td colspan="${key.length + 1}" class="cat-sub"><strong>Projected</strong> · month-end, ${SC_LABEL} (opening − usage + incoming)</td></tr>` + proj.months.map((ym, i) => `<tr><td>${fmtDate(monthEnd(ym))}</td>${key.map(k => { const sc = histories[k.id]?.projection?.scenarios; const m = (sc?.[scenario] || sc?.avg)?.[i]; return cell(m ? m.closing : null); }).join('')}</tr>`).join('') : ''}</tbody></table></div>`;
     }
 
     // FIFO cost lots for the shipment-fed product (Prime Tie Bundled).
@@ -410,11 +416,13 @@ const Stock = (() => {
     async function renderConsumablesForecast(el) {
         if (!el) return;
         el.innerHTML = '<div class="cat-section stk2-section"><div class="orders-loading">Forecasting consumables…</div></div>';
-        let cf;
-        try { cf = await api('/api/stock/consumables-forecast?months=12'); }
-        catch (e) { el.innerHTML = `<div class="cat-section stk2-section"><p class="cat-sub">Consumables forecast unavailable: ${escHtml(e.message)}</p></div>`; return; }
+        let scenario = 'avg', months = 12, cf;
+        const load = async () => {
+            try { cf = await api('/api/stock/consumables-forecast?months=' + months); return true; }
+            catch (e) { el.innerHTML = `<div class="cat-section stk2-section"><p class="cat-sub">Consumables forecast unavailable: ${escHtml(e.message)}</p></div>`; return false; }
+        };
+        if (!(await load())) return;
         if (cf.beforeEpoch || !cf.items) { el.innerHTML = ''; return; }
-        let scenario = 'avg';
         const SC = { avg: 'Average', good: 'Good +10%', great: 'Great +20%' };
         const monthLabel = ym => { const [y, m] = ym.split('-').map(Number); return new Date(Date.UTC(y, m - 1, 1)).toLocaleDateString('en-NZ', { month: 'short', timeZone: 'UTC' }) + (m === 1 ? ` '${String(y).slice(2)}` : ''); };
         const draw = () => {
@@ -428,14 +436,17 @@ const Stock = (() => {
             <div class="cat-section stk2-section">
                 <div class="cat-section-head">
                     <div>
-                        <h2 class="cat-title">Consumables forecast <span class="cat-sub" style="font-weight:400">· next 12 months</span></h2>
+                        <h2 class="cat-title">Consumables forecast <span class="cat-sub" style="font-weight:400">· rolling ${months} months</span></h2>
                         <p class="cat-sub" style="margin:0">Same seasonal sales curve as the Stock Trajectory, turned into units through the last year's product mix and the matrix. <strong>Order by</strong> = run-out less lead time and safety days.${cf.mix.source !== 'sales-history' ? ' <span class="stk2-var--neg">No type×size sales split yet — assuming 10 kg bundled.</span>' : ''}</p>
                     </div>
-                    <div class="stk2-traj-ctl">${Object.entries(SC).map(([k, l]) => `<button class="imp-view-btn${k === scenario ? ' active' : ''}" data-cf-sc="${k}">${l}</button>`).join('')}</div>
+                    <div class="stk2-traj-ctl">
+                        <select id="stk2-cf-sc" class="stk2-select" title="Sales scenario — same as the Imports forecast">${Object.entries(SC).map(([k, l]) => `<option value="${k}" ${k === scenario ? 'selected' : ''}>${l}</option>`).join('')}</select>
+                        <select id="stk2-cf-range" class="stk2-select" title="How far ahead to project"><option value="12" ${months === 12 ? 'selected' : ''}>Rolling 12 months</option><option value="13" ${months === 13 ? 'selected' : ''}>Rolling 13 months</option></select>
+                    </div>
                 </div>
                 ${orderNow ? `<div class="stk2-notice stk2-notice--warn">${orderNow} consumable${orderNow === 1 ? '' : 's'} should be ordered now to land before running out (${SC[scenario]}).</div>` : ''}
                 <div class="stk-table-wrap"><table class="stk-table stk2-table stk2-cf-table">
-                    <thead><tr><th>Consumable</th><th style="text-align:right">On hand</th><th style="text-align:right">12-mo usage</th><th>Runs out</th><th>Order by</th><th style="text-align:right">Lead</th><th>${cf.months.map(m => `<span class="stk2-cf-m">${monthLabel(m.ym)}</span>`).join('')}</th></tr></thead>
+                    <thead><tr><th>Consumable</th><th style="text-align:right">On hand</th><th style="text-align:right">${months}-mo usage</th><th>Runs out</th><th>Order by</th><th style="text-align:right">Lead</th><th>${cf.months.map(m => `<span class="stk2-cf-m">${monthLabel(m.ym)}</span>`).join('')}</th></tr></thead>
                     <tbody>${rows.map(({ it, sc }) => {
                         const unknown = it.onHand == null;
                         const orderCell = unknown ? '<span class="cat-sub">no count</span>'
@@ -460,7 +471,8 @@ const Stock = (() => {
                 </table></div>
                 <p class="cat-sub" style="margin-top:0.5rem">Mix from ${fmtDate(cf.mix.from)} → ${fmtDate(cf.mix.to)}: ${Object.entries(cf.mix.share).map(([sku, sh]) => `${escHtml(sku)} ${Math.round(sh * 100)}%`).join(' · ')}${cf.mix.ordersPerKg ? ` · ${fmtNum(1 / cf.mix.ordersPerKg)} kg per order` : ''}. Bars show month-end stock; red = out.</p>
             </div>`;
-            el.querySelectorAll('[data-cf-sc]').forEach(b => b.addEventListener('click', () => { scenario = b.dataset.cfSc; draw(); }));
+            el.querySelector('#stk2-cf-sc').addEventListener('change', e => { scenario = e.target.value; draw(); });
+            el.querySelector('#stk2-cf-range').addEventListener('change', async e => { months = Number(e.target.value) || 12; if (await load()) draw(); });
         };
         draw();
     }

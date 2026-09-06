@@ -263,3 +263,5 @@ Steps 1–4 ship before 1 October so the opening count has somewhere to go.
 - **Matrix timeless.** `recipesFor()` falls back to the earliest version when none is in force yet (a matrix saved with a future effective date used to zero every consumable's usage).
 - **12-month trajectory.** `projectionFor()` projects month-end on hand from today on the shared seasonal curve — products by their SKUs' share of the trailing mix (+ pending shipments in their ETA month, for Bundled); consumables via consumablesForecast. `/history?project=12`; dashboard chart = actual (solid) + projected (dashed), table includes projected rows.
 - **Stock → Settings tab** renders the same Settings → Stock page inline.
+- **Hero products have no reorder point.** Products report status unknown / out / ok only; replenishment is a shipment decision read off the trajectory. Consumables keep the reorder tiers.
+- **Trajectory + consumables forecast controls** match Imports: scenario dropdown (Average / Good +10% / Great +20%) applied to the projected series, and a view-range dropdown (rolling 12 or 13 months).

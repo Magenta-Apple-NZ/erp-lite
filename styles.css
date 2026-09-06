@@ -7421,3 +7421,4 @@ a.db-row:hover { background: #f8fafc; border-color: #e2e8f0; }
 .stk2-tile-io { margin-top: 0.4rem; }
 .stk2-move { max-width: 420px; }
 .stk2-check input[type="checkbox"] { width: auto; margin: 0; }
+.stk2-select { border: 1px solid var(--stk-line); border-radius: 5px; padding: 0.2rem 0.5rem; font: inherit; font-size: 0.78rem; background: var(--stk-surface); color: var(--stk-ink); }

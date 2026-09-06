@@ -213,20 +213,23 @@ test('status tiers evaluate in order and auto reorder points use lead time + saf
     assert.equal(statusFor({ ...base, mode: 'manual', onHand: 100, avgDaily: 0, daysCover: null, reorderPoint: 150 }), 'low');
 });
 
-test('a low item with a shipment landing before stock-out is flagged covered', () => {
-    // Bundled: on hand 6000 by 31 Oct, manual point far above → low; heavy usage → stock-out in ~3 days; ship-42 ETA 20 Nov is after → not covered.
+test('hero products carry no reorder point — status is only unknown / out / ok; consumables keep the tiers', () => {
     const heavy = { id: 'h', date: '2026-10-30', bundlesKg: 5000, looseKg: 0, ecoTiesKg: 0, xkg: { b10: 5000 } };
     const w = world({ sales: [heavy], items: items.map(i => i.id === SHIPMENT_PRODUCT_ID ? { ...i, reorder: { mode: 'manual', manualPoint: 9000 } } : i) });
-    let lv = computeLevels(w, '2026-10-31');
-    let b = lv.items.find(i => i.id === SHIPMENT_PRODUCT_ID);
-    assert.equal(b.status, 'low');
+    const lv = computeLevels(w, '2026-10-31');
+    const b = lv.items.find(i => i.id === SHIPMENT_PRODUCT_ID);
+    assert.equal(b.reorderPoint, null, 'a manual point on a product is ignored');
+    assert.equal(b.reorderMode, 'none');
+    assert.equal(b.status, 'ok');
     assert.equal(b.covered, false);
-    // Move the ETA to tomorrow → covered.
-    const soon = { ...shipInTransit, milestones: shipInTransit.milestones.map((m, i, a) => i === a.length - 1 ? { ...m, date: '2026-11-01' } : m) };
-    lv = computeLevels({ ...w, shipments: [shipArrived, soon] }, '2026-10-31');
-    b = lv.items.find(i => i.id === SHIPMENT_PRODUCT_ID);
-    assert.equal(b.covered, true);
-    assert.equal(b.coveredBy.id, 'ship-42');
+    // Sold out → out; no count → unknown.
+    const gone = { id: 'g', date: '2026-10-30', bundlesKg: 6000, looseKg: 0, ecoTiesKg: 0, xkg: { b10: 6000 } };
+    assert.equal(computeLevels(world({ sales: [gone] }), '2026-10-31').items.find(i => i.id === SHIPMENT_PRODUCT_ID).status, 'out');
+    assert.equal(computeLevels(world({ counts: [] }), '2026-10-31').items.find(i => i.id === SHIPMENT_PRODUCT_ID).status, 'unknown');
+    // Consumables still get a reorder point and the low/watch tiers.
+    const box = lv.items.find(i => i.id === 'box-10kg');
+    assert.equal(box.reorderMode, 'auto');
+    assert.ok(box.reorderPoint != null);
 });
 
 // ── Counts: commit freezes variance (§9 #9) ──────────────────────────────
