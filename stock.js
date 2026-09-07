@@ -407,7 +407,7 @@ const Stock = (() => {
         if (!el) return;
         let scenario = 'great', months = 13, cf = null;
         const SC = { avg: 'Average', good: 'Good +10%', great: 'Great +20%' };
-        const monthLabel = ym => { const [y, m] = ym.split('-').map(Number); return new Date(Date.UTC(y, m - 1, 1)).toLocaleDateString('en-NZ', { month: 'short', timeZone: 'UTC' }) + (m === 1 ? ` '${String(y).slice(2)}` : ''); };
+        const monthLabel = ym => { const [y, m] = ym.split('-').map(Number); return new Date(Date.UTC(y, m - 1, 1)).toLocaleDateString('en-US', { month: 'short', timeZone: 'UTC' }) + (m === 1 ? ` '${String(y).slice(2)}` : ''); };
         const load = async () => { try { cf = await api('/api/stock/consumables-forecast?months=' + months); } catch { cf = null; } };
         const draw = () => {
             const cons = lv.items.filter(i => i.class === 'consumable');
