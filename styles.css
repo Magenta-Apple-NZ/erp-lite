@@ -7422,3 +7422,10 @@ a.db-row:hover { background: #f8fafc; border-color: #e2e8f0; }
 .stk2-move { max-width: 420px; }
 .stk2-check input[type="checkbox"] { width: auto; margin: 0; }
 .stk2-select { border: 1px solid var(--stk-line); border-radius: 5px; padding: 0.2rem 0.5rem; font: inherit; font-size: 0.78rem; background: var(--stk-surface); color: var(--stk-ink); }
+
+/* Receive / Adjust segmented toggle; merged consumables table */
+.stk2-seg { display: inline-flex; border: 1px solid var(--stk-line); border-radius: 6px; overflow: hidden; margin: -0.4rem 0 0.9rem; }
+.stk2-seg-btn { border: none; background: var(--stk-surface); color: var(--stk-ink-2); font: inherit; font-size: 0.82rem; font-weight: 600; padding: 0.35rem 0.9rem; cursor: pointer; }
+.stk2-seg-btn + .stk2-seg-btn { border-left: 1px solid var(--stk-line); }
+.stk2-seg-btn.active { background: #1e40af; color: #fff; }
+.stk2-cons-table th:last-child, .stk2-cons-table td:last-child { min-width: 190px; }

@@ -267,3 +267,7 @@ Steps 1–4 ship before 1 October so the opening count has somewhere to go.
 - **Trajectory + consumables forecast controls** match Imports: scenario dropdown (Average / Good +10% / Great +20%) applied to the projected series, and a view-range dropdown (rolling 12 or 13 months).
 - **Classifier fix.** A SKU the catalogue knows but doesn't type (Hessian, freight) is `other` — never guessed from its kg per unit. Hessian (1 kg/unit) was being filed as Loose 1kg and burning black bags. Re-run *Backfill orders* to re-file existing rows.
 - **Label books are never matrix columns** (they deplete per invoiced label).
+- **One consumables table** (levels + forecast merged): Item · On hand meter · Qty · Status · Receive / Adjust · Order by · month-end strip; scenario (default **Great +20%**) and range (13 / 36 months) dropdowns. Trajectory also defaults to Great.
+- **Receive / Adjust** is one popover with a toggle.
+- **Reopen a committed count** (`POST /api/stock/counts/:id/reopen`): back to draft with figures kept and frozen snapshots cleared; edit, re-commit.
+- Sales forecast source of truth: Imports → Forecast → monthly averages (`import:forecast.monthlyAvg`, Jan–Dec kg); Good ×1.1, Great ×1.2.

@@ -85,6 +85,7 @@ const Stock = (() => {
         out:      { label: 'Out',      icon: '✕' },
         unknown:  { label: 'Unknown',  icon: '?' },
     };
+    const STATUS_ORDER = ['out', 'critical', 'low', 'watch', 'unknown', 'ok'];
     function statusChip(lv) {
         const s = STATUS[lv.status] || STATUS.unknown;
         const covered = lv.covered && lv.coveredBy
@@ -162,7 +163,7 @@ const Stock = (() => {
                 </div>
                 <div class="stk2-traj-ctl">
                     ${key.length > 1 ? key.map((k, i) => `<button class="imp-view-btn${i === 0 ? ' active' : ''}" data-traj="${escHtml(k.id)}">${escHtml(k.name)}</button>`).join('') : ''}
-                    <select id="stk2-traj-sc" class="stk2-select" title="Sales scenario — same as the Imports forecast"><option value="avg">Average</option><option value="good">Good +10%</option><option value="great">Great +20%</option></select>
+                    <select id="stk2-traj-sc" class="stk2-select" title="Sales scenario — same as the Imports forecast"><option value="avg">Average</option><option value="good">Good +10%</option><option value="great" selected>Great +20%</option></select>
                     <select id="stk2-traj-range" class="stk2-select" title="How far ahead to project"><option value="13">Rolling 13 months</option><option value="36">Rolling 36 months</option></select>
                     <button class="imp-view-btn" id="stk2-traj-table-btn" title="Show the numbers">Table</button>
                 </div>
@@ -172,18 +173,7 @@ const Stock = (() => {
             <div id="stk2-traj-foot" class="cat-sub"></div>
         </div>
 
-        <div class="cat-section stk2-section">
-            <div class="cat-section-head">
-                <div>
-                    <h2 class="cat-title">Consumables</h2>
-                    <p class="cat-sub" style="margin:0">Packaging burnt through the recipes on each order. Sorted worst first. Meter shows on hand against the reorder point.</p>
-                </div>
-                <div class="cat-sub">As at ${fmtDate(lv.asOf)} · usage over ${lv.windowDays} days</div>
-            </div>
-            ${levelsTable(consumables.concat(products), lv)}
-        </div>
-
-        <div id="stk2-cf"></div>
+        <div id="stk2-cons"></div>
 
         ${key.filter(k => Array.isArray(k.lots)).map(lotsSection).join('')}
 
@@ -200,7 +190,7 @@ const Stock = (() => {
         // KPI sparklines + trajectory: one history call per key product, with
         // a projection N months ahead (the view range) in the chosen scenario.
         const histories = {};
-        let selected = key[0]?.id || null, scenario = 'avg', months = 13;
+        let selected = key[0]?.id || null, scenario = 'great', months = 13;
         const loadHistories = async () => {
             await Promise.all(key.map(async k => {
                 try { histories[k.id] = await api(`/api/stock/items/${encodeURIComponent(k.id)}/history?project=${months}`); } catch { histories[k.id] = null; }
@@ -251,7 +241,7 @@ const Stock = (() => {
             } catch (e) { wrap.innerHTML = `<p class="cat-sub">${escHtml(e.message)}</p>`; }
         };
         loadMovs();
-        renderConsumablesForecast(body.querySelector('#stk2-cf'));
+        renderConsumables(body.querySelector('#stk2-cons'), lv, () => renderDashboard(body));
         // In / Out / Adjust on any item → a small popover that posts the movement.
         body.querySelectorAll('[data-move]').forEach(b => b.addEventListener('click', () => {
             const item = lv.items.find(i => i.id === b.dataset.item);
@@ -272,7 +262,7 @@ const Stock = (() => {
             <div class="stk2-tile-foot">${statusChip(lv)}<div class="stk2-spark" aria-hidden="true"></div></div>
             ${lv.value != null ? `<div class="stk2-tile-sub" title="FIFO: oldest shipment lot sold first">Value <strong>$${fmtNum(lv.value)}</strong>${lv.avgCost != null ? ` · avg $${fmtNum(lv.avgCost, 2)}/kg` : ''} <span class="cat-sub">FIFO</span></div>` : ''}
             ${lv.baselineDate ? `<div class="stk2-tile-base">Counted ${fmtDate(lv.baselineDate)}</div>` : ''}
-            <div class="stk2-io stk2-tile-io"><button class="btn-secondary btn-sm" data-move="in" data-item="${escHtml(lv.id)}" title="A delivery arrived (a landed shipment is added automatically)">Receive</button><button class="btn-secondary btn-sm" data-move="adjust" data-item="${escHtml(lv.id)}" title="Set on hand to what's actually there">Adjust</button></div>
+            <div class="stk2-io stk2-tile-io"><button class="btn-secondary btn-sm" data-move="in" data-item="${escHtml(lv.id)}" title="Receive a delivery, or set on hand to what's actually there (landed shipments are added automatically)">Receive / Adjust</button></div>
         </div>`;
     }
 
@@ -411,69 +401,73 @@ const Stock = (() => {
         </div>`;
     }
 
-    // Consumables forecast — next 12 months on the shared seasonal sales
-    // forecast; when each consumable runs out and when it must be ordered.
-    async function renderConsumablesForecast(el) {
+    // Consumables — one table: current level + forecast per item.
+    //   Item · On hand (meter) · Qty · Status · Receive / Adjust · Order by · month-end strip
+    async function renderConsumables(el, lv, onDone) {
         if (!el) return;
-        el.innerHTML = '<div class="cat-section stk2-section"><div class="orders-loading">Forecasting consumables…</div></div>';
-        let scenario = 'avg', months = 13, cf;
-        const load = async () => {
-            try { cf = await api('/api/stock/consumables-forecast?months=' + months); return true; }
-            catch (e) { el.innerHTML = `<div class="cat-section stk2-section"><p class="cat-sub">Consumables forecast unavailable: ${escHtml(e.message)}</p></div>`; return false; }
-        };
-        if (!(await load())) return;
-        if (cf.beforeEpoch || !cf.items) { el.innerHTML = ''; return; }
+        let scenario = 'great', months = 13, cf = null;
         const SC = { avg: 'Average', good: 'Good +10%', great: 'Great +20%' };
         const monthLabel = ym => { const [y, m] = ym.split('-').map(Number); return new Date(Date.UTC(y, m - 1, 1)).toLocaleDateString('en-NZ', { month: 'short', timeZone: 'UTC' }) + (m === 1 ? ` '${String(y).slice(2)}` : ''); };
+        const load = async () => { try { cf = await api('/api/stock/consumables-forecast?months=' + months); } catch { cf = null; } };
         const draw = () => {
-            const rows = cf.items.map(it => ({ it, sc: it.scenarios[scenario] }))
+            const cons = lv.items.filter(i => i.class === 'consumable');
+            const fc = Object.fromEntries(((cf && cf.items) || []).map(i => [i.id, i]));
+            const rows = cons.map(i => ({ i, f: fc[i.id] || null, sc: fc[i.id]?.scenarios?.[scenario] || null }))
                 .sort((a, b) => {
-                    const ra = a.sc.reorderBy || (a.it.onHand == null ? '0000' : '9999'), rb = b.sc.reorderBy || (b.it.onHand == null ? '0000' : '9999');
-                    return ra.localeCompare(rb) || a.it.name.localeCompare(b.it.name);
+                    const ka = a.sc?.reorderBy || (a.i.onHand == null ? '0000' : '9999'), kb = b.sc?.reorderBy || (b.i.onHand == null ? '0000' : '9999');
+                    return ka.localeCompare(kb) || STATUS_ORDER.indexOf(a.i.status) - STATUS_ORDER.indexOf(b.i.status) || a.i.name.localeCompare(b.i.name);
                 });
-            const orderNow = rows.filter(r => r.sc.orderNow).length;
+            const orderNow = rows.filter(r => r.sc?.orderNow).length;
+            const strip = (it, sc) => {
+                if (!sc) return '';
+                const maxAbs = Math.max(1, ...sc.months.map(m => Math.abs(m.closing ?? 0)), it.onHand || 0);
+                return `<div class="stk2-cf-strip">${sc.months.map(m => { const v = m.closing; const h = v == null ? 0 : Math.max(2, Math.round((Math.min(Math.abs(v), maxAbs) / maxAbs) * 22));
+                    return `<span class="stk2-cf-bar ${v != null && v <= 0 ? 'stk2-cf-bar--out' : ''}" style="height:${h}px" title="${monthLabel(m.ym)}: use ${fmtQty(m.usage, it.unit, null, it.unitLabel)} → ${v == null ? '—' : fmtQty(v, it.unit, null, it.unitLabel)} left"></span>`; }).join('')}</div>`;
+            };
+            const orderBy = (it, sc) => {
+                if (it.onHand == null) return '<span class="cat-sub">no count</span>';
+                if (!sc) return '<span class="cat-sub">—</span>';
+                if (!sc.reorderBy) return `<span class="stk2-chip stk2-chip--ok" title="Doesn't run out within ${months} months"><span class="stk2-chip-ico">✓</span>${months} months+</span>`;
+                if (sc.orderNow) return `<span class="stk2-chip stk2-chip--critical" title="Runs out ${fmtDate(sc.runOutDate)} — order by ${fmtDate(sc.reorderBy)} (lead ${it.leadTimeDays || 0} d + ${it.safetyDays || 0} safety)"><span class="stk2-chip-ico">‼</span>Order now</span>`;
+                return `<strong title="Runs out ${fmtDate(sc.runOutDate)} · lead ${it.leadTimeDays || 0} d + ${it.safetyDays || 0} safety">${fmtDate(sc.reorderBy)}</strong>`;
+            };
             el.innerHTML = `
             <div class="cat-section stk2-section">
                 <div class="cat-section-head">
                     <div>
-                        <h2 class="cat-title">Consumables forecast <span class="cat-sub" style="font-weight:400">· rolling ${months} months</span></h2>
-                        <p class="cat-sub" style="margin:0">Same seasonal sales curve as the Stock Trajectory, turned into units through the last year's product mix and the matrix. <strong>Order by</strong> = run-out less lead time and safety days.${cf.mix.source !== 'sales-history' ? ' <span class="stk2-var--neg">No type×size sales split yet — assuming 10 kg bundled.</span>' : ''}</p>
+                        <h2 class="cat-title">Consumables</h2>
+                        <p class="cat-sub" style="margin:0">On hand from the count less what orders used. <strong>Order by</strong> = projected run-out on the ${escHtml(SC[scenario])} sales curve, less lead time and safety days. Bars: month-end stock, red = out.</p>
                     </div>
                     <div class="stk2-traj-ctl">
-                        <select id="stk2-cf-sc" class="stk2-select" title="Sales scenario — same as the Imports forecast">${Object.entries(SC).map(([k, l]) => `<option value="${k}" ${k === scenario ? 'selected' : ''}>${l}</option>`).join('')}</select>
-                        <select id="stk2-cf-range" class="stk2-select" title="How far ahead to project"><option value="13" ${months === 13 ? 'selected' : ''}>Rolling 13 months</option><option value="36" ${months === 36 ? 'selected' : ''}>Rolling 36 months</option></select>
+                        <select id="stk2-cons-sc" class="stk2-select" title="Sales scenario — same as the Imports forecast">${Object.entries(SC).map(([k, l]) => `<option value="${k}" ${k === scenario ? 'selected' : ''}>${l}</option>`).join('')}</select>
+                        <select id="stk2-cons-range" class="stk2-select" title="How far ahead to project"><option value="13" ${months === 13 ? 'selected' : ''}>Rolling 13 months</option><option value="36" ${months === 36 ? 'selected' : ''}>Rolling 36 months</option></select>
                     </div>
                 </div>
-                ${orderNow ? `<div class="stk2-notice stk2-notice--warn">${orderNow} consumable${orderNow === 1 ? '' : 's'} should be ordered now to land before running out (${SC[scenario]}).</div>` : ''}
-                <div class="stk-table-wrap"><table class="stk-table stk2-table stk2-cf-table">
-                    <thead><tr><th>Consumable</th><th style="text-align:right">On hand</th><th style="text-align:right">${months}-mo usage</th><th>Runs out</th><th>Order by</th><th style="text-align:right">Lead</th><th>${cf.months.map(m => `<span class="stk2-cf-m">${monthLabel(m.ym)}</span>`).join('')}</th></tr></thead>
-                    <tbody>${rows.map(({ it, sc }) => {
-                        const unknown = it.onHand == null;
-                        const orderCell = unknown ? '<span class="cat-sub">no count</span>'
-                            : !sc.reorderBy ? '<span class="stk2-chip stk2-chip--ok"><span class="stk2-chip-ico">✓</span>12 months+</span>'
-                            : sc.orderNow ? `<span class="stk2-chip stk2-chip--critical"><span class="stk2-chip-ico">‼</span>Order now</span> <span class="cat-sub">(by ${fmtDate(sc.reorderBy)})</span>`
-                            : `<strong>${fmtDate(sc.reorderBy)}</strong>`;
-                        const maxAbs = Math.max(1, ...sc.months.map(m => Math.abs(m.closing ?? 0)), it.onHand || 0);
-                        const strip = sc.months.map(m => {
-                            const v = m.closing;
-                            const h = v == null ? 0 : Math.max(2, Math.round((Math.min(Math.abs(v), maxAbs) / maxAbs) * 22));
-                            return `<span class="stk2-cf-bar ${v != null && v <= 0 ? 'stk2-cf-bar--out' : ''}" style="height:${h}px" title="${monthLabel(m.ym)}: use ${fmtQty(m.usage, it.unit, null, it.unitLabel)} → ${v == null ? '—' : fmtQty(v, it.unit, null, it.unitLabel)} left"></span>`;
-                        }).join('');
-                        return `<tr class="${sc.orderNow ? 'stk2-row--critical' : ''}">
-                            <td><strong>${escHtml(it.name)}</strong>${it.usagePerKg ? '' : `<div class="cat-sub" style="margin:0">${it.courierSku || it.courierLabel ? 'no courier labels on last year\'s orders yet — run Backfill orders in Settings → Sales Data' : 'not in the matrix — no usage'}</div>`}</td>
-                            <td style="text-align:right;font-variant-numeric:tabular-nums">${fmtQty(it.onHand, it.unit, null, it.unitLabel)}${it.onOrder ? ` <span class="cat-sub">+${fmtNum(it.onOrder)} on order</span>` : ''}</td>
-                            <td style="text-align:right;font-variant-numeric:tabular-nums">${fmtQty(sc.usage12, it.unit, 0, it.unitLabel)}</td>
-                            <td>${unknown ? '<span class="cat-sub">—</span>' : sc.runOutDate ? `<span class="${sc.orderNow ? 'stk2-var--neg' : ''}">${fmtDate(sc.runOutDate)}</span>` : '<span class="cat-sub">not within 12 months</span>'}</td>
-                            <td>${orderCell}</td>
-                            <td style="text-align:right">${it.leadTimeDays ? it.leadTimeDays + ' d' : '—'}${it.safetyDays ? ` <span class="cat-sub">+${it.safetyDays}</span>` : ''}</td>
-                            <td><div class="stk2-cf-strip">${strip}</div></td>
-                        </tr>`; }).join('')}</tbody>
-                </table></div>
-                <p class="cat-sub" style="margin-top:0.5rem">Mix from ${fmtDate(cf.mix.from)} → ${fmtDate(cf.mix.to)}: ${Object.entries(cf.mix.share).map(([sku, sh]) => `${escHtml(sku)} ${Math.round(sh * 100)}%`).join(' · ')}${cf.mix.ordersPerKg ? ` · ${fmtNum(1 / cf.mix.ordersPerKg)} kg per order` : ''}. Bars show month-end stock; red = out.</p>
+                ${orderNow ? `<div class="stk2-notice stk2-notice--warn">${orderNow} consumable${orderNow === 1 ? '' : 's'} should be ordered now (${escHtml(SC[scenario])}).</div>` : ''}
+                ${rows.length ? `<div class="stk-table-wrap"><table class="stk-table stk2-table stk2-levels stk2-cons-table">
+                    <thead><tr><th>Item</th><th style="min-width:150px">On hand</th><th style="text-align:right">Qty</th><th>Status</th><th></th><th>Order by</th><th>${cf ? cf.months.map(m => `<span class="stk2-cf-m">${monthLabel(m.ym)}</span>`).join('') : ''}</th></tr></thead>
+                    <tbody>${rows.map(({ i, f, sc }) => `<tr class="stk2-row--${escHtml(i.status)}">
+                        <td><a href="#" class="stk2-ledger-link" data-ledger="${escHtml(i.id)}" title="Open the ledger — every in and out behind this figure"><strong>${escHtml(i.name)}</strong></a></td>
+                        <td>${meter(i)}</td>
+                        <td style="text-align:right;font-variant-numeric:tabular-nums" title="${i.baselineDate ? 'Counted ' + fmtDate(i.baselineDate) : 'Not counted yet'}${i.onOrder ? ' · ' + fmtNum(i.onOrder) + ' on order' : ''}">${fmtQty(i.onHand, i.unit, null, i.unitLabel)}</td>
+                        <td>${statusChip(i)}</td>
+                        <td style="text-align:right;white-space:nowrap"><button class="btn-secondary btn-sm" data-move="in" data-item="${escHtml(i.id)}" title="Receive a delivery, or set on hand to what's actually there">Receive / Adjust</button></td>
+                        <td>${orderBy(i, sc)}</td>
+                        <td>${strip(i, sc)}</td>
+                    </tr>`).join('')}</tbody></table></div>`
+                : '<p class="cat-sub">No consumables yet — add them under Settings.</p>'}
+                ${cf && cf.mix ? `<p class="cat-sub" style="margin-top:0.5rem">Usage from the matrix × last year's product mix (${Object.entries(cf.mix.share).filter(([, s]) => s > 0.005).map(([sku, sh]) => `${escHtml(sku)} ${Math.round(sh * 100)}%`).join(' · ')})${cf.mix.source !== 'sales-history' ? ' — <span class="stk2-var--neg">no type×size sales split yet, assuming 10 kg bundled</span>' : ''}.</p>` : ''}
             </div>`;
-            el.querySelector('#stk2-cf-sc').addEventListener('change', e => { scenario = e.target.value; draw(); });
-            el.querySelector('#stk2-cf-range').addEventListener('change', async e => { months = Number(e.target.value) || 13; if (await load()) draw(); });
+            el.querySelector('#stk2-cons-sc').addEventListener('change', e => { scenario = e.target.value; draw(); });
+            el.querySelector('#stk2-cons-range').addEventListener('change', async e => { months = Number(e.target.value) || 13; await load(); draw(); });
+            el.querySelectorAll('[data-move]').forEach(b => b.addEventListener('click', () => {
+                const item = lv.items.find(i => i.id === b.dataset.item);
+                if (item) openMovement({ item, mode: 'in', stockEpoch: lv.stockEpoch, onDone });
+            }));
+            el.querySelectorAll('[data-ledger]').forEach(a => a.addEventListener('click', e => { e.preventDefault(); openLedger(a.dataset.ledger); }));
         };
+        draw();            // levels are already here — show them at once
+        await load();      // then fold the forecast in
         draw();
     }
 
@@ -514,24 +508,26 @@ const Stock = (() => {
         overlay.querySelector('#stk2-ledger-close').addEventListener('click', close);
     }
 
-    // In / Out / Adjust for one item — posts a movement without a full count.
-    //   in     → receipt (+qty)      out → wastage (−qty)
-    //   adjust → adjustment of (target − on hand), i.e. "set on hand to X"
-    function openMovement({ item, mode, stockEpoch, onDone }) {
-        const TITLE = { in: 'Receive', out: 'Out', adjust: 'Adjust' }[mode] || 'Movement';
+    // Receive / Adjust for one item — one popover, a toggle inside.
+    //   Receive → receipt (+qty)     Adjust → adjustment of (target − on hand)
+    function openMovement({ item, mode = 'in', stockEpoch, onDone }) {
+        let current = mode === 'adjust' ? 'adjust' : 'in';
         const unitTxt = item.unit === 'kg' ? 'kg' : (item.unitLabel || 'units');
         const overlay = document.createElement('div');
         overlay.className = 'modal-overlay';
         overlay.innerHTML = `
         <div class="modal-box stk2-move" role="dialog" aria-modal="true">
-            <h3 class="modal-title">${TITLE} · ${escHtml(item.name)} <span class="modal-hint">on hand ${item.onHand == null ? 'unknown' : fmtQty(item.onHand, item.unit, null, item.unitLabel)}</span></h3>
+            <h3 class="modal-title">${escHtml(item.name)} <span class="modal-hint">on hand ${item.onHand == null ? 'unknown' : fmtQty(item.onHand, item.unit, null, item.unitLabel)}</span></h3>
+            <div class="stk2-seg" role="tablist">
+                <button type="button" class="stk2-seg-btn" data-seg="in" role="tab">Receive</button>
+                <button type="button" class="stk2-seg-btn" data-seg="adjust" role="tab">Adjust</button>
+            </div>
             <form id="stk2-move-form">
-                ${mode === 'adjust'
-                    ? `<div class="modal-field"><label>Set on hand to <span class="modal-hint">${escHtml(unitTxt)} actually there</span></label><input name="target" type="number" step="any" min="0" required autofocus value="${item.onHand ?? ''}"><span class="cat-sub" id="stk2-move-delta" style="display:block;margin-top:0.3rem"></span></div>`
-                    : `<div class="modal-field"><label>${mode === 'in' ? 'Quantity arrived' : 'Quantity out'} <span class="modal-hint">${escHtml(unitTxt)}</span></label><input name="qty" type="number" step="any" min="0" required autofocus placeholder="0"></div>`}
+                <div class="modal-field" data-for="in"><label>Quantity arrived <span class="modal-hint">${escHtml(unitTxt)}</span></label><input name="qty" type="number" step="any" min="0" placeholder="0"></div>
+                <div class="modal-field" data-for="adjust"><label>Set on hand to <span class="modal-hint">${escHtml(unitTxt)} actually there</span></label><input name="target" type="number" step="any" min="0" value="${item.onHand ?? ''}"><span class="cat-sub" id="stk2-move-delta" style="display:block;margin-top:0.3rem"></span></div>
                 <div class="modal-field"><label>Date</label><input name="date" type="date" value="${nzToday()}" min="${escHtml(stockEpoch || '')}" required></div>
-                <div class="modal-field"><label>Note <span class="modal-hint">optional</span></label><input name="reason" type="text" placeholder="${mode === 'in' ? 'e.g. Delivery from Attwoods' : mode === 'out' ? 'e.g. Damaged / used for samples' : 'e.g. Recount'}"></div>
-                <div class="modal-actions"><button type="button" class="btn-secondary" id="stk2-move-cancel">Cancel</button><button type="submit" class="btn-primary">${mode === 'adjust' ? 'Set on hand' : 'Post ' + TITLE.toLowerCase()}</button></div>
+                <div class="modal-field"><label>Note <span class="modal-hint">optional</span></label><input name="reason" type="text" placeholder="e.g. Delivery from Attwoods / Recount"></div>
+                <div class="modal-actions"><button type="button" class="btn-secondary" id="stk2-move-cancel">Cancel</button><button type="submit" class="btn-primary" id="stk2-move-submit">Post receipt</button></div>
             </form>
         </div>`;
         document.body.appendChild(overlay);
@@ -541,26 +537,39 @@ const Stock = (() => {
         overlay.addEventListener('click', e => { if (e.target === overlay) close(); });
         overlay.querySelector('#stk2-move-cancel').addEventListener('click', close);
         const form = overlay.querySelector('#stk2-move-form');
-        if (mode === 'adjust') {
-            const tgt = form.querySelector('input[name="target"]'), delta = overlay.querySelector('#stk2-move-delta');
-            const upd = () => { const v = Number(tgt.value); if (tgt.value === '' || item.onHand == null || isNaN(v)) { delta.textContent = item.onHand == null ? 'No count yet — this will be the first figure (post via a count instead).' : ''; return; } const d = Math.round((v - item.onHand) * 100) / 100; delta.textContent = d === 0 ? 'No change' : `${d > 0 ? '+' : '−'}${fmtQty(Math.abs(d), item.unit, null, item.unitLabel)} adjustment`; };
-            tgt.addEventListener('input', upd); upd();
-        }
+        const tgt = form.querySelector('input[name="target"]'), qtyInp = form.querySelector('input[name="qty"]'), delta = overlay.querySelector('#stk2-move-delta');
+        const updDelta = () => {
+            const v = Number(tgt.value);
+            if (tgt.value === '' || item.onHand == null || isNaN(v)) { delta.textContent = item.onHand == null ? 'No count yet — commit a count first.' : ''; return; }
+            const d = Math.round((v - item.onHand) * 100) / 100;
+            delta.textContent = d === 0 ? 'No change' : `${d > 0 ? '+' : '−'}${fmtQty(Math.abs(d), item.unit, null, item.unitLabel)} adjustment`;
+        };
+        tgt.addEventListener('input', updDelta);
+        const setSeg = seg => {
+            current = seg;
+            overlay.querySelectorAll('.stk2-seg-btn').forEach(b => b.classList.toggle('active', b.dataset.seg === seg));
+            overlay.querySelectorAll('[data-for]').forEach(f => { f.hidden = f.dataset.for !== seg; });
+            overlay.querySelector('#stk2-move-submit').textContent = seg === 'adjust' ? 'Set on hand' : 'Post receipt';
+            (seg === 'adjust' ? tgt : qtyInp).focus();
+            if (seg === 'adjust') updDelta();
+        };
+        overlay.querySelectorAll('.stk2-seg-btn').forEach(b => b.addEventListener('click', () => setSeg(b.dataset.seg)));
+        setSeg(current);
         form.addEventListener('submit', async e => {
             e.preventDefault();
             const fd = new FormData(form);
             let type, qty;
-            if (mode === 'adjust') {
+            if (current === 'adjust') {
                 if (item.onHand == null) { showToast('No count yet — commit a count first'); return; }
                 type = 'adjustment'; qty = Math.round((Number(fd.get('target')) - item.onHand) * 100) / 100;
                 if (qty === 0) { showToast('No change'); close(); return; }
             } else {
-                type = mode === 'in' ? 'receipt' : 'wastage'; qty = Number(fd.get('qty'));
+                type = 'receipt'; qty = Number(fd.get('qty'));
                 if (!(qty > 0)) { showToast('Enter a quantity'); return; }
             }
             try {
-                await api('/api/stock/movements', { method: 'POST', body: JSON.stringify({ itemId: item.id, type, qty, date: fd.get('date'), reason: String(fd.get('reason') || '').trim() || (mode === 'adjust' ? 'Set on hand' : '') }) });
-                showToast(mode === 'adjust' ? 'On hand set' : TITLE + ' posted');
+                await api('/api/stock/movements', { method: 'POST', body: JSON.stringify({ itemId: item.id, type, qty, date: fd.get('date'), reason: String(fd.get('reason') || '').trim() || (current === 'adjust' ? 'Set on hand' : 'Delivery') }) });
+                showToast(current === 'adjust' ? 'On hand set' : 'Receipt posted');
                 close(); onDone && onDone();
             } catch (err) { showToast('Could not post: ' + err.message); }
         });
@@ -720,7 +729,7 @@ const Stock = (() => {
                 <div class="stk2-form-row">
                     <label class="cat-sub" style="margin:0;display:flex;align-items:center;gap:0.35rem" title="${committed ? 'Move this count to another date. Frozen figures stay as committed; the baseline moves with the date.' : 'Count date (as at end of day)'}">Date <input type="date" id="stk2-count-date" value="${escHtml(c.date)}"></label>
                     ${committed
-                        ? `<a class="btn-secondary btn-sm" href="/api/stock/counts/${encodeURIComponent(c.id)}/valuation?format=csv" download>Valuation CSV</a>`
+                        ? `<button class="btn-secondary btn-sm" id="stk2-reopen" title="Turn this count back into a draft to correct it, then commit again">Reopen to edit</button><a class="btn-secondary btn-sm" href="/api/stock/counts/${encodeURIComponent(c.id)}/valuation?format=csv" download>Valuation CSV</a>`
                         : `<button class="btn-secondary btn-sm" id="stk2-save-draft">Save draft</button><button class="btn-primary btn-sm" id="stk2-commit">Commit count</button>`}
                     <button class="btn-secondary btn-sm" id="stk2-close-count">Close</button>
                 </div>
@@ -747,6 +756,16 @@ const Stock = (() => {
         wrap.querySelector('#stk2-count').scrollIntoView({ behavior: 'smooth', block: 'start' });
         wrap.querySelector('#stk2-close-count').addEventListener('click', () => { wrap.innerHTML = ''; });
         if (committed) {
+            // Reopen → draft again (figures kept, frozen snapshots cleared), edit, re-commit.
+            wrap.querySelector('#stk2-reopen').addEventListener('click', async () => {
+                if (!confirm(`Reopen "${c.label}" (${fmtDate(c.date)}) for editing? It stops being a baseline until you commit it again; the counted figures are kept.`)) return;
+                try {
+                    await api('/api/stock/counts/' + encodeURIComponent(c.id) + '/reopen', { method: 'POST' });
+                    showToast('Count reopened — edit and commit again');
+                    await renderCounts(body);
+                    openCount(body, c.id);
+                } catch (err) { showToast('Could not reopen: ' + err.message); }
+            });
             // Only the date (and label) can change on a committed count.
             wrap.querySelector('#stk2-count-date').addEventListener('change', async e => {
                 const date = e.target.value;
