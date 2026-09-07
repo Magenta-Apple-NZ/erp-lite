@@ -13,7 +13,7 @@ export async function onRequestGet({ env, params, request }) {
     try {
         const url = new URL(request.url);
         const to = isYmd(url.searchParams.get('to')) ? url.searchParams.get('to') : nzToday();
-        const project = Math.max(0, Math.min(24, parseInt(url.searchParams.get('project') || '0', 10) || 0));
+        const project = Math.max(0, Math.min(36, parseInt(url.searchParams.get('project') || '0', 10) || 0));
         const world = await loadWorld(env);
         const item = world.items.find(i => i.id === params.id);
         if (!item) return errResponse('Item not found', 404);

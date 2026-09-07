@@ -10,7 +10,7 @@ import { consumablesForecast } from './_engine.js';
 export async function onRequestGet({ env, request }) {
     try {
         const url = new URL(request.url);
-        const months = Math.max(1, Math.min(24, parseInt(url.searchParams.get('months') || '12', 10) || 12));
+        const months = Math.max(1, Math.min(36, parseInt(url.searchParams.get('months') || '13', 10) || 13));
         const [world, forecastCfg] = await Promise.all([loadWorld(env), getJson(env, 'import:forecast', null)]);
         const monthlyAvg = forecastCfg && Array.isArray(forecastCfg.monthlyAvg) ? forecastCfg.monthlyAvg : null;
         return jsonResponse(consumablesForecast(world, { monthlyAvg, today: nzToday(), months }));

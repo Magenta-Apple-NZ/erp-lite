@@ -163,7 +163,7 @@ const Stock = (() => {
                 <div class="stk2-traj-ctl">
                     ${key.length > 1 ? key.map((k, i) => `<button class="imp-view-btn${i === 0 ? ' active' : ''}" data-traj="${escHtml(k.id)}">${escHtml(k.name)}</button>`).join('') : ''}
                     <select id="stk2-traj-sc" class="stk2-select" title="Sales scenario — same as the Imports forecast"><option value="avg">Average</option><option value="good">Good +10%</option><option value="great">Great +20%</option></select>
-                    <select id="stk2-traj-range" class="stk2-select" title="How far ahead to project"><option value="12">Rolling 12 months</option><option value="13">Rolling 13 months</option></select>
+                    <select id="stk2-traj-range" class="stk2-select" title="How far ahead to project"><option value="13">Rolling 13 months</option><option value="36">Rolling 36 months</option></select>
                     <button class="imp-view-btn" id="stk2-traj-table-btn" title="Show the numbers">Table</button>
                 </div>
             </div>
@@ -200,7 +200,7 @@ const Stock = (() => {
         // KPI sparklines + trajectory: one history call per key product, with
         // a projection N months ahead (the view range) in the chosen scenario.
         const histories = {};
-        let selected = key[0]?.id || null, scenario = 'avg', months = 12;
+        let selected = key[0]?.id || null, scenario = 'avg', months = 13;
         const loadHistories = async () => {
             await Promise.all(key.map(async k => {
                 try { histories[k.id] = await api(`/api/stock/items/${encodeURIComponent(k.id)}/history?project=${months}`); } catch { histories[k.id] = null; }
@@ -227,7 +227,7 @@ const Stock = (() => {
             drawTraj();
         }));
         body.querySelector('#stk2-traj-sc').addEventListener('change', e => { scenario = e.target.value; drawTraj(); });
-        body.querySelector('#stk2-traj-range').addEventListener('change', async e => { months = Number(e.target.value) || 12; await loadHistories(); drawTraj(); });
+        body.querySelector('#stk2-traj-range').addEventListener('change', async e => { months = Number(e.target.value) || 13; await loadHistories(); drawTraj(); });
         body.querySelector('#stk2-traj-table-btn').addEventListener('click', e => {
             const t = body.querySelector('#stk2-traj-table');
             t.hidden = !t.hidden; e.currentTarget.classList.toggle('active', !t.hidden);
@@ -416,7 +416,7 @@ const Stock = (() => {
     async function renderConsumablesForecast(el) {
         if (!el) return;
         el.innerHTML = '<div class="cat-section stk2-section"><div class="orders-loading">Forecasting consumables…</div></div>';
-        let scenario = 'avg', months = 12, cf;
+        let scenario = 'avg', months = 13, cf;
         const load = async () => {
             try { cf = await api('/api/stock/consumables-forecast?months=' + months); return true; }
             catch (e) { el.innerHTML = `<div class="cat-section stk2-section"><p class="cat-sub">Consumables forecast unavailable: ${escHtml(e.message)}</p></div>`; return false; }
@@ -441,7 +441,7 @@ const Stock = (() => {
                     </div>
                     <div class="stk2-traj-ctl">
                         <select id="stk2-cf-sc" class="stk2-select" title="Sales scenario — same as the Imports forecast">${Object.entries(SC).map(([k, l]) => `<option value="${k}" ${k === scenario ? 'selected' : ''}>${l}</option>`).join('')}</select>
-                        <select id="stk2-cf-range" class="stk2-select" title="How far ahead to project"><option value="12" ${months === 12 ? 'selected' : ''}>Rolling 12 months</option><option value="13" ${months === 13 ? 'selected' : ''}>Rolling 13 months</option></select>
+                        <select id="stk2-cf-range" class="stk2-select" title="How far ahead to project"><option value="13" ${months === 13 ? 'selected' : ''}>Rolling 13 months</option><option value="36" ${months === 36 ? 'selected' : ''}>Rolling 36 months</option></select>
                     </div>
                 </div>
                 ${orderNow ? `<div class="stk2-notice stk2-notice--warn">${orderNow} consumable${orderNow === 1 ? '' : 's'} should be ordered now to land before running out (${SC[scenario]}).</div>` : ''}
@@ -472,7 +472,7 @@ const Stock = (() => {
                 <p class="cat-sub" style="margin-top:0.5rem">Mix from ${fmtDate(cf.mix.from)} → ${fmtDate(cf.mix.to)}: ${Object.entries(cf.mix.share).map(([sku, sh]) => `${escHtml(sku)} ${Math.round(sh * 100)}%`).join(' · ')}${cf.mix.ordersPerKg ? ` · ${fmtNum(1 / cf.mix.ordersPerKg)} kg per order` : ''}. Bars show month-end stock; red = out.</p>
             </div>`;
             el.querySelector('#stk2-cf-sc').addEventListener('change', e => { scenario = e.target.value; draw(); });
-            el.querySelector('#stk2-cf-range').addEventListener('change', async e => { months = Number(e.target.value) || 12; if (await load()) draw(); });
+            el.querySelector('#stk2-cf-range').addEventListener('change', async e => { months = Number(e.target.value) || 13; if (await load()) draw(); });
         };
         draw();
     }
