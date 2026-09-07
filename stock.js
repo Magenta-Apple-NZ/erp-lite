@@ -936,7 +936,9 @@ const Stock = (() => {
         // Consumables matrix — rows: products we sell (+ per-order); columns:
         // active consumables. One matrix, no versioning: it applies to every
         // sale from the beginning of time.
-        const activeCons = consumables.filter(c => c.active !== false);
+        // Courier label books never appear in the matrix — they deplete by the
+        // labels invoiced on each order, not per product.
+        const activeCons = consumables.filter(c => c.active !== false && !c.courierSku && !c.courierLabel);
         const latest = (bom.versions || []).slice().sort((a, b) => String(a.effectiveFrom).localeCompare(String(b.effectiveFrom))).pop();
         const matrix = JSON.parse(JSON.stringify(latest?.recipes || {}));
         let perDespatch = (settings.perDespatch || []).map(e => ({ ...e }));

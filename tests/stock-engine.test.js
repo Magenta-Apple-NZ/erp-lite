@@ -578,6 +578,28 @@ test('a product projects month-end on hand from its share of the seasonal kg, wi
     assert.equal(pc.scenarios.avg[1].usage, 100, '1,000 kg × 0.1 box per kg');
 });
 
+// ── Sales-history writer: catalogue-typed lines only ─────────────────────
+import { rowFromOrder } from '../functions/api/sales-history/_writer.js';
+
+test('a catalogue SKU with no product type (Hessian) is never filed as a product from its kg', () => {
+    const itemsMap = new Map([
+        ['HSN-01', { id: 'HSN-01', name: 'Hessian (KG)', kgPerUnit: 1, size: 'oneKg' }],           // no type
+        ['PT-L-1B', { id: 'PT-l-1b', name: 'Prime Ties - Loose - 1kg Bag', kgPerUnit: 1, type: 'loose', size: 'oneKg' }],
+        ['FR-07', { id: 'FR-07', name: 'Freight - Custom' }],
+    ]);
+    const hessian = { id: 'PKS-1044', createdAt: '2026-09-04T02:00:00Z', customer: { name: 'Ceracell' }, shipTo: {}, lines: [
+        { sku: 'HSN-01', description: 'Hessian (KG)', quantity: 242, unitPrice: 3, kgPerUnit: 1 },
+        { sku: 'FR-07', description: 'Freight - Custom', quantity: 1, unitPrice: 150 },
+    ] };
+    assert.equal(rowFromOrder(hessian, itemsMap), null, 'no countable product kg → no sales row, nothing for the stock engine to burn');
+    // A real Loose 1kg line still classifies.
+    const loose = { ...hessian, id: 'PKS-1045', lines: [{ sku: 'PT-l-1b', description: 'Prime Ties - Loose - 1kg Bag', quantity: 10, unitPrice: 12.9, kgPerUnit: 1 }] };
+    const r = rowFromOrder(loose, itemsMap);
+    assert.equal(r.looseKg, 10);
+    assert.equal(r.xkg.l1, 10);
+    assert.equal(r.date, '2026-09-04');
+});
+
 test('renaming an item changes nothing about its stock', () => {
     const renamed = items.map(i => i.id === 'box-10kg' ? { ...i, name: 'Carton (10 kilo)' } : i);
     const a = computeLevels(world(), '2026-10-31').items.find(i => i.id === 'box-10kg');

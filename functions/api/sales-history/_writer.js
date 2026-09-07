@@ -23,9 +23,12 @@ function catalogItem(l, itemsMap) {
 //   2. Description text keywords (legacy / manual entries).
 //   3. Catalog-stamped kgPerUnit (Hub-created orders).
 function classifyLine(l, itemsMap) {
-    // 1. Explicit Type from the items catalogue (deterministic).
+    // 1. Explicit Type from the items catalogue (deterministic). A SKU the
+    //    catalogue knows but doesn't type (Hessian, freight, courier) is
+    //    'other' — never guessed from its kg (hessian is 1 kg/unit and used
+    //    to be mis-filed as Loose 1kg, burning bags in the stock engine).
     const cat = catalogItem(l, itemsMap);
-    if (cat && cat.type) return cat.type;
+    if (cat) return cat.type || 'other';
 
     const sku  = String(l?.sku || '').toUpperCase();
     const desc = String(l?.description || '').toLowerCase();

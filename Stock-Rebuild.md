@@ -265,3 +265,5 @@ Steps 1–4 ship before 1 October so the opening count has somewhere to go.
 - **Stock → Settings tab** renders the same Settings → Stock page inline.
 - **Hero products have no reorder point.** Products report status unknown / out / ok only; replenishment is a shipment decision read off the trajectory. Consumables keep the reorder tiers.
 - **Trajectory + consumables forecast controls** match Imports: scenario dropdown (Average / Good +10% / Great +20%) applied to the projected series, and a view-range dropdown (rolling 12 or 13 months).
+- **Classifier fix.** A SKU the catalogue knows but doesn't type (Hessian, freight) is `other` — never guessed from its kg per unit. Hessian (1 kg/unit) was being filed as Loose 1kg and burning black bags. Re-run *Backfill orders* to re-file existing rows.
+- **Label books are never matrix columns** (they deplete per invoiced label).
