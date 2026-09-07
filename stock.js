@@ -445,7 +445,7 @@ const Stock = (() => {
                 </div>
                 ${orderNow ? `<div class="stk2-notice stk2-notice--warn">${orderNow} consumable${orderNow === 1 ? '' : 's'} should be ordered now (${escHtml(SC[scenario])}).</div>` : ''}
                 ${rows.length ? `<div class="stk-table-wrap"><table class="stk-table stk2-table stk2-levels stk2-cons-table">
-                    <thead><tr><th>Item</th><th style="min-width:150px">On hand</th><th style="text-align:right">Qty</th><th>Status</th><th></th><th>Order by</th><th>${cf ? cf.months.map(m => `<span class="stk2-cf-m">${monthLabel(m.ym)}</span>`).join('') : ''}</th></tr></thead>
+                    <thead><tr><th>Item</th><th style="min-width:150px">On hand</th><th style="text-align:right">Qty</th><th>Status</th><th></th><th>Order by</th><th>${cf ? cf.months.map((m, i) => i % 3 === 0 ? `<span class="stk2-cf-q" style="width:${14 * Math.min(3, cf.months.length - i) - 2}px">${monthLabel(m.ym)}</span>` : '').join('') : ''}</th></tr></thead>
                     <tbody>${rows.map(({ i, f, sc }) => `<tr class="stk2-row--${escHtml(i.status)}">
                         <td><a href="#" class="stk2-ledger-link" data-ledger="${escHtml(i.id)}" title="Open the ledger — every in and out behind this figure"><strong>${escHtml(i.name)}</strong></a></td>
                         <td>${meter(i)}</td>

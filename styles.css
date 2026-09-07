@@ -7429,3 +7429,4 @@ a.db-row:hover { background: #f8fafc; border-color: #e2e8f0; }
 .stk2-seg-btn + .stk2-seg-btn { border-left: 1px solid var(--stk-line); }
 .stk2-seg-btn.active { background: #1e40af; color: #fff; }
 .stk2-cons-table th:last-child, .stk2-cons-table td:last-child { min-width: 190px; }
+.stk2-cf-q { display: inline-block; margin-right: 2px; font-size: 0.6rem; letter-spacing: 0; text-transform: none; color: var(--stk-muted); white-space: nowrap; overflow: hidden; text-align: left; }
