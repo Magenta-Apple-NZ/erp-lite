@@ -271,3 +271,4 @@ Steps 1–4 ship before 1 October so the opening count has somewhere to go.
 - **Receive / Adjust** is one popover with a toggle.
 - **Reopen a committed count** (`POST /api/stock/counts/:id/reopen`): back to draft with figures kept and frozen snapshots cleared; edit, re-commit.
 - Sales forecast source of truth: Imports → Forecast → monthly averages (`import:forecast.monthlyAvg`, Jan–Dec kg); Good ×1.1, Great ×1.2.
+- **COGS.** `cogsFor()` — Bundled: the kg each sale took from the FIFO lots at each lot's $/kg (`fifoFor().takes`); Loose / eco Ties: kg sold × own cost per kg. Wastage costed the same way but reported separately, never inside COGS. Levels carry `cogs.thisMonth / sinceBaseline / byMonth`; ledger sale lines carry `cost`. Shown on the product tile, a by-month table under the shipment lots, and a COGS column in the ledger.

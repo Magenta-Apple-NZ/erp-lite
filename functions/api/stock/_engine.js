@@ -284,7 +284,7 @@ export function fifoFor(item, world, asOf) {
         if (!inRange(m.date, from, to)) continue;
         const q = Number(m.qty) || 0;
         if (q > 0) events.push({ date: m.date, order: 1, kind: 'lot', id: m.id, note: m.reason || m.type, qty: q, unitCost: null });
-        else if (q < 0) events.push({ date: m.date, order: 1, kind: 'take', qty: -q });
+        else if (q < 0) events.push({ date: m.date, order: 1, kind: 'take', src: 'movement', type: m.type, ref: m.id, qty: -q });
     }
     const field = SALES_KG_FIELD[item.salesKey];
     if (field) {
@@ -292,21 +292,27 @@ export function fifoFor(item, world, asOf) {
             const d = String(r.date || '').slice(0, 10);
             if (!inRange(d, from, to) || (epoch && d < epoch)) continue;
             const kg = Number(r[field]) || 0;
-            if (kg > 0) events.push({ date: d, order: 2, kind: 'take', qty: kg });
+            if (kg > 0) events.push({ date: d, order: 2, kind: 'take', src: 'sale', ref: r.id, qty: kg });
         }
     }
     events.sort((a, b) => a.date.localeCompare(b.date) || a.order - b.order);
 
     const lots = [];
-    let shortfall = 0; // sold before any lot could cover it — taken from the next lot to land
-    const take = qty => {
-        let left = qty;
+    const takes = []; // every withdrawal with the cost of the kg it consumed (FIFO) — COGS
+    let shortfall = 0, shortfallCost = 0; // sold before any lot could cover it — taken from the next lot to land
+    const take = ev => {
+        let left = ev.qty, cost = 0;
         for (const l of lots) {
             if (left <= 0) break;
             const t = Math.min(l.remaining, left);
-            l.remaining -= t; left -= t;
+            l.remaining -= t; left -= t; cost += t * l.unitCost;
         }
-        if (left > 0) shortfall += left;
+        if (left > 0) {
+            // Costed at the latest known lot cost until the next lot lands.
+            const guess = lots.length ? lots[lots.length - 1].unitCost : openingCost;
+            shortfall += left; shortfallCost += left * guess; cost += left * guess;
+        }
+        takes.push({ date: ev.date, src: ev.src, type: ev.type || null, ref: ev.ref || null, kg: r2(ev.qty), cost: r2(cost) });
     };
     for (const ev of events) {
         if (ev.kind === 'lot') {
@@ -314,14 +320,55 @@ export function fifoFor(item, world, asOf) {
             lots.push({ id: ev.id, note: ev.note, date: ev.date, qty: r2(ev.qty), remaining: ev.qty, unitCost: cost, basis: ev.unitCost != null ? (ev.basis || null) : 'carried' });
             if (shortfall > 0) { const t = Math.min(shortfall, ev.qty); lots[lots.length - 1].remaining -= t; shortfall -= t; }
         } else {
-            take(ev.qty);
+            take(ev);
         }
     }
     const out = lots.map(l => ({ ...l, remaining: r2(l.remaining), value: r2(l.remaining * l.unitCost) }));
     const onHand = r2(out.reduce((s, l) => s + l.remaining, 0) - shortfall);
     const value = r2(out.reduce((s, l) => s + l.value, 0));
     const held = out.reduce((s, l) => s + l.remaining, 0);
-    return { lots: out, onHand, value, avgCost: held > 0 ? Math.round((value / held) * 10000) / 10000 : null, shortfall: r2(shortfall), openingCost };
+    return { lots: out, onHand, value, avgCost: held > 0 ? Math.round((value / held) * 10000) / 10000 : null, shortfall: r2(shortfall), openingCost, takes };
+}
+
+// ── Cost of goods sold ───────────────────────────────────────────────────
+// Bundled: what the sales actually took from the FIFO lots, at each lot's
+// $/kg. Loose / eco Ties: kg sold × the item's own cost per kg. Wastage is
+// reported alongside, never inside COGS. Range is (from, to].
+export function cogsFor(item, world, { from, to }) {
+    const bucket = () => ({ kg: 0, cost: 0 });
+    const sales = bucket(), wastage = bucket();
+    const byMonth = {};
+    const addMonth = (d, kg, cost) => { const ym = d.slice(0, 7); byMonth[ym] = byMonth[ym] || { ym, kg: 0, cost: 0 }; byMonth[ym].kg += kg; byMonth[ym].cost += cost; };
+    if (item.id === SHIPMENT_PRODUCT_ID) {
+        const f = fifoFor(item, world, to);
+        for (const t of f?.takes || []) {
+            if (!inRange(t.date, from, to)) continue;
+            if (t.src === 'sale') { sales.kg += t.kg; sales.cost += t.cost; addMonth(t.date, t.kg, t.cost); }
+            else { wastage.kg += t.kg; wastage.cost += t.cost; }
+        }
+    } else {
+        const field = SALES_KG_FIELD[item.salesKey];
+        const unit = Number(item.unitValue) || 0;
+        const epoch = world.settings?.stockEpoch;
+        for (const r of world.sales || []) {
+            const d = String(r.date || '').slice(0, 10);
+            if (!field || !inRange(d, from, to) || (epoch && d < epoch)) continue;
+            const kg = Number(r[field]) || 0;
+            if (kg > 0) { sales.kg += kg; sales.cost += kg * unit; addMonth(d, kg, kg * unit); }
+        }
+        for (const m of world.movements?.[item.id] || []) {
+            if (!inRange(m.date, from, to) || !(Number(m.qty) < 0)) continue;
+            const kg = -Number(m.qty); wastage.kg += kg; wastage.cost += kg * unit;
+        }
+    }
+    const months = Object.values(byMonth).sort((a, b) => a.ym.localeCompare(b.ym)).map(m => ({ ym: m.ym, kg: r2(m.kg), cost: r2(m.cost), avgCost: m.kg > 0 ? Math.round((m.cost / m.kg) * 100) / 100 : null }));
+    return {
+        from, to,
+        kg: r2(sales.kg), cost: r2(sales.cost), avgCost: sales.kg > 0 ? Math.round((sales.cost / sales.kg) * 100) / 100 : null,
+        wastageKg: r2(wastage.kg), wastageCost: r2(wastage.cost),
+        byMonth: months,
+        basis: item.id === SHIPMENT_PRODUCT_ID ? 'fifo' : 'unit-cost',
+    };
 }
 
 // ── Baseline & on hand ───────────────────────────────────────────────────
@@ -423,10 +470,24 @@ export function computeLevels(world, asOf) {
         }
         // FIFO cost lots for the shipment-fed product: value on hand + lots.
         const fifo = item.id === SHIPMENT_PRODUCT_ID ? fifoFor(item, { ...world, settings: s }, asOf) : null;
+        // COGS for products: this month, since the count, and by month (last year).
+        let cogs = null;
+        if (isProduct && oh.baseline) {
+            const w2 = { ...world, settings: s };
+            const monthStart = asOf.slice(0, 7) + '-01';
+            const year = cogsFor(item, w2, { from: addDays(asOf, -365), to: asOf });
+            cogs = {
+                thisMonth: cogsFor(item, w2, { from: addDays(monthStart, -1), to: asOf }),
+                sinceBaseline: cogsFor(item, w2, { from: oh.baseline.date, to: asOf }),
+                byMonth: year.byMonth, basis: year.basis,
+            };
+            delete cogs.thisMonth.byMonth; delete cogs.sinceBaseline.byMonth;
+        }
         return {
             id: item.id, name: item.name, class: item.class, unit: item.unit, unitLabel: item.unitLabel || null, key: !!item.key, sortOrder: item.sortOrder ?? 0,
             onHand, onOrder,
             value: fifo ? fifo.value : null, avgCost: fifo ? fifo.avgCost : null, lots: fifo ? fifo.lots : undefined, shortfall: fifo ? fifo.shortfall : undefined,
+            cogs,
             baselineDate: oh.baseline?.date || null, baselineQty: oh.baseline?.qty ?? null, baselineCount: oh.baseline?.countId || null,
             consumedSinceBaseline: oh.consumed, movementsSinceBaseline: oh.movements, receiptsSinceBaseline: oh.receipts,
             avgDaily, daysCover, reorderPoint: isProduct ? null : reorderPoint, reorderMode: isProduct ? 'none' : mode, leadTimeDays, safetyDays,
@@ -734,12 +795,19 @@ export function ledgerFor(item, world, asOf) {
         if (!inRange(m.date, from, to)) continue;
         entries.push({ date: m.date, order: 2, kind: m.type, ref: m.id, label: m.type === 'receipt' ? 'Delivery received' : m.type[0].toUpperCase() + m.type.slice(1), qty: Number(m.qty) || 0, note: m.reason || '', by: m.createdBy || null });
     }
+    // Cost of each sale for products: FIFO takes (Bundled) or kg × unit cost.
+    const isProduct = item.class === 'product';
+    const fifoTakes = isProduct && item.id === SHIPMENT_PRODUCT_ID ? fifoFor(item, world, to)?.takes || [] : [];
+    const costByRef = {};
+    for (const t of fifoTakes) if (t.src === 'sale' && t.ref) costByRef[t.ref] = (costByRef[t.ref] || 0) + t.cost;
+    const unitCost = Number(item.unitValue) || 0;
     for (const r of world.sales || []) {
         const d = String(r.date || '').slice(0, 10);
         if (!inRange(d, from, to) || (epoch && d < epoch)) continue;
         const q = rowConsumption(r, ctx).byItem[item.id] || 0;
         if (!q) continue;
-        entries.push({ date: d, order: 3, kind: 'sale', ref: r.id, label: r.id, qty: -q,
+        const cost = !isProduct ? null : item.id === SHIPMENT_PRODUCT_ID ? (costByRef[r.id] != null ? r2(costByRef[r.id]) : null) : r2(q * unitCost);
+        entries.push({ date: d, order: 3, kind: 'sale', ref: r.id, label: r.id, qty: -q, ...(cost != null ? { cost } : {}),
                        note: [r.customer, r.branch].filter(Boolean).join(' · ') + (r.invoice ? ` · ${r.invoice}` : '') + (r.labels ? ` · ${r.labels} label${r.labels === 1 ? '' : 's'}` : '') });
     }
     entries.sort((a, b) => a.date.localeCompare(b.date) || a.order - b.order || String(a.ref).localeCompare(String(b.ref)));

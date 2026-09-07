@@ -600,6 +600,49 @@ test('a catalogue SKU with no product type (Hessian) is never filed as a product
     assert.equal(r.date, '2026-09-04');
 });
 
+// ── COGS ─────────────────────────────────────────────────────────────────
+import { cogsFor } from '../functions/api/stock/_engine.js';
+
+test('Bundled COGS is what the sales took from the FIFO lots at each lot\'s $/kg', () => {
+    // Opening 5,000 @ 12.50 (item unitValue, no priced shipment before 1 Oct); ship-41 lands 10 Oct: 1,000 @ 4.50.
+    const s1 = { id: 'PKS-1', date: '2026-10-05', bundlesKg: 4000, looseKg: 0, ecoTiesKg: 0, xkg: { b10: 4000 } };
+    const s2 = { id: 'PKS-2', date: '2026-11-03', bundlesKg: 1200, looseKg: 0, ecoTiesKg: 0, xkg: { b10: 1200 } }; // 1,000 @ 12.5 + 200 @ 4.5
+    const w = world({ sales: [s1, s2], movements: { 'prime-tie-bundled': [{ id: 'w', itemId: 'prime-tie-bundled', date: '2026-11-10', qty: -50, type: 'wastage' }] } });
+    const all = cogsFor(items[0], w, { from: '2026-10-01', to: '2026-11-30' });
+    assert.equal(all.basis, 'fifo');
+    assert.equal(all.kg, 5200);
+    assert.equal(all.cost, 4000 * 12.5 + 1000 * 12.5 + 200 * 4.5);
+    assert.deepEqual(all.byMonth.map(m => [m.ym, m.kg, m.cost]), [['2026-10', 4000, 50000], ['2026-11', 1200, 13400]]);
+    assert.equal(all.byMonth[1].avgCost, Math.round((13400 / 1200) * 100) / 100);
+    assert.equal(all.wastageKg, 50);
+    assert.equal(all.wastageCost, 50 * 4.5, 'wastage costed from the lot it came out of, reported separately');
+    // Only November.
+    const nov = cogsFor(items[0], w, { from: '2026-10-31', to: '2026-11-30' });
+    assert.equal(nov.kg, 1200);
+    assert.equal(nov.cost, 13400);
+    // Levels carry this month / since count / by month; ledger sale lines carry cost.
+    const lv = computeLevels(w, '2026-11-30');
+    const b = lv.items.find(i => i.id === SHIPMENT_PRODUCT_ID);
+    assert.equal(b.cogs.thisMonth.cost, 13400);
+    assert.equal(b.cogs.sinceBaseline.cost, 63400);
+    assert.equal(b.cogs.byMonth.length, 2);
+    const lg = ledgerFor(items[0], w, '2026-11-30');
+    assert.equal(lg.entries.find(e => e.ref === 'PKS-2').cost, 13400);
+    assert.equal(lg.entries.find(e => e.ref === 'PKS-1').cost, 50000);
+});
+
+test('Loose / eco Ties COGS is kg sold × the item\'s own cost per kg', () => {
+    const w = world({ sales: [saleLoose5] }); // 50 kg loose @ unitValue 11
+    const c = cogsFor(items[1], w, { from: '2026-10-01', to: '2026-10-31' });
+    assert.equal(c.basis, 'unit-cost');
+    assert.equal(c.kg, 50);
+    assert.equal(c.cost, 550);
+    assert.equal(c.avgCost, 11);
+    assert.equal(ledgerFor(items[1], w, '2026-10-31').entries.find(e => e.kind === 'sale').cost, 550);
+    // A consumable never carries a cost on its sale lines.
+    assert.equal(ledgerFor(items[3], w, '2026-10-31').entries.find(e => e.kind === 'sale').cost, undefined);
+});
+
 test('renaming an item changes nothing about its stock', () => {
     const renamed = items.map(i => i.id === 'box-10kg' ? { ...i, name: 'Carton (10 kilo)' } : i);
     const a = computeLevels(world(), '2026-10-31').items.find(i => i.id === 'box-10kg');

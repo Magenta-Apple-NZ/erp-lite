@@ -261,6 +261,7 @@ const Stock = (() => {
             <div class="stk2-tile-sub">${escHtml(cover)}${lv.onOrder ? ` · <span title="On order — not included in on hand">${fmtNum(lv.onOrder)} ${lv.unit} on order</span>` : ''}</div>
             <div class="stk2-tile-foot">${statusChip(lv)}<div class="stk2-spark" aria-hidden="true"></div></div>
             ${lv.value != null ? `<div class="stk2-tile-sub" title="FIFO: oldest shipment lot sold first">Value <strong>$${fmtNum(lv.value)}</strong>${lv.avgCost != null ? ` · avg $${fmtNum(lv.avgCost, 2)}/kg` : ''} <span class="cat-sub">FIFO</span></div>` : ''}
+            ${lv.cogs ? `<div class="stk2-tile-sub" title="Cost of goods sold — ${lv.cogs.basis === 'fifo' ? 'what the sales took from the FIFO lots, at each lot\'s $/kg' : 'kg sold × this product\'s cost per kg'}">COGS this month <strong>$${fmtNum(lv.cogs.thisMonth.cost)}</strong> · ${fmtNum(lv.cogs.thisMonth.kg)} kg${lv.cogs.thisMonth.avgCost != null ? ` @ $${fmtNum(lv.cogs.thisMonth.avgCost, 2)}` : ''} <span class="cat-sub">· since count $${fmtNum(lv.cogs.sinceBaseline.cost)}</span></div>` : ''}
             ${lv.baselineDate ? `<div class="stk2-tile-base">Counted ${fmtDate(lv.baselineDate)}</div>` : ''}
             <div class="stk2-io stk2-tile-io"><button class="btn-secondary btn-sm" data-move="in" data-item="${escHtml(lv.id)}" title="Receive a delivery, or set on hand to what's actually there (landed shipments are added automatically)">Receive / Adjust</button></div>
         </div>`;
@@ -398,6 +399,12 @@ const Stock = (() => {
             ${lv.shortfall ? `<p class="cat-sub stk2-var--neg" style="margin-top:0.5rem">${fmtNum(lv.shortfall)} kg sold beyond what the lots hold — the next shipment to land covers it first.</p>` : ''}`
             : '<p class="cat-sub">No lots yet — commit the opening count, then received shipments appear here.</p>'}
             ${(lv.onOrder ? `<p class="cat-sub" style="margin-top:0.5rem">${fmtNum(lv.onOrder)} kg on order (not in on hand).</p>` : '')}
+            ${lv.cogs && lv.cogs.byMonth && lv.cogs.byMonth.length ? `
+            <h3 class="cat-sub" style="margin:1rem 0 0.25rem"><strong>Cost of goods sold</strong> · by month, ${lv.cogs.basis === 'fifo' ? 'FIFO' : 'at unit cost'}${lv.cogs.sinceBaseline.wastageKg ? ` · wastage ${fmtNum(lv.cogs.sinceBaseline.wastageKg)} kg ($${fmtNum(lv.cogs.sinceBaseline.wastageCost)}) shown separately` : ''}</h3>
+            <div class="stk-table-wrap"><table class="stk-table stk2-table" style="max-width:520px">
+                <thead><tr><th>Month</th><th style="text-align:right">Sold kg</th><th style="text-align:right">Avg $/kg</th><th style="text-align:right">COGS</th></tr></thead>
+                <tbody>${lv.cogs.byMonth.slice().reverse().map(m => `<tr><td>${new Date(Date.UTC(Number(m.ym.slice(0, 4)), Number(m.ym.slice(5, 7)) - 1, 1)).toLocaleDateString('en-NZ', { month: 'short', year: 'numeric', timeZone: 'UTC' })}</td><td style="text-align:right;font-variant-numeric:tabular-nums">${fmtNum(m.kg)}</td><td style="text-align:right;font-variant-numeric:tabular-nums">${m.avgCost != null ? '$' + fmtNum(m.avgCost, 2) : '—'}</td><td style="text-align:right;font-variant-numeric:tabular-nums"><strong>$${fmtNum(m.cost)}</strong></td></tr>`).join('')}</tbody>
+            </table></div>` : ''}
         </div>`;
     }
 
@@ -493,7 +500,7 @@ const Stock = (() => {
             ${lg.baseline ? `
             <div class="stk2-ledger-sum"><span>Baseline <strong>${q(lg.baseline.qty)}</strong></span><span>Closing <strong>${lg.closing != null ? fmtQty(lg.closing, lg.unit, null, lg.unitLabel) : '—'}</strong></span><span class="cat-sub">${rows.length} entries · newest first</span></div>
             <div class="stk-table-wrap stk2-ledger-wrap"><table class="stk-table stk2-table">
-                <thead><tr><th>Date</th><th>Type</th><th>Reference</th><th style="text-align:right">In</th><th style="text-align:right">Out</th><th style="text-align:right">Balance</th></tr></thead>
+                <thead><tr><th>Date</th><th>Type</th><th>Reference</th><th style="text-align:right">In</th><th style="text-align:right">Out</th><th style="text-align:right">Balance</th>${rows.some(e => e.cost != null) ? '<th style="text-align:right" title="Cost of goods sold for this sale">COGS</th>' : ''}</tr></thead>
                 <tbody>${rows.map(e => `<tr class="stk2-ledger--${escHtml(e.kind)}">
                     <td style="white-space:nowrap">${fmtDate(e.date)}</td>
                     <td>${escHtml(KIND[e.kind] || e.kind)}</td>
@@ -501,6 +508,7 @@ const Stock = (() => {
                     <td style="text-align:right;font-variant-numeric:tabular-nums" class="stk2-var--pos">${e.qty > 0 ? '+' + q(e.qty) : ''}</td>
                     <td style="text-align:right;font-variant-numeric:tabular-nums" class="stk2-var--neg">${e.qty < 0 ? '−' + q(e.qty) : ''}</td>
                     <td style="text-align:right;font-variant-numeric:tabular-nums"><strong>${fmtQty(e.balance, lg.unit, null, lg.unitLabel)}</strong></td>
+                    ${rows.some(x => x.cost != null) ? `<td style="text-align:right;font-variant-numeric:tabular-nums">${e.cost != null ? '$' + fmtNum(e.cost) : ''}</td>` : ''}
                 </tr>`).join('')}</tbody>
             </table></div>`
             : `<p class="cat-sub">No committed count yet — the ledger starts from a baseline count.</p>`}
