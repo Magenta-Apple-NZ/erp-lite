@@ -8,6 +8,8 @@ import { jsonResponse, errResponse } from '../_xero.js';
 import { nzToday, nzYmd } from '../_dates.js';
 import { rowFromOrder } from '../sales-history/_writer.js';
 import { loadItemsMap } from '../catalog/items.js';
+import { loadWorld } from './_store.js';
+import { stockAnchor } from './_engine.js';
 
 export async function onRequestGet({ env, request }) {
     try {
@@ -18,6 +20,8 @@ export async function onRequestGet({ env, request }) {
             Promise.all([...new Set(ids)].map(id => env.ORDERS_KV.get('order:' + id, { type: 'json' }))),
             loadItemsMap(env).catch(() => null),
         ]);
+        let anchor = null;
+        try { anchor = stockAnchor(await loadWorld(env), nzToday()); } catch { /* optional */ }
         const rows = [];
         for (const o of orders) {
             if (!o || !o.createdAt) continue;
@@ -31,11 +35,17 @@ export async function onRequestGet({ env, request }) {
                 invoice: o.xeroInvoiceNumber || '',
                 totalKg: Math.round((b + l + e) * 100) / 100, bundlesKg: b, looseKg: l, ecoTiesKg: e,
                 counted: !!r, lines: other,
+                // On/before the count date: already inside the count, so it never comes off stock again.
+                inCount: !!(anchor && date <= anchor.date),
             });
         }
         rows.sort((a, b) => b.date.localeCompare(a.date) || String(b.id).localeCompare(String(a.id)));
         const sum = k => Math.round(rows.reduce((s, r) => s + (r[k] || 0), 0) * 100) / 100;
-        return jsonResponse({ month, rows, totals: { orders: rows.length, totalKg: sum('totalKg'), bundlesKg: sum('bundlesKg'), looseKg: sum('looseKg'), ecoTiesKg: sum('ecoTiesKg') } });
+        const after = rows.filter(r => !r.inCount);
+        const sumA = k => Math.round(after.reduce((x, r) => x + (r[k] || 0), 0) * 100) / 100;
+        return jsonResponse({ month, countDate: anchor ? anchor.date : null, countLabel: anchor ? anchor.label : null, rows,
+            totals: { orders: rows.length, totalKg: sum('totalKg'), bundlesKg: sum('bundlesKg'), looseKg: sum('looseKg'), ecoTiesKg: sum('ecoTiesKg') },
+            afterCount: { orders: after.length, totalKg: sumA('totalKg'), bundlesKg: sumA('bundlesKg'), looseKg: sumA('looseKg'), ecoTiesKg: sumA('ecoTiesKg') } });
     } catch (e) {
         return errResponse(e.message);
     }

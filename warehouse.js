@@ -477,6 +477,8 @@ const Warehouse = (() => {
         if (_importsPrefetchP) {
             try { ({ config, actuals } = await _importsPrefetchP); } catch (e) {}
             _importsPrefetchP = null; // consume once — next visit fetches fresh
+            // The prefetch may predate the latest count / orders — always refresh the forecast config.
+            try { const fresh = await api('/api/import/forecast'); if (fresh) { config = fresh; if (fresh.actuals) actuals = { ...fresh.actuals }; } } catch (e) { /* keep prefetched */ }
         } else {
             try { config = (await api('/api/import/forecast')) || {}; } catch (e) { /* ok */ }
             if (config.actuals) actuals = { ...config.actuals };

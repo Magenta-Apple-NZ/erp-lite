@@ -608,6 +608,7 @@ const Stock = (() => {
             const rows = type === 'all' ? d.rows : d.rows.filter(r => r[t.key] > 0);
             const kg = v => v ? fmtNum(v) : '<span class="cat-sub">—</span>';
             const sum = k => Math.round(rows.reduce((s, r) => s + (r[k] || 0), 0) * 100) / 100;
+            const sumAfter = k => Math.round(rows.filter(r => !r.inCount).reduce((s, r) => s + (r[k] || 0), 0) * 100) / 100;
             box.innerHTML = `
                 <h3 class="modal-title">Sales · ${escHtml(label)} <span class="modal-hint">${rows.length} of ${d.rows.length} order${d.rows.length === 1 ? '' : 's'} · NZ dates</span></h3>
                 <div class="stk2-ledger-sum">
@@ -617,14 +618,14 @@ const Stock = (() => {
                 </div>
                 <div class="stk-table-wrap stk2-ledger-wrap"><table class="stk-table stk2-table">
                     <thead><tr><th>Date</th><th>Order</th><th>Customer</th><th style="text-align:right">kg ordered</th><th style="text-align:right">${escHtml(t.col)}</th></tr></thead>
-                    <tbody>${rows.length ? rows.map(r => `<tr class="${r[t.key] ? '' : 'stk2-lot--done'}">
-                        <td style="white-space:nowrap">${fmtDate(r.date)}</td>
+                    <tbody>${rows.length ? rows.map(r => `<tr class="${r[t.key] && !r.inCount ? '' : 'stk2-lot--done'}" title="${r.inCount ? 'On or before the count (' + fmtDate(d.countDate) + ') — already inside the counted figure' : ''}">
+                        <td style="white-space:nowrap">${fmtDate(r.date)}${r.inCount ? '<div class="cat-sub" style="margin:0">in count</div>' : ''}</td>
                         <td><a href="#orders/${encodeURIComponent(r.id)}" onclick="document.querySelector('.modal-overlay')?.remove()">${escHtml(r.id)}</a>${r.invoice ? `<div class="cat-sub" style="margin:0">${escHtml(r.invoice)}</div>` : ''}</td>
                         <td>${escHtml(r.customer)}${r.branch ? `<div class="cat-sub" style="margin:0">${escHtml(r.branch)}</div>` : ''}${!r.counted ? `<div class="cat-sub" style="margin:0" title="${escHtml(r.lines.join(', '))}">no product kg — ${escHtml(r.lines.slice(0, 2).join(', '))}${r.lines.length > 2 ? '…' : ''}</div>` : ''}</td>
                         <td style="text-align:right;font-variant-numeric:tabular-nums">${kg(r.totalKg)}</td>
                         <td style="text-align:right;font-variant-numeric:tabular-nums"><strong>${kg(r[t.key])}</strong></td>
                     </tr>`).join('') : `<tr><td colspan="5" class="cat-sub">No ${type === 'all' ? '' : t.label + ' '}orders this month.</td></tr>`}</tbody>
-                    <tfoot><tr class="stk2-ms-foot"><td colspan="3">Total · ${rows.length} order${rows.length === 1 ? '' : 's'}</td><td style="text-align:right;font-variant-numeric:tabular-nums">${fmtNum(sum('totalKg'))}</td><td style="text-align:right;font-variant-numeric:tabular-nums">${fmtNum(sum(t.key))}</td></tr></tfoot>
+                    <tfoot><tr class="stk2-ms-foot"><td colspan="3">Total · ${rows.length} order${rows.length === 1 ? '' : 's'}</td><td style="text-align:right;font-variant-numeric:tabular-nums">${fmtNum(sum('totalKg'))}</td><td style="text-align:right;font-variant-numeric:tabular-nums">${fmtNum(sum(t.key))}</td></tr>${d.countDate && rows.some(r => r.inCount) ? `<tr class="stk2-ms-foot"><td colspan="3" class="cat-sub">After the count (${fmtDate(d.countDate)}) — what comes off stock and shows as Actual</td><td style="text-align:right;font-variant-numeric:tabular-nums">${fmtNum(sumAfter('totalKg'))}</td><td style="text-align:right;font-variant-numeric:tabular-nums">${fmtNum(sumAfter(t.key))}</td></tr>` : ''}</tfoot>
                 </table></div>
                 <div class="modal-actions"><button class="btn-secondary" id="stk2-ms-close">Close</button></div>`;
             box.querySelector('#stk2-ms-close').addEventListener('click', close);
