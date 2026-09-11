@@ -444,7 +444,8 @@ const Warehouse = (() => {
                     fetch('/api/orders').then(r => r.ok ? r.json() : []).catch(() => []),
                 ]);
                 config = configData || {};
-                for (const o of (ordersData || [])) {
+                if (config.actuals) { actuals = { ...config.actuals }; }
+                for (const o of (config.actuals ? [] : (ordersData || []))) {
                     const ym = nzYm(o.createdAt);
                     if (!ym) continue;
                     // Pre-Hub-live months are sourced from the sales sheet
@@ -478,8 +479,9 @@ const Warehouse = (() => {
             _importsPrefetchP = null; // consume once — next visit fetches fresh
         } else {
             try { config = (await api('/api/import/forecast')) || {}; } catch (e) { /* ok */ }
+            if (config.actuals) actuals = { ...config.actuals };
             try {
-                const orders = await api('/api/orders');
+                const orders = config.actuals ? [] : await api('/api/orders');
                 for (const o of (orders || [])) {
                     const ym = nzYm(o.createdAt);
                     if (!ym) continue;
@@ -2591,7 +2593,7 @@ const Warehouse = (() => {
                                 <span style="color:#94a3b8">· ${escHtml(config.stocktake.label)}</span>
                                 &nbsp;&middot;&nbsp; Stock now: <strong>${config.stocktake.onHandNow == null ? '—' : fmtFull(config.stocktake.onHandNow) + ' kg'}</strong>
                                 <span class="chart-info" title="Count ${fmtFull(config.startingKg ?? 0)} kg − ${fmtFull(config.stocktake.soldSince || 0)} kg sold (orders) + ${fmtFull(config.stocktake.receivedSince || 0)} kg shipments landed ${(config.stocktake.adjustedSince || 0) >= 0 ? '+' : '−'} ${fmtFull(Math.abs(config.stocktake.adjustedSince || 0))} kg adjustments, as at ${config.stocktake.asOf}">&#9432;</span>
-                                <a class="btn-link" href="#warehouse">Manage counts</a></p>` : `
+                                <a class="btn-link" href="#warehouse">Manage counts</a> &middot; <button class="btn-link" id="imp-month-sales-btn" type="button">This month's sales</button></p>` : `
                             <p class="cat-sub">Stocktake: <strong>${fmtFull(config.startingKg ?? 0)} kg</strong>
                                 ${config.stocktakeDate ? `as of <strong>${config.stocktakeDate}</strong>` : '<span style="color:#94a3b8">(no date set — assuming start of this month)</span>'}
                                 <button class="btn-link" id="imp-edit-stock-btn">Edit</button>
@@ -2717,6 +2719,7 @@ const Warehouse = (() => {
             document.getElementById('imp-stock-cancel-btn')?.addEventListener('click', () => {
                 document.getElementById('imp-stock-edit').style.display = 'none';
             });
+            document.getElementById('imp-month-sales-btn')?.addEventListener('click', () => { if (typeof Stock !== 'undefined') Stock.openMonthSales(); });
             document.getElementById('imp-stock-save-btn')?.addEventListener('click', async () => {
                 const kg   = parseFloat(document.getElementById('imp-stock-kg').value) || 0;
                 const date = document.getElementById('imp-stock-date').value;
@@ -3431,7 +3434,8 @@ const Warehouse = (() => {
                 fetch('/api/orders').then(r => r.ok ? r.json() : []).catch(() => []),
             ]);
             config = configData || {};
-            for (const o of (ordersData || [])) {
+            if (config.actuals) actuals = { ...config.actuals };
+            for (const o of (config.actuals ? [] : (ordersData || []))) {
                 const ym = nzYm(o.createdAt);
                 if (!ym || ym < HUB_LIVE_YM) continue;
                 const kg = (o.lines || []).reduce((s, l) => s + lineKg(l), 0);

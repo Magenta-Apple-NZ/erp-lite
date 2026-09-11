@@ -249,6 +249,7 @@ const Stock = (() => {
         }));
         // Item name → its ledger (audit trail with running balance).
         body.querySelectorAll('[data-ledger]').forEach(a => a.addEventListener('click', e => { e.preventDefault(); openLedger(a.dataset.ledger); }));
+        body.querySelectorAll('[data-month-sales]').forEach(a => a.addEventListener('click', e => { e.preventDefault(); openMonthSales(); }));
     }
 
     function kpiTile(lv) {
@@ -261,7 +262,7 @@ const Stock = (() => {
             <div class="stk2-tile-sub">${escHtml(cover)}${lv.onOrder ? ` · <span title="On order — not included in on hand">${fmtNum(lv.onOrder)} ${lv.unit} on order</span>` : ''}</div>
             <div class="stk2-tile-foot">${statusChip(lv)}<div class="stk2-spark" aria-hidden="true"></div></div>
             ${lv.value != null ? `<div class="stk2-tile-sub" title="FIFO: oldest shipment lot sold first">Value <strong>$${fmtNum(lv.value)}</strong>${lv.avgCost != null ? ` · avg $${fmtNum(lv.avgCost, 2)}/kg` : ''} <span class="cat-sub">FIFO</span></div>` : ''}
-            ${lv.cogs ? `<div class="stk2-tile-sub" title="Cost of goods sold — ${lv.cogs.basis === 'fifo' ? 'what the sales took from the FIFO lots, at each lot\'s $/kg' : 'kg sold × this product\'s cost per kg'}">COGS this month <strong>$${fmtNum(lv.cogs.thisMonth.cost)}</strong> · ${fmtNum(lv.cogs.thisMonth.kg)} kg${lv.cogs.thisMonth.avgCost != null ? ` @ $${fmtNum(lv.cogs.thisMonth.avgCost, 2)}` : ''} <span class="cat-sub">· since count $${fmtNum(lv.cogs.sinceBaseline.cost)}</span></div>` : ''}
+            ${lv.cogs ? `<div class="stk2-tile-sub" title="Cost of goods sold — ${lv.cogs.basis === 'fifo' ? 'what the sales took from the FIFO lots, at each lot\'s $/kg' : 'kg sold × this product\'s cost per kg'}"><a href="#" class="stk2-ledger-link" data-month-sales="1" title="This month's orders and their kg">COGS this month</a> <strong>$${fmtNum(lv.cogs.thisMonth.cost)}</strong> · ${fmtNum(lv.cogs.thisMonth.kg)} kg${lv.cogs.thisMonth.avgCost != null ? ` @ $${fmtNum(lv.cogs.thisMonth.avgCost, 2)}` : ''} <span class="cat-sub">· since count $${fmtNum(lv.cogs.sinceBaseline.cost)}</span></div>` : ''}
             ${lv.baselineDate ? `<div class="stk2-tile-base">Counted ${fmtDate(lv.baselineDate)}</div>` : ''}
             <div class="stk2-io stk2-tile-io"><button class="btn-secondary btn-sm" data-move="in" data-item="${escHtml(lv.id)}" title="Receive a delivery, or set on hand to what's actually there (landed shipments are added automatically)">Receive / Adjust</button></div>
         </div>`;
@@ -581,6 +582,54 @@ const Stock = (() => {
                 close(); onDone && onDone();
             } catch (err) { showToast('Could not post: ' + err.message); }
         });
+    }
+
+    // This month's sales — every order in the month with the kg the stock
+    // engine attributes to it. Opened from the Imports header and the tiles.
+    async function openMonthSales(ym) {
+        const overlay = document.createElement('div');
+        overlay.className = 'modal-overlay';
+        overlay.innerHTML = `<div class="modal-box modal-box--wide stk2-modal stk2-ledger" role="dialog" aria-modal="true"><h3 class="modal-title">Loading sales…</h3></div>`;
+        document.body.appendChild(overlay);
+        const close = () => { overlay.remove(); document.removeEventListener('keydown', onKey); };
+        const onKey = e => { if (e.key === 'Escape') close(); };
+        document.addEventListener('keydown', onKey);
+        overlay.addEventListener('click', e => { if (e.target === overlay) close(); });
+        const box = overlay.querySelector('.modal-box');
+        const draw = async (month) => {
+            box.innerHTML = `<h3 class="modal-title">Loading sales…</h3>`;
+            let d;
+            try { d = await api('/api/stock/sales?month=' + encodeURIComponent(month)); }
+            catch (e) { box.innerHTML = `<h3 class="modal-title">Sales</h3><p class="cat-sub">${escHtml(e.message)}</p><div class="modal-actions"><button class="btn-secondary" id="stk2-ms-close">Close</button></div>`; box.querySelector('#stk2-ms-close').addEventListener('click', close); return; }
+            const [y, m] = month.split('-').map(Number);
+            const label = new Date(Date.UTC(y, m - 1, 1)).toLocaleDateString('en-NZ', { month: 'long', year: 'numeric', timeZone: 'UTC' });
+            const prev = `${m === 1 ? y - 1 : y}-${String(m === 1 ? 12 : m - 1).padStart(2, '0')}`;
+            const next = `${m === 12 ? y + 1 : y}-${String(m === 12 ? 1 : m + 1).padStart(2, '0')}`;
+            const kg = v => v ? fmtNum(v) : '<span class="cat-sub">—</span>';
+            box.innerHTML = `
+                <h3 class="modal-title">Sales · ${escHtml(label)} <span class="modal-hint">${d.totals.orders} order${d.totals.orders === 1 ? '' : 's'} · NZ dates</span></h3>
+                <div class="stk2-ledger-sum">
+                    <span>Bundled <strong>${fmtNum(d.totals.bundlesKg)} kg</strong></span>
+                    <span>All product <strong>${fmtNum(d.totals.totalKg)} kg</strong></span>
+                    ${d.totals.looseKg ? `<span>Loose ${fmtNum(d.totals.looseKg)} kg</span>` : ''}${d.totals.ecoTiesKg ? `<span>eco ${fmtNum(d.totals.ecoTiesKg)} kg</span>` : ''}
+                    <span class="stk2-form-row" style="margin-left:auto"><button class="btn-secondary btn-sm" data-ms="${prev}">‹</button><button class="btn-secondary btn-sm" data-ms="${next}">›</button></span>
+                </div>
+                <p class="cat-sub" style="margin:0 0 0.5rem">Only <strong>Bundled kg</strong> moves Prime Tie Bundled stock and the forecast. Orders with no product kg (Hessian, freight) are listed for completeness and move nothing.</p>
+                <div class="stk-table-wrap stk2-ledger-wrap"><table class="stk-table stk2-table">
+                    <thead><tr><th>Date</th><th>Order</th><th>Customer</th><th style="text-align:right">kg ordered</th><th style="text-align:right">Bundled kg</th></tr></thead>
+                    <tbody>${d.rows.length ? d.rows.map(r => `<tr class="${r.bundlesKg ? '' : 'stk2-lot--done'}">
+                        <td style="white-space:nowrap">${fmtDate(r.date)}</td>
+                        <td><a href="#orders/${encodeURIComponent(r.id)}" onclick="document.querySelector('.modal-overlay')?.remove()">${escHtml(r.id)}</a>${r.invoice ? `<div class="cat-sub" style="margin:0">${escHtml(r.invoice)}</div>` : ''}</td>
+                        <td>${escHtml(r.customer)}${r.branch ? `<div class="cat-sub" style="margin:0">${escHtml(r.branch)}</div>` : ''}${!r.counted ? `<div class="cat-sub" style="margin:0" title="${escHtml(r.lines.join(', '))}">no product kg — ${escHtml(r.lines.slice(0, 2).join(', '))}${r.lines.length > 2 ? '…' : ''}</div>` : ''}</td>
+                        <td style="text-align:right;font-variant-numeric:tabular-nums">${kg(r.totalKg)}</td>
+                        <td style="text-align:right;font-variant-numeric:tabular-nums"><strong>${kg(r.bundlesKg)}</strong></td>
+                    </tr>`).join('') : '<tr><td colspan="5" class="cat-sub">No orders this month.</td></tr>'}</tbody>
+                </table></div>
+                <div class="modal-actions"><button class="btn-secondary" id="stk2-ms-close">Close</button></div>`;
+            box.querySelector('#stk2-ms-close').addEventListener('click', close);
+            box.querySelectorAll('[data-ms]').forEach(b => b.addEventListener('click', () => draw(b.dataset.ms)));
+        };
+        draw(ym || nzToday().slice(0, 7));
     }
 
     function meter(lv) {
@@ -1162,5 +1211,5 @@ const Stock = (() => {
         });
     }
 
-    return { renderWarehouse, renderDashboard, renderCounts, renderSettingsTab };
+    return { renderWarehouse, renderDashboard, renderCounts, renderSettingsTab, openMonthSales };
 })();

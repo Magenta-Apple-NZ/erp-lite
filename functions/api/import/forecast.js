@@ -11,7 +11,7 @@
 import { jsonResponse, errResponse } from '../_xero.js';
 import { nzToday } from '../_dates.js';
 import { loadWorld } from '../stock/_store.js';
-import { stockAnchor } from '../stock/_engine.js';
+import { stockAnchor, actualsByMonth } from '../stock/_engine.js';
 
 const KEY = 'import:forecast';
 
@@ -44,9 +44,9 @@ const DEFAULTS = {
 async function loadAnchor(env) {
     try {
         const world = await loadWorld(env);
-        return stockAnchor(world, nzToday());
+        return { anchor: stockAnchor(world, nzToday()), actuals: actualsByMonth(world.sales, 'bundles') };
     } catch {
-        return null;
+        return { anchor: null, actuals: null };
     }
 }
 
@@ -54,7 +54,11 @@ export async function onRequestGet({ env }) {
     try {
         const raw = await env.ORDERS_KV.get(KEY);
         const config = raw ? JSON.parse(raw) : { ...DEFAULTS };
-        const anchor = await loadAnchor(env);
+        const { anchor, actuals } = await loadAnchor(env);
+        // Actual kg sold by month — Prime Tie Bundled only, from Sales History
+        // (the same rows the stock engine depletes from). The client used to
+        // sum every order line's kg, which let Hessian / Loose / eco inflate it.
+        if (actuals) config.actuals = actuals;
         if (anchor) {
             config.manualStartingKg    = config.startingKg;
             config.manualStocktakeDate = config.stocktakeDate;

@@ -727,6 +727,21 @@ export function consumablesForecast(world, { monthlyAvg, today, months = 12, mix
              months: list.map(m => ({ ym: m.ym, kgAvg: r2(m.kgAvg), fraction: Math.round(m.fraction * 1000) / 1000 })), items };
 }
 
+// Actual kg sold by month for one sales bucket (default: Bundled — the
+// product the Imports forecast tracks). From sales_history, so it matches
+// the stock engine exactly; Hessian / freight never enter it.
+export function actualsByMonth(rows, salesKey = 'bundles') {
+    const field = SALES_KG_FIELD[salesKey];
+    const out = {};
+    for (const r of rows || []) {
+        const ym = String(r.date || '').slice(0, 7);
+        if (!/^\d{4}-\d{2}$/.test(ym)) continue;
+        const kg = Number(r[field]) || 0;
+        if (kg > 0) out[ym] = r2((out[ym] || 0) + kg);
+    }
+    return out;
+}
+
 // ── 12-month projection for one item ─────────────────────────────────────
 // Month-end on hand from today on the shared seasonal curve. Consumables
 // reuse consumablesForecast; a product takes its share of forecast kg (its

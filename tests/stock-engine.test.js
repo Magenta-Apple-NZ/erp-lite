@@ -650,3 +650,17 @@ test('renaming an item changes nothing about its stock', () => {
     assert.equal(a.onHand, b.onHand);
     assert.equal(a.status, b.status);
 });
+
+// ── Forecast actuals come from Sales History, Bundled only ───────────────
+import { actualsByMonth } from '../functions/api/stock/_engine.js';
+
+test('monthly actuals for the forecast count Bundled kg only, by NZ month', () => {
+    const rows = [
+        { id: 'a', date: '2026-09-02', bundlesKg: 800, looseKg: 300, ecoTiesKg: 0 },
+        { id: 'b', date: '2026-09-20', bundlesKg: 90, looseKg: 0, ecoTiesKg: 100 },
+        { id: 'c', date: '2026-10-01', bundlesKg: 10, looseKg: 0, ecoTiesKg: 0 },
+        { id: 'd', date: '2026-10-05', bundlesKg: 0, looseKg: 50, ecoTiesKg: 0 }, // loose only → no Bundled actual
+    ];
+    assert.deepEqual(actualsByMonth(rows), { '2026-09': 890, '2026-10': 10 });
+    assert.deepEqual(actualsByMonth(rows, 'loose'), { '2026-09': 300, '2026-10': 50 });
+});
