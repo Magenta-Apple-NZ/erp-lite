@@ -2347,7 +2347,7 @@ const Warehouse = (() => {
                 <tr class="imp-row ${r.incoming ? 'imp-has-import' : ''} ${!hasActual && status !== 'ok' ? 'imp-row--' + status : ''}">
                     <td class="imp-td-month">${escHtml(r.label)}</td>
                     <td class="imp-td-num ${hasActual ? 'imp-actual-val' : ''}">${hasActual ? `<button class="imp-actual-link" data-month="${escHtml(r.ym)}" title="Orders in ${escHtml(r.label)} — Bundled kg sold after the count">${fmtFull(r.actualSales)}</button>` : '—'}</td>
-                    <td class="imp-td-num">${fmtFull(sales)}</td>
+                    <td class="imp-td-num" title="${hasActual ? (sales > r.actualSales ? `Conservative: ${fmtFull(r.actualSales)} kg sold so far, forecast ${fmtFull(sales)} kg is higher, so the forecast is used` : `Actual ${fmtFull(r.actualSales)} kg exceeds the forecast, so the actual is used`) : 'Forecast'}">${fmtFull(sales)}</td>
                     <td class="imp-td-num">${fmtFull(r[openKey])}</td>
                     <td class="imp-td-num imp-incoming ${r.incoming ? 'imp-incoming-val' : ''}">${incomingContent}</td>
                     <td class="imp-td-num ${closing < 0 ? 'fcst-negative' : ''}">${fmtFull(closing)}</td>
