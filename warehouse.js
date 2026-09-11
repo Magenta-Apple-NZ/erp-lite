@@ -2350,7 +2350,9 @@ const Warehouse = (() => {
                     <td class="imp-td-num" title="${hasActual ? (sales > r.actualSales ? `Conservative: ${fmtFull(r.actualSales)} kg sold so far, forecast ${fmtFull(sales)} kg is higher, so the forecast is used` : `Actual ${fmtFull(r.actualSales)} kg exceeds the forecast, so the actual is used`) : 'Forecast'}">${fmtFull(sales)}</td>
                     <td class="imp-td-num">${fmtFull(r[openKey])}</td>
                     <td class="imp-td-num imp-incoming ${r.incoming ? 'imp-incoming-val' : ''}">${incomingContent}</td>
-                    <td class="imp-td-num ${closing < 0 ? 'fcst-negative' : ''}">${fmtFull(closing)}</td>
+                    <td class="imp-td-num ${closing < 0 ? 'fcst-negative' : ''}">${hasActual && sales > r.actualSales
+                        ? `<span class="imp-tip" tabindex="0">${fmtFull(closing)}<span class="imp-tip-mark">*</span><span class="imp-tip-box" role="tooltip"><strong>Forecast used, not actual</strong>Only ${fmtFull(r.actualSales)} kg has sold so far, but the ${fmtFull(sales)} kg forecast is higher, so the closing figure assumes the forecast to stay conservative. Stock right now is ${fmtFull(r[openKey] - r.actualSales + r.incoming)} kg.</span></span>`
+                        : fmtFull(closing)}</td>
                     <td style="text-align:center;padding:0 0.5rem">${dot}</td>
                 </tr>`;
             }).join('');

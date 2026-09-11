@@ -7448,3 +7448,11 @@ a.db-row:hover { background: #f8fafc; border-color: #e2e8f0; }
 .imp-overview-side .imp-upcoming-card-section { margin-bottom: 0; }
 .imp-overview-side .imp-upcoming-grid { grid-template-columns: 1fr; }
 .imp-overview-side .imp-add-form-grid { grid-template-columns: 1fr; }
+
+/* Hub tooltip (hover / focus) — used on forecast Closing when the forecast beat the actual */
+.imp-tip { position: relative; display: inline-block; cursor: help; outline: none; }
+.imp-tip-mark { color: #f59e0b; font-weight: 700; margin-left: 2px; }
+.imp-tip-box { position: absolute; right: 0; bottom: calc(100% + 8px); z-index: 30; width: 260px; padding: 0.55rem 0.7rem; background: #0f172a; color: #e2e8f0; font-size: 0.74rem; font-weight: 400; line-height: 1.4; text-align: left; white-space: normal; border-radius: 8px; box-shadow: 0 8px 24px rgba(15,23,42,0.25); opacity: 0; visibility: hidden; transform: translateY(4px); transition: opacity 0.12s, transform 0.12s; pointer-events: none; }
+.imp-tip-box strong { display: block; color: #fff; margin-bottom: 0.2rem; font-size: 0.76rem; }
+.imp-tip-box::after { content: ''; position: absolute; right: 14px; top: 100%; border: 6px solid transparent; border-top-color: #0f172a; }
+.imp-tip:hover .imp-tip-box, .imp-tip:focus .imp-tip-box, .imp-tip:focus-within .imp-tip-box { opacity: 1; visibility: visible; transform: translateY(0); }
