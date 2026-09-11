@@ -7,7 +7,13 @@ import { loadSettings, saveSettings, loadItems } from './_store.js';
 
 export async function onRequestGet({ env }) {
     try {
-        return jsonResponse(await loadSettings(env));
+        const cur = await loadSettings(env);
+        if (cur.stockEpoch === '2026-09-01' && !cur.epochMovedToAug) {
+            const next = { ...cur, stockEpoch: '2026-08-01', epochMovedToAug: true };
+            await saveSettings(env, next);
+            return jsonResponse(next);
+        }
+        return jsonResponse(cur);
     } catch (e) {
         return errResponse(e.message);
     }

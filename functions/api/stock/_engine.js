@@ -12,7 +12,7 @@
 import { addDays } from '../_dates.js';
 
 export const DEFAULT_SETTINGS = {
-    stockEpoch:            '2026-09-01',   // testing from 1 Sep 2026; go-live count 1 Oct
+    stockEpoch:            '2026-08-01',   // counts/forecasts from 1 Aug 2026; go-live count 1 Oct
     consumptionWindowDays: 28,
     defaultLeadTimeDays:   14,   // consumables: days from ordering to delivery
     defaultSafetyDays:     7,
