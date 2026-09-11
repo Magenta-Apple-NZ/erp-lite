@@ -7444,3 +7444,7 @@ a.db-row:hover { background: #f8fafc; border-color: #e2e8f0; }
 .imp-actual-link { border: none; background: none; font: inherit; font-weight: 700; color: #1e293b; cursor: pointer; padding: 0; border-bottom: 1px dotted #94a3b8; }
 .imp-actual-link:hover { color: #1d4ed8; border-bottom-color: #1d4ed8; }
 .stk2-ms-foot td { border-top: 2px solid var(--stk-line); font-weight: 700; }
+/* Upcoming shipments live in the right column, stacked */
+.imp-overview-side .imp-upcoming-card-section { margin-bottom: 0; }
+.imp-overview-side .imp-upcoming-grid { grid-template-columns: 1fr; }
+.imp-overview-side .imp-add-form-grid { grid-template-columns: 1fr; }

@@ -2431,12 +2431,13 @@ const Warehouse = (() => {
 
                 // "Arrives May, 26" — driven by the last-milestone date when
                 // available, otherwise the shipment-level ym.
+                const started = (s.milestones || []).some(m => m.done);
+                const startYmL = s.startDate ? s.startDate.slice(0, 7) : null;
                 const arriveYm = shipArrivalYm(s) || s.ym;
                 let arriveLabel = '';
-                if (arriveYm) {
-                    const [yr, mo] = arriveYm.split('-');
-                    arriveLabel = `Arrives ${MONTH_NAMES[parseInt(mo, 10) - 1]}, ${yr.slice(-2)}`;
-                }
+                const mmyy = ym => { const [yr, mo] = ym.split('-'); return `${MONTH_NAMES[parseInt(mo, 10) - 1]}, ${yr.slice(-2)}`; };
+                if (!started && startYmL) arriveLabel = `Starting ${mmyy(startYmL)}`;
+                else if (arriveYm) arriveLabel = `${started ? 'Arrives' : 'Starting'} ${mmyy(arriveYm)}`;
 
                 const payBar = totalNzd > 0 ? `
                     <div class="imp-pay-progress" title="${pctPaid}% paid">
@@ -2529,15 +2530,7 @@ const Warehouse = (() => {
                 ? [...upcomingShips, ...pastShips.slice().reverse()]
                 : upcomingShips.slice(0, 3);
 
-            body.innerHTML = `
-            <div>
-                <div class="imp-overview-grid">
-                <div class="imp-overview-main">
-                <div class="imp-tabs">
-                    <button class="imp-tab-btn${activeTab==='forecast'?' imp-tab-btn--active':''}" data-tab="forecast">Forecast</button>
-                    <button class="imp-tab-btn${activeTab==='analytics'?' imp-tab-btn--active':''}" data-tab="analytics">Analytics</button>
-                </div>
-                <div class="imp-tab-pane${activeTab==='forecast'?'':' imp-tab-pane--hidden'}" data-tab-pane="forecast">
+            const upcomingSectionHtml = `
                 <div class="cat-section imp-upcoming-card-section">
                     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.75rem;gap:0.75rem">
                         <h2 class="cat-title" style="margin:0">${showAllShips ? 'All Shipments' : 'Upcoming Shipments'}</h2>
@@ -2580,8 +2573,17 @@ const Warehouse = (() => {
                             ? visibleShips.map(s => upcomingCard(s)).join('')
                             : '<p class="wh-empty" style="margin:0">No upcoming shipments — click + Add to create one.</p>'}
                     </div>
-                </div>
+                </div>`;
 
+            body.innerHTML = `
+            <div>
+                <div class="imp-overview-grid">
+                <div class="imp-overview-main">
+                <div class="imp-tabs">
+                    <button class="imp-tab-btn${activeTab==='forecast'?' imp-tab-btn--active':''}" data-tab="forecast">Forecast</button>
+                    <button class="imp-tab-btn${activeTab==='analytics'?' imp-tab-btn--active':''}" data-tab="analytics">Analytics</button>
+                </div>
+                <div class="imp-tab-pane${activeTab==='forecast'?'':' imp-tab-pane--hidden'}" data-tab-pane="forecast">
                 <div class="cat-section imp-chart-card">
                     <div class="cat-section-head">
                         <div>
@@ -2702,7 +2704,7 @@ const Warehouse = (() => {
                 ${buildShipAnalyticsSection(allShips, forex, getStageDefaults(config))}
                 </div>
                 </div>
-                ${fxPanelHtml ? `<div class="imp-overview-side">${fxPanelHtml}</div>` : ''}
+                <div class="imp-overview-side">${upcomingSectionHtml}${fxPanelHtml}</div>
                 </div>
             </div>`;
 
