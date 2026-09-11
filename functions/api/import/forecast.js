@@ -44,7 +44,12 @@ const DEFAULTS = {
 async function loadAnchor(env) {
     try {
         const world = await loadWorld(env);
-        return { anchor: stockAnchor(world, nzToday()), actuals: actualsByMonth(world.sales, 'bundles') };
+        const anchor = stockAnchor(world, nzToday());
+        // A count is "as at end of day", so the count month's Actual is only
+        // what sold AFTER the count date — then it equals "Stock now"'s sold-
+        // since figure exactly. Earlier months aren't shown by the forecast.
+        const rows = anchor ? world.sales.filter(r => String(r.date || '') > anchor.date) : world.sales;
+        return { anchor, actuals: actualsByMonth(rows, 'bundles') };
     } catch {
         return { anchor: null, actuals: null };
     }

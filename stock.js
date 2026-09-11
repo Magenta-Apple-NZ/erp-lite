@@ -596,38 +596,46 @@ const Stock = (() => {
         document.addEventListener('keydown', onKey);
         overlay.addEventListener('click', e => { if (e.target === overlay) close(); });
         const box = overlay.querySelector('.modal-box');
-        const draw = async (month) => {
-            box.innerHTML = `<h3 class="modal-title">Loading sales…</h3>`;
-            let d;
-            try { d = await api('/api/stock/sales?month=' + encodeURIComponent(month)); }
-            catch (e) { box.innerHTML = `<h3 class="modal-title">Sales</h3><p class="cat-sub">${escHtml(e.message)}</p><div class="modal-actions"><button class="btn-secondary" id="stk2-ms-close">Close</button></div>`; box.querySelector('#stk2-ms-close').addEventListener('click', close); return; }
-            const [y, m] = month.split('-').map(Number);
+        // Product-type filter: all orders, or only those carrying that type (its kg column shown).
+        const TYPES = { all: { label: 'All', key: 'totalKg', col: 'All product kg' }, bundles: { label: 'Bundled', key: 'bundlesKg', col: 'Bundled kg' }, loose: { label: 'Loose', key: 'looseKg', col: 'Loose kg' }, ecoTies: { label: 'eco Ties', key: 'ecoTiesKg', col: 'eco Ties kg' } };
+        let type = 'bundles', cur = null, d = null;
+        const render = () => {
+            const [y, m] = cur.split('-').map(Number);
             const label = new Date(Date.UTC(y, m - 1, 1)).toLocaleDateString('en-NZ', { month: 'long', year: 'numeric', timeZone: 'UTC' });
             const prev = `${m === 1 ? y - 1 : y}-${String(m === 1 ? 12 : m - 1).padStart(2, '0')}`;
             const next = `${m === 12 ? y + 1 : y}-${String(m === 12 ? 1 : m + 1).padStart(2, '0')}`;
+            const t = TYPES[type];
+            const rows = type === 'all' ? d.rows : d.rows.filter(r => r[t.key] > 0);
             const kg = v => v ? fmtNum(v) : '<span class="cat-sub">—</span>';
+            const sum = k => Math.round(rows.reduce((s, r) => s + (r[k] || 0), 0) * 100) / 100;
             box.innerHTML = `
-                <h3 class="modal-title">Sales · ${escHtml(label)} <span class="modal-hint">${d.totals.orders} order${d.totals.orders === 1 ? '' : 's'} · NZ dates</span></h3>
+                <h3 class="modal-title">Sales · ${escHtml(label)} <span class="modal-hint">${rows.length} of ${d.rows.length} order${d.rows.length === 1 ? '' : 's'} · NZ dates</span></h3>
                 <div class="stk2-ledger-sum">
-                    <span>Bundled <strong>${fmtNum(d.totals.bundlesKg)} kg</strong></span>
-                    <span>All product <strong>${fmtNum(d.totals.totalKg)} kg</strong></span>
-                    ${d.totals.looseKg ? `<span>Loose ${fmtNum(d.totals.looseKg)} kg</span>` : ''}${d.totals.ecoTiesKg ? `<span>eco ${fmtNum(d.totals.ecoTiesKg)} kg</span>` : ''}
-                    <span class="stk2-form-row" style="margin-left:auto"><button class="btn-secondary btn-sm" data-ms="${prev}">‹</button><button class="btn-secondary btn-sm" data-ms="${next}">›</button></span>
+                    <div class="stk2-seg" style="margin:0">${Object.entries(TYPES).map(([k, v]) => `<button type="button" class="stk2-seg-btn${k === type ? ' active' : ''}" data-type="${k}">${v.label}</button>`).join('')}</div>
+                    <span class="cat-sub">${type === 'bundles' ? 'Only Bundled kg moves Prime Tie Bundled stock and the forecast.' : type === 'all' ? 'Orders with no product kg (Hessian, freight) are listed and move nothing.' : ''}</span>
+                    <span class="stk2-form-row" style="margin-left:auto"><button class="btn-secondary btn-sm" data-ms="${prev}" title="Previous month">‹</button><button class="btn-secondary btn-sm" data-ms="${next}" title="Next month">›</button></span>
                 </div>
-                <p class="cat-sub" style="margin:0 0 0.5rem">Only <strong>Bundled kg</strong> moves Prime Tie Bundled stock and the forecast. Orders with no product kg (Hessian, freight) are listed for completeness and move nothing.</p>
                 <div class="stk-table-wrap stk2-ledger-wrap"><table class="stk-table stk2-table">
-                    <thead><tr><th>Date</th><th>Order</th><th>Customer</th><th style="text-align:right">kg ordered</th><th style="text-align:right">Bundled kg</th></tr></thead>
-                    <tbody>${d.rows.length ? d.rows.map(r => `<tr class="${r.bundlesKg ? '' : 'stk2-lot--done'}">
+                    <thead><tr><th>Date</th><th>Order</th><th>Customer</th><th style="text-align:right">kg ordered</th><th style="text-align:right">${escHtml(t.col)}</th></tr></thead>
+                    <tbody>${rows.length ? rows.map(r => `<tr class="${r[t.key] ? '' : 'stk2-lot--done'}">
                         <td style="white-space:nowrap">${fmtDate(r.date)}</td>
                         <td><a href="#orders/${encodeURIComponent(r.id)}" onclick="document.querySelector('.modal-overlay')?.remove()">${escHtml(r.id)}</a>${r.invoice ? `<div class="cat-sub" style="margin:0">${escHtml(r.invoice)}</div>` : ''}</td>
                         <td>${escHtml(r.customer)}${r.branch ? `<div class="cat-sub" style="margin:0">${escHtml(r.branch)}</div>` : ''}${!r.counted ? `<div class="cat-sub" style="margin:0" title="${escHtml(r.lines.join(', '))}">no product kg — ${escHtml(r.lines.slice(0, 2).join(', '))}${r.lines.length > 2 ? '…' : ''}</div>` : ''}</td>
                         <td style="text-align:right;font-variant-numeric:tabular-nums">${kg(r.totalKg)}</td>
-                        <td style="text-align:right;font-variant-numeric:tabular-nums"><strong>${kg(r.bundlesKg)}</strong></td>
-                    </tr>`).join('') : '<tr><td colspan="5" class="cat-sub">No orders this month.</td></tr>'}</tbody>
+                        <td style="text-align:right;font-variant-numeric:tabular-nums"><strong>${kg(r[t.key])}</strong></td>
+                    </tr>`).join('') : `<tr><td colspan="5" class="cat-sub">No ${type === 'all' ? '' : t.label + ' '}orders this month.</td></tr>`}</tbody>
+                    <tfoot><tr class="stk2-ms-foot"><td colspan="3">Total · ${rows.length} order${rows.length === 1 ? '' : 's'}</td><td style="text-align:right;font-variant-numeric:tabular-nums">${fmtNum(sum('totalKg'))}</td><td style="text-align:right;font-variant-numeric:tabular-nums">${fmtNum(sum(t.key))}</td></tr></tfoot>
                 </table></div>
                 <div class="modal-actions"><button class="btn-secondary" id="stk2-ms-close">Close</button></div>`;
             box.querySelector('#stk2-ms-close').addEventListener('click', close);
             box.querySelectorAll('[data-ms]').forEach(b => b.addEventListener('click', () => draw(b.dataset.ms)));
+            box.querySelectorAll('[data-type]').forEach(b => b.addEventListener('click', () => { type = b.dataset.type; render(); }));
+        };
+        const draw = async (month) => {
+            box.innerHTML = `<h3 class="modal-title">Loading sales…</h3>`;
+            try { d = await api('/api/stock/sales?month=' + encodeURIComponent(month)); }
+            catch (e) { box.innerHTML = `<h3 class="modal-title">Sales</h3><p class="cat-sub">${escHtml(e.message)}</p><div class="modal-actions"><button class="btn-secondary" id="stk2-ms-close">Close</button></div>`; box.querySelector('#stk2-ms-close').addEventListener('click', close); return; }
+            cur = month; render();
         };
         draw(ym || nzToday().slice(0, 7));
     }

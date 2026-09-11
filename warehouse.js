@@ -2344,7 +2344,7 @@ const Warehouse = (() => {
                 return yearRow + `
                 <tr class="imp-row ${r.incoming ? 'imp-has-import' : ''} ${!hasActual && status !== 'ok' ? 'imp-row--' + status : ''}">
                     <td class="imp-td-month">${escHtml(r.label)}</td>
-                    <td class="imp-td-num ${hasActual ? 'imp-actual-val' : ''}">${hasActual ? fmtFull(r.actualSales) : '—'}</td>
+                    <td class="imp-td-num ${hasActual ? 'imp-actual-val' : ''}">${hasActual ? `<button class="imp-actual-link" data-month="${escHtml(r.ym)}" title="Orders in ${escHtml(r.label)} — Bundled kg sold after the count">${fmtFull(r.actualSales)}</button>` : '—'}</td>
                     <td class="imp-td-num">${fmtFull(sales)}</td>
                     <td class="imp-td-num">${fmtFull(r[openKey])}</td>
                     <td class="imp-td-num imp-incoming ${r.incoming ? 'imp-incoming-val' : ''}">${incomingContent}</td>
@@ -2593,7 +2593,7 @@ const Warehouse = (() => {
                                 <span style="color:#94a3b8">· ${escHtml(config.stocktake.label)}</span>
                                 &nbsp;&middot;&nbsp; Stock now: <strong>${config.stocktake.onHandNow == null ? '—' : fmtFull(config.stocktake.onHandNow) + ' kg'}</strong>
                                 <span class="chart-info" title="Count ${fmtFull(config.startingKg ?? 0)} kg − ${fmtFull(config.stocktake.soldSince || 0)} kg sold (orders) + ${fmtFull(config.stocktake.receivedSince || 0)} kg shipments landed ${(config.stocktake.adjustedSince || 0) >= 0 ? '+' : '−'} ${fmtFull(Math.abs(config.stocktake.adjustedSince || 0))} kg adjustments, as at ${config.stocktake.asOf}">&#9432;</span>
-                                <a class="btn-link" href="#warehouse">Manage counts</a> &middot; <button class="btn-link" id="imp-month-sales-btn" type="button">This month's sales</button></p>` : `
+                                <a class="btn-link" href="#warehouse">Manage counts</a></p>` : `
                             <p class="cat-sub">Stocktake: <strong>${fmtFull(config.startingKg ?? 0)} kg</strong>
                                 ${config.stocktakeDate ? `as of <strong>${config.stocktakeDate}</strong>` : '<span style="color:#94a3b8">(no date set — assuming start of this month)</span>'}
                                 <button class="btn-link" id="imp-edit-stock-btn">Edit</button>
@@ -2719,7 +2719,7 @@ const Warehouse = (() => {
             document.getElementById('imp-stock-cancel-btn')?.addEventListener('click', () => {
                 document.getElementById('imp-stock-edit').style.display = 'none';
             });
-            document.getElementById('imp-month-sales-btn')?.addEventListener('click', () => { if (typeof Stock !== 'undefined') Stock.openMonthSales(); });
+            body.querySelectorAll('.imp-actual-link').forEach(b => b.addEventListener('click', () => { if (typeof Stock !== 'undefined') Stock.openMonthSales(b.dataset.month); }));
             document.getElementById('imp-stock-save-btn')?.addEventListener('click', async () => {
                 const kg   = parseFloat(document.getElementById('imp-stock-kg').value) || 0;
                 const date = document.getElementById('imp-stock-date').value;

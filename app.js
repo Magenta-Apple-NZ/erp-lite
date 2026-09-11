@@ -15,7 +15,24 @@ function initCharts(container) {
             try { window._chartInst[id].destroy(); } catch (_) {}
             delete window._chartInst[id];
         }
-        window._chartInst[id] = new Chart(canvas, cfg);
+        // Any chart already bound to this canvas element (e.g. from a previous
+        // render that lost its registry entry) must go first, or Chart.js throws.
+        try { const prev = Chart.getChart(canvas); if (prev) prev.destroy(); } catch (_) {}
+        try {
+            window._chartInst[id] = new Chart(canvas, cfg);
+        } catch (err) {
+            // Never let one chart kill the rest of the page's wiring. Retry
+            // without annotations (the usual culprit), then surface the error.
+            console.error('Chart "' + id + '" failed:', err);
+            try {
+                const bare = { ...cfg, options: { ...cfg.options, plugins: { ...(cfg.options?.plugins || {}), annotation: undefined } } };
+                window._chartInst[id] = new Chart(canvas, bare);
+            } catch (err2) {
+                console.error('Chart "' + id + '" failed again:', err2);
+                const wrap = canvas.parentElement;
+                if (wrap) wrap.innerHTML = '<p style="padding:1rem;color:#b91c1c;font-size:0.85rem">Chart failed to render: ' + String(err2 && err2.message || err2) + '</p>';
+            }
+        }
         delete window._chartQ[id];
     });
 }

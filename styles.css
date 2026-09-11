@@ -7441,3 +7441,6 @@ a.db-row:hover { background: #f8fafc; border-color: #e2e8f0; }
 .stk2-cons-table th:nth-child(6), .stk2-cons-table td:nth-child(6) { padding-right: 1.25rem; }
 .stk2-cons-table th:last-child, .stk2-cons-table td:last-child { min-width: 0; text-align: left; padding-left: 0.25rem; }
 .stk2-cf-q { overflow: visible; }
+.imp-actual-link { border: none; background: none; font: inherit; font-weight: 700; color: #1e293b; cursor: pointer; padding: 0; border-bottom: 1px dotted #94a3b8; }
+.imp-actual-link:hover { color: #1d4ed8; border-bottom-color: #1d4ed8; }
+.stk2-ms-foot td { border-top: 2px solid var(--stk-line); font-weight: 700; }
