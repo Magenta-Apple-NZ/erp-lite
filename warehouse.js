@@ -2540,7 +2540,7 @@ const Warehouse = (() => {
                         <h2 class="cat-title" style="margin:0">${showAllShips ? 'All Shipments' : 'Upcoming Shipments'}</h2>
                         <div style="display:flex;gap:0.4rem;align-items:center">
                             ${totalShips > 3 ? `<button class="btn-link" id="imp-toggle-all-ships">${showAllShips ? 'Show upcoming only' : `View all (${totalShips})`}</button>` : ''}
-                            <button class="btn-primary btn-sm" id="imp-add-ship-btn">+ Add</button>
+                            <button class="btn-primary btn-sm imp-add-ship-plus" id="imp-add-ship-btn" title="Add a shipment" aria-label="Add a shipment">+</button>
                         </div>
                     </div>
                     <div id="imp-add-ship-form" style="display:none;margin-bottom:1rem;padding:0.75rem;background:#f8fafc;border-radius:6px;border:1px solid #e2e8f0">

@@ -7456,3 +7456,4 @@ a.db-row:hover { background: #f8fafc; border-color: #e2e8f0; }
 .imp-tip-box strong { display: block; color: #fff; margin-bottom: 0.2rem; font-size: 0.76rem; }
 .imp-tip-box::after { content: ''; position: absolute; right: 14px; top: 100%; border: 6px solid transparent; border-top-color: #0f172a; }
 .imp-tip:hover .imp-tip-box, .imp-tip:focus .imp-tip-box, .imp-tip:focus-within .imp-tip-box { opacity: 1; visibility: visible; transform: translateY(0); }
+.imp-add-ship-plus { width: 28px; height: 28px; padding: 0; font-size: 1.1rem; line-height: 1; border-radius: 6px; }
