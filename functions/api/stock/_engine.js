@@ -3,9 +3,9 @@
 // single place the dashboard, counts and reorder logic get their numbers.
 //
 // Units: a product item is kg, a consumable is each. They are never summed.
-// Dates: 'YYYY-MM-DD' NZ-local strings, compared as strings. A count taken on
-// day D is "as at end of D", so everything dated D is already inside it and
-// ranges since a baseline are (D, asOf] — from exclusive, to inclusive.
+// Dates: 'YYYY-MM-DD' NZ-local strings, compared as strings. A count dated D
+// is the OPENING stock at 12:00am on D, so sales / movements / receipts dated D
+// come off it: ranges since a baseline are [D, asOf] (both inclusive).
 //
 // See Stock-Rebuild.md for the model.
 
@@ -245,11 +245,11 @@ export function productValueFromShipments(shipments) {
 export function fifoFor(item, world, asOf) {
     const baseline = baselineFor(item.id, world.counts, asOf);
     if (!baseline) return null;
-    const from = baseline.date, to = asOf;
+    const from = addDays(baseline.date, -1), to = asOf; // count = opening stock at 12:00am on its date → that day is inside the range
     const epoch = world.settings?.stockEpoch;
     const shipments = world.shipments || [];
     const pricedBefore = shipments
-        .filter(s => shipUnitCost(s) != null && (shipmentEta(s) || `${s.ym || ''}-01`) <= from)
+        .filter(s => shipUnitCost(s) != null && (shipmentEta(s) || `${s.ym || ''}-01`) < baseline.date)
         .sort((a, b) => String(shipmentEta(b) || b.ym).localeCompare(String(shipmentEta(a) || a.ym)))[0];
     const openingCost = pricedBefore ? shipUnitCost(pricedBefore) : (Number(item.unitValue) || 0);
 
@@ -269,12 +269,12 @@ export function fifoFor(item, world, asOf) {
         }).sort((a, b) => (a.num ?? 1e9) - (b.num ?? 1e9) || a.i - b.i);
         for (const s of subs) {
             if (s.l.shipmentId) countedShips.add(s.l.shipmentId);
-            events.push({ date: from, order: 0, kind: 'lot', id: s.l.shipmentId || 'opening-' + s.i,
+            events.push({ date: baseline.date, order: 0, kind: 'lot', id: s.l.shipmentId || 'opening-' + s.i,
                           note: s.l.label || (s.ship ? shipLabel(s.ship) : baseline.countLabel || 'Opening count'),
                           qty: Number(s.l.kg) || 0, unitCost: s.cost != null ? s.cost : openingCost, basis: 'counted' });
         }
     } else {
-        events.push({ date: from, order: 0, kind: 'lot', id: 'opening', note: baseline.countLabel || 'Opening count', qty: baseline.qty, unitCost: openingCost });
+        events.push({ date: baseline.date, order: 0, kind: 'lot', id: 'opening', note: baseline.countLabel || 'Opening count', qty: baseline.qty, unitCost: openingCost });
     }
     for (const r of receipts({ shipments, from, to, epoch })) {
         if (countedShips.has(r.shipmentId)) continue; // already on the shelf at the count
@@ -391,7 +391,7 @@ export function baselineFor(itemId, counts, asOf) {
 export function onHandFor(item, world, asOf) {
     const baseline = baselineFor(item.id, world.counts, asOf);
     if (!baseline) return { onHand: null, baseline: null, consumed: 0, movements: 0, receipts: 0 };
-    const from = baseline.date, to = asOf;
+    const from = addDays(baseline.date, -1), to = asOf; // count = opening stock at 12:00am on its date → that day is inside the range
     const consumed = consumption({ rows: world.sales, items: world.items, bom: world.bom, settings: world.settings, from, to }).byItem[item.id] || 0;
     const movements = (world.movements?.[item.id] || [])
         .filter(m => inRange(m.date, from, to))
@@ -478,7 +478,7 @@ export function computeLevels(world, asOf) {
             const year = cogsFor(item, w2, { from: addDays(asOf, -365), to: asOf });
             cogs = {
                 thisMonth: cogsFor(item, w2, { from: addDays(monthStart, -1), to: asOf }),
-                sinceBaseline: cogsFor(item, w2, { from: oh.baseline.date, to: asOf }),
+                sinceBaseline: cogsFor(item, w2, { from: addDays(oh.baseline.date, -1), to: asOf }),
                 byMonth: year.byMonth, basis: year.basis,
             };
             delete cogs.thisMonth.byMonth; delete cogs.sinceBaseline.byMonth;
@@ -531,7 +531,7 @@ export function expectedForCount(count, world) {
     for (const line of count.lines || []) {
         const item = (world.items || []).find(i => i.id === line.itemId);
         if (!item) continue;
-        out[line.itemId] = onHandFor(item, world, count.date).onHand;
+        out[line.itemId] = onHandFor(item, world, addDays(count.date, -1)).onHand; // opening stock at 12:00am on the count date
     }
     return out;
 }
@@ -566,7 +566,7 @@ export function commitCount(count, world, { committedAt, committedBy } = {}) {
     const fifoCost = {};
     for (const it of world.items || []) {
         if (it.id !== SHIPMENT_PRODUCT_ID) continue;
-        const f = fifoFor(it, world, count.date);
+        const f = fifoFor(it, world, addDays(count.date, -1));
         if (f && f.avgCost != null) fifoCost[it.id] = f.avgCost;
     }
     const lines = (count.lines || []).map(l => {
@@ -794,11 +794,11 @@ export function projectionFor(item, world, { monthlyAvg, today, months = 12 } = 
 export function ledgerFor(item, world, asOf) {
     const baseline = baselineFor(item.id, world.counts, asOf);
     if (!baseline) return { itemId: item.id, unit: item.unit, baseline: null, entries: [], closing: null };
-    const from = baseline.date, to = asOf;
+    const from = addDays(baseline.date, -1), to = asOf; // count = opening stock at 12:00am on its date → that day is inside the range
     const epoch = world.settings?.stockEpoch;
     const ctx = consumptionContext(world.items, world.bom, world.settings);
     const entries = [];
-    entries.push({ date: from, order: 0, kind: 'count', ref: baseline.countId, label: baseline.countLabel || 'Count', qty: baseline.qty, note: 'Baseline (physical count)' });
+    entries.push({ date: baseline.date, order: 0, kind: 'count', ref: baseline.countId, label: baseline.countLabel || 'Count', qty: baseline.qty, note: 'Baseline (physical count)' });
     if (item.id === SHIPMENT_PRODUCT_ID) {
         const counted = new Set((baseline.lots || []).map(l => l.shipmentId).filter(Boolean));
         for (const r of receipts({ shipments: world.shipments, from, to, epoch })) {
@@ -833,7 +833,7 @@ export function ledgerFor(item, world, asOf) {
         e.balance = r2(bal);
         delete e.order;
     }
-    return { itemId: item.id, unit: item.unit, baseline: { date: from, qty: baseline.qty, countId: baseline.countId }, asOf, entries, closing: r2(bal) };
+    return { itemId: item.id, unit: item.unit, baseline: { date: baseline.date, qty: baseline.qty, countId: baseline.countId }, asOf, entries, closing: r2(bal) };
 }
 
 // Enviroware-format valuation rows for a committed count.

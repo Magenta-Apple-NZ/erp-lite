@@ -45,14 +45,14 @@ async function loadAnchor(env) {
     try {
         const world = await loadWorld(env);
         const anchor = stockAnchor(world, nzToday());
-        // A count is "as at end of day", so the count month's Actual is only
-        // what sold AFTER the count date — then it equals "Stock now"'s sold-
-        // since figure exactly. Earlier months aren't shown by the forecast.
+        // A count is the opening stock at 12:00am on its date, so the count
+        // month's Actual is everything sold from that date on — exactly what
+        // "Stock now" subtracts. Earlier months aren't shown by the forecast.
         // Identical filter to the stock engine's consumption: after the count
         // date AND on/after the stock epoch — so Actual can never diverge from
         // the kg the engine actually takes off stock.
         const epoch = world.settings?.stockEpoch || '';
-        const rows = world.sales.filter(r => { const d = String(r.date || ''); return (!anchor || d > anchor.date) && (!epoch || d >= epoch); });
+        const rows = world.sales.filter(r => { const d = String(r.date || ''); return (!anchor || d >= anchor.date) && (!epoch || d >= epoch); });
         return { anchor, actuals: actualsByMonth(rows, 'bundles') };
     } catch {
         return { anchor: null, actuals: null };

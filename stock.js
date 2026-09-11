@@ -618,14 +618,14 @@ const Stock = (() => {
                 </div>
                 <div class="stk-table-wrap stk2-ledger-wrap"><table class="stk-table stk2-table">
                     <thead><tr><th>Date</th><th>Order</th><th>Customer</th><th style="text-align:right">kg ordered</th><th style="text-align:right">${escHtml(t.col)}</th></tr></thead>
-                    <tbody>${rows.length ? rows.map(r => `<tr class="${r[t.key] && !r.inCount ? '' : 'stk2-lot--done'}" title="${r.inCount ? 'On or before the count (' + fmtDate(d.countDate) + ') — already inside the counted figure' : ''}">
+                    <tbody>${rows.length ? rows.map(r => `<tr class="${r[t.key] && !r.inCount ? '' : 'stk2-lot--done'}" title="${r.inCount ? 'Before the count (' + fmtDate(d.countDate) + ') — already inside the opening figure' : ''}">
                         <td style="white-space:nowrap">${fmtDate(r.date)}${r.inCount ? '<div class="cat-sub" style="margin:0">in count</div>' : ''}</td>
                         <td><a href="#orders/${encodeURIComponent(r.id)}" onclick="document.querySelector('.modal-overlay')?.remove()">${escHtml(r.id)}</a>${r.invoice ? `<div class="cat-sub" style="margin:0">${escHtml(r.invoice)}</div>` : ''}</td>
                         <td>${escHtml(r.customer)}${r.branch ? `<div class="cat-sub" style="margin:0">${escHtml(r.branch)}</div>` : ''}${!r.counted ? `<div class="cat-sub" style="margin:0" title="${escHtml(r.lines.join(', '))}">no product kg — ${escHtml(r.lines.slice(0, 2).join(', '))}${r.lines.length > 2 ? '…' : ''}</div>` : ''}</td>
                         <td style="text-align:right;font-variant-numeric:tabular-nums">${kg(r.totalKg)}</td>
                         <td style="text-align:right;font-variant-numeric:tabular-nums"><strong>${kg(r[t.key])}</strong></td>
                     </tr>`).join('') : `<tr><td colspan="5" class="cat-sub">No ${type === 'all' ? '' : t.label + ' '}orders this month.</td></tr>`}</tbody>
-                    <tfoot><tr class="stk2-ms-foot"><td colspan="3">Total · ${rows.length} order${rows.length === 1 ? '' : 's'}</td><td style="text-align:right;font-variant-numeric:tabular-nums">${fmtNum(sum('totalKg'))}</td><td style="text-align:right;font-variant-numeric:tabular-nums">${fmtNum(sum(t.key))}</td></tr>${d.countDate && rows.some(r => r.inCount) ? `<tr class="stk2-ms-foot"><td colspan="3" class="cat-sub">After the count (${fmtDate(d.countDate)}) — what comes off stock and shows as Actual</td><td style="text-align:right;font-variant-numeric:tabular-nums">${fmtNum(sumAfter('totalKg'))}</td><td style="text-align:right;font-variant-numeric:tabular-nums">${fmtNum(sumAfter(t.key))}</td></tr>` : ''}</tfoot>
+                    <tfoot><tr class="stk2-ms-foot"><td colspan="3">Total · ${rows.length} order${rows.length === 1 ? '' : 's'}</td><td style="text-align:right;font-variant-numeric:tabular-nums">${fmtNum(sum('totalKg'))}</td><td style="text-align:right;font-variant-numeric:tabular-nums">${fmtNum(sum(t.key))}</td></tr>${d.countDate && rows.some(r => r.inCount) ? `<tr class="stk2-ms-foot"><td colspan="3" class="cat-sub">From the count date (${fmtDate(d.countDate)}) — what comes off stock and shows as Actual</td><td style="text-align:right;font-variant-numeric:tabular-nums">${fmtNum(sumAfter('totalKg'))}</td><td style="text-align:right;font-variant-numeric:tabular-nums">${fmtNum(sumAfter(t.key))}</td></tr>` : ''}</tfoot>
                 </table></div>
                 <div class="modal-actions"><button class="btn-secondary" id="stk2-ms-close">Close</button></div>`;
             box.querySelector('#stk2-ms-close').addEventListener('click', close);
@@ -683,7 +683,7 @@ const Stock = (() => {
             <div class="cat-section-head">
                 <div>
                     <h2 class="cat-title">Counts</h2>
-                    <p class="cat-sub" style="margin:0">A committed count is the baseline every item runs from. Counts are as-at end of day; sales that day are already inside them.</p>
+                    <p class="cat-sub" style="margin:0">A committed count is the baseline every item runs from. A count is the opening stock at 12:00am on its date — that day's sales come off it.</p>
                 </div>
                 <form id="stk2-new-count" class="stk2-form-row">
                     <input name="date" type="date" value="${nzToday()}" min="${escHtml(settings.stockEpoch || '')}" required title="Counts start at the stock epoch (${escHtml(settings.stockEpoch || '')})">
@@ -790,7 +790,7 @@ const Stock = (() => {
             <div class="cat-section-head">
                 <div>
                     <h2 class="cat-title">${escHtml(c.label)} <span class="cat-sub" style="font-weight:400">· ${fmtDate(c.date)} · ${committed ? 'committed ' + fmtDate((c.committedAt || '').slice(0, 10)) + (c.committedBy ? ' by ' + escHtml(String(c.committedBy).split('@')[0]) : '') : 'draft'}</span></h2>
-                    <p class="cat-sub" style="margin:0">${committed ? 'Frozen: expected, variance and valuation were snapshotted at commit.' : 'Expected is the engine\'s figure at end of this date. Enter what you physically counted; tick <em>Not counted</em> for anything skipped (it keeps its old baseline).'}</p>
+                    <p class="cat-sub" style="margin:0">${committed ? 'Frozen: expected, variance and valuation were snapshotted at commit.' : 'Expected is the engine\'s figure at the start of this date (12:00am). Enter what you physically counted; tick <em>Not counted</em> for anything skipped (it keeps its old baseline).'}</p>
                 </div>
                 <div class="stk2-form-row">
                     <label class="cat-sub" style="margin:0;display:flex;align-items:center;gap:0.35rem" title="${committed ? 'Move this count to another date. Frozen figures stay as committed; the baseline moves with the date.' : 'Count date (as at end of day)'}">Date <input type="date" id="stk2-count-date" value="${escHtml(c.date)}"></label>

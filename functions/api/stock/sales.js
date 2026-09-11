@@ -35,8 +35,8 @@ export async function onRequestGet({ env, request }) {
                 invoice: o.xeroInvoiceNumber || '',
                 totalKg: Math.round((b + l + e) * 100) / 100, bundlesKg: b, looseKg: l, ecoTiesKg: e,
                 counted: !!r, lines: other,
-                // On/before the count date: already inside the count, so it never comes off stock again.
-                inCount: !!(anchor && date <= anchor.date),
+                // Before the count date: already inside the opening count, so it never comes off stock again.
+                inCount: !!(anchor && date < anchor.date),
             });
         }
         rows.sort((a, b) => b.date.localeCompare(a.date) || String(b.id).localeCompare(String(a.id)));

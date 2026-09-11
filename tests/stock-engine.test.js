@@ -84,7 +84,7 @@ test('a row dated 2026-10-01 falls inside an October range regardless of TZ', ()
     const c = consumption({ rows, items, bom, settings, from: '2026-09-30', to: '2026-10-31' });
     assert.equal(c.byItem['prime-tie-bundled'], 10);
     const c2 = consumption({ rows, items, bom, settings, from: '2026-10-01', to: '2026-10-31' });
-    assert.equal(c2.byItem['prime-tie-bundled'], undefined, 'from is exclusive: the count on D already includes D');
+    assert.equal(c2.byItem['prime-tie-bundled'], undefined, 'inRange: from is exclusive');
 });
 
 test('addDays / daysBetween are pure calendar arithmetic across the NZ DST change', () => {
@@ -641,6 +641,31 @@ test('Loose / eco Ties COGS is kg sold × the item\'s own cost per kg', () => {
     assert.equal(ledgerFor(items[1], w, '2026-10-31').entries.find(e => e.kind === 'sale').cost, 550);
     // A consumable never carries a cost on its sale lines.
     assert.equal(ledgerFor(items[3], w, '2026-10-31').entries.find(e => e.kind === 'sale').cost, undefined);
+});
+
+test('a count is the opening stock at 12:00am on its date — that day\'s sales, movements and landed shipments come off it', () => {
+    // Count 2,000 on 1 Sep; 300 kg sold on 1 Sep, 590 kg on 5 Sep → 1,110 on hand.
+    const st = { ...settings, stockEpoch: '2026-08-01' };
+    const cnt = { id: 'c', label: 'Opening', date: '2026-09-01', status: 'committed', committedAt: '2026-09-01T00:00:00Z', lines: [{ itemId: 'prime-tie-bundled', counted: true, countedQty: 2000 }, { itemId: 'box-10kg', counted: true, countedQty: 100 }] };
+    const sales = [
+        { id: 'PKS-A', date: '2026-09-01', bundlesKg: 300, looseKg: 0, ecoTiesKg: 0, xkg: { b10: 300 } },
+        { id: 'PKS-B', date: '2026-09-05', bundlesKg: 590, looseKg: 0, ecoTiesKg: 0, xkg: { b10: 590 } },
+        { id: 'PKS-Z', date: '2026-08-31', bundlesKg: 999, looseKg: 0, ecoTiesKg: 0, xkg: { b10: 999 } }, // before the count — inside it
+    ];
+    const mov = { 'box-10kg': [{ id: 'm', itemId: 'box-10kg', date: '2026-09-01', qty: -10, type: 'wastage' }] };
+    const w = world({ settings: st, counts: [cnt], sales, shipments: [], movements: mov });
+    assert.equal(onHandFor(items[0], w, '2026-09-12').onHand, 1110);
+    assert.equal(onHandFor(items[3], w, '2026-09-12').onHand, 100 - 30 - 59 - 10, 'wastage on the count date counts too');
+    const a = stockAnchor(w, '2026-09-12');
+    assert.equal(a.soldSince, 890);
+    assert.equal(a.onHandNow, 1110);
+    const lg = ledgerFor(items[0], w, '2026-09-12');
+    assert.deepEqual(lg.entries.map(e => [e.date, e.kind, e.qty]), [['2026-09-01', 'count', 2000], ['2026-09-01', 'sale', -300], ['2026-09-05', 'sale', -590]]);
+    assert.equal(lg.closing, 1110);
+    // Expected for a new count dated 5 Sep = stock at 12:00am on 5 Sep = 1,700.
+    assert.equal(expectedForCount({ date: '2026-09-05', lines: [{ itemId: 'prime-tie-bundled' }] }, w)['prime-tie-bundled'], 1700);
+    // FIFO lots see the same thing.
+    assert.equal(fifoFor(items[0], w, '2026-09-12').onHand, 1110);
 });
 
 test('renaming an item changes nothing about its stock', () => {
