@@ -36,10 +36,6 @@ const Payslips = (() => {
     }
 
     const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-    function fmtShortDate(iso) {
-        const [, m, d] = iso.split('-').map(Number);
-        return `${d}-${MONTHS[m - 1]}`;
-    }
     function thisMonthYm() { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`; }
 
     // ── Dispatch tab ──

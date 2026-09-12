@@ -426,7 +426,7 @@ const SalesView = (() => {
         let chartYear = allAvailableYears.includes(nowYr) ? nowYr : (allAvailableYears[allAvailableYears.length - 1] || nowYr);
         // Top Stores: date range (default this calendar year) + grouping.
         let storeFrom  = nowYr + '-01-01';
-        let storeTo    = new Date().toISOString().slice(0, 10);
+        let storeTo    = new Date().toLocaleDateString('en-CA', { timeZone: 'Pacific/Auckland' });
         let storeGroup = localStorage.getItem('sales-store-group') || 'branch'; // 'customer' | 'customerBranch' | 'branch'
 
         // ── Apply filters → returns filtered rows ──

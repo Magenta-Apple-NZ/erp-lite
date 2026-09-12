@@ -66,16 +66,6 @@ const Orders = (() => {
         paid:         '#047857',
     };
 
-    // Xero brand mark — a Xero-blue circle with a white "x". Designed to read at
-    // 15–18px so it works as a row-action icon. Dim state is handled via the
-    // .row-action-btn--dim CSS opacity, so the SVG itself stays a single source.
-    function xeroBadgeSVG() {
-        return `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" aria-label="Xero">
-            <circle cx="12" cy="12" r="11" fill="#13B5EA"/>
-            <text x="12" y="17" text-anchor="middle" fill="#fff" font-family="Helvetica, Arial, sans-serif" font-weight="700" font-size="15">x</text>
-        </svg>`;
-    }
-
     function isWarehouseRole() {
         return document.body.classList.contains('role-warehouse');
     }
@@ -1752,7 +1742,7 @@ const Orders = (() => {
         const dispatchBtn = splitButton(dispatchMain, dispatchItems, { done: dispatched });
 
         // Kebab — duplicate / delete only.
-        const kebab = `
+        const kebab = isWarehouseRole() ? '' : `
             <div class="overflow-menu">
                 <button class="overflow-trigger btn-secondary btn-sm" title="More actions" onclick="event.stopPropagation();this.closest('.overflow-menu').classList.toggle('open')">•••</button>
                 <div class="overflow-dropdown">
@@ -3214,8 +3204,6 @@ const Orders = (() => {
         // Courier label — create / reprint
         document.getElementById('create-courier-btn')?.addEventListener('click', e => runCreateCourier(order, e.currentTarget));
         document.getElementById('courier-label-btn')?.addEventListener('click', () => openCourierLabelModal(order));
-        document.getElementById('courier-reprint-btn')?.addEventListener('click', () => runReprintCourier(order));
-        document.getElementById('courier-clear-btn')?.addEventListener('click', () => runClearCourier(order));
 
         // Download packing slip as PDF
         document.getElementById('download-slip-btn')?.addEventListener('click', e => {

@@ -74,7 +74,6 @@ const Stock = (() => {
         if (label) return fmtNum(v, d) + ' ' + (Math.abs(v) === 1 || /s$/.test(label) ? label : label + (/(x|ch|sh)$/.test(label) ? 'es' : 's'));
         return fmtNum(v, d);
     }
-    const unitWord = (u, n) => u === 'kg' ? 'kg' : (Math.abs(Number(n)) === 1 ? 'unit' : 'units');
 
     // Reserved status palette — icon + label always, never colour alone.
     const STATUS = {
@@ -110,7 +109,7 @@ const Stock = (() => {
         container.innerHTML = `
         <div class="view-header">
             <div>
-                <h1 class="view-title">Warehouse</h1>
+                <h1 class="view-title">Stock</h1>
                 <p class="view-subtitle">Stock on hand per item, reorder alerts, and physical counts. Items, packaging recipes and settings live in <a href="#admin">Settings → Stock</a>.</p>
             </div>
         </div>
@@ -146,8 +145,6 @@ const Stock = (() => {
         }
         const key = lv.items.filter(i => i.key);
         const rest = lv.items.filter(i => !i.key);
-        const products = rest.filter(i => i.class === 'product');
-        const consumables = rest.filter(i => i.class === 'consumable');
         const noCount = lv.items.every(i => i.onHand == null);
 
         body.innerHTML = `
@@ -653,23 +650,6 @@ const Stock = (() => {
         </div>`;
     }
 
-    function levelsTable(items, lv) {
-        if (!items.length) return '<p class="cat-sub">No consumables yet — add them under Settings → Stock.</p>';
-        return `<div class="stk-table-wrap"><table class="stk-table stk2-table stk2-levels">
-            <thead><tr><th>Item</th><th style="min-width:160px">On hand</th><th style="text-align:right">Qty</th><th style="text-align:right">Cover</th><th style="text-align:right">Reorder at</th><th style="text-align:right">Lead</th><th>Status</th><th style="text-align:right">On order</th><th></th></tr></thead>
-            <tbody>${items.map(i => `<tr class="stk2-row--${escHtml(i.status)}">
-                <td><a href="#" class="stk2-ledger-link" data-ledger="${escHtml(i.id)}" title="Open the ledger — every in and out behind this figure"><strong>${escHtml(i.name)}</strong></a><div class="cat-sub" style="margin:0">${i.baselineDate ? 'counted ' + fmtDate(i.baselineDate) : 'not counted'}</div></td>
-                <td>${meter(i)}</td>
-                <td style="text-align:right;font-variant-numeric:tabular-nums">${fmtQty(i.onHand, i.unit, null, i.unitLabel)}</td>
-                <td style="text-align:right;font-variant-numeric:tabular-nums">${i.daysCover == null ? '—' : fmtNum(i.daysCover) + ' d'}</td>
-                <td style="text-align:right;font-variant-numeric:tabular-nums" title="${i.reorderMode === 'manual' ? 'Manual reorder point' : 'Auto: avg daily × (lead time + safety days)'}">${i.reorderPoint == null ? '—' : fmtNum(i.reorderPoint)}${i.reorderMode === 'manual' ? '' : ' <span class="cat-sub">auto</span>'}</td>
-                <td style="text-align:right">${i.leadTimeDays ? i.leadTimeDays + ' d' : '—'}</td>
-                <td>${statusChip(i)}</td>
-                <td style="text-align:right;font-variant-numeric:tabular-nums">${i.onOrder ? fmtQty(i.onOrder, i.unit) : '—'}</td>
-                <td style="text-align:right;white-space:nowrap"><span class="stk2-io"><button class="btn-secondary btn-sm" data-move="in" data-item="${escHtml(i.id)}" title="A delivery arrived">Receive</button><button class="btn-secondary btn-sm" data-move="adjust" data-item="${escHtml(i.id)}" title="Set on hand to what's actually there">Adjust</button></span></td>
-            </tr>`).join('')}</tbody></table></div>`;
-    }
-
     // ── Counts ──
     async function renderCounts(body) {
         body.innerHTML = '<div class="orders-loading">Loading counts…</div>';
@@ -793,7 +773,7 @@ const Stock = (() => {
                     <p class="cat-sub" style="margin:0">${committed ? 'Frozen: expected, variance and valuation were snapshotted at commit.' : 'Expected is the engine\'s figure at the start of this date (12:00am). Enter what you physically counted; tick <em>Not counted</em> for anything skipped (it keeps its old baseline).'}</p>
                 </div>
                 <div class="stk2-form-row">
-                    <label class="cat-sub" style="margin:0;display:flex;align-items:center;gap:0.35rem" title="${committed ? 'Move this count to another date. Frozen figures stay as committed; the baseline moves with the date.' : 'Count date (as at end of day)'}">Date <input type="date" id="stk2-count-date" value="${escHtml(c.date)}"></label>
+                    <label class="cat-sub" style="margin:0;display:flex;align-items:center;gap:0.35rem" title="${committed ? 'Move this count to another date. Frozen figures stay as committed; the baseline moves with the date.' : 'Count date — the opening stock at 12:00am on this date'}">Date <input type="date" id="stk2-count-date" value="${escHtml(c.date)}"></label>
                     ${committed
                         ? `<button class="btn-secondary btn-sm" id="stk2-reopen" title="Turn this count back into a draft to correct it, then commit again">Reopen to edit</button><a class="btn-secondary btn-sm" href="/api/stock/counts/${encodeURIComponent(c.id)}/valuation?format=csv" download>Valuation CSV</a>`
                         : `<button class="btn-secondary btn-sm" id="stk2-save-draft">Save draft</button><button class="btn-primary btn-sm" id="stk2-commit">Commit count</button>`}
@@ -965,9 +945,9 @@ const Stock = (() => {
 
         body.innerHTML = `
         <div class="cat-section stk2-section">
-            <div class="cat-section-head"><div><h2 class="cat-title">Products</h2><p class="cat-sub" style="margin:0">Each depletes from its Sales History bucket. Prime Tie Bundled is costed from its shipments (FIFO); Loose and eco Ties carry their own cost per kg.</p></div></div>
+            <div class="cat-section-head"><div><h2 class="cat-title">Products</h2><p class="cat-sub" style="margin:0">Prime Tie Bundled is the tracked line — costed from its shipments (FIFO) and depleted by Sales History. Loose and eco Ties are parked (inactive) until wanted; each would carry its own cost per kg.</p></div></div>
             <table class="stk-table stk2-table"><thead><tr><th>Name</th><th>Sales bucket</th><th style="text-align:right">Cost $/kg</th><th>Active</th><th></th></tr></thead>
-            <tbody>${products.map(i => `<tr class="stk2-rowlink" data-open="${escHtml(i.id)}">
+            <tbody>${products.map(i => `<tr class="stk2-rowlink${i.active === false ? ' stk2-lot--done' : ''}" data-open="${escHtml(i.id)}" title="${i.active === false ? 'Parked — not tracked. Open to reactivate.' : ''}">
                 <td>${i.profile?.imageUrl ? `<img class="stk2-thumb" src="${escHtml(i.profile.imageUrl)}" alt="" loading="lazy" onerror="this.remove()">` : ''}<strong>${escHtml(i.name)}</strong></td><td class="cat-sub">${escHtml(i.salesKey || '—')}</td>
                 <td style="text-align:right;font-variant-numeric:tabular-nums" title="${escHtml(i.id === SHIPMENT_PRODUCT_ID ? (i.unitValueSource || 'No costed shipment yet') : 'Own cost per kg (edit in the popover)')}">${money(i.unitValue)}${i.id === SHIPMENT_PRODUCT_ID ? (i.unitValueSource ? ` <span class="cat-sub">${escHtml(i.unitValueSource.split(' · ')[0])}</span>` : '') : ' <span class="cat-sub">own</span>'}</td>
                 <td>${i.active === false ? 'No' : 'Yes'}</td>

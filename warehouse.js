@@ -439,11 +439,11 @@ const Warehouse = (() => {
         _importsPrefetchP = (async () => {
             let config = {}, actuals = {};
             try {
-                const [configData, ordersData] = await Promise.all([
-                    fetch('/api/import/forecast').then(r => r.ok ? r.json() : {}).catch(() => ({})),
-                    fetch('/api/orders').then(r => r.ok ? r.json() : []).catch(() => []),
-                ]);
+                const configData = await fetch('/api/import/forecast').then(r => r.ok ? r.json() : {}).catch(() => ({}));
                 config = configData || {};
+                // Actuals come with the forecast (Bundled kg from Sales History); only
+                // fall back to summing orders when an old server omits them.
+                const ordersData = config.actuals ? [] : await fetch('/api/orders').then(r => r.ok ? r.json() : []).catch(() => []);
                 if (config.actuals) { actuals = { ...config.actuals }; }
                 for (const o of (config.actuals ? [] : (ordersData || []))) {
                     const ym = nzYm(o.createdAt);
@@ -494,7 +494,7 @@ const Warehouse = (() => {
         }
 
         let forex = {};
-        const fxToday = new Date().toISOString().slice(0, 10);
+        const fxToday = new Date().toLocaleDateString('en-CA', { timeZone: 'Pacific/Auckland' });
         try {
             const cached = localStorage.getItem('imp-fx-' + fxToday);
             if (cached) {
@@ -2616,7 +2616,7 @@ const Warehouse = (() => {
                                 value="${config.startingKg ?? ''}" placeholder="e.g. 5000" min="0" step="any">
                             <label style="font-size:0.8125rem;color:#64748b;white-space:nowrap">as of</label>
                             <input type="date" id="imp-stock-date" class="imp-url-input" style="max-width:170px"
-                                value="${escHtml(config.stocktakeDate || new Date().toISOString().slice(0, 10))}">
+                                value="${escHtml(config.stocktakeDate || new Date().toLocaleDateString('en-CA', { timeZone: 'Pacific/Auckland' }))}">
                             <button class="btn-primary btn-sm" id="imp-stock-save-btn">Save</button>
                             <button class="btn-secondary btn-sm" id="imp-stock-cancel-btn">Cancel</button>
                         </div>
@@ -2871,7 +2871,7 @@ const Warehouse = (() => {
                     }
                     const dateInp = document.getElementById('ship-startdate');
                     if (dateInp && !dateInp.value) {
-                        dateInp.value = new Date().toISOString().slice(0, 10);
+                        dateInp.value = new Date().toLocaleDateString('en-CA', { timeZone: 'Pacific/Auckland' });
                     }
                 }
             });
@@ -3167,7 +3167,7 @@ const Warehouse = (() => {
                 const { shipId } = e.target.dataset;
                 const idx   = parseInt(e.target.dataset.idx);
                 const done  = e.target.checked;
-                const today = new Date().toISOString().slice(0, 10);
+                const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Pacific/Auckland' });
                 config.shipments = (config.shipments || []).map(s => {
                     if (s.id !== shipId) return s;
                     const milestones = (s.milestones || []).map((m, i) =>
@@ -3293,7 +3293,7 @@ const Warehouse = (() => {
             if (stageStep) {
                 const { shipId } = stageStep.dataset;
                 const idx = parseInt(stageStep.dataset.idx);
-                const today = new Date().toISOString().slice(0, 10);
+                const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Pacific/Auckland' });
                 config.shipments = (config.shipments || []).map(s => {
                     if (s.id !== shipId) return s;
                     const milestones = (s.milestones || []).map((m, i) =>
@@ -3435,11 +3435,9 @@ const Warehouse = (() => {
         let config = {};
         let actuals = {};
         try {
-            const [configData, ordersData] = await Promise.all([
-                fetch('/api/import/forecast').then(r => r.ok ? r.json() : {}).catch(() => ({})),
-                fetch('/api/orders').then(r => r.ok ? r.json() : []).catch(() => []),
-            ]);
+            const configData = await fetch('/api/import/forecast').then(r => r.ok ? r.json() : {}).catch(() => ({}));
             config = configData || {};
+            const ordersData = config.actuals ? [] : await fetch('/api/orders').then(r => r.ok ? r.json() : []).catch(() => []);
             if (config.actuals) actuals = { ...config.actuals };
             for (const o of (config.actuals ? [] : (ordersData || []))) {
                 const ym = nzYm(o.createdAt);

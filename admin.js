@@ -1,4 +1,4 @@
-// ── Admin / Catalogue module ──
+// ── Settings module (was Catalogue) ──
 // Handles #admin view — pricing matrix and store locations
 
 const Admin = (() => {
@@ -13,7 +13,7 @@ const Admin = (() => {
     }
 
     function escHtml(str) {
-        return String(str || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        return String(str || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
     }
 
     function showToast(msg) {
@@ -23,86 +23,6 @@ const Admin = (() => {
         t.classList.add('show');
         setTimeout(() => t.classList.remove('show'), 3000);
     }
-
-    function parseCsv(text) {
-        const lines = text.replace(/^﻿/, '').trim().split(/\r?\n/);
-        if (lines.length < 2) return [];
-        const headers = lines[0].split(',').map(h => h.trim().toLowerCase().replace(/[\s-]+/g, '_').replace(/[^a-z0-9_]/g, ''));
-        return lines.slice(1)
-            .filter(l => l.trim())
-            .map(line => {
-                const values = [];
-                let cur = '', inQ = false;
-                for (const ch of line) {
-                    if (ch === '"') { inQ = !inQ; }
-                    else if (ch === ',' && !inQ) { values.push(cur.trim()); cur = ''; }
-                    else { cur += ch; }
-                }
-                values.push(cur.trim());
-                return Object.fromEntries(headers.map((h, i) => [h, values[i] ?? '']));
-            });
-    }
-
-    const STORE_HEADERS = ['Customer Code', 'Customer', 'Branch', 'City', 'Street Address', 'Postcode', 'Phone', 'Zone_courier', 'Zone_freight'];
-    const STORE_EXAMPLE = ['FF-Te-Puke', 'Fruitfed', 'Fruitfed - Te Puke', 'Te Puke', '1 Jellicoe Street', '3119', '07 533 1234', 'Local', 'Tauranga / Te Puke'];
-
-    function downloadCsv(csv, filename) {
-        const a = document.createElement('a');
-        a.href = 'data:text/csv;charset=utf-8,' + encodeURIComponent(csv);
-        a.download = filename;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-    }
-
-    function quoteField(v) {
-        const s = String(v ?? '');
-        return s.includes(',') || s.includes('"') || s.includes('\n') ? `"${s.replace(/"/g, '""')}"` : s;
-    }
-
-    function itemsToCsv(items) {
-        const headers = ['Id', 'Name', 'Unit Price', '150+ kg', '500+ kg', '2000+ kg'];
-        const rows = items.map(i => [
-            i.id || '', i.name || '',
-            i.defaultPrice ?? '', i.pb1Price ?? '', i.pb2Price ?? '', i.pb3Price ?? '',
-        ].map(quoteField).join(','));
-        return [headers.join(','), ...rows].join('\n');
-    }
-
-    function storesToCsv(stores) {
-        const headers = ['Customer Code', 'Customer', 'Branch', 'City', 'Street Address', 'Postcode', 'Phone', 'Zone_courier', 'Zone_freight'];
-        const rows = stores.map(s => [
-            s.customerCode || '', s.customer || '', s.branch || '',
-            s.city || '', s.streetAddress || '', s.postcode || '', s.phone || '',
-            s.zoneCourier || '', s.zoneFreight || '',
-        ].map(quoteField).join(','));
-        return [headers.join(','), ...rows].join('\n');
-    }
-
-    // (storesTableRows removed — the Stores tab now renders an editable
-    // table inline rather than a short read-only preview.)
-
-    // ── Price matrix row HTML ──
-    function matrixRow(item) {
-        const p = v => (v != null && v !== '') ? Number(v).toFixed(2) : '';
-        return `
-        <tr class="matrix-row">
-            <td><input type="text" class="matrix-id matrix-cell-input" value="${escHtml(item.id || '')}" placeholder="PT-I-10"></td>
-            <td><input type="text" class="matrix-name matrix-cell-input" value="${escHtml(item.name || '')}" placeholder="Product name"></td>
-            <td><input type="number" class="matrix-p0 matrix-cell-input matrix-price-input" value="${p(item.defaultPrice)}" placeholder="0.00" min="0" step="0.01"></td>
-            <td><input type="number" class="matrix-p150 matrix-cell-input matrix-price-input" value="${p(item.pb1Price)}" placeholder="—" min="0" step="0.01"></td>
-            <td><input type="number" class="matrix-p500 matrix-cell-input matrix-price-input" value="${p(item.pb2Price)}" placeholder="—" min="0" step="0.01"></td>
-            <td><input type="number" class="matrix-p2000 matrix-cell-input matrix-price-input" value="${p(item.pb3Price)}" placeholder="—" min="0" step="0.01"></td>
-            <td><button class="matrix-del" title="Remove row">×</button></td>
-        </tr>`;
-    }
-
-    // ── Prices tab (pricing matrix) ──
-    // The Prices and Stores catalogs are now sourced from published Google
-    // Sheets via /api/catalog/items and /api/catalog/stores. The Hub no
-    // longer accepts edits — the sheet is the source of truth. This tab is
-    // a read-only viewer plus a link out for editing.
-    const ITEMS_SHEET_VIEW_URL  = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSf_VXDqVAC5KqHJZTil7H-2MoeK5lSqx5OWmCaigi6Xn7wNdznlp0mS-D5rgI35-X4Vh-itflowh1j/pubhtml?gid=0';
 
     function fmtPrice(v) { return v == null ? '<span class="cat-price-nil">—</span>' : '$' + Number(v).toFixed(2); }
 
@@ -722,7 +642,8 @@ const Admin = (() => {
             });
         }
 
-        await reload();
+        try { await reload(); }
+        catch (e) { body.innerHTML = `<p class="cat-sub" style="padding:1rem;color:#b91c1c">Could not load stores: ${escHtml(e.message)}</p>`; }
     }
 
     async function renderAdmin(container) {

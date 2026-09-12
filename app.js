@@ -238,7 +238,7 @@ async function loadDashboardPnl() {
 // ── Notification system ──────────────────────────────────────────────────
 // Shared data fetch + dismiss persistence for dashboard banner and #notifications view.
 
-const _notifEsc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+const _notifEsc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 const NOTIF_DISMISS_KEY = 'hub-notif-dismissed';
 const NOTIF_TTL = 86400000;            // 24h — ordinary notifications come back tomorrow
 const NOTIF_STICKY_TTL = 180 * 86400000; // sticky ones stay dismissed (per occurrence) ~6 months
@@ -274,7 +274,7 @@ function notifRestoreAll() {
 async function confirmShipmentArrival(shipId) {
     try {
         const forecast  = await fetch('/api/import/forecast').then(r => r.json());
-        const today     = new Date().toISOString().slice(0, 10);
+        const today     = _ymd(new Date());
         const shipments = (forecast.shipments || []).map(s => {
             if (s.id !== shipId) return s;
             // Mark the last milestone as done (that's what triggered the notification)
@@ -549,7 +549,7 @@ function _renderCalendarModule() {
     if (!body) return;
 
     const today = new Date();
-    const todayStr = today.toISOString().slice(0, 10);
+    const todayStr = _ymd(today);
     const selDate = _cal.selectedDate || todayStr;
     const visible = ev => _cal.toggles.has(ev.type);
 
@@ -784,6 +784,11 @@ async function handleRoute() {
     }
 
     const editMatch = hash.match(/^orders\/([^/]+)\/edit$/);
+    if (editMatch && currentRole === 'warehouse') {
+        // Warehouse gets the slip-only detail view, never the admin edit form.
+        location.hash = 'orders/' + editMatch[1];
+        return;
+    }
     if (editMatch) {
         setActiveView('view-orders-edit');
         setActiveNav('nav-orders');
