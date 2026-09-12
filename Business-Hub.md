@@ -95,7 +95,8 @@ Roughly by value. Items marked **[review 12 Sep]** came out of the code review a
 9. **Backups** — `backup:*` keys are written without TTL; add a 90-day expiry.
 10. **Data hygiene (ongoing)** — customer/store-name consistency; placeholder-contact cleanup; historical-seed corrections; a family-fold safeguard for report grouping.
 11. **Polish** — consistent Xero error handling (token / rate / network), an order/backup search tool, GoSweetSpot void-label, warehouse SOP, mobile-first warehouse UI (deliberately out of scope so far).
-12. **Retire the manual Imports stocktake** — `startingKg` / `stocktakeDate` are still writable as a fallback; once the first count is committed they are superseded by the stock anchor and can go.
+12. **Frontend consolidation [review 12 Sep]** — one dashboard load still fetches the forecast up to 5× and the calendar 2× (hoist one promise-cached loader in app.js); `api()`, `escHtml`, `showToast`, `fmtDate` and the modal scaffold are each defined in 6–9 modules with slightly different behaviour; `alert()` still used for errors in lc.js / payslips.js / orders.js; ~370 unused CSS selectors (db-alerts, db-grid, imp-connect/cost/matrix families); dead nav-bootstrap blocks in app.js; the Stock trajectory chart should use the shared chart registry so it's destroyed on navigation.
+13. **Retire the manual Imports stocktake** — `startingKg` / `stocktakeDate` are still writable as a fallback; once the first count is committed they are superseded by the stock anchor and can go.
 
 ### Still out of scope
 Supplier PO automation · MYOB decommission · pricing/costing rebuild · multi-tenant anything.
