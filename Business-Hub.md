@@ -40,7 +40,7 @@ Both behind Cloudflare Access. `/api/me` maps the email to a role (UX gating onl
 
 ## 2. Architecture
 
-- **Frontend** — single-page app, no framework, no bundler: `index.html` + `styles.css` + `app.js`, one IIFE module per view (`orders.js`, `stock.js`, `warehouse.js` (Imports/forecast), `sales.js`, `admin.js`, `payslips.js`, `lc.js`, `calendar.js`, `dispatch-log.js`). Chart.js via CDN.
+- **Frontend** — single-page app, no framework, no bundler: `index.html` + `styles.css` + `app.js`, one IIFE module per view (`orders.js`, `stock.js`, `warehouse.js` (Imports/forecast), `sales.js`, `admin.js`, `payslips.js`, `lc.js`, `calendar.js`). Chart.js via CDN.
 - **Backend** — Cloudflare Pages Functions under `functions/api/`. Domains: `orders/`, `xero/`, `sales-history/`, `catalog/`, `import/`, `stock/`, `courier/`, `payroll/`, `print/`, `calendar/`, `lc-*`. Shared helpers are underscore-prefixed (`_dates.js`, `_xero.js`, `_freight.js`, `_courier.js`, `stock/_engine.js`, `stock/_store.js`, `import/_cost.js`, `sales-history/_writer.js`).
 - **Persistence** — Cloudflare KV. `ORDERS_KV`: orders, `sales_history`, stock (`stock:*`), import forecast, payroll, LC records, legacy `stocktake:*`. `XERO_KV`: OAuth tokens, cached customers, alerts, payment-reconcile state.
 - **Reference data** — catalogue items (SKU, kg, Type/Size, units per box, prices) and stores (branch, zone, pickup) are published Google Sheets read live at the edge.
