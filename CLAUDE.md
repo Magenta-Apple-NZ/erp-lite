@@ -1,75 +1,34 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+Guidance for Claude Code when working in this repository.
 
-## Project ambition
+## What this is
 
-**The Business Hub is evolving from a static dashboard into a mini-ERP.** Over a 12-week sprint (Apr 17 — Jul 17, 2026), it will become the system of record for orders, dispatch, and Xero invoice coordination. It consolidates three separate systems (Chrome Extension scraper, Make webhooks, Packing Slip Generator on Render) into one integrated platform.
+The Business Hub is the mini-ERP for Prime Ties / Enviroware: orders enter once and flow to packing slips, courier labels, Xero invoices, the dispatch log, sales history, stock and forecasts. Two users behind Cloudflare Access. Read `Business-Hub.md` for the north star, what's shipped and the backlog; `Stock-Rebuild.md` for the stock engine; `README.md` for setup.
 
-**End state (Jul 17):** Warehouse staff work autonomously from the Hub queue. Orders enter once, generate packing slips natively, and push to Xero. Manual logs and triple-keying are gone.
+## Architecture in one breath
 
-See `Business-Hub.md` for the full context (users, architecture, source-of-truth decisions) and the 5-phase roadmap with success criteria.
+Single-page app with no framework or bundler (`index.html`, `styles.css`, `app.js`, one IIFE module per view sharing the global scope) + Cloudflare Pages Functions under `functions/api/` + Cloudflare KV (`ORDERS_KV`, `XERO_KV`). Catalogue items and stores are published Google Sheets read live. Deploy = push to `main`.
 
-## Running locally
+## Conventions (follow these)
 
-```bash
-python3 -m http.server 8000
-# then open http://localhost:8000
-```
+- **Dates.** Every business date is a Pacific/Auckland `YYYY-MM-DD` string. Use `functions/api/_dates.js` (`nzYmd`, `nzToday`, `addDays`, `daysBetween`) — never `new Date().toISOString().slice(0,10)`. UTC ISO timestamps are audit metadata only.
+- **Classification.** Order lines become product kg only through `functions/api/sales-history/_writer.js` (`rowFromOrder`, catalogue Type/Size first). Do not write another classifier.
+- **Stock.** A count is the opening stock at 12:00am on its date. Stock is derived on read; never store a running balance. Engine logic goes in `functions/api/stock/_engine.js` (pure) with a test in `tests/stock-engine.test.js`.
+- **Sales history sync.** Any endpoint that writes an order must call `syncSalesHistory(env, order)` afterwards.
+- **Shared helpers** live in underscore-prefixed files (`_xero.js`, `_freight.js`, `_courier.js`, `_dates.js`, `import/_cost.js`); Pages ignores them as routes.
+- **Anthropic calls** go through raw `fetch` (pattern in `functions/api/lc-extract.js` / `orders/extract-pdf.js`), model `claude-sonnet-5`.
+- **Frontend style.** Plain template literals with `escHtml`; modals use `.modal-overlay` / `.modal-box`; toasts via `showToast`; the Hub is light-only (do not add `prefers-color-scheme` rules).
+- **Tests.** `npm test` runs under both `TZ=UTC` and `TZ=Pacific/Auckland`; run it before committing engine changes. `node --check` every edited file.
+- **Commits.** One change per commit with a descriptive message; push to `main` to deploy.
 
-No build step. Open `index.html` directly via `file://` if you need local file/folder links to work natively (Chrome blocks `file://` links from `http://` pages).
+## Things not to do
 
-## Architecture
+- Don't touch the raw historical sales seed (`source: 'historical'` rows) except through the Sales Data tools.
+- Don't add per-product reorder points; products are replenished by shipments.
+- Don't reintroduce description parsing anywhere in the stock path.
+- Don't make Loose / eco Ties active; they are parked by decision.
 
-**Frontend:** Single-page app (`index.html` + `styles.css` + `app.js` + `config.json`). No frameworks, no bundler.
+## Memory
 
-**Backend:** Cloudflare Workers (Pages Functions) under `/functions/api/`. Currently includes:
-- `_xero.js` — Shared Xero OAuth logic
-- `xero/auth.js` — Initiate OAuth flow
-- `xero/callback.js` — Handle OAuth callback, store tokens in XERO_KV
-- `xero/status.js` — Get Xero organisation & contact list
-- `xero/customers.js` — Fetch Xero customers for typeahead
-- `xero/push.js` — (Planned) Push invoice to Xero
-
-**Data layer:** Cloudflare KV (persistent key-value store). Currently planned namespaces:
-- `ORDERS_KV` — Order records (ID, customer, items, ship-to, status, packing slip data)
-- `XERO_KV` — Xero OAuth tokens + cached customer/location data
-
-### Frontend data flow
-
-`loadConfig()` fetches `config.json` at runtime → populates `allGroups` and `pinnedItems` → `renderGroups()` / `renderPinned()` build the DOM. **config.json is the only file users edit** for static content (groups, links, seasonal items).
-
-**Item types:** `link` (opens URL), `file`, `folder`. File/folder items get a "Copy path" button as fallback.
-
-**Seasonal logic:** Items tagged with `"season": "oct-mar"` are dimmed off-season with a grey badge.
-
-**Currency widget:** Fetches live rates from `frankfurter.dev` on load.
-
-**Collapse state:** Persisted to `localStorage` under `hub-collapsed`.
-
-### Backend data flow (Phase 1+)
-
-App routes like `/orders` and `/warehouse` will call Cloudflare Worker endpoints (`/api/orders`, `/api/orders/[id]`, etc.) to fetch/create/update orders in KV. Xero integration flows through `/api/xero/push`.
-
-## Current progress
-
-**✅ Phase 1 scaffolding complete** (Week 1–3, in progress):
-- Cloudflare Functions boilerplate and OAuth flow implemented
-- Order creation form with Xero customer typeahead
-- KV namespace bindings declared in `wrangler.toml`
-- Orders list and detail views drafted in the UI
-
-**⏳ Next steps:**
-- Provision `ORDERS_KV` and `XERO_KV` namespaces in Cloudflare dashboard
-- End-to-end verification: create order → render packing slip → push Xero draft
-- Seed store locations into KV from existing Google Sheet
-
-**🚫 Feature-frozen:** Packing Slip Generator (Render service) receives no new work from this point. All slip rendering moves to Hub.
-
-## Deployment
-
-Hosted on Cloudflare Pages from the `Magenta-Apple-NZ/erp-lite` GitHub repo (auto-deploys on push to `main`). Custom domain: `hub.primetie.co.nz`. Access restricted to two users via Cloudflare Access.
-
-Deploy: commit and push to `main` — Pages + Workers both auto-deploy.
-
-**KV provisioning:** Namespaces must be created in the Cloudflare dashboard and their IDs added to `wrangler.toml` before Phase 1 can be verified.
+Persistent notes live in `~/.claude/projects/.../memory/` (see `MEMORY.md` there): depot printer status, Xero granular scopes, project overview.

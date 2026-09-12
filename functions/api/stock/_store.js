@@ -62,7 +62,7 @@ export async function saveSettings(env, settings) {
 // its product buckets. Consumables are added by hand in Admin → Stock.
 // Only Prime Tie Bundled is tracked for now (fed by shipments, FIFO-costed).
 // Loose and eco Ties exist so their sales buckets resolve, but stay inactive
-// until they are wanted — reactivate from Catalogue → Stock.
+// until they are wanted — reactivate from Settings → Stock.
 export const PRODUCT_SEED = [
     { id: 'prime-tie-bundled', name: 'Prime Tie Bundled', class: 'product', unit: 'kg', active: true,  key: true,  sortOrder: 10, salesKey: 'bundles', aliases: [], accountCode: '1440', unitValue: null, unitValueAsAt: null, reorder: { mode: 'auto', manualPoint: null, safetyDays: null, reorderQty: null } },
     { id: 'prime-tie-loose',   name: 'Prime Tie Loose',   class: 'product', unit: 'kg', active: false, key: false, sortOrder: 20, salesKey: 'loose',   aliases: [], accountCode: '1440', unitValue: null, unitValueAsAt: null, reorder: { mode: 'auto', manualPoint: null, safetyDays: null, reorderQty: null } },

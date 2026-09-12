@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(node --check functions/api/sales-history/backfill.js)",
+      "Bash(node --check functions/api/catalog/items.js)",
+      "Bash(curl -sL \"https://docs.google.com/spreadsheets/d/e/2PACX-1vSf_VXDqVAC5KqHJZTil7H-2MoeK5lSqx5OWmCaigi6Xn7wNdznlp0mS-D5rgI35-X4Vh-itflowh1j/pub?gid=0&single=true&output=csv\")"
+    ]
+  }
+}

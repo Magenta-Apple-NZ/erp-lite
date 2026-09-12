@@ -1,53 +1,53 @@
-# Business Hub
+# Business Hub — developer notes
 
-A local browser-based business dashboard — one page to access all your spreadsheets, accounting links, compliance portals, and tools.
+Mini-ERP for Prime Ties / Enviroware: orders → packing slips → courier labels → Xero invoices → dispatch log → sales history → stock and forecasts. Live at [hub.primetie.co.nz](https://hub.primetie.co.nz) behind Cloudflare Access.
 
-## Setup
+| Doc | What it's for |
+|---|---|
+| [Business-Hub.md](Business-Hub.md) | The project: north star, architecture, what's shipped, backlog |
+| [Stock-Rebuild.md](Stock-Rebuild.md) | The stock engine model and API |
+| [CLAUDE.md](CLAUDE.md) | Conventions for AI-assisted changes |
 
-1. Open a terminal and navigate to this folder
-2. Run: `python3 -m http.server 8000`
-3. Open `http://localhost:8000` in Chrome or Edge
+## Run locally
 
-**Why a local server?** Chrome blocks `file://` links when a page is loaded over `http://`. If you open `index.html` directly via `file://`, local file/folder links will work natively. When using the local server, use the "Copy path" button next to file items to grab the path.
+No build step. Static files plus Cloudflare Pages Functions.
 
-## Configuration
+```bash
+# frontend only (no /api)
+python3 -m http.server 8000
 
-Edit `config.json` to manage all content. No code changes needed.
-
-### Item types
-
-| Type     | Opens                            | Example field |
-|----------|----------------------------------|---------------|
-| `link`   | URL in a new browser tab         | `"url": "https://..."` |
-| `file`   | Local file (spreadsheet, doc)    | `"path": "/Users/..."` |
-| `folder` | Local folder in Finder           | `"path": "/Users/..."` |
-
-### Pinned items
-
-Add a `"pinned"` array at the top level of `config.json` for your most-used items. These appear as quick-access buttons above the groups.
-
-### Seasonal tags
-
-Tag items with a `"season"` field using three-letter month abbreviations:
-
-```json
-"season": "oct-mar"
+# frontend + functions against local KV
+npx wrangler pages dev . --kv ORDERS_KV --kv XERO_KV
 ```
 
-- Items in season are shown normally with a green "In season" badge
-- Off-season items are dimmed with a grey badge
-- Wraps around the year boundary (e.g., `oct-mar` = October through March)
+Environment variables for the Functions (set in the Pages dashboard; see `wrangler.toml` for the full list): Xero client id/secret/redirect, PrintNode key, GoSweetSpot keys, `ANTHROPIC_API_KEY`, `HUB_WEBHOOK_KEY`, optional catalogue CSV URL overrides.
 
-### Collapse/expand
+## Tests
 
-Click any group header to collapse or expand it. State is saved in your browser.
+```bash
+npm test
+```
 
-### Reload
+Runs the stock-engine acceptance suite twice, under `TZ=UTC` and `TZ=Pacific/Auckland`; both must pass. Zero dependencies (`node:test`).
 
-Click the ↻ button in the header to reload `config.json` without refreshing the page.
+## Deploy
 
-## File paths
+Commit and push to `main`. Cloudflare Pages deploys the static assets and the Functions together. Environment or binding changes need a redeploy.
 
-- Use absolute paths (e.g., `/Users/amcleod/Documents/...`)
-- Paths with spaces work fine
-- iCloud Drive paths look like: `/Users/amcleod/Library/Mobile Documents/com~apple~CloudDocs/...`
+## Layout
+
+```
+index.html styles.css app.js      shell, dashboard, routing, chart registry
+orders.js stock.js warehouse.js   views (warehouse.js = Imports / forecast)
+sales.js admin.js payslips.js lc.js calendar.js dispatch-log.js
+config.json                       static dashboard groups + printer registry
+functions/api/                    Pages Functions; _prefixed files are shared helpers, not routes
+tests/                            node:test suites
+```
+
+## Conventions worth knowing
+
+- Business dates are NZ calendar dates (`functions/api/_dates.js`: `nzYmd`, `nzToday`, `addDays`). Never `toISOString().slice(0,10)` for a business date.
+- A stock count is the opening stock at 12:00am on its date.
+- Order lines are classified by the catalogue's Type/Size via `sales-history/_writer.js`; every other consumer (payroll, exports, stock) calls that, never its own heuristic.
+- KV has no transactions; bulk writes back up to `backup:*` first.

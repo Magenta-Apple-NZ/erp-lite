@@ -1,156 +1,142 @@
 # Business Hub
 
-**Live:** [hub.primetie.co.nz](https://hub.primetie.co.nz) (Cloudflare Pages + Access)
-**Repo:** `Magenta-Apple-NZ/erp-lite`
-**Original sprint:** Apr 17 → Jul 17, 2026 (12 weeks · ~3 hrs/week)
-**Status (Aug 2026):** The original five-phase sprint is delivered and the platform has grown past it — orders, dispatch, imports/forecast, sales analytics, stocktake, Letter-of-Credit checking, **live courier labels (GoSweetSpot / Post Haste)**, and **monthly Hub payroll** are all live. This doc now describes what's shipped and what's still open, not a sprint in flight.
+**Owner:** Andrew McLeod — Calibrate (trading as Prime Ties / Enviroware)
+**Live:** [hub.primetie.co.nz](https://hub.primetie.co.nz) (Cloudflare Pages + Access) · **Repo:** `Magenta-Apple-NZ/erp-lite`
+**Status (Sep 2026):** the original 12-week sprint (Apr–Jul 2026) is delivered and the platform has grown past it. This is the single project document: why it exists, what's shipped, what's still open. Technical detail for the stock engine lives in [Stock-Rebuild.md](Stock-Rebuild.md); developer setup in [README.md](README.md); agent guidance in [CLAUDE.md](CLAUDE.md).
 
 ---
 
-## Part 1 — Context
+## 1. North star
 
-### What this is
-The Business Hub is a mini-ERP for Prime Ties. It replaced a patchwork of separate tools — a Chrome Extension scraper, Make webhooks, and a Render-hosted packing-slip generator — with one platform that owns orders, dispatch, Xero invoice coordination, imports, and reporting.
+The Hub exists to **remove re-keying from a two-person business**. An order enters once and flows end-to-end: packing slip → courier label → Xero invoice → dispatch log → sales history → stock and forecast. Sales, dispatch, shipments and stock that used to live in spreadsheets live in one place that updates itself.
+
+It is deliberately small: two users, one shared warehouse desktop, one printer station, one accountant. Anything that doesn't make that day easier doesn't ship.
+
+### Principles
+1. **Single source of truth.** An order, a sale, a shipment, a count — each exists in exactly one place. Everything else (charts, forecasts, stock levels, payslips) is a view derived from it on read.
+2. **The sheet is sacred until the Hub overtakes it.** Historical sales pre-April 2026 live in the Google Sheet seed; from April 2026 the Hub is authoritative. Catalogue items and stores stay in Google Sheets, read live.
+3. **No re-keying.** Order entered = slip printed = invoice pushed = dispatch logged = stock depleted. One action per stage.
+4. **Optimise for the work that happens.** Andrew reviews 5–20 orders a morning; the warehouse dispatches them; catalogue admin happens once a season. UI weight follows that.
+5. **Cloud-backed, no database to babysit.** Cloudflare KV for records, Google Sheets for reference data, no server.
+6. **Print is a first-class output.** Slips, address sheets and courier labels go straight to the depot printers via PrintNode.
+7. **NZ calendar dates everywhere.** Every business date is a Pacific/Auckland `YYYY-MM-DD`; UTC timestamps are audit metadata only.
 
 ### Who uses it
-Two people, both behind Cloudflare Access. No public surface, no external customers logging in.
-
-| User | Role |
-|---|---|
-| Andrew (head office) | Order entry, oversight, Xero, imports, LC, all admin |
-| Warehouse staff (shared desktop) | Queue + flag actions, packing slips, dispatch, stocktake |
-
-### What we set out to kill — and did
-- **Triple-keying.** An order was keyed into the Farmlands portal (scraped), into a Make scenario, and into Xero. Now it enters once and the packing slip + Xero invoice flow from it.
-- **The manual dispatch log.** Replaced by an append-only log that writes itself as orders move through the Hub.
-- **The manual "is it paid?" check.** Order payment status now reconciles automatically from Xero.
-
-### Convergence — three workstreams
-
-| Workstream | Role | State |
+| User | Where | Does |
 |---|---|---|
-| Chrome Extension | Data capture from Farmlands / Xero portals — browser scraping a server can't do | **Permanent.** POSTs clean order payloads to `/api/orders/inbound`. |
-| Business Hub | System of record — orders, ship-tos, status history, packing slips, Xero refs, dispatch log, imports, reporting | **Permanent.** The platform. |
-| Make + Render PSG | Glue that drove the old pipeline | **Being retired.** Slip rendering + Xero push are now native to the Hub; confirm what still runs through Make. |
+| Andrew (admin) | Desktop + phone | Order review, Xero, imports, LC, stock counts, settings |
+| Warehouse (Jake) | Shared depot desktop | Queue, print slips + labels, dispatch |
 
-Convergence point: `/api/orders`. Once an order exists in Hub KV, packing-slip rendering, freight calculation, and Xero invoice push are all local operations.
+Both behind Cloudflare Access. `/api/me` maps the email to a role (UX gating only).
 
-### Architecture
-- **Frontend** — single-page app, no framework, no bundler. `index.html` + `app.js` + `styles.css` + `config.json`, with per-view modules: `orders.js`, `warehouse.js` (stocktake), `imports.js`, `sales.js`, `dispatch-log.js`, `payslips.js`, `lc.js`, `admin.js`, `calendar.js`.
-- **Backend** — Cloudflare Pages Functions under `/functions/api/` (Workers). Domains: `orders/`, `xero/`, `sales-history/`, `catalog/`, `import/`, `stocktake/`, `lc/` + `lc-*`, `courier/`, `payroll/`, `print/`, `calendar/`.
-- **Persistence** — Cloudflare KV. `ORDERS_KV` (orders, `sales_history`, stocktake snapshots, import forecast, payroll blobs, LC records — hot/write-heavy). `XERO_KV` (OAuth tokens + cached customers, alerts, payment-reconcile state). Catalogue **items** and **stores** are read live from published Google Sheets (single source of truth, edge-cached).
-- **Integrations** — Xero (OAuth: invoices, payments, AR alerts), Google Drive (LC document archive), Google Calendar, PrintNode (depot printing), GoSweetSpot / Post Haste (courier, test mode), Chrome Extension (order intake).
-- **Auth** — Cloudflare Access locks the whole site to Andrew + warehouse. `/api/me` resolves the role from the authenticated email.
-- **Deploy** — push to `main` → Pages auto-deploys static assets and Workers.
+### What "done" looks like — a normal morning
+1. Warehouse opens the Hub: today's queue, created overnight by the Chrome Extension or by hand.
+2. Andrew reviews from his phone; pushes each to Xero (or links one that started in Xero).
+3. Warehouse prints slips and courier labels to the depot printers, packs, marks each dispatched.
+4. Dispatch log, sales history, stock on hand, consumables forecast and payroll inputs all update themselves.
+5. Nobody opens Make. Nobody re-keys an invoice. Nobody counts boxes to know what to reorder.
+
+---
+
+## 2. Architecture
+
+- **Frontend** — single-page app, no framework, no bundler: `index.html` + `styles.css` + `app.js`, one IIFE module per view (`orders.js`, `stock.js`, `warehouse.js` (Imports/forecast), `sales.js`, `admin.js`, `payslips.js`, `lc.js`, `calendar.js`, `dispatch-log.js`). Chart.js via CDN.
+- **Backend** — Cloudflare Pages Functions under `functions/api/`. Domains: `orders/`, `xero/`, `sales-history/`, `catalog/`, `import/`, `stock/`, `courier/`, `payroll/`, `print/`, `calendar/`, `lc-*`. Shared helpers are underscore-prefixed (`_dates.js`, `_xero.js`, `_freight.js`, `_courier.js`, `stock/_engine.js`, `stock/_store.js`, `import/_cost.js`, `sales-history/_writer.js`).
+- **Persistence** — Cloudflare KV. `ORDERS_KV`: orders, `sales_history`, stock (`stock:*`), import forecast, payroll, LC records, legacy `stocktake:*`. `XERO_KV`: OAuth tokens, cached customers, alerts, payment-reconcile state.
+- **Reference data** — catalogue items (SKU, kg, Type/Size, units per box, prices) and stores (branch, zone, pickup) are published Google Sheets read live at the edge.
+- **Integrations** — Xero (invoices, payments, P&L, AR alerts), GoSweetSpot / Post Haste (courier), PrintNode (depot printing), Google Drive (LC archive), Google Calendar, Anthropic (LC extraction, PO-PDF import), Chrome Extension (order intake → `/api/orders/inbound`).
+- **Deploy** — push to `main`; Pages deploys static assets and Functions together.
+- **Tests** — `npm test` runs the stock-engine suite under `TZ=UTC` and `TZ=Pacific/Auckland` (must agree).
 
 ### Source-of-truth decisions
-- The Hub owns the order/dispatch model. Xero is a downstream subscriber — invoices are pushed from the Hub; payment status flows back. Xero can't be the source: no packing-slip type, no multi-branch ship-to (e.g. PGG Wrightson corporate → Martinborough branch).
-- Xero (not MYOB) is the accounting path. MYOB decommission remains a parallel track, out of scope here.
-- Catalogue (items + stores) lives in Google Sheets, read live by the Hub — so pricing, kg-per-unit, product **Type/Size**, and store **zones** are edited in one place.
-- Packing slip layout is a customer-facing interface — it matches current PGG Wrightson / Farmlands expectations. The format is a published spec now that it's shipped.
+| Thing | Lives in | Notes |
+|---|---|---|
+| Orders, ship-tos, status events, courier record | Hub KV | Xero is downstream (invoice pushed from the Hub; payment status flows back) |
+| Sales history | Hub KV `sales_history` | One row per order, NZ-dated, kg by type and type×size, courier label counts; synced on every order write |
+| Catalogue (items, stores) | Google Sheets | Type/Size/kg/units-per-box drive classification, freight and box counts |
+| Seasonal sales forecast | Imports → Forecast → monthly averages | The one curve behind the stock trajectory, monthly forecast, consumables forecast |
+| Stock | Hub KV `stock:*` | Committed counts + derived depletion from sales history; see Stock-Rebuild.md |
+| Accounting | Xero | MYOB decommission is a separate track |
+
+---
+
+## 3. What's shipped
+
+**Orders & dispatch** — list + new/edit form with Xero customer typeahead, multi-branch ship-to, catalogue SKU autocomplete, server-side freight (zones, units-per-box, 14-box courier ceiling, pickup stores skip freight). PDF PO import (Claude extracts a customer's PO into the form). Native packing slips with PrintNode auto-print. Non-linear status; Xero push on any status until invoiced; automatic payment reconciliation. Dispatch log from timestamped events. Order audit + storeId mapping tools.
+
+**Courier** — GoSweetSpot / Post Haste live. Three-page label wizard (Recipient → Items → Print), box counts from catalogue units-per-box, two-fold label reconciliation that blocks creation on mismatch, PrintNode label printing, label popup (PDF, print, download, tracking). Aramex physical label books are tracked as stock per courier service until the Posthaste (on-demand) move.
+
+**Stock** — the engine described in Stock-Rebuild.md. Prime Tie Bundled on FIFO shipment lots with landed cost; consumables with a product × consumable matrix; counts (opening stock at 12:00am on their date, per-shipment sub-count, reopen/edit); Receive / Adjust movements; per-item ledger with COGS; 13/36-month trajectory and consumables forecast on the shared seasonal curve; valuation CSV per committed count. Loose and eco Ties are parked (inactive) until wanted.
+
+**Imports / forecast** — shipments with milestone timelines and V3 landed-cost breakdown (feeds FIFO lot cost); stock trajectory anchored on the committed count; monthly forecast with Average / Good / Great; monthly averages recomputable from history.
+
+**Sales history & analytics** — seed + live append; by month, cumulative (calendar / FY), type × size, annual, top stores; CSV round-trip and replace-historical import; store auto-match with stable storeId.
+
+**Payroll (Hub-side)** — monthly cycle; boxes dispatched auto-counted per pay month from the dispatch log (manual month reassignment), manual packed boxes / hours, base rate + petrol from settings, on-screen payslip + PDF. Inputs are ready for Xero Payroll (not yet pushed).
+
+**Letter of Credit checker** — upload + extract, per-document AI checks primed with ANZ discrepancy patterns, manual-accept overrides, Drive archive, print-ready presentation packet.
+
+**Platform** — Settings (prices, stores, printers, sales data, payroll, stock), Google Calendar, three-column dashboard (sales/stock · Xero P&L + AR · calendar), notifications view + nav badge, role-gated navigation.
+
+---
+
+## 4. Live backlog
+
+Roughly by value. Items marked **[review 12 Sep]** came out of the code review and are not yet done.
+
+1. **Xero Payroll push** — the largest un-started track (see §5). Pre-req: confirm Xero Payroll is enabled on the org.
+2. **Make / Extension cutover** — confirm what still runs through Make and retire it; the Extension stays as intake.
+3. **Concurrency on KV read-modify-write [review 12 Sep]** — `sales_history` upserts, `order_counter`, and `stock:movements` all read-modify-write whole blobs; two overlapping writes can lose a row. Serialise through one writer (Durable Object or queue) or verify-after-write. Orders self-heal on the index; sales rows and movements do not.
+4. **Role enforcement server-side [review 12 Sep]** — `/api/me` gates the UI only. Add a `_middleware.js` that maps the Access email to a role and blocks destructive verbs for the warehouse account. Also check `orders/by-po.js` (extension-facing) for the `X-Hub-Key` guard.
+5. **Stock engine performance [review 12 Sep]** — `historyFor` recomputes on-hand per day (O(days × rows)); fine at today's window, walk events once before the epoch window grows past a year.
+6. **Shipment schema validation [review 12 Sep]** — `POST /api/import/forecast` persists shipments verbatim; validate id / ym / kg / milestones since they feed receipts, lots and on-order.
+7. **Consolidate duplicated helpers [review 12 Sep]** — CSV parser ×7, "load every order" ×8, forex / shipment-status / V3 derived maths forked between `warehouse.js` and `functions/api/**`. Extract `_csv.js`, `loadOrders()`, and share the shipment maths.
+8. **Dead or undocumented endpoints [review 12 Sep]** — `orders/import.js` + `orders/export.js` (bulk edit pair; `import.js` writes orders without re-syncing sales history) and `import/index.js` + `import/fetch.js` (`import:schedule`) have no frontend caller. Delete or document as manual tools.
+9. **Backups** — `backup:*` keys are written without TTL; add a 90-day expiry.
+10. **Data hygiene (ongoing)** — customer/store-name consistency; placeholder-contact cleanup; historical-seed corrections; a family-fold safeguard for report grouping.
+11. **Polish** — consistent Xero error handling (token / rate / network), an order/backup search tool, GoSweetSpot void-label, warehouse SOP, mobile-first warehouse UI (deliberately out of scope so far).
+12. **Retire the manual Imports stocktake** — `startingKg` / `stocktakeDate` are still writable as a fallback; once the first count is committed they are superseded by the stock anchor and can go.
 
 ### Still out of scope
-Real-time per-SKU stock-on-hand (we have periodic **stocktake snapshots** + a forward **forecast**, not continuous inventory) · supplier PO automation · MYOB decommission · pricing/costing rebuild · mobile-first warehouse UI.
+Supplier PO automation · MYOB decommission · pricing/costing rebuild · multi-tenant anything.
 
 ---
 
-## Part 2 — What's shipped
+## 5. Payroll → Xero Payroll API
 
-The original five phases are delivered. Marking them against the plan:
+**Already shipped:** monthly Hub payroll with clean inputs (`payroll_config`, `payroll_monthly`, dispatch-log boxes per pay month). The official payslip is still keyed into Xero Payroll by hand.
 
-| Phase | Goal | Status |
-|---|---|---|
-| **1 · Order model + Xero push** | Order entered once → packing slip + Xero invoice | ✅ Delivered — plus automatic payment reconciliation back from Xero |
-| **2 · Warehouse queue + freight** | Warehouse works from Hub; freight computed server-side | ✅ Delivered — queue, PrintNode auto-print, zone/units-per-box freight, stores catalogue |
-| **3 · Close the invoicing loop** | "Complete" finalises the sale | ✅ Delivered — dispatch → Xero; payment status syncs |
-| **4 · Dispatch log** | Manual log goes away | ✅ Delivered — auto log feeds payroll + analytics |
-| **5 · Imports + seasonal demand** | "Enough stock for 60 days?" | ✅ Delivered — shipment milestones, stock trajectory, forecast, full sales analytics |
+**Goal:** the Hub prepares period inputs; Xero Payroll computes PAYE / KiwiSaver / ESCT / holiday pay and produces the official payslip. Eventually Jake submits his own numbers.
 
-### By domain
+**Pre-req:** confirm Xero **Payroll** is enabled on the org we OAuth against (separate subscription).
 
-**Orders & dispatch**
-- Order list + new/edit form with Xero customer typeahead; multi-branch ship-to; freight lines
-- Native packing slips (Render PSG retired for new work); PrintNode auto-print to the depot
-- Xero push: draft → invoice, PKS-id-derived numbers, contact-ID self-heal via live Xero search, **push available on any status until invoiced** (stages needn't be linear)
-- **Payment reconciliation** — `/api/xero/reconcile-payments` stamps `paidAt` from Xero (auto on Orders load, throttled; manual "Sync payments" button)
-- Dispatch log view built from timestamped status events
-
-**Courier** — GoSweetSpot / Post Haste **live**. Create-label wizard (Recipient → Items → Print), box-count derived from catalogue `unitsPerBox`, two-fold label reconciliation (labels vs boxes, labels vs invoiced), address suburb from store branch, PrintNode label printing, and a label popup (PDF preview · print · download · tracking). Freight vs courier decided by the 14-box (1 m²) ceiling; **pickup stores** are flagged in the catalogue and skip auto-freight.
-
-**Catalogue** — items + stores from Google Sheets; product **Type/Size**, store **zone**, and **Pickup** columns drive freight and sales classification deterministically. Stores editor has bulk delete-by-id + a store-ID-mandatory seed guard.
-
-**Sales History & analytics** — historical seed + live-order append; Sales by Month, Cumulative (Calendar/Financial page toggle), Product Type × Size, Annual Summary, Top Stores; page-level size filter (All / 10kg / 1kg); CSV round-trip + **Replace-historical** bulk import. Rows **auto-match to the store catalogue** and carry a stable **storeId** (mapping tool + backfill) so renamed stores stay aligned. An **order audit** flags dispatched-but-untracked / pre-Xero strays. **Stocktake** editor embedded here (snapshots, value-over-time, CSV import).
-
-**Imports / forecast** — shipments with editable milestone timelines, cost breakdown, and an 18-month stock trajectory (Average / Good / Great) with shipment arrivals overlaid.
-
-**Letter of Credit checker** — upload + extract, per-document AI checks primed with real ANZ discrepancy patterns, grouped requirements, manual-accept overrides, Drive archival, and a print-ready ANZ presentation packet.
-
-**Payroll (Hub-side)** — **monthly** cycle. Dispatch log grouped by pay month (auto-assigned by dispatch date, manual month reassignment); boxes dispatched auto-calculated per month; a consolidated payslip view with manual packed-box/hours entry, base rate + petrol from settings, and PDF.
-
-**Platform** — Google Calendar, three-column dashboard (Sales/Stock · Xero P&L incl. Cost of Sales + AR, FY chart · calendar), role-gated views. Notifications surface in a dedicated view + nav badge (dashboard banners removed).
+- **P1 — plumbing + one-employee push (~1 week).** Scopes `payroll.timesheets payroll.employees.read payroll.payruns.read payroll.settings.read` (re-consent). `/api/xero/payroll/settings` fetches EarningsRates + Employees into KV. Mapping screen: Hub line item → EarningsRateID, Hub employee → EmployeeID (`payroll_xero_map`). "Push to Xero" on the payslip builds and POSTs a Timesheet for the period. *Exit:* Generate payslip → Push to Xero → timesheet appears in Xero, no retyping.
+- **P2 — self-service view for Jake (~3–4 days).** `/payroll-submit`: dispatched boxes pre-filled, hours + packed boxes editable, submit pushes the timesheet. Add Jake to Access; gate by email. *Exit:* Jake submits; Andrew approves the pay run in Xero.
+- **P3 — polish.** "Already submitted" guard (read timesheets back), reimbursements → Xero Reimbursement Pay Items, YTD on the preview.
 
 ---
 
-## Part 3 — Live backlog
+## 6. Risks & watchpoints
 
-What's genuinely still open, roughly by value:
-
-1. **Xero Payroll API push (P1–P3, below).** The largest un-started track — push a Timesheet to Xero Payroll so Xero produces the official payslip, and eventually Jake self-submits. Monthly Hub payroll now feeds it clean inputs. Pre-req: confirm Xero **Payroll** is enabled on the org.
-2. **Make / Extension cutover.** Confirm what still runs through Make and retire it; the Extension stays as the intake source.
-3. **Data hygiene (ongoing).** Customer/store-name consistency (`Horticentre` vs `HortiCentre Ltd`, `PGG` vs `Fruitfed`) — tools now exist (auto-match, store-mapping, order audit), the cleanup itself continues. Also placeholder-contact cleanup and historical-seed corrections. A **family-fold** safeguard for report grouping is a candidate.
-4. **Polish / hardening.** Consistent Xero error handling (token/rate/network), an order/backup search tool, GoSweetSpot void-label, warehouse SOP, and grooming the Q3 backlog (stock-on-hand, supplier POs, MYOB retirement).
-
-**Recently shipped (was backlog):** courier is **live** (real Post Haste consignments, PrintNode labels — only the depot Honeywell PrintNode id is pending); payroll moved to a **monthly** cycle with a linked dispatch log and consolidated payslip.
-
----
-
-## Payroll → Xero Payroll API integration
-
-**Already shipped:** Hub-side payroll now runs on a **monthly** cycle. Boxes dispatched auto-calculate per pay month from the Dispatch Log (auto-assigned by dispatch date, with manual month reassignment via `order.payslipMonth`); packed 10kg / 1kg and hours are a single manual monthly entry (`payroll_monthly`); base rate + petrol come from `payroll_config`. Renders an on-screen payslip + PDF. Enough to compute pay; the official payslip is still keyed into Xero Payroll by hand.
-
-**Goal:** Hub prepares the period inputs; Xero Payroll computes PAYE / KiwiSaver / ESCT / Holiday Pay and produces the official payslip. Eventually Jake submits his own numbers from a stripped-down view, dispatched boxes pre-filled from his Dispatch Log activity.
-
-**Pre-req:** Confirm Enviroware/Prime Tie has Xero **Payroll** enabled on the org we already OAuth against — it's a separate subscription to standard Xero.
-
-### Phase P1 — Plumbing & one-employee push (~1 week)
-- Add OAuth scopes: `payroll.timesheets`, `payroll.employees.read`, `payroll.payruns.read`, `payroll.settings.read`. User re-consents Xero.
-- `/api/xero/payroll/settings` — fetch Xero `EarningsRates` + `Employees`, cache in KV.
-- Mapping screen: each Hub line item → Xero `EarningsRateID`; each Hub employee → Xero `EmployeeID` (persisted as `payroll_xero_map`).
-- "Push to Xero" on the payslip preview builds a Xero **Timesheet** for the period (one line per Hub line item) and POSTs it; Xero handles tax / KiwiSaver / leave at pay-run time. Inline link to the timesheet.
-
-**Exit:** Andrew clicks "Generate payslip" then "Push to Xero" and the timesheet appears in Xero ready for pay run, no retyping.
-
-### Phase P2 — Self-service view for Jake (~3–4 days)
-- `/payroll-submit` route — stripped-down employee view. Dispatched boxes pre-filled (read-only); hours + packed boxes editable; submit pushes the timesheet.
-- Add Jake to Cloudflare Access; gate admin vs. submit views by authenticated email.
-
-**Exit:** Jake submits his own period; Andrew approves the pay run in Xero.
-
-### Phase P3 — Polish
-- "Already submitted this period" guard (read timesheets back from Xero).
-- Optional reimbursements field wired to Xero Reimbursement Pay Items.
-- YTD figures on the preview (from Xero pay-run history).
+- **Warehouse adoption** — judge on sustained daily use, not build completion.
+- **Xero rate limits** (60/min/org) — reconcile and alerts self-throttle with 5-minute caches. Refresh tokens rotate on every use; a refresh race prompts a reconnect.
+- **KV has no transactions** — see backlog #3. Bulk writes back up first (`backup:*`).
+- **Extension is a single point of failure** — runs on Andrew's machine; the manual order form is the safety valve.
+- **Packing slip format** is a published customer-facing interface — parity before innovation.
+- **Service-account Drive** — LC archival needs a Shared Drive and full `drive` scope.
+- **Seasonality vs trailing usage** — consumables reorder from a 28-day trailing window reads near zero in Nov–Feb; the forecast-based order-by dates are the signal to use, not the reorder tier.
 
 ---
 
-## Risks & watchpoints
+## 7. What replaced what
 
-- **Warehouse adoption.** The queue must be faster than the email + sheet habit. Judge on *use*, not build completion.
-- **Xero rate limits** — 60 calls/min/org. Fine for two users; the payment-reconcile and alerts endpoints self-throttle (5-min caches) to stay clear.
-- **Xero token refresh** — refresh tokens rotate on every use; the Hub re-reads KV on a refresh race and prompts a reconnect if it can't recover.
-- **Packing slip format drift** — PGG Wrightson and similar have established expectations. Parity before innovation; it's a published interface now.
-- **KV has no transactions.** Orders self-heal on index races; bulk writes back up first (`backup:sales_history:<ts>` etc.).
-- **Extension is a single point of failure** — runs only on Andrew's machine. The manual order-entry form is the safety valve.
-- **Service-account Drive** — LC archival requires a Shared Drive (service accounts have no personal-Drive quota) and full `drive` scope with `supportsAllDrives`.
-
----
-
-## What success looks like — and where we stand
-
-1. **Andrew never keys an order twice.** ✅ Order → slip → Xero invoice from one entry.
-2. **Warehouse works from the Hub each morning.** ✅ Queue, slips, dispatch, stocktake — pending the real verdict: sustained daily use.
-3. **Dispatch → Authorised Xero invoice is one action.** ✅ Push + payment sync close the loop.
-4. **The manual log is gone.** ✅ Events captured automatically.
-5. **"Next container — will it cover spring?" answerable from the Hub.** ✅ Imports forecast + stock trajectory.
-
-Remaining to call the whole thing "done": Xero Payroll push and Make fully retired. (Courier is now live.)
+| Was | Is |
+|---|---|
+| Farmlands portal → manual entry → Make webhook | Chrome Extension → `/api/orders/inbound` (or PDF PO import) |
+| Packing Slip Generator (Render) | Native slip in `orders.js` + PrintNode |
+| MYOB invoice re-entry | Xero invoice pushed from the order |
+| Dispatch tally sheet | Hub dispatch log from status events |
+| Three sales spreadsheets | `sales_history` + one weaved monthly series |
+| Hand-entered monthly averages | "Recompute from history" |
+| Annual $-valued stocktake spreadsheet | Stock counts + FIFO lots + valuation CSV |
+| Aramex label books counted by eye | Label-book consumables depleting per invoiced label |

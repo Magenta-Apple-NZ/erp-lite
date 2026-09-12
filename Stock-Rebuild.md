@@ -1,277 +1,103 @@
-# Stock & Stocktake System — Rebuild Spec (v2, corrected against the codebase)
+# Stock engine — current model
 
-**Status:** spec of record · **Cutover:** 1 October 2026 · **Timezone:** Pacific/Auckland — every business date is a local `YYYY-MM-DD` string, compared as strings.
+**Status:** live (built Sep 2026) · **Timezone:** Pacific/Auckland; every business date is a local `YYYY-MM-DD` string, compared as strings · **Code:** `functions/api/stock/_engine.js` (pure), `_store.js` (KV), `stock.js` (UI) · **Tests:** `tests/stock-engine.test.js`, run under both `TZ=UTC` and `TZ=Pacific/Auckland`.
 
-This is the original brief corrected after reading the real schemas. Where it departs from the brief, the reason is stated. Decisions confirmed with Andrew on 4 Sep 2026 are marked **[decided]**.
-
----
-
-## 1. What the code actually has (and what changed as a result)
-
-| Brief assumed | Code reality | Consequence |
-|---|---|---|
-| Order lines may be packs or kg | Lines are `{ sku, description, quantity, unitPrice, accountCode, kgPerUnit }`. `quantity` = **units of the SKU** (one 10kg box, or one 1kg bag). | BOM is declared **per SKU**, with fractional quantities (a 1kg bag uses 0.1 of a 10kg box). No divisibility rejection needed. |
-| New catalogue with `sizes[]` | Product catalogue already exists as a **Google Sheet** (`functions/api/catalog/items.js`). 6 product SKUs = 3 types × {10kg, 1kg bag}: `PT-b-10, PT-b-1b, PT-l-10, PT-l-1b, ET-b-10, ET-b-1b`. No 20kg. | No second product catalogue. Stock items map to sheet SKUs by a fixed lookup table (§3.2). Consumables exist only in KV. |
-| Shipments have lines with status | A shipment is `{ id, ym, kg, note, milestones[{label,date,done}], startDate? }` — one kg total, no product split, status **derived** from milestones (`planning → ordered → in-transit → customs → delivered`). | **[decided]** A shipment is 100 % Prime Tie Bundled for now. Receipts are derived from the final milestone, not posted as ledger rows (§5.3). |
-| Consumption derived from orders | `sales_history` already holds one NZ-dated row per order with kg by type (`bundlesKg/looseKg/ecoTiesKg`) and by type×size (`xkg.b1/b10/l1/l10/e1/e10`), synced on every order write. | **[decided]** All depletion — product kg *and* consumable burn — is derived from `sales_history`, so the sales chart, the stock engine and reorder maths share one source. Stock depletes on the **order date**. |
-| Blob storage for images | KV only, no R2 binding. | `imageUrl` links out to the supplier page. No upload. |
-| Test suite exists | No `package.json`, no runner. | Add a zero-dependency `node:test` suite; engine maths lives in a pure module. |
-| Trailing 28-day usage | Sales are extremely seasonal (Nov ≈ 50 kg, Jul ≈ 7,000 kg). | **[decided]** Keep `avgDaily` from Sales History for uniformity. Known limitation: cover will read "unknown/∞" in the off-season. `consumptionWindowDays` is a setting so it can be widened. |
-| Hessian, transfers, permissions | — | **[decided]** Hessian ignored. No Bundled→Loose transfer. Single role (no permissions) — `createdBy` still stamped from the Cloudflare Access email header. |
-| Catalogue under Warehouse | Admin already has a Catalogue area (Prices / Stores / Printers / Sales Data / Payroll). | **[decided]** Stock items, packaging recipes and engine settings live in **Admin → Stock**. Warehouse keeps only Dashboard + Counts. |
+This document describes the model as it is now. The decision history is condensed in §9.
 
 ---
 
-## 2. Principles (unchanged from the brief)
+## 1. Principles
 
-1. Nothing in the stock engine ever parses a description. Every row references an item id.
-2. Each item has exactly one unit — products `kg`, consumables `each`. Never summed together.
-3. Stock is computed **per item**, from that item's own latest committed count.
-4. Consumables are governed by an explicit packaging recipe (BOM). No hard-coded ratios, no `if (eco)`.
-5. `onOrder` is never inside `onHand`.
-6. An item with no committed count is `unknown`, never `0` or `ok`.
-7. Committed counts snapshot their expected/variance and valuation; nothing recomputes them later.
+1. Nothing in the engine parses a description. Every row references an item id; product lines resolve through the catalogue's Type/Size.
+2. Each item has exactly one unit — products `kg`, consumables `each` (with a display unit type: box, roll, bag…). Never summed together.
+3. Stock is **derived on read** per item: latest committed count ± movements ± receipts − sales. Nothing stores a running balance.
+4. **A count is the opening stock at 12:00am on its date.** Sales, movements and shipments landing on that date come off it. Ranges since a baseline are `[date, asOf]`.
+5. On-order is never inside on-hand. An item with no committed count is `unknown`, never `0` or `ok`.
+6. Committed counts freeze expected / variance / valuation. Everything else recomputes when history changes.
+7. One seasonal sales curve (Imports → Forecast → monthly averages; Good ×1.1, Great ×1.2) drives the stock trajectory, the monthly forecast and the consumables forecast.
 
 ---
 
-## 3. Data model (KV, `ORDERS_KV`)
+## 2. Items
 
-### 3.1 Settings — `stock:settings`
+Three products (`prime-tie-bundled` active; `prime-tie-loose`, `eco-ties` parked inactive) and any number of consumables, in KV `stock:item:<id>` with index `stock:items:index`.
+
 ```js
-{
-  stockEpoch:            '2026-10-01',   // engine computes nothing before this
-  consumptionWindowDays: 28,             // trailing window for avgDaily
-  defaultSafetyDays:     7,
-  watchMultiplier:       1.25,
-  perDespatch:           [ { consumableId, qty } ],   // consumed once per order, e.g. courier label
-  valuation:             { defaultAccountCode: '1440', gstBasis: 'ex' }
-}
+{ id, name, class: 'product'|'consumable', unit: 'kg'|'each', unitLabel: 'box', active, key, sortOrder,
+  salesKey: 'bundles'|'loose'|'ecoTies',          // products: which sales_history bucket depletes it
+  unitValue, accountCode,                         // valuation; Bundled's is derived from shipments
+  profile: { retailer, retailerUrl, supplierSku, description, imageUrl, leadTimeDays, typicalCost, packSize },
+  courierSku: 'FR-01'..'FR-04' | null, courierLabel: bool,   // label books (see §4.3)
+  reorder: { mode, manualPoint, safetyDays, reorderQty } }
 ```
 
-### 3.2 Item — `stock:item:<id>`, index `stock:items:index → [id]`
-```js
-{
-  id: 'prime-tie-bundled',      // stable slug, never reused
-  name: 'Prime Tie Bundled',
-  class: 'product' | 'consumable',
-  unit: 'kg' | 'each',          // immutable once the item has a committed count line
-  active: true,
-  key: true,                    // products only: pinned KPI tile on the dashboard
-  sortOrder: 10,
-  aliases: [],                  // CSV import names → this item (explicit, never fuzzy)
+- **Products** carry no reorder point; status is only unknown / out / ok. Replenishment is a shipment decision read off the trajectory.
+- **Consumables** get reorder tiers (`out → critical → low → watch → ok`) from trailing usage × (lead time + safety days), plus the forecast-based order-by date.
+- **Images**: pasted URL, or an uploaded photo resized in the browser and stored in KV (`stock:image:<id>`, served by `/api/stock/items/:id/image`).
+- Sheet SKU ↔ product mapping is one fixed table (`SKU_TABLE`): `PT-b-10/PT-b-1b → bundles`, `PT-l-10/PT-l-1b → loose`, `ET-b-10/ET-b-1b → ecoTies`, with kg per unit 10 / 1.
 
-  // valuation (report only — the engine never reads these)
-  accountCode: '1440', unitValue: 12.5, unitValueAsAt: '2026-10-01',
+## 3. Prime Tie Bundled — shipments and FIFO
 
-  // products only — which sales_history bucket depletes this item
-  salesKey: 'bundles' | 'loose' | 'ecoTies',
+- Every shipment is Prime Tie Bundled (shipments have no product lines yet).
+- **Received** = its last dated milestone ("Arrived in Tauranga") is ticked. Receipts are derived on read from the forecast's shipment list, never posted, so double-posting is impossible. A shipment sub-counted in the baseline count is never received again.
+- **Cost per kg** = landed cost: all V3 cost lines (raw, Bangladesh, freight, misc, extra) converted to NZD ÷ yield kg (`import/_cost.js`, mirrors the Imports view). Falls back to the listed $/kg, then to the previous lot's cost.
+- **FIFO lots** (`fifoFor`): the opening count is the first lot (or one lot per shipment when sub-counted, oldest first, each at its own $/kg); each received shipment is a lot; sales and wastage take from the oldest lot. Positive adjustments become a lot at the latest cost. Output: lots with remaining kg and value, on-hand value, weighted average $/kg, and every withdrawal with the cost of the kg it consumed.
+- **COGS** (`cogsFor`): Bundled = what sales took from the lots at each lot's $/kg; Loose / eco Ties = kg × own cost per kg. Wastage is costed the same way but reported separately. Shown per sale in the ledger, per month under the lots, and on the tile.
+- **On order** = shipments with status ordered / in-transit / customs, shown beside on-hand, never added to it. A low item with a shipment landing before its projected stock-out is flagged *covered*.
 
-  // consumables only
-  profile: { retailer, retailerUrl, supplierSku, imageUrl, leadTimeDays, typicalCost, packSize, minOrderQty, notes },
+## 4. Consumption
 
-  reorder: { mode: 'auto' | 'manual', manualPoint: null, safetyDays: 7, reorderQty: null }
-}
-```
-Products are seeded as the three key items. Each maps to `sales_history` via `salesKey` (kg) and, for the BOM, via the fixed SKU ↔ `xkg` table — the only "mapping" in the system, in one place:
+All depletion is derived from `sales_history` (one row per order, NZ-dated, synced on every order write, courier-label creation and Xero push). Per row:
 
-| Sheet SKU | `xkg` key | kg/unit | Product |
-|---|---|---|---|
-| PT-b-10 | b10 | 10 | prime-tie-bundled |
-| PT-b-1b | b1 | 1 | prime-tie-bundled |
-| PT-l-10 | l10 | 10 | prime-tie-loose |
-| PT-l-1b | l1 | 1 | prime-tie-loose |
-| ET-b-10 | e10 | 10 | eco-ties |
-| ET-b-1b | e1 | 1 | eco-ties |
+### 4.1 Products
+`bundlesKg / looseKg / ecoTiesKg` → the product with that `salesKey`.
 
-`units sold (SKU) = xkg[key] ÷ kg/unit`.
+### 4.2 Consumables matrix
+Products we sell (items sheet minus courier/freight) × consumables. Cells are **pieces per sale** (2 staples, 0.1 of a box); stock is in **units**; the consumable's *Quantity per unit* (`profile.packSize`) converts: 2 staples from a 1,000-staple box = 0.002 boxes. Units sold per SKU come from the row's type×size split (`xkg` ÷ kg per unit). A *Per order* row is consumed once per despatch. Stored as `stock:bom` (single version).
 
-### 3.3 Packaging recipes (BOM) — `stock:bom`
-```js
-{ versions: [ { effectiveFrom: '2026-10-01', recipes: {
-    'PT-l-10': [ { consumableId: 'box-10kg', qty: 1 }, { consumableId: 'staple', qty: 2 }, … ],
-    'PT-l-1b': [ { consumableId: 'bag-black', qty: 1 }, { consumableId: 'box-10kg', qty: 0.1 }, … ],
-    …
-} } ] }
-```
-Versioned by `effectiveFrom`; a sales row uses the latest version whose `effectiveFrom ≤ row.date`. Recipes are keyed by sheet SKU. A SKU with no recipe consumes nothing (that is how eco Ties starts).
+### 4.3 Courier label books
+Four consumables seeded once (`labels-fr-01..04`, "Aramex labels · Local / Inner Island / Outer Island / Inter Island"), each tied to a courier SKU. The sales row carries the invoiced quantity per courier SKU (`svc`) and the total (`labels`); a book depletes one label per invoiced label of its own service. No matrix cell. Any consumable can be linked to a service (or "any courier label") from its card. Stopgap until the Posthaste (on-demand label) move — then deactivate the books.
 
-### 3.4 Count — `stock:count:<id>`, index `stock:counts:index → [{id,label,date,status}]`
-```js
-{
-  id: 'cnt_20261001', label: 'Opening count', date: '2026-10-01',
-  status: 'draft' | 'committed', committedAt, createdBy,
-  lines: [ {
-    itemId, counted: true | false,          // false = deliberately "not counted" (item keeps its old baseline)
-    countedQty: 842.5,
-    expectedQty, varianceQty, variancePct,  // frozen at commit (null while draft)
-    varianceReason: '',
-    unitValue, accountCode                  // snapshotted at commit for the valuation report
-  } ]
-}
-```
-A count pre-populates every active item. Only lines with `counted: true` rebase the item. Drafts never affect `onHand`.
+### 4.4 Classification
+`sales-history/_writer.js` classifies each order line by the catalogue's Type (deterministic); a SKU the catalogue knows but doesn't type (Hessian, freight) is `other` and never depletes anything. Payroll boxes and the order export use the same function. **Run Backfill orders** (Settings → Sales Data) after any classifier or catalogue change to re-file existing rows.
 
-### 3.5 Movement — `stock:movements:<itemId> → [Movement]`, index `stock:movements:index → [itemId]`
-```js
-{ id: 'mov_…', itemId, date: 'YYYY-MM-DD', qty: -25, unit,
-  type: 'adjustment' | 'wastage' | 'correction',
-  reason: 'Damaged', createdAt: ISO-UTC, createdBy: 'andrew@…' }
-```
-Append-only. Mistakes are reversed with a `correction`. (No `receipt`/`transfer` types yet — see §5.3.)
+## 5. Counts and movements
 
-### 3.6 Legacy (read-only)
-`stocktake:<id>`, `stocktake:list` — kept for prior-year valuations, shown under Warehouse → Counts → Archive. Never feed the engine. The Imports/Forecast crude stocktake (`startingKg` + `stocktakeDate`) is out of scope; tech debt to replace its seed with `onHand(prime-tie-bundled, date)` later.
+- **Count** (`stock:count:<id>`): draft pre-populated with every active item (re-synced on open); live expected / variance while typing; explicit *Not counted*; per-shipment sub-count for Bundled (kg per shipment at its $/kg, totalling into Counted); commit freezes expected / variance / valuation and makes it the baseline; **Reopen to edit** returns it to draft with figures kept; label and date editable on committed counts (the baseline moves with the date). Expected for a count = stock at the start of that date.
+- **Movements** (`stock:movements:<itemId>`, append-only): `receipt` (+), `adjustment` (±, "set on hand to X"), `wastage` (−), `correction`. The UI offers **Receive / Adjust** on every item; orders take stock out automatically. Mistakes are reversed with an opposite entry, never edited.
+- **Ledger** (`/api/stock/items/:id/ledger`): baseline count, every order (linked, with customer and label count), shipments landed at $/kg, every movement with who posted it, running balance that closes at on-hand, COGS per sale for products.
+- **Settings** (`stock:settings`): `stockEpoch` (2026-08-01; nothing before it counts), `consumptionWindowDays` (28), `defaultLeadTimeDays` (14), `defaultSafetyDays` (7), `watchMultiplier` (1.25), `perDespatch`, valuation defaults.
 
----
+## 6. Forecasts
 
-## 4. Consumption (derived on read, never stored)
+- **Trajectory** (`projectionFor`): from today, month-end on-hand N months ahead (13 or 36) per scenario. Products: their SKUs' share of the trailing-year mix × the seasonal curve, plus pending shipments in their ETA month (Bundled). Consumables: via the consumables forecast. Chart = actual (solid) + projected (dashed), landing months annotated.
+- **Consumables forecast** (`consumablesForecast`): seasonal kg → sales units via the trailing-365-day product mix → pieces via the matrix (+ per-order, + labels per kg for label books) → month-by-month walk of on-hand (current month pro-rated) → run-out date; **order by** = run-out − (lead time + safety days); *Order now* when that has passed. One table with the current level and the forecast per consumable; default scenario Great +20%.
+- **Imports page alignment**: `/api/import/forecast` overrides the hand-typed stocktake with the committed count (`stockAnchor`), reports stock now (count − sales + landed ± adjustments), flags sub-counted shipments so they aren't added again, and supplies monthly **Actual** = Bundled kg sold from the count date on (same filter as the engine). A month's est. sales = max(actual, forecast) — conservative; the Closing cell explains when the forecast overrode the actual. Actual cells open the month's orders (All / Bundled / Loose / eco, totals, in-count rows marked).
 
-For each `sales_history` row with `stockEpoch ≤ row.date`, in range:
-```
-product kg:     item[salesKey]        += row.<salesKey>Kg
-per SKU units:  units[sku]             = row.xkg[key] / kgPerUnit         (table §3.2)
-consumables:    for each (sku, units): for each recipe entry (BOM version for row.date):
-                    consumed[consumableId] += units × qty
-per despatch:   for each row:  consumed[consumableId] += settings.perDespatch qty
-```
-Rows lacking `xkg` (pre-Hub historical rows) cannot burn consumables — irrelevant after the epoch since every Hub row carries it; the engine reports a `rowsWithoutXkg` count so the gap is visible, never silent.
-
-Editing a historical order changes historical stock (single source of truth). Committed counts snapshot `expectedQty`, so stored variances don't move.
-
----
-
-## 5. The engine — `functions/api/stock/_engine.js` (pure, testable)
-
-### 5.1 On hand
-```
-baseline(item)         = latest committed count line for item with counted:true and date ≤ asOf
-onHand(item, asOf)     = baseline.countedQty
-                       + Σ movements    (baseline.date < d ≤ asOf)
-                       + Σ receipts     (baseline.date < d ≤ asOf)     // products only, §5.3
-                       − Σ consumption  (baseline.date < d ≤ asOf)     // §4
-onHand = null (status 'unknown') when there is no baseline.
-```
-Baselines are **per item** — a March recount of boxes rebases boxes only.
-
-### 5.2 On order
-`onOrder(prime-tie-bundled) = Σ shipment.kg` for shipments whose derived status ∈ {ordered, in-transit, customs}. Zero for every other item until shipments carry lines. Shown beside `onHand`, never added to it.
-
-### 5.3 Receipts (deviation from the brief, by design)
-A shipment is received when its final milestone ("Arrived in New Zealand") is `done`; the receipt is **derived on read**: `+kg` to prime-tie-bundled on that milestone's date. No ledger row is written, so double-posting is impossible by construction and un-ticking the milestone reverses it automatically. This trades the brief's idempotent-upsert machinery for zero state. Revisit only when shipments gain per-product lines.
-
-### 5.4 Low stock
-```
-avgDaily     = consumption over trailing consumptionWindowDays ÷ windowDays   (from sales_history)
-daysCover    = onHand ÷ avgDaily                      (null when avgDaily = 0)
-reorderPoint = mode='manual' ? manualPoint : avgDaily × (leadTimeDays + safetyDays)
-               (products have no leadTime → auto mode uses settings.defaultSafetyDays + shipment lead of 0 → effectively manual for products)
-```
-Tiers, first match wins: `out` (onHand ≤ 0) → `critical` (daysCover < leadTimeDays) → `low` (onHand ≤ reorderPoint) → `watch` (≤ reorderPoint × watchMultiplier) → `ok`. `unknown` when no baseline, or avgDaily = 0 and no manual point.
-`covered: true` when low/critical but an in-transit shipment's ETA (final milestone date, or `ym`-01) lands before the projected stock-out date.
-
----
-
-## 6. API
+## 7. API
 
 | Method | Path | Purpose |
 |---|---|---|
-| GET / PUT | `/api/stock/settings` | §3.1 |
-| GET / POST | `/api/stock/items` | list / create |
-| GET / PATCH | `/api/stock/items/:id` | read / edit (soft delete via `active:false`; `unit` locked once counted) |
-| GET / PUT | `/api/stock/bom` | §3.3 |
-| GET / POST | `/api/stock/counts` | list / create draft (pre-populated) |
-| GET / PATCH | `/api/stock/counts/:id` | read / edit draft (PATCH refused once committed) |
-| POST | `/api/stock/counts/:id/commit` | freeze variances + valuation, make it a baseline |
-| GET | `/api/stock/counts/:id/valuation` | Enviroware-format rows (+ `?format=csv`) |
-| GET / POST | `/api/stock/movements` | ledger (`?itemId=&from=&to=`) / manual adjustment or wastage |
-| GET | `/api/stock/levels?asOf=` | **the only dashboard call** — per item: onHand, onOrder, avgDaily, daysCover, reorderPoint, status, covered, baselineDate, unit |
-| GET | `/api/stock/items/:id/history?from=&to=` | daily on-hand series + movement/receipt annotations for the trajectory chart |
+| GET/PUT | `/api/stock/settings` | engine settings (§5) |
+| GET/POST, GET/PATCH | `/api/stock/items[/:id]` | items; `POST/GET/DELETE …/:id/image`; `GET …/:id/ledger`; `GET …/:id/history?project=N` |
+| GET/PUT | `/api/stock/bom` | consumables matrix (+ `products` for the rows) |
+| GET/POST, GET/PATCH/DELETE | `/api/stock/counts[/:id]` | counts; `POST …/:id/commit`, `POST …/:id/reopen`, `GET …/:id/valuation[?format=csv]` |
+| GET/POST | `/api/stock/movements` | ledger entries |
+| GET | `/api/stock/levels?asOf=` | the one dashboard call: per item on-hand, on-order, value, COGS, status, covered, lots |
+| GET | `/api/stock/consumables-forecast?months=` | §6 |
+| GET | `/api/stock/shipments` | shipments by number with landed $/kg (sub-count picker) |
+| GET | `/api/stock/sales?month=` | the month's orders with total vs Bundled kg |
+| GET | `/api/stocktake[/:id]` | legacy $-valued snapshots, read-only archive |
 
-Before `stockEpoch` every engine endpoint returns `{ beforeEpoch: true }`, not zeros.
+## 8. Acceptance (all held by tests)
 
----
+No description parsing · renaming changes nothing · units never summed · 5 × PT-l-10 reduces loose by 50 kg and each consumable by 5 × its cell ÷ pack size · eco Ties has its own cells, no exclusion · a shipment ticked twice is received once · no count → unknown · on-order never in on-hand · commit freezes variance · count = opening stock at 12:00am (2,000 on 1 Sep − 300 sold 1 Sep − 590 later = 1,110) · Bundled COGS from FIFO takes · Loose/eco COGS at unit cost · label book depletes only by its own service · forecast actuals are Bundled-only from sales history · identical results under UTC and NZ.
 
-## 7. UI
+## 9. Decision history (condensed)
 
-```
-Admin → Stock            items (products pinned, consumables), consumable profile, packaging recipes (BOM), engine settings
-Warehouse
- ├─ Dashboard (default)  3 KPI tiles (on-hand kg, cover, 90-day sparkline, status chip) · trajectory chart with reorder baseline + shipment ETA annotations · consumables table with on-hand/reorder meter, sorted worst-first
- └─ Counts               list · new count (pre-populated, live expected/variance, explicit "not counted") · committed view · valuation export · Archive (legacy snapshots)
-Sales History            "Stocktake" tab removed
-```
-Status colours use one reserved palette (ok / watch / low / critical / out / unknown), always with an icon + text label, never colour alone. kg and $ never share a chart; no dual axes; incoming stock is an annotation, never a stacked series.
-
----
-
-## 8. Dates & tests
-
-- `functions/api/_dates.js` exports `nzToday()` and `nzYmd(iso)`; the sales-history writer switches to it.
-- Never `new Date(x).toISOString().slice(0,10)` in stock code.
-- `tests/stock-engine.test.js` (node:test, no deps) covers the acceptance list below and runs under both `TZ=UTC` and `TZ=Pacific/Auckland` (`npm test` runs both).
-
----
-
-## 9. Acceptance criteria
-
-1. No stock code path classifies by description; the `isProductRow`/`classify` regexes are deleted with the legacy endpoints.
-2. Renaming an item changes nothing.
-3. Every on-hand is in its own unit; no view sums kg and each.
-4. A sales row for 5 × PT-l-10 reduces prime-tie-loose by 50 kg and each consumable by 5 × its recipe qty — from the BOM only.
-5. eco Ties is governed by its own recipe; no eco exclusion anywhere.
-6. A shipment ticked "Arrived" twice (or saved twice) yields exactly one receipt.
-7. No committed count → `unknown`.
-8. `onOrder` never appears inside `onHand`.
-9. Commit freezes variance; later order edits don't change it.
-10. Tests pass identically under both timezones.
-11. The count editor exists at one route (Warehouse → Counts).
-12. Valuation CSV for a committed count matches the Enviroware FY format.
-
-## 10. Build order
-1. `_dates.js`, settings, items, BOM (+ Admin → Stock UI)
-2. Counts: draft / edit / commit (expected stubbed until 4)
-3. Movements ledger
-4. Engine: consumption from sales_history + BOM, receipts, `levels` — with tests
-5. Warehouse Dashboard + Counts UI; remove Sales History tab; archive legacy
-6. Valuation export; delete `/api/inventory/*`
-
-Steps 1–4 ship before 1 October so the opening count has somewhere to go.
-
----
-
-## 11. Addendum — 4 Sep 2026 (after first review)
-
-- **Only Prime Tie Bundled is tracked.** Loose and eco Ties are seeded/migrated to `active:false`; reactivate from Catalogue → Stock if ever needed.
-- **FIFO cost lots.** `fifoFor()` in the engine: every received shipment is a lot (kg at its listed `pricePerKg`); the opening count is the first lot, costed at the latest priced shipment on or before the count date. Sales and wastage take from the oldest lot first; positive adjustments become a lot at the latest cost. `levels` returns `value`, `avgCost`, `lots`, `shortfall` for the shipment-fed product, and a committed count values it at FIFO average cost as at the count date. Shipments only record a *listed* $/kg — landed cost is a follow-up.
-- **Consumables matrix** replaces "packaging recipes": rows are the items-sheet products minus freight (`/api/stock/bom` → `products`), keyed by SKU. Only SKUs with a type×size mapping (`SKU_TABLE`) actually consume; others are shown as "no sales mapping yet".
-- **Consumable fields** stripped to Retailer, Unit price, Quantity per unit, Image link, Link to product (+ name, active). Lead time is a single engine setting (`defaultLeadTimeDays`, default 14).
-- **Stock nav item** added (Warehouse → Dashboard / Counts had no link before).
-- **Testing from 1 Sep 2026.** Default `stockEpoch` is now `2026-09-01` (editable under Settings → Stock → Engine settings). Go-live count stays 1 Oct.
-- **Counted shipments never double up.** `stockAnchor()` returns `countedShipmentIds`; the forecast flags those shipments `inCount` and `computeForecast` skips them as incoming, and the engine skips their receipt. "Arrived" = final milestone (Arrived in Tauranga) ticked.
-- **Catalogue renamed Settings.** Prime Tie Bundled's popover shows on hand, weighted FIFO cost, the per-shipment lot breakdown and on-order shipments; stock changes only via a count or an adjustment. Products can carry an image link (URL only — no blob storage).
-- **Consumables forecast.** `consumablesForecast()` shares the Imports seasonal curve (kg/month) and scenarios (Average / Good ×1.1 / Great ×1.2): kg → sales units via the trailing-365-day product mix from Sales History (`salesMix`), units → consumables via the matrix (+ per-order lines × orders-per-kg), then each consumable's on hand is walked 12 months (current month pro-rated) to a run-out date; **order by** = run-out − (lead time + safety). Lead time is per consumable (`profile.leadTimeDays`), falling back to the engine default. Dashboard section with scenario toggle and month-end strip. Endpoint `/api/stock/consumables-forecast`.
-- **Consumables matrix** is a single table (no versions; stored as one version effective 2020-01-01).
-- **Pieces vs units.** Matrix cells are in *pieces* (what one sale uses); stock is in *units* (boxes, rolls). `profile.packSize` ("Quantity per unit") converts: consumption = pieces ÷ packSize (`piecesPerUnit()`). 2 staples from a 1,000-staple box = 0.002 boxes per 10 kg sold.
-- **Courier rows.** The four courier SKUs (FR-01..04) are matrix rows; the sales-history writer records their unit counts per row (`svc`), the engine burns per consignment, and the forecast uses courier consignments per kg from the trailing mix. Freight (FR-05+) is never a row. Run *Backfill orders* in Settings → Sales Data once so existing rows carry `svc`.
-- **Receipts.** `receipt` movement type (always +) for consumable deliveries; "Receive" on each consumable row prefills the ledger form.
-- **Courier consumables are per label, not per product (corrected).** The sales-history row carries `labels` (labels created on the order's courier record, else the labels invoiced on FR-01..04 lines). `settings.perLabel` lists the pieces each label uses; the engine burns `labels × perLabel`, the forecast uses labels-per-kg from the trailing mix. Courier SKUs are no longer matrix rows. This covers physical Aramex labels until the move to Posthaste (on-demand) — clear the row then. Creating a courier label re-syncs the sales row.
-- **Per-item ledger (audit trail).** `ledgerFor()` lists the baseline count, every order (via `rowConsumption`, the same per-row expansion `consumption()` uses), shipments landed, manual receipts/adjustments/wastage, with a running balance that closes at on hand. `GET /api/stock/items/:id/ledger`; click any item name on the Stock dashboard.
-- **Courier labels (corrected again, final).** A label book is an ordinary consumable flagged `courierLabel`. It depletes by the labels *invoiced* on each order (courier lines FR-01..04, quantity each; fallback: labels created). No matrix row, no per-label setting in the UI. Opening count − labels invoiced = on hand; the forecast uses labels-per-kg.
-- **In / Out / Adjust** on every item (dashboard tiles + consumables table) post movements without a full count: In = receipt, Out = wastage, Adjust = "set on hand to X" (adjustment of the difference). The bottom ledger form is gone; counts are for opening stock and periodic true-ups.
-- **Count dates are editable** on drafts and committed counts (committed: only label/date may change; frozen figures stay; the baseline moves with the date).
-- **Four label books, one per courier service.** Seeded once (items schema v3): `labels-fr-01..04` ("Aramex labels · Local / Inner Island / Outer Island / Inter Island"), each with `courierSku` = its courier SKU. The sales-history row carries `svc` (invoiced quantity per courier SKU) as well as `labels`; a book depletes only by its own service's invoiced labels. The card's *Courier service* selector links any consumable to a service (or "any courier label").
-- **Matrix timeless.** `recipesFor()` falls back to the earliest version when none is in force yet (a matrix saved with a future effective date used to zero every consumable's usage).
-- **12-month trajectory.** `projectionFor()` projects month-end on hand from today on the shared seasonal curve — products by their SKUs' share of the trailing mix (+ pending shipments in their ETA month, for Bundled); consumables via consumablesForecast. `/history?project=12`; dashboard chart = actual (solid) + projected (dashed), table includes projected rows.
-- **Stock → Settings tab** renders the same Settings → Stock page inline.
-- **Hero products have no reorder point.** Products report status unknown / out / ok only; replenishment is a shipment decision read off the trajectory. Consumables keep the reorder tiers.
-- **Trajectory + consumables forecast controls** match Imports: scenario dropdown (Average / Good +10% / Great +20%) applied to the projected series, and a view-range dropdown (rolling 12 or 13 months).
-- **Classifier fix.** A SKU the catalogue knows but doesn't type (Hessian, freight) is `other` — never guessed from its kg per unit. Hessian (1 kg/unit) was being filed as Loose 1kg and burning black bags. Re-run *Backfill orders* to re-file existing rows.
-- **Label books are never matrix columns** (they deplete per invoiced label).
-- **One consumables table** (levels + forecast merged): Item · On hand meter · Qty · Status · Receive / Adjust · Order by · month-end strip; scenario (default **Great +20%**) and range (13 / 36 months) dropdowns. Trajectory also defaults to Great.
-- **Receive / Adjust** is one popover with a toggle.
-- **Reopen a committed count** (`POST /api/stock/counts/:id/reopen`): back to draft with figures kept and frozen snapshots cleared; edit, re-commit.
-- Sales forecast source of truth: Imports → Forecast → monthly averages (`import:forecast.monthlyAvg`, Jan–Dec kg); Good ×1.1, Great ×1.2.
-- **COGS.** `cogsFor()` — Bundled: the kg each sale took from the FIFO lots at each lot's $/kg (`fifoFor().takes`); Loose / eco Ties: kg sold × own cost per kg. Wastage costed the same way but reported separately, never inside COGS. Levels carry `cogs.thisMonth / sinceBaseline / byMonth`; ledger sale lines carry `cost`. Shown on the product tile, a by-month table under the shipment lots, and a COGS column in the ledger.
-- **Forecast actuals unified.** `/api/import/forecast` returns `actuals` (Bundled kg by NZ month from Sales History via `actualsByMonth`); the Imports trajectory, Monthly Forecast and dashboard module use it instead of summing every order line's kg client-side (which let Hessian / Loose / eco inflate "Actual"). `GET /api/stock/sales?month=` lists the month's orders with total vs Bundled kg; popover from the Imports header ("This month's sales") and the product tile.
-- **Actual = sold after the count.** The forecast's monthly actuals exclude rows on/before the anchor count date (a count is as-at end of day), so the count month's Actual equals "Stock now"'s sold-since. Actual cells open the month-sales popover (type toggle All / Bundled / Loose / eco, summary row). `initCharts` is now resilient (retries without annotations, then shows the error).
-- **Count convention flipped (12 Sep 2026): a count is the OPENING stock at 12:00am on its date.** Sales, movements and landed shipments dated on the count date come off it; ranges since a baseline are [date, asOf]. Expected for a count = stock at the start of that date. Forecast Actual and the month-sales popover follow the same rule.
+- 4 Sep 2026: rebuilt from the $-valued stocktake editor. Shipments = 100% Bundled; depletion from sales history on the order date; catalogue stays in Sheets; no blob storage; single role; Loose and eco Ties parked.
+- Cost basis moved from listed $/kg to landed cost from V3 cost lines; FIFO lots; per-shipment sub-count on the opening count.
+- Consumables: matrix in pieces with pack-size conversion; per-product lead time; forecast on the shared curve. Courier labels went from matrix rows → per-label setting → four label-book consumables tied to courier SKUs (final).
+- Hero products lost their reorder point; In/Out/Adjust became Receive/Adjust; counts became reopenable; the consumables table absorbed the forecast.
+- Hessian (1 kg/unit, untyped) was being filed as Loose and burning bags — classifier now trusts the catalogue Type only.
+- 12 Sep 2026: count convention flipped from "end of day" to **opening stock at 12:00am on its date**; forecast Actual and stock now reconciled to the same filter; epoch moved to 1 Aug 2026.
