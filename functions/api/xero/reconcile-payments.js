@@ -10,6 +10,7 @@
 // XERO_KV) so the automatic on-load call doesn't burn the rate limit.
 
 import { getValidToken, xeroHeaders, jsonResponse, errResponse, XeroAuthError } from '../_xero.js';
+import { nzToday } from '../_dates.js';
 
 const CACHE_KEY = 'payments_reconcile';
 const CACHE_TTL = 300; // seconds
@@ -25,7 +26,7 @@ function xeroDateToIso(v) {
     }
     const iso = String(v || '').match(/^\d{4}-\d{2}-\d{2}/);
     if (iso) return iso[0];
-    return new Date().toISOString().slice(0, 10);
+    return nzToday();
 }
 
 export async function onRequestPost({ env, request }) {

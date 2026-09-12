@@ -9,6 +9,8 @@
 // so totals here match what each order contributes to sales_history.
 
 import { errResponse } from '../_xero.js';
+import { rowFromOrder } from '../sales-history/_writer.js';
+import { loadItemsMap } from '../catalog/items.js';
 
 const HEADERS = [
     'order_id', 'created_at', 'dispatched_at', 'dispatched_by',
@@ -23,34 +25,13 @@ function csvEscape(v) {
     return /[",\n\r]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
 }
 
-// Same heuristic the Xero push hook uses (see sales-history/_writer.js).
-// Kept inline to avoid an import cycle.
-function classifyLine(l) {
-    const sku  = String(l?.sku || '').toUpperCase();
-    const desc = String(l?.description || '').toLowerCase();
-    if (sku.includes('ECOTIE') || /eco\s*ti/.test(desc)) return 'ecoTies';
-    if (sku.includes('BUNDLE') || /bundle/.test(desc))   return 'bundles';
-    if (sku.includes('LOOSE')  || /loose/.test(desc))    return 'loose';
-    const kpu = Number(l?.kgPerUnit);
-    if (kpu === 10) return 'bundles';
-    if (kpu === 1)  return 'loose';
-    return 'other';
-}
-
-function lineKg(l) {
-    return (Number(l?.quantity) || 0) * (Number(l?.kgPerUnit) || 0);
-}
-
-function summarize(order) {
-    const buckets = { bundles: 0, loose: 0, ecoTies: 0 };
-    let lineCount = 0;
-    let subtotal = 0;
-    for (const l of (order.lines || [])) {
-        const cat = classifyLine(l);
-        if (cat !== 'other') buckets[cat] += lineKg(l);
-        lineCount++;
-        subtotal += (Number(l.quantity) || 0) * (Number(l.unitPrice) || 0);
-    }
+// kg by type from the sales-history writer (catalogue Type/Size, then SKU
+// prefix) — identical to Sales History and the stock engine.
+function summarize(order, itemsMap) {
+    const r = rowFromOrder(order, itemsMap);
+    const buckets = { bundles: r ? r.bundlesKg : 0, loose: r ? r.looseKg : 0, ecoTies: r ? r.ecoTiesKg : 0 };
+    let lineCount = 0, subtotal = 0;
+    for (const l of (order.lines || [])) { lineCount++; subtotal += (Number(l.quantity) || 0) * (Number(l.unitPrice) || 0); }
     return { ...buckets, lineCount, subtotal };
 }
 
@@ -61,9 +42,10 @@ export async function onRequestGet({ env }) {
 
         if (indexRaw) {
             const ids = [...new Set(JSON.parse(indexRaw))];
-            const orders = await Promise.all(
-                ids.map(id => env.ORDERS_KV.get('order:' + id, { type: 'json' }))
-            );
+            const [orders, itemsMap] = await Promise.all([
+                Promise.all(ids.map(id => env.ORDERS_KV.get('order:' + id, { type: 'json' }))),
+                loadItemsMap(env).catch(() => null),
+            ]);
             // Newest-first, then by id as tiebreak. Easier to scan in Sheets.
             orders.sort((a, b) => {
                 if (!a || !b) return 0;
@@ -72,7 +54,7 @@ export async function onRequestGet({ env }) {
             });
             for (const o of orders) {
                 if (!o) continue;
-                const s = summarize(o);
+                const s = summarize(o, itemsMap);
                 const totalKg = s.bundles + s.loose + s.ecoTies;
                 lines.push([
                     o.id,

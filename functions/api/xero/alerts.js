@@ -7,6 +7,7 @@
 // "Overdue" = unpaid AND DueDate < today.
 
 import { getValidToken, xeroHeaders, jsonResponse, errResponse, XeroAuthError } from '../_xero.js';
+import { nzToday } from '../_dates.js';
 
 const CACHE_KEY = 'alerts_cache';
 const CACHE_TTL = 300; // 5 minutes
@@ -41,7 +42,7 @@ export async function onRequestGet({ env, request }) {
         const data = await resp.json();
         const invoices = data.Invoices || [];
 
-        const today = new Date().toISOString().slice(0, 10);
+        const today = nzToday();
         let unpaidCount = 0, unpaidTotal = 0;
         let overdueCount = 0, overdueTotal = 0;
 

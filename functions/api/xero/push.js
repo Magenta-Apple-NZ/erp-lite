@@ -7,6 +7,7 @@
 
 import { getValidToken, xeroHeaders, jsonResponse, errResponse, XeroAuthError } from '../_xero.js';
 import { syncSalesHistory } from '../sales-history/_writer.js';
+import { nzToday } from '../_dates.js';
 
 // Customer-specific payment-term rules. Each entry is matched against the
 // customer name case-insensitively as a substring. Day of 0 = due on the
@@ -141,7 +142,7 @@ export async function onRequestPost({ env, request }) {
         }
 
         const now = new Date();
-        const today = now.toISOString().split('T')[0];
+        const today = nzToday(); // NZ calendar date — UTC would be yesterday at NZ evening
 
         // Derive Xero invoice number: PKS-1021 → INV-1021 (also handles legacy ORD- prefix)
         const invoiceNumber = order.id.replace(/^(?:PKS|ORD)-/, 'INV-');

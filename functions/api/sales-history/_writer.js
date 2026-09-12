@@ -5,7 +5,6 @@
 import { loadItemsMap } from '../catalog/items.js';
 import { nzYmd } from '../_dates.js';
 
-const HUB_LIVE_YM = '2026-04'; // (Reference; sales_history doesn't gate on it)
 
 // Look up an order line's SKU in the items catalogue (Map keyed by SKU).
 function catalogItem(l, itemsMap) {
@@ -205,4 +204,3 @@ export async function syncSalesHistory(env, order) {
     }
 }
 
-export { HUB_LIVE_YM };

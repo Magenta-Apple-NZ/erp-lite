@@ -567,7 +567,9 @@ async function handleRoundTrip(env, csv, apply) {
     await env.ORDERS_KV.put(`backup:sales_history:${backupTs}`, JSON.stringify(existing));
 
     for (const r of adds) byId.set(r.id, r);
-    for (const r of updates) byId.set(r.id, r);
+    // Keep fields the CSV doesn't carry (type×size split, label counts,
+    // storeId) — otherwise one round-trip silently stops consumables burning.
+    for (const r of updates) byId.set(r.id, { ...(byId.get(r.id) || {}), ...r });
     const merged = [...byId.values()];
     await env.ORDERS_KV.put('sales_history', JSON.stringify(merged));
 

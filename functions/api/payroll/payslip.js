@@ -12,45 +12,17 @@
 // Multiplies by the rates from payroll_config, returns the breakdown.
 
 import { jsonResponse, errResponse } from '../_xero.js';
+import { nzYmd } from '../_dates.js';
+import { rowFromOrder } from '../sales-history/_writer.js';
+import { loadItemsMap } from '../catalog/items.js';
 
-// Reuse the classifier from the sales-history writer so dispatched-
-// boxes count matches what each order contributes elsewhere.
-function classifyLine(l) {
-    const sku  = String(l?.sku || '').toUpperCase();
-    const desc = String(l?.description || '').toLowerCase();
-    if (/^PT[-_]?L/.test(sku))   return 'loose';
-    if (/^PT[-_]?B/.test(sku))   return 'bundles';
-    if (/^ET([-_]|$)/.test(sku)) return 'ecoTies';
-    if (/eco\s*ti/.test(desc)) return 'ecoTies';
-    if (/bundle/.test(desc))   return 'bundles';
-    if (/loose/.test(desc))    return 'loose';
-    const kpu = Number(l?.kgPerUnit);
-    if (kpu === 10) return 'bundles';
-    if (kpu === 1)  return 'loose';
-    return 'other';
-}
+// Boxes come from the sales-history writer's classification (catalogue
+// Type/Size, then SKU prefix) so payroll counts exactly what Sales History
+// and the stock engine count — never a kg-per-unit guess (Hessian is 1 kg/unit).
 
-function inferKgPerUnit(l) {
-    if (l?.kgPerUnit != null && !isNaN(Number(l.kgPerUnit))) return Number(l.kgPerUnit);
-    const sku = String(l?.sku || '').toUpperCase();
-    if (/-10$/.test(sku))    return 10;
-    if (/-1B?$/.test(sku))   return 1;
-    const desc = String(l?.description || '');
-    const m = desc.match(/\b(\d+)\s*kg\b/i);
-    if (m) {
-        const v = parseInt(m[1], 10);
-        if (v === 10 || v === 1) return v;
-    }
-    return 0;
-}
-
-function orderProductKg(order) {
-    let kg = 0;
-    for (const l of (order.lines || [])) {
-        if (classifyLine(l) === 'other') continue;
-        kg += (Number(l.quantity) || 0) * inferKgPerUnit(l);
-    }
-    return kg;
+function orderProductKg(order, itemsMap) {
+    const r = rowFromOrder(order, itemsMap);
+    return r ? r.bundlesKg + r.looseKg + r.ecoTiesKg : 0;
 }
 
 async function loadJson(env, key, fallback = []) {
@@ -64,7 +36,8 @@ async function loadJson(env, key, fallback = []) {
 function orderPayMonth(o) {
     const m = String(o?.payslipMonth || '');
     if (/^\d{4}-\d{2}$/.test(m)) return m;
-    return (o?.dispatchedAt || o?.updatedAt || '').slice(0, 7);
+    const ts = o?.dispatchedAt || o?.updatedAt || '';
+    return ts ? nzYmd(ts).slice(0, 7) : '';
 }
 
 export async function onRequestGet({ env, request }) {
@@ -87,7 +60,10 @@ export async function onRequestGet({ env, request }) {
         // Attributed to the pay month by dispatch date, or a manual reassignment.
         const idxRaw = await env.ORDERS_KV.get('orders_index');
         const ids = idxRaw ? [...new Set(JSON.parse(idxRaw))] : [];
-        const orders = await Promise.all(ids.map(id => env.ORDERS_KV.get('order:' + id, { type: 'json' })));
+        const [orders, itemsMap] = await Promise.all([
+            Promise.all(ids.map(id => env.ORDERS_KV.get('order:' + id, { type: 'json' }))),
+            loadItemsMap(env).catch(() => null),
+        ]);
 
         let boxesDispatched = 0;
         const dispatchOrderIds = [];
@@ -96,7 +72,7 @@ export async function onRequestGet({ env, request }) {
             if (o.status !== 'dispatched' && o.status !== 'paid') continue;
             if (o.dispatchedBy !== employee.name) continue;
             if (orderPayMonth(o) !== month) continue;
-            boxesDispatched += orderProductKg(o) / 10;
+            boxesDispatched += orderProductKg(o, itemsMap) / 10;
             dispatchOrderIds.push(o.id);
         }
 

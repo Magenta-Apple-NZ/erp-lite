@@ -192,11 +192,13 @@ export function deriveShipStatus(s) {
 }
 export const ON_ORDER_STATUSES = ['ordered', 'in-transit', 'customs'];
 
-// Planned/actual arrival: the final milestone's date, else the 1st of its month.
+// Planned/actual arrival: the last DATED milestone (same rule as the
+// Imports view's shipArrivalDate), else the 1st of the shipment's month.
 export function shipmentEta(s) {
     const ms = s?.milestones || [];
-    const last = ms[ms.length - 1];
-    if (last && last.date) return String(last.date).slice(0, 10);
+    for (let i = ms.length - 1; i >= 0; i--) {
+        if (ms[i] && ms[i].date) return String(ms[i].date).slice(0, 10);
+    }
     if (s?.ym && /^\d{4}-\d{2}$/.test(s.ym)) return s.ym + '-01';
     return null;
 }
@@ -524,7 +526,7 @@ export function historyFor(item, world, from, to) {
 }
 
 // ── Counts ───────────────────────────────────────────────────────────────
-// Expected qty for every line of a count (as at the count date), from the
+// Expected qty for every line of a count (opening stock at 12:00am on the count date), from the
 // committed counts only — drafts never feed the engine.
 export function expectedForCount(count, world) {
     const out = {};

@@ -66,6 +66,8 @@ export async function onRequestPatch({ env, params, request }) {
         if (updates.shipTo !== undefined) order.shipTo = updates.shipTo;
         if (updates.lines !== undefined) order.lines = updates.lines;
         if (updates.packingNotes !== undefined) order.packingNotes = updates.packingNotes;
+        if (updates.fulfilmentMethod !== undefined) order.fulfilmentMethod = updates.fulfilmentMethod === 'pickup' ? 'pickup' : 'courier';
+        if (updates.fulfilmentMethod !== undefined) order.fulfilmentMethod = updates.fulfilmentMethod === 'pickup' ? 'pickup' : 'courier';
         if (updates.xeroInvoiceId !== undefined) order.xeroInvoiceId = updates.xeroInvoiceId;
         if (updates.xeroInvoiceNumber !== undefined) order.xeroInvoiceNumber = updates.xeroInvoiceNumber;
         if (updates.xeroSourced !== undefined) order.xeroSourced = updates.xeroSourced === true;

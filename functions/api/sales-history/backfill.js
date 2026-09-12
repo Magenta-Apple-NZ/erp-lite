@@ -54,7 +54,9 @@ export async function onRequestPost({ env, request }) {
                                        'bundlesKg','looseKg','ecoTiesKg','oneKg','tenKg']
                     .some(k => (prev[k] ?? null) !== (row[k] ?? null));
                 const xkgChanged = JSON.stringify(prev.xkg || null) !== JSON.stringify(row.xkg || null);
-                if (scalarChanged || xkgChanged) wouldUpdate.push(row);
+                // Courier label counts feed the label-book consumables.
+                const labelsChanged = (prev.labels ?? null) !== (row.labels ?? null) || JSON.stringify(prev.svc || null) !== JSON.stringify(row.svc || null);
+                if (scalarChanged || xkgChanged || labelsChanged) wouldUpdate.push(row);
             }
         }
 
