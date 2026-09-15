@@ -1718,6 +1718,11 @@ const Orders = (() => {
         } else {
             courierItems = createCourierItem + printAddrItem;
         }
+        // Send-to-printer (PrintNode) — one item per printer that handles the
+        // document, from config.printers. Slips first, then address sheets.
+        const printerItems = printerMenuItems('slip', { prefix: '🖨 Send slip to ' })
+            + printerMenuItems('address', { prefix: '🏷 Send address to ' });
+        courierItems = (printerItems ? printerItems + '<div class="overflow-sep"></div>' : '') + courierItems;
         const courierBtn = splitButton(courierMain, courierItems, {});
 
         // 3) Dispatch — primary dispatches as Jake; dropdown as Andrew (admin only).
