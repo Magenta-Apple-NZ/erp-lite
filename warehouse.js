@@ -2444,13 +2444,15 @@ const Warehouse = (() => {
 
                 // "Arrives May, 26" — driven by the last-milestone date when
                 // available, otherwise the shipment-level ym.
+                // Start + arrival on the card, as real dates where known. Start
+                // comes from the shipment's start date (or first dated milestone);
+                // arrival from the last dated milestone (else the shipment month).
                 const started = (s.milestones || []).some(m => m.done);
-                const startYmL = s.startDate ? s.startDate.slice(0, 7) : null;
-                const arriveYm = shipArrivalYm(s) || s.ym;
-                let arriveLabel = '';
-                const mmyy = ym => { const [yr, mo] = ym.split('-'); return `${MONTH_NAMES[parseInt(mo, 10) - 1]}, ${yr.slice(-2)}`; };
-                if (!started && startYmL) arriveLabel = `Starting ${mmyy(startYmL)}`;
-                else if (arriveYm) arriveLabel = `${started ? 'Arrives' : 'Starting'} ${mmyy(arriveYm)}`;
+                const firstDated = (s.milestones || []).find(m => m && m.date);
+                const startIso = s.startDate || (firstDated ? firstDated.date : null);
+                const arriveIso = shipArrivalDate(s) || null;
+                const dmy = iso => { if (!iso) return null; const [yr, mo, d] = iso.slice(0, 10).split('-'); return d ? `${parseInt(d, 10)} ${MONTH_NAMES[parseInt(mo, 10) - 1]} '${yr.slice(-2)}` : `${MONTH_NAMES[parseInt(mo, 10) - 1]} '${yr.slice(-2)}`; };
+                const arriveLabel = `<span class="imp-upcoming-arrival-label">${started ? 'Started' : 'Starts'}</span> ${escHtml(dmy(startIso) || '—')} <span class="imp-upcoming-arrival-label">· Arrives</span> ${escHtml(dmy(arriveIso) || '—')}`;
 
                 const payBar = totalNzd > 0 ? `
                     <div class="imp-pay-progress" title="${pctPaid}% paid">
@@ -2470,7 +2472,7 @@ const Warehouse = (() => {
                     <div class="imp-upcoming-row1">
                         <span class="imp-upcoming-num">#${seqForTitle}</span>
                     </div>
-                    <div class="imp-upcoming-arrival">${escHtml(arriveLabel)}</div>
+                    <div class="imp-upcoming-arrival">${arriveLabel}</div>
                     ${payBar}
                     <div class="db-ship-ms" role="img" aria-label="Milestone progress">${segs}</div>
                 </div>`;
