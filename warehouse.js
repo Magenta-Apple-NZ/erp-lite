@@ -2452,7 +2452,7 @@ const Warehouse = (() => {
                 const startIso = s.startDate || (firstDated ? firstDated.date : null);
                 const arriveIso = shipArrivalDate(s) || null;
                 const dmy = iso => { if (!iso) return null; const [yr, mo, d] = iso.slice(0, 10).split('-'); return d ? `${parseInt(d, 10)} ${MONTH_NAMES[parseInt(mo, 10) - 1]} '${yr.slice(-2)}` : `${MONTH_NAMES[parseInt(mo, 10) - 1]} '${yr.slice(-2)}`; };
-                const arriveLabel = `<span class="imp-upcoming-arrival-label">${started ? 'Started' : 'Starts'}</span> ${escHtml(dmy(startIso) || '—')} <span class="imp-upcoming-arrival-label">· Arrives</span> ${escHtml(dmy(arriveIso) || '—')}`;
+                const arriveLabel = `<span class="imp-upcoming-arrival-label">${started ? 'started' : 'starts'}</span> ${escHtml(dmy(startIso) || '—')} <span class="imp-upcoming-arrival-label">arrives</span> ${escHtml(dmy(arriveIso) || '—')}`;
 
                 const payBar = totalNzd > 0 ? `
                     <div class="imp-pay-progress" title="${pctPaid}% paid">
@@ -2460,8 +2460,8 @@ const Warehouse = (() => {
                             <div class="imp-pay-bar-paid" style="width:${pctPaid}%"></div>
                         </div>
                         <div class="imp-pay-labels">
-                            <span class="imp-pay-paid">${fmtKshort(paidNzd)} paid</span>
-                            <span class="imp-pay-os">${fmtKshort(outstandingNzd)} outstanding</span>
+                            <span class="imp-pay-paid" title="Paid">${fmtKshort(paidNzd)} paid</span>
+                            <span class="imp-pay-os" title="Outstanding">${fmtKshort(outstandingNzd)} o/s</span>
                         </div>
                     </div>`
                     : '<div class="imp-pay-empty">No costs entered</div>';
