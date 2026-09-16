@@ -410,9 +410,13 @@ const Warehouse = (() => {
                             maxRotation: 0, autoSkip: false,
                             // show every other month label; intermediate ticks stay
                             // for the gridlines but render blank
+                            // Every month labelled; the year appears on the first tick and
+                            // whenever it changes (January), otherwise just the month.
                             callback: function(_v, i) {
-                                const lbl = this.getLabelForValue(i);
-                                return i % 2 === 0 ? lbl : '';
+                                const r = rows[i];
+                                if (!r) return '';
+                                const showYear = i === 0 || r.mo === 0;
+                                return showYear ? `${MONTH_NAMES[r.mo]} '${String(r.yr).slice(-2)}` : MONTH_NAMES[r.mo];
                             },
                         },
                     },
@@ -557,6 +561,10 @@ const Warehouse = (() => {
         } catch (e) { /* BDT sparkline optional */ }
 
         let scenario  = 'great';
+        // Forecast view range (YYYY-MM, inclusive). Default: this month → +24 months.
+        const nzYmNow = new Date().toLocaleDateString('en-CA', { timeZone: 'Pacific/Auckland' }).slice(0, 7);
+        const addYm = (ym, n) => { const [y, m] = ym.split('-').map(Number); const t = y * 12 + (m - 1) + n; return `${Math.floor(t / 12)}-${String((t % 12) + 1).padStart(2, '0')}`; };
+        let viewFrom = nzYmNow, viewTo = addYm(nzYmNow, 24);
         let activeTab = 'forecast';
         let showAllShips = false;
         let currentDetailShipId = null;
@@ -2268,7 +2276,8 @@ const Warehouse = (() => {
         function rebuild() {
             currentDetailShipId = null;
 
-            const rows     = computeForecast(config, 18, actuals);
+            const allRows  = computeForecast(config, 60, actuals);
+            const rows     = allRows.filter(r => r.ym >= viewFrom && r.ym <= viewTo);
             const closeKey = { avg: 'closeAvg', good: 'closeGood', great: 'closeGreat' }[scenario];
             const openKey  = { avg: 'openAvg',  good: 'openGood',  great: 'openGreat'  }[scenario];
             const salesKey = { avg: 'avgSales', good: 'goodSales', great: 'greatSales' }[scenario];
@@ -2605,7 +2614,8 @@ const Warehouse = (() => {
                                 <button class="btn-link" id="imp-edit-stock-btn">Edit</button>
                                 <span style="color:#94a3b8">· manual — commit a count under <a href="#warehouse">Stock → Counts</a> and this follows it automatically</span></p>`}
                         </div>
-                        <div class="cat-actions">
+                        <div class="cat-actions" style="display:flex;gap:0.6rem;align-items:center;flex-wrap:wrap">
+                            <span class="imp-range-wrap" title="Months shown on the chart and table"><input type="month" id="imp-view-from" class="imp-range-inp" value="${viewFrom}"> <span class="cat-sub">→</span> <input type="month" id="imp-view-to" class="imp-range-inp" value="${viewTo}"><button class="btn-link" id="imp-view-reset" title="This month → +24 months">24m</button></span>
                             <div class="imp-scenario-wrap">${scenarioBtns}</div>
                         </div>
                     </div>
@@ -2717,6 +2727,10 @@ const Warehouse = (() => {
             body.querySelectorAll('.imp-scenario-btn').forEach(btn => {
                 btn.addEventListener('click', () => { scenario = btn.dataset.s; rebuild(); });
             });
+            const okYm = v => /^\d{4}-\d{2}$/.test(v || '');
+            document.getElementById('imp-view-from')?.addEventListener('change', e => { if (okYm(e.target.value) && e.target.value <= viewTo) { viewFrom = e.target.value; rebuild(); } else e.target.value = viewFrom; });
+            document.getElementById('imp-view-to')?.addEventListener('change', e => { if (okYm(e.target.value) && e.target.value >= viewFrom) { viewTo = e.target.value; rebuild(); } else e.target.value = viewTo; });
+            document.getElementById('imp-view-reset')?.addEventListener('click', () => { viewFrom = nzYmNow; viewTo = addYm(nzYmNow, 24); rebuild(); });
 
             document.getElementById('imp-edit-stock-btn')?.addEventListener('click', () => {
                 document.getElementById('imp-stock-edit').style.display = '';
