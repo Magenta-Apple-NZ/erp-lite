@@ -1392,7 +1392,10 @@ const Orders = (() => {
             if (qty <= 0) return;
             const sku = (tr.querySelector('.line-sku')?.value || '').trim().toLowerCase();
             const item = _formCatalogItems.find(i => (i.id || '').toLowerCase() === sku);
-            const per = item && item.unitsPerBox > 0 ? item.unitsPerBox : 1;
+            // Catalogue units-per-box; if the catalogue isn't loaded yet, a 1kg
+            // bag (kg/unit < 5) is 10 to a box, anything else 1 — never 1 per bag.
+            const kpu = parseFloat(tr.querySelector('.line-kg')?.value || tr.dataset.kgPerUnit || '') || Number(item?.kgPerUnit) || 0;
+            const per = item && item.unitsPerBox > 0 ? item.unitsPerBox : (kpu > 0 && kpu < 5 ? 10 : 1);
             boxes += Math.ceil(qty / per);
         });
         return boxes;
@@ -2300,20 +2303,21 @@ const Orders = (() => {
         const BOX_KG = 11.5; // standard full-box weight (product + packaging)
         const lines = order.lines || [];
 
-        // (1) Box count from the courier/freight line, if present.
-        let boxes = lines
-            .filter(isCourierLine)
-            .reduce((s, l) => s + (Number(l.quantity) || 0), 0);
-        let source = 'courier-line';
-
-        // (2) Fall back to per-product packaging rules (Σ ceil(qty ÷ unitsPerBox)).
+        // (1) What physically ships: Σ ceil(qty ÷ unitsPerBox) over the product
+        //     lines (10 × 1kg bags = 1 box). The courier line is what was
+        //     INVOICED and is checked against this separately — it must never
+        //     drive the label count (a wrong quantity there meant 10 labels).
+        let boxes = 0;
+        let source = 'derived';
+        lines.filter(l => !isCourierLine(l)).forEach(l => {
+            const qty = Number(l.quantity) || 0;
+            if (!qty) return;
+            boxes += Math.ceil(qty / unitsPerBoxForLine(l));
+        });
+        // (2) No product lines at all — fall back to the courier line, then 1.
         if (boxes <= 0) {
-            source = 'derived';
-            lines.filter(l => !isCourierLine(l)).forEach(l => {
-                const qty = Number(l.quantity) || 0;
-                if (!qty) return;
-                boxes += Math.ceil(qty / unitsPerBoxForLine(l));
-            });
+            source = 'courier-line';
+            boxes = lines.filter(isCourierLine).reduce((t, l) => t + (Number(l.quantity) || 0), 0);
         }
         if (boxes <= 0) boxes = 1;
 
