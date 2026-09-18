@@ -97,6 +97,7 @@ export async function onRequestPost({ env, request }) {
         if (body.monthlyAvg    !== undefined) existing.monthlyAvg    = body.monthlyAvg;
         if (body.shipments     !== undefined) existing.shipments     = body.shipments.map(s => { const { inCount, ...rest } = s || {}; return rest; });
         if (body.stageDefaults !== undefined) existing.stageDefaults = body.stageDefaults;
+        if (body.lineDefaults  !== undefined) existing.lineDefaults  = body.lineDefaults;  // default cost lines for new shipments
         existing.version  = (existing.version || 1) + 1;
         existing.savedAt  = new Date().toISOString();
         await env.ORDERS_KV.put(KEY, JSON.stringify(existing));

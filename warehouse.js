@@ -867,16 +867,64 @@ const Warehouse = (() => {
             { key: 'interest',       section: 'misc',       label: 'Interest Cost',            kind: 'flat',  defaultAmount: 0,    defaultCcy: 'NZD' },
         ];
 
-        function defaultFixedLinesV3() {
-            const out = {};
-            for (const def of FIXED_LINE_SCHEMA_V3) {
-                const line = { ccy: def.defaultCcy, paid: false, paidVia: '' };
-                if (def.kind === 'flat')            line.amount = def.defaultAmount;
-                else if (def.kind === 'perKg')      line.rate   = def.defaultRate;
-                else if (def.kind === 'allocation') { line.allocFactor = def.defaultAlloc; line.annualAmount = def.defaultAnnual; }
-                out[def.key] = line;
+        // Factory default for one fixed line (rate / amount / allocation + ccy).
+        function factoryLineDefault(def) {
+            const line = { ccy: def.defaultCcy };
+            if (def.kind === 'flat')            line.amount = def.defaultAmount;
+            else if (def.kind === 'perKg')      line.rate   = def.defaultRate;
+            else if (def.kind === 'allocation') { line.allocFactor = def.defaultAlloc; line.annualAmount = def.defaultAnnual; }
+            return line;
+        }
+        // Effective default for a line: the user's saved override (config.lineDefaults[key]) over the factory value.
+        function lineDefaultFor(def, cfg) {
+            const o = (cfg && cfg.lineDefaults && cfg.lineDefaults[def.key]) || {};
+            const base = factoryLineDefault(def);
+            const out = { ...base };
+            if (o.ccy) out.ccy = o.ccy;
+            if (def.kind === 'flat' && o.amount != null) out.amount = Number(o.amount) || 0;
+            if (def.kind === 'perKg' && o.rate != null) out.rate = Number(o.rate) || 0;
+            if (def.kind === 'allocation') {
+                if (o.allocFactor != null) out.allocFactor = Number(o.allocFactor) || 0;
+                if (o.annualAmount != null) out.annualAmount = Number(o.annualAmount) || 0;
             }
             return out;
+        }
+        // Fixed lines for a NEW shipment — the effective defaults, unpaid.
+        function defaultFixedLinesV3(cfg) {
+            const out = {};
+            for (const def of FIXED_LINE_SCHEMA_V3) out[def.key] = { ...lineDefaultFor(def, cfg), paid: false, paidVia: '' };
+            return out;
+        }
+
+        // Line-defaults panel (Cost Breakdown → Defaults). Values are what a
+        // NEW shipment starts with; "Apply to this shipment" rewrites this
+        // shipment's fixed lines to the defaults (paid flags kept).
+        function buildLineDefaultsPanel(cfg, s) {
+            const rows = FIXED_LINE_SCHEMA_V3.map(def => {
+                const d = lineDefaultFor(def, cfg);
+                const sec = (SHIP_SECTIONS_V3.find(x => x.key === def.section) || {}).label || def.section;
+                let field;
+                if (def.kind === 'flat') field = `<input type="number" class="ship-ld-val" data-key="${def.key}" data-field="amount" value="${d.amount ?? ''}" step="0.01" min="0"><span class="ship-tl-cfg-unit">flat</span>`;
+                else if (def.kind === 'perKg') field = `<input type="number" class="ship-ld-val" data-key="${def.key}" data-field="rate" value="${d.rate ?? ''}" step="0.0001" min="0"><span class="ship-tl-cfg-unit">per kg (${escHtml(def.kgField)})</span>`;
+                else field = `<input type="number" class="ship-ld-val" data-key="${def.key}" data-field="annualAmount" value="${d.annualAmount ?? ''}" step="1" min="0"><span class="ship-tl-cfg-unit">annual ×</span><input type="number" class="ship-ld-val" data-key="${def.key}" data-field="allocFactor" value="${d.allocFactor ?? ''}" step="0.01" min="0" max="1" style="width:64px"><span class="ship-tl-cfg-unit">share</span>`;
+                const ccy = `<select class="ship-ld-ccy" data-key="${def.key}">${CCYS_FIXED.map(c => `<option ${c === d.ccy ? 'selected' : ''}>${c}</option>`).join('')}</select>`;
+                return `<div class="ship-tl-cfg-row ship-ld-row">
+                    <span class="ship-tl-cfg-label"><span class="ship-ld-sec">${escHtml(sec)}</span>${escHtml(def.label)}</span>
+                    <span class="ship-tl-cfg-rule">${ccy}${field}</span>
+                </div>`;
+            }).join('');
+            return `<div class="ship-tl-cfg" id="ship-ld-cfg" hidden>
+                <div class="ship-tl-cfg-hd">
+                    <strong>Default cost lines for new shipments</strong>
+                    <span class="ship-tl-cfg-hint">Saved as you type. Existing shipments keep their own values unless you apply these.</span>
+                </div>
+                <div class="ship-tl-cfg-list">${rows}</div>
+                <div class="ship-tl-cfg-actions">
+                    <button class="btn-link" id="ship-ld-apply" type="button" data-ship-id="${escHtml(s.id)}">Apply to this shipment</button>
+                    <button class="btn-link" id="ship-ld-reset" type="button">Reset to factory</button>
+                    <span class="ship-tl-cfg-saved" id="ship-ld-saved" hidden>Saved</span>
+                </div>
+            </div>`;
         }
 
         // ── V3 timeline ─────────────────────────────────────────────────
@@ -1512,6 +1560,51 @@ const Warehouse = (() => {
                 ? `<div class="sa-card-foot"><button class="btn-link sa-show-more-btn" data-extra="${n - 3}">Show more (${n - 3})</button></div>`
                 : '';
 
+            // ── Cost lines across shipments: every fixed line (and extras by
+            //    section) for the latest shipments, in NZD or per yield kg.
+            const cmpShips = sortedCost.slice(0, 6);
+            const cmpTot   = cmpShips.map(s => computeShipTotalsV3(s, forex));
+            const nzdOf = (s, def, t) => fixedLineNzdV3(def, (s.fixedLines || {})[def.key], t.derived, forex);
+            const extraOf = (s, sec, t) => (s.extraLines || []).filter(l => l.section === sec).reduce((sum, l) => {
+                const kg = l.kind === 'perKg' ? (Number(t.derived[l.kgField || 'netKg']) || 0) : 0;
+                const raw = l.kind === 'flat' ? (Number(l.amount) || 0) : (Number(l.rate) || 0) * kg;
+                const ccy = l.ccy || 'NZD';
+                return sum + (ccy === 'NZD' ? raw : (forex[ccy] ? raw / forex[ccy] : raw));
+            }, 0);
+            const cell = (v, kg, mode) => {
+                if (!(v > 0)) return '<td class="sa-td-num sa-td-na">—</td>';
+                return mode === 'kg'
+                    ? `<td class="sa-td-num">${kg > 0 ? '$' + (v / kg).toFixed(2) : '—'}</td>`
+                    : `<td class="sa-td-num">$${fmtFull(v)}</td>`;
+            };
+            const linesTableFor = mode => {
+                const head = `<thead><tr><th>Line</th>${cmpShips.map(s => `<th class="sa-th-num">#${s.seq}</th>`).join('')}</tr></thead>`;
+                let body = '';
+                for (const sec of SHIP_SECTIONS_V3) {
+                    const defs = FIXED_LINE_SCHEMA_V3.filter(d => d.section === sec.key);
+                    body += `<tr class="sa-tr-sec"><td colspan="${cmpShips.length + 1}">${escHtml(sec.label)}</td></tr>`;
+                    for (const def of defs) {
+                        const vals = cmpShips.map((s, i) => nzdOf(s, def, cmpTot[i]));
+                        if (!vals.some(v => v > 0)) continue;
+                        body += `<tr><td class="sa-td-ship sa-td-line">${escHtml(def.label)}</td>${vals.map((v, i) => cell(v, cmpTot[i].derived.yieldKg, mode)).join('')}</tr>`;
+                    }
+                    const extras = cmpShips.map((s, i) => extraOf(s, sec.key, cmpTot[i]));
+                    if (extras.some(v => v > 0)) body += `<tr><td class="sa-td-ship sa-td-line">Other (added lines)</td>${extras.map((v, i) => cell(v, cmpTot[i].derived.yieldKg, mode)).join('')}</tr>`;
+                    body += `<tr class="sa-tr-sub"><td class="sa-td-ship">${escHtml(sec.label)} subtotal</td>${cmpTot.map(t => cell(t.sectionTotals[sec.key], t.derived.yieldKg, mode)).join('')}</tr>`;
+                }
+                const foot = `<tfoot><tr class="sa-tr-foot"><td class="sa-td-ship">Total</td>${cmpTot.map(t => cell(t.total, t.derived.yieldKg, mode)).join('')}</tr>
+                    <tr class="sa-tr-foot"><td class="sa-td-ship">Yield kg</td>${cmpTot.map(t => `<td class="sa-td-num">${fmtFull(t.derived.yieldKg)}</td>`).join('')}</tr></tfoot>`;
+                return `<table class="sa-table sa-lines-table" data-mode="${mode}"${mode === 'kg' ? ' hidden' : ''}>${head}<tbody>${body}</tbody>${foot}</table>`;
+            };
+            const linesCard = cmpShips.length ? `
+                <div class="sa-card">
+                    <div class="sa-card-hd">
+                        <h3 class="sa-card-title">Cost Lines by Shipment</h3>
+                        <span class="sa-card-sub">latest ${cmpShips.length} · <button class="btn-link sa-lines-mode active" data-mode="nzd" type="button">NZD</button> · <button class="btn-link sa-lines-mode" data-mode="kg" type="button">$ / kg</button></span>
+                    </div>
+                    <div class="sa-card-body sa-card-body--wide">${linesTableFor('nzd')}${linesTableFor('kg')}</div>
+                </div>` : '';
+
             return `
             <div class="cat-section sa-block">
                 <div class="sa-hd">
@@ -1536,6 +1629,8 @@ const Warehouse = (() => {
                     <div class="sa-card-body sa-card-body--wide">${tlTable}</div>
                     ${moreBtn(dated.length)}
                 </div>
+
+                ${linesCard}
 
                 <div class="sa-card">
                     <div class="sa-card-hd">
@@ -1706,30 +1801,35 @@ const Warehouse = (() => {
                         </div>
 
                         ${(() => {
-                            // Paid card greens up as paidPct rises; Outstanding reddens as it rises.
-                            // hue 0 = red, 120 = green. Hue stays gray-ish (null) when total = 0.
-                            const osPct  = total > 0 ? Math.max(0, Math.min(100, (osNzd / total) * 100)) : 0;
-                            const paidH  = total > 0 ? paidPct * 1.2 : null;
-                            const osH    = total > 0 ? 120 - osPct * 1.2 : null;
-                            const tint   = h => h == null
+                            // Total, paid-so-far and outstanding — each in NZD and per yield kg.
+                            const kg      = d.yieldKg > 0 ? d.yieldKg : 0;
+                            const perKg   = v => kg > 0 ? '$' + (v / kg).toFixed(2) + ' / kg' : '—';
+                            const osPct   = total > 0 ? Math.max(0, Math.min(100, (osNzd / total) * 100)) : 0;
+                            const paidH   = total > 0 ? paidPct * 1.2 : null;
+                            const osH     = total > 0 ? 120 - osPct * 1.2 : null;
+                            const tint    = h => h == null
                                 ? 'background:#f8fafc;border-color:#e2e8f0;color:#1e293b'
                                 : `background:hsl(${h},80%,96%);border-color:hsl(${h},60%,82%);color:hsl(${h},65%,32%)`;
                             return `<div class="ship-sum-row">
                                 <div class="ship-sum-card">
                                     <div class="ship-sum-val">${fmtKg(d.yieldKg)}</div>
-                                    <div class="ship-sum-lbl">KG</div>
+                                    <div class="ship-sum-lbl">Yield kg</div>
+                                    <div class="ship-sum-sub">${fmtKg(d.netKg)} net · ${d.yieldPct.toFixed(1)}% yield</div>
                                 </div>
                                 <div class="ship-sum-card">
-                                    <div class="ship-sum-val">${ppkg ? '$' + ppkg : '—'}</div>
-                                    <div class="ship-sum-lbl">$ / kg</div>
+                                    <div class="ship-sum-val">$${Math.round(total).toLocaleString('en-NZ')}</div>
+                                    <div class="ship-sum-lbl">Total</div>
+                                    <div class="ship-sum-sub"><strong>${perKg(total)}</strong></div>
                                 </div>
                                 <div class="ship-sum-card" style="${tint(paidH)}">
                                     <div class="ship-sum-val">$${Math.round(paid).toLocaleString('en-NZ')}</div>
-                                    <div class="ship-sum-lbl">Paid (${paidPct}%)</div>
+                                    <div class="ship-sum-lbl">Paid so far (${paidPct}%)</div>
+                                    <div class="ship-sum-sub"><strong>${perKg(paid)}</strong></div>
                                 </div>
                                 <div class="ship-sum-card" style="${tint(osH)}">
                                     <div class="ship-sum-val">${osNzd > 0.5 ? '$' + Math.round(osNzd).toLocaleString('en-NZ') : '✓ Clear'}</div>
                                     <div class="ship-sum-lbl">Outstanding</div>
+                                    <div class="ship-sum-sub">${osNzd > 0.5 ? perKg(osNzd) : '&nbsp;'}</div>
                                 </div>
                             </div>`;
                         })()}
@@ -1757,7 +1857,9 @@ const Warehouse = (() => {
                             <div class="ship-det-hd">
                                 <h3 class="ship-det-title">Cost Breakdown</h3>
                                 <button class="btn-link ship-add-cost-toggle" data-ship-id="${escHtml(s.id)}">+ Add cost</button>
+                                <button class="btn-link ship-ld-toggle" type="button" title="Edit the default values new shipments start with">Defaults</button>
                             </div>
+                            ${buildLineDefaultsPanel(config, s)}
                             <div class="ship-add-cost-form" data-ship-id="${escHtml(s.id)}" hidden>
                                 <div class="ship-add-cost-fields">
                                     <select class="ship-add-cost-section">
@@ -2785,6 +2887,13 @@ const Warehouse = (() => {
             });
 
             // ── Show more / Show less for analytics tables ──
+            body.querySelectorAll('.sa-lines-mode').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    const mode = btn.dataset.mode;
+                    body.querySelectorAll('.sa-lines-mode').forEach(b => b.classList.toggle('active', b === btn));
+                    body.querySelectorAll('.sa-lines-table').forEach(t => { t.hidden = t.dataset.mode !== mode; });
+                });
+            });
             body.querySelectorAll('.sa-show-more-btn').forEach(btn => {
                 btn.addEventListener('click', () => {
                     const card = btn.closest('.sa-card');
@@ -2942,7 +3051,7 @@ const Warehouse = (() => {
                         startDate,
                         ym: ymFromStartDate(startDate, stageDefaults),
                         whiteRawKg, colourRawKg, wastePct,
-                        fixedLines: defaultFixedLinesV3(),
+                        fixedLines: defaultFixedLinesV3(config),
                         status:     'planning',
                         milestones: defaultMilestonesV3(startDate, stageDefaults),
                     };
@@ -2981,7 +3090,7 @@ const Warehouse = (() => {
                 await api('/api/import/forecast', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ shipments: config.shipments, stageDefaults: config.stageDefaults }),
+                    body: JSON.stringify({ shipments: config.shipments, stageDefaults: config.stageDefaults, lineDefaults: config.lineDefaults || null }),
                 });
                 if (currentDetailShipId) {
                     const updated = config.shipments.find(sh => sh.id === currentDetailShipId);
@@ -2997,7 +3106,7 @@ const Warehouse = (() => {
                 await api('/api/import/forecast', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ shipments: config.shipments, stageDefaults: config.stageDefaults }),
+                    body: JSON.stringify({ shipments: config.shipments, stageDefaults: config.stageDefaults, lineDefaults: config.lineDefaults || null }),
                 });
             } catch (err) { showToast('Save failed: ' + err.message); }
         }
@@ -3160,6 +3269,19 @@ const Warehouse = (() => {
                 return;
             }
 
+            // Line-defaults edit — persist to config.lineDefaults
+            if (e.target.matches('.ship-ld-val') || e.target.matches('.ship-ld-ccy')) {
+                const key = e.target.dataset.key;
+                const cur = { ...((config.lineDefaults || {})[key] || {}) };
+                if (e.target.matches('.ship-ld-ccy')) cur.ccy = e.target.value;
+                else cur[e.target.dataset.field] = Number(e.target.value) || 0;
+                config.lineDefaults = { ...(config.lineDefaults || {}), [key]: cur };
+                await quietSave();
+                const saved = document.getElementById('ship-ld-saved');
+                if (saved) { saved.hidden = false; clearTimeout(saved._t); saved._t = setTimeout(() => { saved.hidden = true; }, 1200); }
+                return;
+            }
+
             // Stage-defaults gap edit — persist to config.stageDefaults
             if (e.target.matches('.ship-tl-cfg-gap')) {
                 const i = parseInt(e.target.dataset.idx);
@@ -3318,6 +3440,32 @@ const Warehouse = (() => {
                     return { ...s, milestones };
                 });
                 await costSave();
+                return;
+            }
+
+            // Line defaults panel — open/close, reset, apply to this shipment
+            if (e.target.closest('.ship-ld-toggle')) {
+                const panel = document.getElementById('ship-ld-cfg');
+                if (panel) panel.hidden = !panel.hidden;
+                return;
+            }
+            if (e.target.closest('#ship-ld-reset')) {
+                config.lineDefaults = null;
+                await quietSave();
+                renderShipDetail(config.shipments.find(sh => sh.id === currentDetailShipId));
+                return;
+            }
+            if (e.target.closest('#ship-ld-apply')) {
+                const shipId = e.target.closest('#ship-ld-apply').dataset.shipId;
+                const sh = config.shipments.find(x => x.id === shipId);
+                if (!sh) return;
+                if (!confirm('Replace this shipment\'s fixed cost lines with the current defaults? Paid flags are kept.')) return;
+                const fresh = defaultFixedLinesV3(config);
+                const merged = {};
+                for (const key of Object.keys(fresh)) merged[key] = { ...fresh[key], paid: !!(sh.fixedLines?.[key]?.paid), paidVia: sh.fixedLines?.[key]?.paidVia || '' };
+                config.shipments = config.shipments.map(x => x.id === shipId ? { ...x, fixedLines: merged } : x);
+                await quietSave();
+                renderShipDetail(config.shipments.find(x => x.id === shipId));
                 return;
             }
 
