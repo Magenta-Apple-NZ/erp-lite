@@ -37,3 +37,24 @@ export function daysBetween(a, b) {
     const [by, bm, bd] = String(b).split('-').map(Number);
     return Math.round((Date.UTC(by, bm - 1, bd) - Date.UTC(ay, am - 1, ad)) / 86400000);
 }
+
+// ISO 8601 instant (UTC) for 12:00am Pacific/Auckland on a 'YYYY-MM-DD'.
+// Used wherever an external consumer wants a real timestamp for a business
+// date (e.g. the notification feed's due_at). Tries NZDT (+13) then NZST
+// (+12) and keeps the candidate that lands on that calendar day at 00:00.
+export function nzMidnightIso(ymd) {
+    const [y, m, d] = String(ymd).split('-').map(Number);
+    const base = Date.UTC(y, m - 1, d);
+    for (const offsetHours of [13, 12]) {
+        const t = new Date(base - offsetHours * 3600000);
+        const parts = new Intl.DateTimeFormat('en-CA', {
+            timeZone: 'Pacific/Auckland', year: 'numeric', month: '2-digit', day: '2-digit',
+            hour: '2-digit', hourCycle: 'h23',
+        }).formatToParts(t);
+        const get = type => (parts.find(p => p.type === type) || {}).value;
+        if (`${get('year')}-${get('month')}-${get('day')}` === ymd && get('hour') === '00') {
+            return t.toISOString();
+        }
+    }
+    return new Date(base - 12 * 3600000).toISOString();
+}

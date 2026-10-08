@@ -20,7 +20,13 @@ python3 -m http.server 8000
 npx wrangler pages dev . --kv ORDERS_KV --kv XERO_KV
 ```
 
-Environment variables for the Functions (set in the Pages dashboard; see `wrangler.toml` for the full list): Xero client id/secret/redirect, PrintNode key, GoSweetSpot keys, `ANTHROPIC_API_KEY`, `HUB_WEBHOOK_KEY`, optional catalogue CSV URL overrides.
+Environment variables for the Functions (set in the Pages dashboard; see `wrangler.toml` for the full list): Xero client id/secret/redirect, PrintNode key, GoSweetSpot keys, `ANTHROPIC_API_KEY`, `HUB_WEBHOOK_KEY`, `NOTIFY_FEED_TOKEN`, optional catalogue CSV URL overrides.
+
+## Notification feed
+
+`GET /api/feeds/notifications/<NOTIFY_FEED_TOKEN>` serves the Hub's notifications (orders not yet in Xero, shipments overdue or arriving, sticky tax and calendar reminders) in the New Tab Dashboard's Notification Feed Spec v1. The builder in `functions/api/feeds/_notifications.js` is pure and mirrors `fetchNotificationItems()` in `app.js`; keep the two in step. Daily items carry a date-suffixed id so a dismissal lasts a day, like the Hub's own 24h dismissal; sticky calendar items keep one id per occurrence.
+
+Setup: set `NOTIFY_FEED_TOKEN` to a long random string, add a Zero Trust Access policy that lets `/api/feeds/notifications/*` through without a login (the dashboard polls without a session; same pattern as `/api/orders/inbound`), then register `https://hub.primetie.co.nz/api/feeds/notifications/<token>` in the dashboard's Notifications settings. The feed URL is a credential.
 
 ## Tests
 
