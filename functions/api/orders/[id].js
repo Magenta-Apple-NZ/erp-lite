@@ -1,8 +1,15 @@
 // GET   /api/orders/:id   — fetch a single order
 // PATCH /api/orders/:id   — update status, fields, or append an event
+// DELETE /api/orders/:id  — remove (a tombstone keeps the last version)
+//
+// Every PATCH that changes data records an activity event with a field-level
+// diff (see _events.js), attributed to the Cloudflare Access user — whether
+// or not the client sent an event of its own.
 
 import { jsonResponse, errResponse } from '../_xero.js';
 import { syncSalesHistory, removeRow } from '../sales-history/_writer.js';
+import { userFromRequest } from '../_users.js';
+import { appendEvent, diffOrder } from './_events.js';
 
 const VALID_STATUSES = ['new', 'reviewed', 'sent_to_xero', 'dispatched'];
 
@@ -16,10 +23,17 @@ export async function onRequestGet({ env, params }) {
     }
 }
 
-export async function onRequestDelete({ env, params }) {
+export async function onRequestDelete({ env, params, request }) {
     try {
         const order = await env.ORDERS_KV.get('order:' + params.id, { type: 'json' });
         if (!order) return errResponse('Order not found', 404);
+
+        // Tombstone: the deleted order, its activity log and who deleted it,
+        // so a deletion is itself on the record and recoverable from KV.
+        const who = userFromRequest(request);
+        await env.ORDERS_KV.put('deleted:order:' + params.id, JSON.stringify({
+            deletedAt: new Date().toISOString(), deletedBy: who.email || who.name, order,
+        }));
 
         await env.ORDERS_KV.delete('order:' + params.id);
 
@@ -44,6 +58,7 @@ export async function onRequestPatch({ env, params, request }) {
         if (!order) return errResponse('Order not found', 404);
 
         const updates = await request.json();
+        const before = structuredClone(order);
 
         if (updates.status !== undefined) {
             if (!VALID_STATUSES.includes(updates.status)) {
@@ -66,7 +81,6 @@ export async function onRequestPatch({ env, params, request }) {
         if (updates.shipTo !== undefined) order.shipTo = updates.shipTo;
         if (updates.lines !== undefined) order.lines = updates.lines;
         if (updates.packingNotes !== undefined) order.packingNotes = updates.packingNotes;
-        if (updates.fulfilmentMethod !== undefined) order.fulfilmentMethod = updates.fulfilmentMethod === 'pickup' ? 'pickup' : 'courier';
         if (updates.fulfilmentMethod !== undefined) order.fulfilmentMethod = updates.fulfilmentMethod === 'pickup' ? 'pickup' : 'courier';
         if (updates.xeroInvoiceId !== undefined) order.xeroInvoiceId = updates.xeroInvoiceId;
         if (updates.xeroInvoiceNumber !== undefined) order.xeroInvoiceNumber = updates.xeroInvoiceNumber;
@@ -92,10 +106,14 @@ export async function onRequestPatch({ env, params, request }) {
             order.payslipMonth = /^\d{4}-\d{2}$/.test(m) ? m : null;
         }
 
-        // Append event to activity log
-        if (updates.event) {
-            if (!order.events) order.events = [];
-            order.events.push(updates.event);
+        // Activity log: the client's event (if any) carries the diff of what
+        // this write changed; a data change with no event still gets one.
+        const changes = diffOrder(before, order);
+        if (updates.event || changes.length) {
+            appendEvent(order, {
+                ...(updates.event || { action: 'Updated' }),
+                ...(changes.length && { changes }),
+            }, request);
         }
 
         order.updatedAt = new Date().toISOString();

@@ -8,6 +8,7 @@
 import { getValidToken, xeroHeaders, jsonResponse, errResponse, XeroAuthError } from '../_xero.js';
 import { syncSalesHistory } from '../sales-history/_writer.js';
 import { nzToday } from '../_dates.js';
+import { appendEvent } from '../orders/_events.js';
 
 // Customer-specific payment-term rules. Each entry is matched against the
 // customer name case-insensitively as a substring. Day of 0 = due on the
@@ -213,6 +214,10 @@ export async function onRequestPost({ env, request }) {
         order.xeroInvoiceId = created.InvoiceID;
         order.xeroInvoiceNumber = created.InvoiceNumber;
         order.updatedAt = new Date().toISOString();
+        appendEvent(order, {
+            action: 'Sent to Xero', detail: created.InvoiceNumber,
+            changes: [`Xero invoice: — → ${created.InvoiceNumber}`],
+        }, request);
         await env.ORDERS_KV.put('order:' + orderId, JSON.stringify(order));
 
         // Sync sales_history. /api/orders POST + inbound already do this

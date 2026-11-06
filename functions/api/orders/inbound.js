@@ -4,6 +4,7 @@
 // Also add an Access bypass policy for /api/orders/inbound in Zero Trust dashboard.
 
 import { jsonResponse, errResponse } from '../_xero.js';
+import { appendEvent } from './_events.js';
 import { syncSalesHistory } from '../sales-history/_writer.js';
 import { computeAutoFreightLines } from '../_freight.js';
 
@@ -94,6 +95,12 @@ export async function onRequestPost({ env, request }) {
             const freightLines = await computeAutoFreightLines(env, order);
             if (freightLines && freightLines.length) order.lines.push(...freightLines);
         } catch (_) { /* freight is best-effort; never block intake */ }
+
+        // Webhooks bypass Access, so attribute to the sending source.
+        appendEvent(order, {
+            action: 'Order received', kind: 'system', user: `Inbound (${String(order.source).slice(0, 40)})`,
+            detail: [customer?.name, order.poNumber && `PO ${order.poNumber}`, `${order.lines.length} line(s)`].filter(Boolean).join(' · '),
+        }, request);
 
         await env.ORDERS_KV.put('order:' + id, JSON.stringify(order));
 

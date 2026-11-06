@@ -1,14 +1,20 @@
-// POST /api/print  { orderId, document, pdfBase64, printerId }
+// POST /api/print  { orderId, document, pdfBase64, printerId, printerLabel }
 // Forwards a base64-encoded PDF to PrintNode, then polls the job state until
 // it reaches a terminal state ('done', 'error', 'cancelled', 'expired') or
 // the polling window closes. Returns the verbatim PrintNode message on
 // failure so the client can surface it to the operator.
 //
-// document  : 'slip' | 'address' (free-form, used for the job title + event log)
+// document  : 'slip' | 'address' | 'label' (job title + activity log)
 // printerId : PrintNode printer id — picked client-side from the config.json
 //             registry. Falls back to env.PRINTNODE_PRINTER_ID for back-compat.
+//
+// Once PrintNode has accepted a job, its outcome (printed / failed /
+// unconfirmed) is written to the order's activity log here, server-side, so
+// it's recorded even if the browser closes mid-poll. Failures before a job
+// exists (bad PDF, PrintNode rejecting it) are logged by the client.
 
 import { printNodeHeaders, jsonResponse, errResponse } from './_printnode.js';
+import { appendOrderEvent, DOC_LABELS } from '../orders/_events.js';
 
 const MAX_PDF_BYTES = 8 * 1024 * 1024; // 8 MB — well above any realistic slip
 
@@ -57,7 +63,7 @@ export async function onRequestPost({ env, request }) {
             return errResponse('PRINTNODE_API_KEY not configured', 500);
         }
 
-        const { orderId, document, pdfBase64, printerId } = await request.json();
+        const { orderId, document, pdfBase64, printerId, printerLabel } = await request.json();
         if (!orderId)    return errResponse('orderId is required', 400);
         if (!pdfBase64)  return errResponse('pdfBase64 is required', 400);
 
@@ -81,7 +87,8 @@ export async function onRequestPost({ env, request }) {
         const order = await env.ORDERS_KV.get('order:' + orderId, { type: 'json' });
         if (!order) return errResponse('Order not found', 404);
 
-        const docLabel = document === 'address' ? 'Address Sheet' : 'Packing Slip';
+        const docKey   = DOC_LABELS[document] ? document : 'slip';
+        const docLabel = DOC_LABELS[docKey];
         const ref      = order.xeroInvoiceNumber || order.id;
         const title    = `${docLabel} — ${ref}`;
 
@@ -122,6 +129,16 @@ export async function onRequestPost({ env, request }) {
         const final = await pollJobState(jobId, env.PRINTNODE_API_KEY);
         const state = final?.state || 'pending';
         const confirmed = TERMINAL_STATES.has(state);
+        const success   = state === 'done';
+
+        const where = String(printerLabel || `Printer #${targetPrinter}`).slice(0, 80);
+        const doc   = docLabel.toLowerCase();
+        await appendOrderEvent(env, orderId, {
+            kind: 'document', doc: docKey, channel: 'printnode', printer: where, jobId,
+            action: success ? `Printed ${doc}` : confirmed ? `Print failed — ${doc}` : `Print unconfirmed — ${doc}`,
+            detail: [where, !success && `${state}${final?.message ? ': ' + final.message : ''}`, `PrintNode job #${jobId}`]
+                .filter(Boolean).join(' · '),
+        }, request).catch(() => {}); // the print result matters more than the log write
 
         return jsonResponse({
             jobId,
@@ -130,7 +147,8 @@ export async function onRequestPost({ env, request }) {
             state,
             message: final?.message || null,
             confirmed,                    // reached a terminal state within the polling window
-            success:   state === 'done',  // the only state that means "printed"
+            success,                      // 'done' is the only state that means "printed"
+            logged:    true,              // outcome is on the order's activity log
         });
 
     } catch (e) {

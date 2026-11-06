@@ -11,6 +11,7 @@
 
 import { getValidToken, xeroHeaders, jsonResponse, errResponse, XeroAuthError } from '../_xero.js';
 import { nzToday } from '../_dates.js';
+import { appendEvent } from '../orders/_events.js';
 
 const CACHE_KEY = 'payments_reconcile';
 const CACHE_TTL = 300; // seconds
@@ -79,9 +80,8 @@ export async function onRequestPost({ env, request }) {
                 if (!paid) continue;
 
                 order.paidAt = xeroDateToIso(inv.FullyPaidOnDate);
-                if (!order.events) order.events = [];
-                order.events.push({
-                    timestamp: new Date().toISOString(),
+                appendEvent(order, {
+                    kind: 'system',
                     user: 'Xero sync',
                     action: 'Payment received',
                     detail: (order.xeroInvoiceNumber || '') +

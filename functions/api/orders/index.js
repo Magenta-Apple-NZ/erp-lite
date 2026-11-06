@@ -3,6 +3,7 @@
 
 import { jsonResponse, errResponse } from '../_xero.js';
 import { syncSalesHistory } from '../sales-history/_writer.js';
+import { appendEvent } from './_events.js';
 
 export async function onRequestGet({ env }) {
     try {
@@ -83,6 +84,10 @@ export async function onRequestPost({ env, request }) {
             xeroInvoiceNumber: null,
             xeroSourced: body.xeroSourced === true,
         };
+        appendEvent(order, {
+            action: 'Order created',
+            detail: [order.customer?.name, order.poNumber && `PO ${order.poNumber}`, `${order.lines.length} line(s)`].filter(Boolean).join(' · '),
+        }, request);
 
         await env.ORDERS_KV.put('order:' + id, JSON.stringify(order));
 

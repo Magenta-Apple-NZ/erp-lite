@@ -17,6 +17,7 @@
 import { jsonResponse, errResponse } from '../_xero.js';
 import { createShipment, getLabelPdf, isMockMode } from '../_courier.js';
 import { syncSalesHistory } from '../sales-history/_writer.js';
+import { appendEvent } from '../orders/_events.js';
 
 // GET /api/courier/label?orderId=PKS-0001 — refetch the label PDF for an
 // order's existing consignment (reprint). Does NOT create a new consignment.
@@ -132,14 +133,14 @@ export async function onRequestPost({ env, request }) {
         };
         order.courier = courier;
         order.updatedAt = new Date().toISOString();
-        order.events = order.events || [];
-        order.events.unshift({
-            ts: order.updatedAt,
-            msg: `Courier label created — ${courier.carrier} ${courier.connote}${courier.mock ? ' (TEST)' : ''}`
-                + `; ${labelsCreated} label(s) created`
+        appendEvent(order, {
+            action: 'Created courier label',
+            detail: `${courier.carrier} ${courier.connote}${courier.mock ? ' (TEST)' : ''}`
+                + ` · ${labelsCreated} label(s) created`
                 + (expected != null ? `, ${expected} box(es) needed${boxMismatch ? ' — MISMATCH' : ''}` : '')
-                + (invoiced != null ? `, ${invoiced} invoiced${invoiceMismatch ? ' — MISMATCH' : ''}` : ''),
-        });
+                + (invoiced != null ? `, ${invoiced} invoiced${invoiceMismatch ? ' — MISMATCH' : ''}` : '')
+                + (courier.cost != null ? ` · $${Number(courier.cost).toFixed(2)}` : ''),
+        }, request);
         await env.ORDERS_KV.put('order:' + orderId, JSON.stringify(order));
         // Labels created feed courier-consumable usage on the sales row.
         await syncSalesHistory(env, order);

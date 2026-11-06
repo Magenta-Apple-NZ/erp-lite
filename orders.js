@@ -20,6 +20,14 @@ const Orders = (() => {
         { key: 'export',      label: 'Export',        xeroName: '',                 xeroCode: '', isExport: true },
     ];
 
+    // Activity log filter (log is re-rendered, so delegate from document).
+    document.addEventListener('click', e => {
+        const btn = e.target.closest('[data-event-filter]');
+        if (!btn) return;
+        const log = btn.closest('.event-log');
+        log.dataset.filter = btn.dataset.eventFilter;
+        log.querySelectorAll('[data-event-filter]').forEach(b => b.classList.toggle('active', b === btn));
+    });
     // Close overflow menus when clicking outside; close on item click (capture so it fires before any stopPropagation)
     document.addEventListener('click', e => {
         const trigger = e.target.closest('.overflow-trigger');
@@ -123,16 +131,23 @@ const Orders = (() => {
         return currentUser;
     }
 
-    async function logEvent(orderId, action, detail = '') {
+    // Append an activity event. The server stamps the time and the Access
+    // identity; `user` here only matters in local dev. `extra` tags document
+    // events: { kind: 'document', doc: 'slip'|'address'|'label',
+    // channel: 'printnode'|'browser'|'download'|'view' }. Writes that change
+    // data should send `event` in the same PATCH instead (the server attaches
+    // the diff) — this is for actions that don't touch the order's fields.
+    async function logEvent(orderId, action, detail = '', extra = {}) {
         const user = await getUser();
         return api('/api/orders/' + orderId, {
             method: 'PATCH',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-                event: { timestamp: new Date().toISOString(), user: user.name, action, detail },
+                event: { user: user.name, action, detail, ...extra },
             }),
         }).catch(() => {}); // non-blocking
     }
+    const docEvent = (doc, channel) => ({ kind: 'document', doc, channel });
 
     async function checkXeroStatus() {
         try {
@@ -1575,7 +1590,6 @@ const Orders = (() => {
                     xeroSourced: document.getElementById('xero-sourced')?.checked === true,
                 }),
             });
-            await logEvent(order.id, 'Order created');
             location.hash = 'orders/' + order.id;
         } catch (e) {
             showFormError(e.message);
@@ -1606,9 +1620,9 @@ const Orders = (() => {
                     lines,
                     packingNotes: document.getElementById('packing-notes').value.trim(),
                     xeroSourced: document.getElementById('xero-sourced')?.checked === true,
+                    event: { action: 'Order edited' },
                 }),
             });
-            await logEvent(orderId, 'Order edited');
             showToast('Saved');
             // Re-render in place so the slip preview, activity log, and action
             // bar reflect the saved state (status / xeroInvoiceNumber etc.).
@@ -1930,18 +1944,53 @@ const Orders = (() => {
         }
     }
 
+    // Activity log, newest first. Reads every event shape the log has ever
+    // held: legacy { ts, msg }, client { timestamp, user, action, detail } and
+    // the server-normalised one with kind / changes / doc (orders/_events.js).
+    const EVENT_ICONS = { change: '✎', document: '📄', system: '⚙' };
+    const DOC_CHANNEL_ICONS = { printnode: '🖨', browser: '🖨', download: '⬇', view: '👁' };
     function renderEventLog(events) {
-        if (!events.length) return `<div class="event-log no-print"><p class="event-log-empty">No activity yet.</p></div>`;
+        const list = (events || [])
+            .map((e, i) => ({
+                i,
+                timestamp: e.timestamp || e.ts || '',
+                user:   e.user || '',
+                email:  e.email || '',
+                action: e.action || e.msg || '',
+                detail: e.detail || '',
+                kind:   e.kind || (/print|download|label pdf/i.test(e.action || e.msg || '') ? 'document' : 'change'),
+                channel: e.channel || '',
+                changes: Array.isArray(e.changes) ? e.changes : [],
+            }))
+            .filter(e => e.action)
+            .sort((a, b) => (b.timestamp || '').localeCompare(a.timestamp || '') || b.i - a.i);
+        if (!list.length) return `<div class="event-log no-print"><p class="event-log-empty">No activity yet.</p></div>`;
+        const n = k => list.filter(e => e.kind === k).length;
+        const full = iso => { const d = new Date(iso); return isNaN(d) ? '' : d.toLocaleString('en-NZ', { dateStyle: 'full', timeStyle: 'medium' }); };
         return `
-        <div class="event-log no-print">
-            <h3 class="event-log-title">Activity</h3>
+        <div class="event-log no-print" data-filter="all">
+            <div class="event-log-hd">
+                <h3 class="event-log-title">Activity · ${list.length}</h3>
+                <div class="event-filter">
+                    <button type="button" class="active" data-event-filter="all">All</button>
+                    <button type="button" data-event-filter="change">Changes · ${n('change')}</button>
+                    <button type="button" data-event-filter="document">Documents · ${n('document')}</button>
+                    ${n('system') ? `<button type="button" data-event-filter="system">System · ${n('system')}</button>` : ''}
+                </div>
+            </div>
             <div class="event-list">
-                ${events.map(e => `
-                <div class="event-item">
-                    <span class="event-who">${escHtml(e.user)}</span>
-                    <span class="event-action">${escHtml(e.action)}</span>
-                    ${e.detail ? `<span class="event-detail">${escHtml(e.detail)}</span>` : ''}
-                    <span class="event-time">${fmtDateTime(e.timestamp)}</span>
+                ${list.map(e => `
+                <div class="event-item event-item--${e.kind}">
+                    <span class="event-icon" aria-hidden="true">${(e.kind === 'document' && DOC_CHANNEL_ICONS[e.channel]) || EVENT_ICONS[e.kind] || '•'}</span>
+                    <div class="event-main">
+                        <div class="event-line">
+                            <span class="event-who"${e.email ? ` title="${escHtml(e.email)}"` : ''}>${escHtml(e.user || '—')}</span>
+                            <span class="event-action">${escHtml(e.action)}</span>
+                            ${e.detail ? `<span class="event-detail">${escHtml(e.detail)}</span>` : ''}
+                            <span class="event-time" title="${escHtml(full(e.timestamp))}">${e.timestamp ? fmtDateTime(e.timestamp) : ''}</span>
+                        </div>
+                        ${e.changes.length ? `<ul class="event-changes">${e.changes.map(c => `<li>${escHtml(c)}</li>`).join('')}</ul>` : ''}
+                    </div>
                 </div>`).join('')}
             </div>
         </div>`;
@@ -2708,9 +2757,10 @@ const Orders = (() => {
             showToast('No printable label in test mode — go live to fetch the real PDF.');
             return;
         }
-        const openPdf = () => {
+        const openPdf = (why = '') => {
             const win = window.open('', '_blank');
             if (win) win.document.write(`<iframe src="data:application/pdf;base64,${labelBase64}" style="width:100%;height:100%;border:0"></iframe>`);
+            logEvent(order.id, 'Opened courier label PDF', [order.courier?.connote, why].filter(Boolean).join(' · '), docEvent('label', 'view'));
         };
         if (opts.pdf) { openPdf(); return; }
         const labelPrinter = opts.printerId
@@ -2718,16 +2768,18 @@ const Orders = (() => {
             : getPrinters().find(p => Array.isArray(p.documents) && p.documents.includes('label'));
         if (labelPrinter) {
             try {
-                const result = await sendToPrintNode({ order, document: 'label', pdfBase64: labelBase64, printerId: labelPrinter.id });
+                const result = await sendToPrintNode({ order, document: 'label', pdfBase64: labelBase64, printerId: labelPrinter.id, printerLabel: labelPrinter.label });
                 if (result.success) {
                     showToast(`Label printed at ${labelPrinter.label}`);
-                    logEvent(order.id, 'Printed courier label', `${labelPrinter.label} · ${order.courier?.connote || ''}`);
                     return;
                 }
                 showErrorBanner(`Label print not confirmed at ${labelPrinter.label} — opening PDF instead.`);
             } catch (e) {
                 showErrorBanner('Label print failed: ' + e.message + ' — opening PDF instead.');
+                logEvent(order.id, 'Print error — courier label', `${labelPrinter.label} · ${e.message}`, docEvent('label', 'printnode'));
             }
+            openPdf('fallback after print failed');
+            return;
         }
         openPdf();
     }
@@ -2775,10 +2827,6 @@ const Orders = (() => {
         };
         refreshActionBar(order);
         showToast(`Label created: ${result.carrier} ${result.connote}${result.mock ? ' (TEST)' : ''}`);
-        logEvent(order.id, 'Created courier label',
-            `${result.carrier} ${result.connote} · ${result.boxesOrdered} created`
-            + (result.boxesExpected != null ? `, ${result.boxesExpected} needed` : '')
-            + (result.invoicedLabels != null ? `, ${result.invoicedLabels} invoiced` : ''));
         const warns = [];
         if (result.boxMismatch)     warns.push(`${result.boxesOrdered} label(s) created but ${result.boxesExpected} box(es) needed`);
         if (result.invoiceMismatch) warns.push(`${result.boxesOrdered} label(s) created but ${result.invoicedLabels} invoiced`);
@@ -2893,21 +2941,24 @@ const Orders = (() => {
                     base64 = r.labelBase64;
                 }
                 if (!base64) { showErrorBanner('No label PDF available to print (test mode?).'); return; }
-                const result = await sendToPrintNode({ order, document: 'label', pdfBase64: base64, printerId: printer.id });
+                const result = await sendToPrintNode({ order, document: 'label', pdfBase64: base64, printerId: printer.id, printerLabel: printer.label });
                 if (result.success) {
                     showToast(`Label sent to ${printer.label}`);
-                    logEvent(order.id, 'Printed courier label', `${printer.label} · ${order.courier?.connote || ''}`);
                 } else {
                     showErrorBanner(`Print not confirmed at ${printer.label}: ${describePrintFailure(result)}`);
                 }
             } catch (e) {
                 showErrorBanner('Print failed: ' + e.message);
+                logEvent(order.id, 'Print error — courier label', `${printer.label} · ${e.message}`, docEvent('label', 'printnode'));
             } finally {
                 btn.disabled = false; btn.textContent = orig;
             }
         });
         $('#clv-download').addEventListener('click', () => {
-            if (labelBase64) downloadPdfBase64(labelBase64, `${c.connote || order.id}-label.pdf`);
+            if (!labelBase64) return;
+            const filename = `${c.connote || order.id}-label.pdf`;
+            downloadPdfBase64(labelBase64, filename);
+            logEvent(order.id, 'Downloaded courier label', filename, docEvent('label', 'download'));
         });
         $('#clv-clear').addEventListener('click', async () => { await runClearCourier(order); if (!order.courier) close(); });
     }
@@ -2926,12 +2977,11 @@ const Orders = (() => {
             await api('/api/orders/' + order.id, {
                 method: 'PATCH',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ courier: null }),
+                body: JSON.stringify({ courier: null, event: { action: 'Cleared courier label', detail: live ? 'Post Haste consignment not voided' : '' } }),
             });
             order.courier = null;
             refreshActionBar(order);
             showToast('Courier label cleared — you can create a new one');
-            logEvent(order.id, 'Cleared courier label', c.connote || '');
         } catch (e) {
             showErrorBanner('Clear failed: ' + e.message);
         }
@@ -2947,6 +2997,7 @@ const Orders = (() => {
         win.document.close();
         win.focus();
         setTimeout(() => { win.print(); }, 400);
+        logEvent(order.id, 'Browser print — address sheet', 'print dialog opened; not confirmed', docEvent('address', 'browser'));
     }
 
     // Render an element to a base64-encoded PDF (no data: prefix) using html2pdf.
@@ -2970,11 +3021,15 @@ const Orders = (() => {
         return dataUri.split(',')[1];
     }
 
-    async function sendToPrintNode({ order, document: doc, pdfBase64, printerId }) {
+    // The server polls PrintNode for up to 25s and logs the job's outcome on
+    // the order itself, so callers only log failures that happen before a
+    // job exists. Timeout sits above the server's poll window.
+    async function sendToPrintNode({ order, document: doc, pdfBase64, printerId, printerLabel }) {
         return api('/api/print', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ orderId: order.id, document: doc, pdfBase64, printerId }),
+            body: JSON.stringify({ orderId: order.id, document: doc, pdfBase64, printerId, printerLabel }),
+            timeout: 40000,
         });
     }
 
@@ -3001,7 +3056,7 @@ const Orders = (() => {
         try {
             const slipEl = host.querySelector('.packing-slip');
             const pdfBase64 = await elementToPdfBase64(slipEl, { orientation: 'portrait' });
-            const result = await sendToPrintNode({ order, document: 'slip', pdfBase64, printerId });
+            const result = await sendToPrintNode({ order, document: 'slip', pdfBase64, printerId, printerLabel: dest });
             printResult = result;
 
             const jobRef = `PrintNode job #${result.jobId}`;
@@ -3009,7 +3064,6 @@ const Orders = (() => {
             if (result.success) {
                 // Confirmed printed — terminal state was 'done'.
                 showToast(`Slip printed at ${dest} (${jobRef})`);
-                logEvent(order.id, 'Printed packing slip', `${dest} · ${jobRef}`);
                 if (order.status === 'new') {
                     api('/api/orders/' + order.id, {
                         method: 'PATCH',
@@ -3024,16 +3078,14 @@ const Orders = (() => {
                 // Terminal failure (error/cancelled/expired) — surface PrintNode's verbatim message.
                 const detail = describePrintFailure(result);
                 showErrorBanner(`Print FAILED at ${dest} — ${detail}. Use "Print in browser" as a fallback. (${jobRef})`);
-                logEvent(order.id, 'Print failed', `${dest} · ${detail} · ${jobRef}`);
             } else {
                 // Polling closed without a terminal state — likely the local PrintNode Client is offline.
                 const stateLabel = result.state || 'pending';
                 showErrorBanner(`Slip not confirmed at ${dest} after 25s — last state: ${stateLabel}. The PrintNode Client may be offline. Use "Print in browser" as a fallback. (${jobRef})`);
-                logEvent(order.id, 'Print unconfirmed', `${dest} · last state: ${stateLabel} · ${jobRef}`);
             }
         } catch (e) {
             showErrorBanner('Print failed: ' + e.message);
-            logEvent(order.id, 'Print error', e.message);
+            logEvent(order.id, 'Print error — packing slip', `${dest} · ${e.message}`, docEvent('slip', 'printnode'));
         } finally {
             host.remove();
             if (btn) { btn.disabled = false; btn.textContent = orig; }
@@ -3073,10 +3125,10 @@ const Orders = (() => {
                 .save();
 
             showToast(`Downloaded ${filename}`);
-            logEvent(order.id, 'Downloaded packing slip', filename);
+            logEvent(order.id, 'Downloaded packing slip', filename, docEvent('slip', 'download'));
         } catch (e) {
             showErrorBanner('Download failed: ' + e.message);
-            logEvent(order.id, 'Download error', e.message);
+            logEvent(order.id, 'Download error — packing slip', e.message, docEvent('slip', 'download'));
         } finally {
             host.remove();
             if (btn) { btn.disabled = false; btn.textContent = orig; }
@@ -3099,25 +3151,22 @@ const Orders = (() => {
         try {
             const page = host.querySelector('.page');
             const pdfBase64 = await elementToPdfBase64(page, { orientation: 'landscape' });
-            const result = await sendToPrintNode({ order, document: 'address', pdfBase64, printerId });
+            const result = await sendToPrintNode({ order, document: 'address', pdfBase64, printerId, printerLabel: dest });
 
             const jobRef = `PrintNode job #${result.jobId}`;
 
             if (result.success) {
                 showToast(`Address printed at ${dest} (${jobRef})`);
-                logEvent(order.id, 'Printed address sheet', `${dest} · ${jobRef}`);
             } else if (result.confirmed) {
                 const detail = describePrintFailure(result);
                 showErrorBanner(`Address print FAILED at ${dest} — ${detail}. (${jobRef})`);
-                logEvent(order.id, 'Address print failed', `${dest} · ${detail} · ${jobRef}`);
             } else {
                 const stateLabel = result.state || 'pending';
                 showErrorBanner(`Address not confirmed at ${dest} after 25s — last state: ${stateLabel}. The PrintNode Client may be offline. (${jobRef})`);
-                logEvent(order.id, 'Address print unconfirmed', `${dest} · last state: ${stateLabel} · ${jobRef}`);
             }
         } catch (e) {
             showErrorBanner('Print failed: ' + e.message);
-            logEvent(order.id, 'Print error', e.message);
+            logEvent(order.id, 'Print error — address sheet', `${dest} · ${e.message}`, docEvent('address', 'printnode'));
         } finally {
             host.remove();
             if (btn) { btn.disabled = false; btn.textContent = orig; }
@@ -3139,7 +3188,7 @@ const Orders = (() => {
                     await api('/api/orders/' + orderId, {
                         method: 'PATCH',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ status: newStatus, event: { ts: new Date().toISOString(), msg: `Status set to ${STATUS_LABELS[newStatus]}` } }),
+                        body: JSON.stringify({ status: newStatus, event: { action: 'Status changed' } }),
                     });
                     order.status = newStatus;
                     // Only rebuild action buttons — status-sel already has its listener
@@ -3175,7 +3224,7 @@ const Orders = (() => {
                         xeroInvoiceId: invoiceId,
                         xeroInvoiceNumber: invoiceNumber,
                         status: nextStatus,
-                        event: { ts: new Date().toISOString(), msg: `Linked to Xero invoice ${invoiceNumber || invoiceId}` },
+                        event: { action: 'Linked to Xero invoice', detail: invoiceNumber || invoiceId },
                     }),
                 });
                 Object.assign(order, updated);
@@ -3253,7 +3302,7 @@ const Orders = (() => {
             win.focus();
             setTimeout(() => { win.print(); win.close(); }, 400);
 
-            logEvent(orderId, 'Printed packing slip', order.xeroInvoiceNumber || order.id);
+            logEvent(orderId, 'Browser print — packing slip', 'print dialog opened; not confirmed', docEvent('slip', 'browser'));
         });
 
         // Send to Xero — advances reviewed → sent_to_xero AND auto-prints the
@@ -3298,7 +3347,6 @@ const Orders = (() => {
                 order.xeroInvoiceId = result.invoiceId;
                 order.xeroInvoiceNumber = result.invoiceNumber;
                 refreshActionBar(order);
-                logEvent(orderId, 'Sent to Xero', result.invoiceNumber);
                 showToast('Invoice created in Xero: ' + result.invoiceNumber);
 
                 // Prompt the user to print rather than auto-printing — some
@@ -3367,14 +3415,13 @@ const Orders = (() => {
                 await api('/api/orders/' + orderId, {
                     method: 'PATCH',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ status: 'dispatched', dispatchedBy }),
+                    body: JSON.stringify({ status: 'dispatched', dispatchedBy, event: { action: 'Marked complete', detail: `by ${dispatchedBy}` } }),
                 });
                 order.status = 'dispatched';
                 order.dispatchedBy = dispatchedBy;
                 const sel = document.getElementById('order-status-sel');
                 if (sel) sel.value = 'dispatched';
                 refreshActionBar(order);
-                logEvent(orderId, `Marked complete by ${dispatchedBy}`);
                 showToast(`Order marked complete by ${dispatchedBy}`);
             } catch (err) {
                 showErrorBanner('Error: ' + err.message);
@@ -3393,14 +3440,13 @@ const Orders = (() => {
                 await api('/api/orders/' + orderId, {
                     method: 'PATCH',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ status: revert, dispatchedBy: null, event: { ts: new Date().toISOString(), msg: 'Unmarked as dispatched' } }),
+                    body: JSON.stringify({ status: revert, dispatchedBy: null, event: { action: 'Unmarked as dispatched' } }),
                 });
                 order.status = revert;
                 order.dispatchedBy = null;
                 const sel = document.getElementById('order-status-sel');
                 if (sel) sel.value = revert;
                 refreshActionBar(order);
-                logEvent(orderId, 'Unmarked as dispatched');
                 showToast('Unmarked as dispatched');
             } catch (e) {
                 showErrorBanner('Error: ' + e.message);
