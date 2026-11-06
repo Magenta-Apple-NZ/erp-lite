@@ -34,6 +34,11 @@ export function userFromRequest(request) {
     const h = request?.headers;
     const email = h?.get('CF-Access-Authenticated-User-Email')
         || emailFromJwt(h?.get('Cf-Access-Jwt-Assertion'));
+    return userFromEmail(email);
+}
+
+// Map a (verified or trusted) email to { email, name, role }.
+export function userFromEmail(email) {
     if (!email) return { email: null, name: 'Unknown', role: 'admin' };
     const mapped = USER_MAP[email.toLowerCase()];
     const role = mapped?.role || 'admin';
