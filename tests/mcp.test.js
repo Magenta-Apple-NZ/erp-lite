@@ -143,6 +143,8 @@ test('auth: nothing configured → 503; token right / wrong', async () => {
     assert.equal((await authenticate(req({ Authorization: 'Bearer s3cret' }), env)).ok, true);
     assert.equal((await authenticate(req({ Authorization: 'Bearer nope' }), env)).status, 401);
     assert.equal((await authenticate(req({}), env)).status, 401);
+    assert.equal((await authenticate(req({ Authorization: 'Bearer s3cret' }), { MCP_TOKEN: "'s3cret'\n" })).ok, true);
+    assert.equal((await authenticate(req({}), { MCP_TOKEN: '  ' })).status, 503);
 });
 
 test('auth: unverified identity headers are never trusted', async () => {
@@ -175,6 +177,9 @@ test('auth: Access JWT verified by signature, audience, issuer and expiry', asyn
         const ok = await authenticate(req({ 'Cf-Access-Jwt-Assertion': await sign(good) }), env);
         assert.equal(ok.ok, true);
         assert.equal(ok.user.name, 'Jake');
+        // Copy-paste slips in the dashboard values are tolerated.
+        const messy = { ACCESS_TEAM_DOMAIN: ' https://primetie.cloudflareaccess.com/\n', ACCESS_AUD: '"aud-123" ' };
+        assert.equal((await authenticate(req({ 'Cf-Access-Jwt-Assertion': await sign(good) }), messy)).ok, true);
         for (const [bad, why] of [
             [{ ...good, aud: ['other'] }, /audience/],
             [{ ...good, exp: now - 3600 }, /expired/],

@@ -32,7 +32,10 @@ function safeEqual(a, b) {
     return diff === 0;
 }
 
-const teamHost = env => String(env.ACCESS_TEAM_DOMAIN || '').replace(/^https?:\/\//, '').replace(/\/+$/, '');
+// Dashboard values pasted with a stray space, newline or wrapping quotes
+// would otherwise fail every request as "wrong audience" or similar.
+const setting = v => String(v ?? '').trim().replace(/^(['"])(.*)\1$/s, '$2').trim();
+const teamHost = env => setting(env.ACCESS_TEAM_DOMAIN).replace(/^https?:\/\//, '').replace(/\/+$/, '');
 
 async function accessKeys(env, { refresh = false } = {}) {
     const url = `https://${teamHost(env)}/cdn-cgi/access/certs`;
@@ -63,20 +66,21 @@ export async function verifyAccessJwt(jwt, env) {
     if (typeof claims.exp !== 'number' || claims.exp < now - 30) throw new Error('expired');
     if (typeof claims.nbf === 'number' && claims.nbf > now + 30) throw new Error('not yet valid');
     const aud = Array.isArray(claims.aud) ? claims.aud : [claims.aud];
-    if (!aud.includes(env.ACCESS_AUD)) throw new Error('wrong audience');
+    if (!aud.includes(setting(env.ACCESS_AUD))) throw new Error('wrong audience');
     if (claims.iss !== `https://${teamHost(env)}`) throw new Error('wrong issuer');
     return claims;
 }
 
 export async function authenticate(request, env) {
-    const hasToken  = !!env.MCP_TOKEN;
-    const hasAccess = !!(env.ACCESS_TEAM_DOMAIN && env.ACCESS_AUD);
+    const token     = setting(env.MCP_TOKEN);
+    const hasToken  = !!token;
+    const hasAccess = !!(teamHost(env) && setting(env.ACCESS_AUD));
     if (!hasToken && !hasAccess) {
         return { ok: false, status: 503, error: 'MCP is not configured: set MCP_TOKEN and/or ACCESS_TEAM_DOMAIN + ACCESS_AUD' };
     }
 
     const bearer = (request.headers.get('Authorization') || '').match(/^Bearer\s+(.+)$/i)?.[1]?.trim();
-    if (hasToken && bearer && safeEqual(bearer, env.MCP_TOKEN)) {
+    if (hasToken && bearer && safeEqual(bearer, token)) {
         return { ok: true, user: { email: null, name: 'MCP token', via: 'token' } };
     }
 
