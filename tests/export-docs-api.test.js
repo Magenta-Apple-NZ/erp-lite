@@ -157,14 +157,15 @@ test('confirm is refused while a blocking check fails, then accepted', async () 
     assert.equal(ok.body.record.log[0].by, 'andrew@primetie.co.nz');
 });
 
-test('generation: blocked until settings are saved and rate/number ticked; then frozen copies + xlsx', async () => {
+test('generation: the proforma waits for bank details and the rate/number ticks; then frozen copies + xlsx', async () => {
     await uploadBoth();
     await call(confirmApi.onRequestPost, 'POST', '/c');
 
     const early = await call(renderApi.onRequestPost, 'POST', '/g', { docs: [{ doc: 'packing', stage: 'draft' }, { doc: 'proforma' }] });
     assert.equal(early.status, 422);
-    assert.match(early.body.error, /settings have not been checked/);
+    assert.match(early.body.error, /Proforma invoice: Settings incomplete: Bank name, Bank SWIFT/);
     assert.match(early.body.error, /Tick to confirm the export rate/);
+    assert.doesNotMatch(early.body.error, /Draft packing list/, 'the packing list is ready from the seeded settings');
 
     await fillSettings();
     const v = (await call(recordApi.onRequestGet, 'GET', '/r')).body;

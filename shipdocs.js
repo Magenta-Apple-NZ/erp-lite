@@ -108,13 +108,11 @@ const ShipDocs = (() => {
     }
 
     function settingsBannerHtml(v) {
-        const s = v.settingsStatus;
-        const miss = [...new Set([...(s.missingPacking || []), ...(s.missingProforma || [])])];
-        if (s.reviewedAt && !miss.length) return '';
+        const st = v.settingsStatus;
+        const miss = [...new Set([...(st.missingPacking || []), ...(st.missingProforma || [])])];
+        if (!miss.length) return '';
         return `<div class="sd-banner sd-banner--warn">
-            <strong>Document settings need checking before anything can be generated.</strong>
-            ${!s.reviewedAt ? 'They were seeded from the brief, not from the Shipment 42 reference documents — compare them with the reference and save once.' : ''}
-            ${miss.length ? `<div>Still blank: ${esc(miss.join(', '))}.</div>` : ''}
+            <strong>Still needed before the documents can be generated: ${esc(miss.join(', '))}.</strong>
             <button class="btn-secondary btn-sm" data-act="settings">Open document settings</button>
         </div>`;
     }
@@ -695,68 +693,84 @@ const ShipDocs = (() => {
     }
 
     // ── Settings modal ───────────────────────────────────────────────────
-    const FIELD_LABELS = { irc: 'IRC no.', applicantTin: 'Applicant TIN', applicantBin: 'Applicant BIN', bankBin: 'Bank BIN', bankTin: 'Bank TIN', bankVatReg: 'Bank VAT reg no.', hsCode: 'HS code', lcNumber: 'LC no.', lcDate: 'LC date' };
+    // Four tabs, one per party: only what can change between shipments.
+    // Labels, wording templates, sign-off and defaults live in code
+    // (SETTINGS_SEED in functions/api/import/_exportdocs.js).
+    const SETTINGS_TABS = [['enviroware', 'Enviroware'], ['jps', 'JPS Enterprise'], ['documents', 'Documents'], ['xero', 'Xero']];
+
+    function settingsGaps(s) {
+        const blank = v => !String(Array.isArray(v) ? v.join('') : (v ?? '')).trim();
+        const gaps = { enviroware: [], jps: [], documents: [], xero: [] };
+        [['Phone', s.seller.phone], ['Email', s.seller.email], ['GST no.', s.seller.gstNumber], ['Bank name', s.bank.name], ['Bank SWIFT', s.bank.swift]]
+            .forEach(([l, v]) => blank(v) && gaps.enviroware.push(l));
+        [['Address', s.buyer.addressLines], ['IRC no.', s.identifiers.irc], ['Applicant TIN', s.identifiers.applicantTin], ['Applicant BIN', s.identifiers.applicantBin], ['Bank TIN', s.identifiers.bankTin], ['Bank BIN / VAT reg no.', s.identifiers.bankBin]]
+            .forEach(([l, v]) => blank(v) && gaps.jps.push(l));
+        [['HS code', s.hsCode], ['Terms', s.terms]].forEach(([l, v]) => blank(v) && gaps.documents.push(l));
+        const a = s.xero.accounts || {};
+        if (['rawProduct', 'lcDeposit', 'handling', 'exportSale'].some(k => blank(a[k]))) gaps.xero.push('Account codes');
+        return gaps;
+    }
 
     async function openSettings(onSaved) {
         let data;
         try { data = await api('/api/import/export-docs/settings'); } catch (e) { toast('Could not load settings: ' + e.message); return; }
         const s = data.settings;
+        const gaps = settingsGaps(s);
         const overlay = document.createElement('div');
         overlay.className = 'modal-overlay';
         const inp = (label, path, val, attrs = '') => `<label class="sd-field"><span class="imp-field-label">${esc(label)}</span><input class="sd-input" data-s="${path}" value="${esc(val ?? '')}" ${attrs}></label>`;
-        const ta = (label, path, arr, rows = 3, hint = '') => `<label class="sd-field sd-field--wide"><span class="imp-field-label">${esc(label)}</span><textarea class="sd-input" data-s="${path}" data-lines rows="${rows}">${esc((arr || []).join('\n'))}</textarea>${hint ? `<span class="sd-muted">${hint}</span>` : ''}</label>`;
-        const rowsEd = stage => `<div class="sd-idrows">${(s.identifierRows[stage] || []).map((r, i) => `<label class="sd-field"><span class="imp-field-label">${esc(FIELD_LABELS[r.field] || r.field)}</span><input class="sd-input" data-idrow="${stage}.${i}" data-field="${esc(r.field)}" value="${esc(r.label)}"></label>`).join('')}</div>`;
+        const ta = (label, path, arr, rows = 3) => `<label class="sd-field"><span class="imp-field-label">${esc(label)}</span><textarea class="sd-input" data-s="${path}" data-lines rows="${rows}">${esc((arr || []).join('\n'))}</textarea></label>`;
+        const image = n => `<div class="sd-image" data-asset="${n}"><span class="imp-field-label">${n === 'seal' ? 'Official seal' : 'Signature'}</span>
+            <div class="sd-image-prev">${data.assets[n] ? `<img src="/api/import/export-docs/settings/${n}?v=${Date.now()}" alt="">` : '<span class="sd-muted">None</span>'}</div>
+            <span><label class="btn-secondary btn-sm">Upload<input type="file" accept="image/png,image/jpeg,image/webp" hidden data-asset-file="${n}"></label>
+            ${data.assets[n] ? ` <button class="btn-link" data-asset-del="${n}">Remove</button>` : ''}</span></div>`;
+        const panels = {
+            enviroware: `
+                <div class="sd-grid3">${inp('Company', 'seller.name', s.seller.name)}${inp('Strapline', 'seller.strapline', s.seller.strapline)}${inp('GST no.', 'seller.gstNumber', s.seller.gstNumber)}
+                    ${inp('Phone', 'seller.phone', s.seller.phone)}${inp('Email', 'seller.email', s.seller.email)}${ta('Address (one line each)', 'seller.addressLines', s.seller.addressLines)}</div>
+                <h4 class="sd-h4">Bank <span class="sd-muted">printed on the proforma</span></h4>
+                <div class="sd-grid3">${inp('Bank', 'bank.name', s.bank.name, 'placeholder="ANZ Bank New Zealand Ltd"')}${inp('SWIFT', 'bank.swift', s.bank.swift)}${inp('Account no.', 'bank.accountNumber', s.bank.accountNumber)}
+                    ${ta('Bank address (optional)', 'bank.addressLines', s.bank.addressLines, 2)}</div>
+                <h4 class="sd-h4">Signature and seal <span class="sd-muted">on the proforma</span></h4>
+                <div class="sd-images">${image('signature')}${image('seal')}</div>`,
+            jps: `
+                <div class="sd-grid3">${inp('Name', 'buyer.name', s.buyer.name)}${ta('Address (one line each)', 'buyer.addressLines', s.buyer.addressLines, 4)}</div>
+                <h4 class="sd-h4">Applicant numbers <span class="sd-muted">checked against each shipment's LC</span></h4>
+                <div class="sd-grid3">${inp('IRC no.', 'identifiers.irc', s.identifiers.irc)}${inp('Applicant TIN', 'identifiers.applicantTin', s.identifiers.applicantTin)}${inp('Applicant BIN', 'identifiers.applicantBin', s.identifiers.applicantBin)}
+                    ${inp("Applicant's bank", 'identifiers.bankName', s.identifiers.bankName)}${inp('Bank TIN', 'identifiers.bankTin', s.identifiers.bankTin)}${inp('Bank BIN / VAT reg no.', 'identifiers.bankBin', s.identifiers.bankBin)}</div>`,
+            documents: `
+                <div class="sd-grid3">${inp('HS code', 'hsCode', s.hsCode)}${inp('Packing — draft packing list', 'packingSpec.draft', s.packingSpec.draft)}${inp('Packing — final packing list', 'packingSpec.final', s.packingSpec.final)}</div>
+                <p class="sd-warn-text">Match the packing wording in this shipment's LC — earlier LCs required exactly “export standard seaworthy packaging”.</p>
+                <div class="sd-grid1">${ta('Proforma terms & conditions (one per line)', 'terms', s.terms, 7)}</div>`,
+            xero: `
+                <div class="sd-grid3">${inp('Pistoni contact', 'xero.supplierContact', s.xero.supplierContact)}${inp('JPS contact', 'xero.buyerContact', s.xero.buyerContact)}
+                    <label class="sd-field"><span class="imp-field-label">Create invoices as</span><select class="sd-input" data-s="xero.status">
+                    ${[['DRAFT', 'Draft'], ['SUBMITTED', 'Awaiting approval'], ['AUTHORISED', 'Awaiting payment']].map(([v, l]) => `<option value="${v}" ${s.xero.status === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label></div>
+                <h4 class="sd-h4">Account codes <span class="sd-muted">your accountant's choice — nothing goes to Xero until they're set</span></h4>
+                <div class="sd-grid4">${inp('Raw product (Pistoni bill)', 'xero.accounts.rawProduct', s.xero.accounts.rawProduct)}${inp('LC deposit (JPS bill)', 'xero.accounts.lcDeposit', s.xero.accounts.lcDeposit)}
+                    ${inp('Handling & sorting (JPS bill)', 'xero.accounts.handling', s.xero.accounts.handling)}${inp('Export sale (our proforma)', 'xero.accounts.exportSale', s.xero.accounts.exportSale)}</div>`,
+        };
+        const first = SETTINGS_TABS.find(([k]) => gaps[k].length)?.[0] || 'enviroware';
         overlay.innerHTML = `<div class="modal-box sd-settings">
-            <h3 class="modal-title">Export document settings</h3>
-            <p class="sd-muted">Printed on every Enviroware packing list and proforma invoice. Banks check documents against the LC word for word: copy each value from the Shipment 42 reference documents, then save. ${s.reviewedAt ? `Last saved ${esc(when(s.reviewedAt))} by ${esc(who(s.reviewedBy))}.` : '<strong>Not yet checked — seeded from the brief.</strong>'}</p>
-            <h4 class="sd-h4">Enviroware letterhead</h4>
-            <div class="sd-grid3">${inp('Company', 'seller.name', s.seller.name)}${inp('Strapline', 'seller.strapline', s.seller.strapline)}${inp('Phone', 'seller.phone', s.seller.phone)}
-                ${inp('Email', 'seller.email', s.seller.email)}${inp('GST no.', 'seller.gstNumber', s.seller.gstNumber)}</div>
-            <div class="sd-grid3">${ta('Address (one line each)', 'seller.addressLines', s.seller.addressLines)}</div>
-            <h4 class="sd-h4">Bank (proforma letterhead)</h4>
-            <div class="sd-grid3">${inp('Bank name', 'bank.name', s.bank.name, 'placeholder="ANZ …"')}${inp('SWIFT', 'bank.swift', s.bank.swift)}${inp('Account name', 'bank.accountName', s.bank.accountName)}${inp('Account no.', 'bank.accountNumber', s.bank.accountNumber)}</div>
-            <div class="sd-grid3">${ta('Bank address', 'bank.addressLines', s.bank.addressLines)}</div>
-            <h4 class="sd-h4">Applicant — JPS Enterprise</h4>
-            <div class="sd-grid3">${inp('Name', 'buyer.name', s.buyer.name)}</div>
-            <div class="sd-grid3">${ta('Address (one line each)', 'buyer.addressLines', s.buyer.addressLines, 3, 'Joined with commas on the final packing list\'s Applicant line.')}</div>
-            <div class="sd-grid3">${inp('IRC no.', 'identifiers.irc', s.identifiers.irc)}${inp('Applicant TIN', 'identifiers.applicantTin', s.identifiers.applicantTin)}${inp('Applicant BIN', 'identifiers.applicantBin', s.identifiers.applicantBin)}
-                ${inp("Applicant's bank", 'identifiers.bankName', s.identifiers.bankName)}${inp('Bank BIN', 'identifiers.bankBin', s.identifiers.bankBin)}${inp('Bank TIN', 'identifiers.bankTin', s.identifiers.bankTin)}${inp('Bank VAT reg no.', 'identifiers.bankVatReg', s.identifiers.bankVatReg)}</div>
-            <p class="sd-muted">These usually appear verbatim in the LC's field 47A conditions — check them against the current LC.</p>
-            <h4 class="sd-h4">Goods and wording</h4>
-            <div class="sd-grid3">${inp('HS code', 'hsCode', s.hsCode)}${inp('Packing list subtitle', 'goods.subtitle', s.goods.subtitle)}</div>
-            <div class="sd-grid2">${inp('Proforma description', 'goods.proformaDescription', s.goods.proformaDescription)}${inp('Proforma line', 'goods.proformaLine', s.goods.proformaLine)}</div>
-            <p class="sd-muted">Placeholders: {bales} {netKg} {rate} {shipment}.</p>
-            <div class="sd-grid2">${inp('Packing specification — Draft', 'packingSpec.draft', s.packingSpec.draft)}${inp('Packing specification — Final', 'packingSpec.final', s.packingSpec.final)}</div>
-            <p class="sd-warn-text">Earlier LCs required the exact words “export standard seaworthy packaging” on the packing list (Letter of Credit checker, condition 8). Match the wording in this shipment's LC.</p>
-            <h4 class="sd-h4">Identifier labels — Draft packing list</h4>${rowsEd('draft')}
-            <h4 class="sd-h4">Identifier labels — Final packing list</h4>${rowsEd('final')}
-            <h4 class="sd-h4">Proforma terms &amp; conditions</h4>
-            <div class="sd-grid3">${ta('One per line, printed numbered', 'terms', s.terms, 8)}</div>
-            <h4 class="sd-h4">Sign-off</h4>
-            <div class="sd-grid3">${inp('Packing list name', 'signOff.packingName', s.signOff.packingName)}${inp('Packing list title', 'signOff.packingTitle', s.signOff.packingTitle)}${inp('Company', 'signOff.company', s.signOff.company)}
-                ${inp('Proforma name', 'signOff.proformaName', s.signOff.proformaName)}${inp('Proforma title', 'signOff.proformaTitle', s.signOff.proformaTitle)}</div>
-            <div class="sd-images">${['signature', 'seal'].map(n => `<div class="sd-image" data-asset="${n}"><span class="imp-field-label">${n === 'seal' ? 'Official seal' : 'Signature'} (proforma)</span>
-                <div class="sd-image-prev">${data.assets[n] ? `<img src="/api/import/export-docs/settings/${n}?v=${Date.now()}" alt="">` : '<span class="sd-muted">None</span>'}</div>
-                <label class="btn-secondary btn-sm">Upload<input type="file" accept="image/png,image/jpeg,image/webp" hidden data-asset-file="${n}"></label>
-                ${data.assets[n] ? `<button class="btn-link" data-asset-del="${n}">Remove</button>` : ''}</div>`).join('')}</div>
-            <h4 class="sd-h4">Xero</h4>
-            <p class="sd-muted">The Pistoni bill, our proforma (as a sales invoice to JPS) and the JPS bill are created from the shipment on a click. Choose the account codes with your accountant; nothing goes to Xero until they're set.</p>
-            <div class="sd-grid3">${inp('Pistoni contact name', 'xero.supplierContact', s.xero.supplierContact)}${inp('JPS contact name', 'xero.buyerContact', s.xero.buyerContact)}
-                <label class="sd-field"><span class="imp-field-label">Create as</span><select class="sd-input" data-s="xero.status">
-                    ${[['DRAFT', 'Draft'], ['SUBMITTED', 'Awaiting approval'], ['AUTHORISED', 'Awaiting payment (approved)']].map(([v, l]) => `<option value="${v}" ${s.xero.status === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label></div>
-            <div class="sd-grid3">${inp('Raw product account (Pistoni bill)', 'xero.accounts.rawProduct', s.xero.accounts.rawProduct, 'placeholder="e.g. 630"')}${inp('LC deposit account (JPS bill)', 'xero.accounts.lcDeposit', s.xero.accounts.lcDeposit)}${inp('Handling & sorting account (JPS bill)', 'xero.accounts.handling', s.xero.accounts.handling)}
-                ${inp('Export sale account (our proforma)', 'xero.accounts.exportSale', s.xero.accounts.exportSale)}${inp('Tax type on bills', 'xero.taxTypes.purchases', s.xero.taxTypes.purchases)}${inp('Tax type on our proforma', 'xero.taxTypes.exportSale', s.xero.taxTypes.exportSale)}</div>
-            <h4 class="sd-h4">Defaults and checks</h4>
-            <div class="sd-grid3">${inp('Invoice currency', 'currency', s.currency, 'maxlength="3"')}${inp('Default rate per kg', 'defaultRate', s.defaultRate, 'type="number" step="0.0001"')}${inp('Default rate source', 'defaultRateSource', s.defaultRateSource)}
-                ${inp('Last invoice no. before the Hub', 'lastInvoiceNumber', s.lastInvoiceNumber)}${inp('Bale warning below kg', 'baleMinKg', s.baleMinKg, 'type="number"')}${inp('Bale warning above kg', 'baleMaxKg', s.baleMaxKg, 'type="number"')}
-                ${inp('Usual JPS handling & sorting per kg', 'jpsMarginPerKg', s.jpsMarginPerKg, 'type="number" step="0.01"')}</div>
-            <div class="modal-actions"><button class="btn-secondary" data-close>Cancel</button><button class="btn-primary" data-save>Save — I've checked these</button></div>
+            <h3 class="modal-title">Document settings</h3>
+            <p class="sd-muted">Taken from Commercial Invoice 101/2026 (Shipment 42). They rarely change — each shipment's LC is checked against them.</p>
+            <div class="sd-stabs">${SETTINGS_TABS.map(([k, l]) => `<button class="sd-stab${k === first ? ' sd-stab--active' : ''}" data-stab="${k}" title="${esc(gaps[k].length ? 'Still blank: ' + gaps[k].join(', ') : '')}">${esc(l)}${gaps[k].length ? '<span class="sd-stab-dot"></span>' : ''}</button>`).join('')}</div>
+            ${SETTINGS_TABS.map(([k]) => `<div class="sd-spanel" data-spanel="${k}" ${k === first ? '' : 'hidden'}>
+                ${gaps[k].length ? `<p class="sd-warn-text">Still blank: ${esc(gaps[k].join(', '))}</p>` : ''}${panels[k]}</div>`).join('')}
+            <div class="modal-actions"><button class="btn-secondary" data-close>Cancel</button><button class="btn-primary" data-save>Save</button></div>
         </div>`;
         document.body.appendChild(overlay);
         const close = () => { document.removeEventListener('keydown', onKey); overlay.remove(); };
         const onKey = e => { if (e.key === 'Escape') close(); };
         document.addEventListener('keydown', onKey);
-        overlay.addEventListener('click', e => { if (e.target === overlay || e.target.closest('[data-close]')) close(); });
+        overlay.addEventListener('click', e => {
+            if (e.target === overlay || e.target.closest('[data-close]')) return close();
+            const tab = e.target.closest('[data-stab]');
+            if (tab) {
+                overlay.querySelectorAll('[data-stab]').forEach(b => b.classList.toggle('sd-stab--active', b === tab));
+                overlay.querySelectorAll('[data-spanel]').forEach(p => { p.hidden = p.dataset.spanel !== tab.dataset.stab; });
+            }
+        });
 
         overlay.querySelectorAll('[data-asset-file]').forEach(inpEl => inpEl.addEventListener('change', async e => {
             const f = e.target.files && e.target.files[0];
@@ -781,10 +795,6 @@ const ShipDocs = (() => {
                 let o = next;
                 for (let i = 0; i < parts.length - 1; i++) o = o[parts[i]];
                 o[parts.at(-1)] = el.dataset.lines !== undefined ? el.value.split('\n').map(x => x.trim()).filter(Boolean) : (el.type === 'number' ? num(el.value) : el.value);
-            });
-            overlay.querySelectorAll('[data-idrow]').forEach(el => {
-                const [stage, i] = el.dataset.idrow.split('.');
-                next.identifierRows[stage][Number(i)] = { label: el.value, field: el.dataset.field };
             });
             e.target.disabled = true;
             try {

@@ -185,11 +185,13 @@ test('Shipment 43: rendered draft packing list and proforma carry the expected v
     assert.match(pf, /102\/2026/);
     assert.match(pf, /13th November 2026/);
     assert.match(pf, /45 bales of knitted nylon stocking material \(Toeclip\)/);
-    assert.match(pf, /18,130kg toeclip @ \$USD1\.18\/kg/);
-    assert.match(pf, /21,393\.40/);
-    assert.match(pf, /USD 21,393\.40/);
-    assert.match(pf, /6002\.90\.00/);
-    assert.match(pf, /<td>GST<\/td><td class="amt">Nil<\/td>/);
+    assert.match(pf, /18,130 kg toeclip @ \$USD1\.18\/kg/);
+    assert.match(pf, /\$USD 21,393\.40/);
+    assert.match(pf, /TOTAL @ <em>\$USD1\.18\/kg<\/em><\/td><td class="amt"><strong>\$USD 21,393\.40<\/strong>/);
+    assert.match(pf, /HS Code 6002\.90\.00/);
+    assert.match(pf, /Total net weight 18,130kg/);
+    assert.match(pf, /Goods &amp; Services Tax \(GST\)<\/td><td class="amt">nil<\/td>/);
+    assert.match(pf, /No: 102\/2026<\/span><span>Date: 13th November 2026/);
 });
 
 test('supplier cost never reaches an output: no EUR, no Pistoni, no white/coloured split', () => {
@@ -298,11 +300,12 @@ test('status: review → draft → LC issued → final', () => {
     assert.equal(deriveStatus(record43({ lc: { number: 'X', date: '2026-12-01', grossKg: 18136 }, outputs: [{ doc: 'packing', stage: 'final' }] })), 'final');
 });
 
-test('generation is blocked until settings are checked, filled and the rate and number ticked', () => {
+test('generation waits for missing settings and the rate and number ticks', () => {
     const rec = record43();
-    const seedIssues = generationIssues({ record: rec, settings: mergeSettings({}), doc: 'proforma', shipmentNumber: 43 });
-    assert.ok(seedIssues.some(i => /not been checked/.test(i)));
-    assert.ok(seedIssues.some(i => /Settings incomplete: .*Seller phone.*GST no\..*Bank name/.test(i)));
+    // Straight from the commercial invoice seed: the packing lists are ready,
+    // the proforma only waits for Enviroware's bank details.
+    assert.deepEqual(generationIssues({ record: rec, settings: mergeSettings({}), doc: 'packing', stage: 'draft', shipmentNumber: 43 }), []);
+    assert.deepEqual(generationIssues({ record: rec, settings: mergeSettings({}), doc: 'proforma', shipmentNumber: 43 }), ['Settings incomplete: Bank name, Bank SWIFT']);
     assert.deepEqual(generationIssues({ record: rec, settings: SETTINGS_FILLED, doc: 'proforma', shipmentNumber: 43 }), []);
     assert.deepEqual(generationIssues({ record: rec, settings: SETTINGS_FILLED, doc: 'packing', stage: 'draft', shipmentNumber: 43 }), []);
 
@@ -363,7 +366,13 @@ test('settings merge keeps the seed and reports blanks', () => {
     assert.equal(s.seller.name, 'Enviroware Ltd');
     assert.equal(s.seller.phone, '123');
     assert.deepEqual(s.terms, ['Only one']);
-    assert.ok(missingSettings(s, 'packing').includes('IRC no.'));
+    assert.deepEqual(missingSettings(s, 'packing'), [], 'the identifiers come seeded');
+    assert.deepEqual(missingSettings(s, 'proforma'), ['Bank name', 'Bank SWIFT']);
+    // A blank saved value never hides a seeded one
+    const blanked = mergeSettings({ seller: { phone: '' }, identifiers: { irc: '  ' }, buyer: { addressLines: [] } });
+    assert.equal(blanked.seller.phone, '+64-27-6312070');
+    assert.equal(blanked.identifiers.irc, '260326110775319');
+    assert.equal(blanked.buyer.addressLines.length, 4);
     assert.equal(missingSettings(SETTINGS_FILLED, 'packing').length, 0);
     assert.equal(missingSettings(SETTINGS_FILLED, 'proforma').length, 0);
 });
@@ -408,4 +417,49 @@ test('packing list workbook: Draft tab with formulas over the bale cells; Final 
     assert.match(text, /<sheet name="Final" sheetId="2"/);
     assert.match(text, /DRAFT PACKING LIST/);
     assert.doesNotMatch(text, /EUR|Pistoni/);
+});
+
+// ── Seeded from Commercial Invoice 101/2026 (Shipment 42) ────────────────
+test('settings are seeded from Commercial Invoice 101/2026', () => {
+    const s = mergeSettings({});
+    assert.equal(s.seller.phone, '+64-27-6312070');
+    assert.equal(s.seller.gstNumber, '129-544-112');
+    assert.deepEqual(s.buyer.addressLines, ['Komolapur, Holding no:533 Birulia', 'Savar', 'Dhaka-1340,', 'Bangladesh']);
+    assert.deepEqual(s.identifiers, { irc: '260326110775319', applicantTin: '358887309351', applicantBin: '001173726-0403', bankName: 'SBAC Bank', bankTin: '166085152182', bankBin: '000060296-0202' });
+});
+
+test('documents print the seeded numbers; the bank BIN doubles as the VAT reg no.', () => {
+    const s = mergeSettings({});
+    const rec = record43({ lc: { number: '320126011494', date: '2026-12-01', grossKg: 18136 } });
+    const draft = renderPackingList({ record: rec, settings: s, stage: 'draft', shipmentNumber: 43 });
+    assert.match(draft, /193 Mount Smart Road, Onehunga, 1061, New Zealand/);
+    assert.match(draft, /BIN no\. \(SBAC Bank\)<\/th><td>000060296-0202/);
+    const final = renderPackingList({ record: rec, settings: s, stage: 'final', shipmentNumber: 43 });
+    assert.match(final, /VAT reg no\.<\/th><td>000060296-0202/);
+    assert.match(final, /Applicant's bank TIN<\/th><td>166085152182/);
+    assert.match(final, /Applicant:<\/strong> JPS Enterprise, Komolapur, Holding no:533 Birulia, Savar, Dhaka-1340, Bangladesh</);
+    const pf = renderProforma({ record: rec, settings: s, shipmentNumber: 43 });
+    assert.match(pf, /<strong>PRIME TIE<\/strong> – <em>the stretchy loop tie<\/em>/);
+    assert.match(pf, /GST No\.: 129-544-112/);
+    assert.match(pf, /<span class="lbl">Phone<\/span>\+64-27-6312070/);
+    assert.match(pf, /JPS Enterprise<br>Komolapur, Holding no:533 Birulia<br>Savar<br>Dhaka-1340,<br>Bangladesh/);
+    assert.match(pf, /ANDREW FRASER MCLEOD<\/div>\s*<div><strong>DIRECTOR<\/strong><\/div>\s*<div>For and on behalf of Enviroware Ltd/);
+    assert.doesNotMatch(pf.replace(/<style>[\s\S]*?<\/style>/, ''), /Bank:/, 'no bank block until it is filled in');
+    const withBank = renderProforma({ record: rec, settings: mergeSettings({ bank: { name: 'ANZ Bank New Zealand Ltd', swift: 'ANZBNZ22' } }), shipmentNumber: 43 });
+    assert.match(withBank, /Bank: ANZ Bank New Zealand Ltd<\/div><div>SWIFT: ANZBNZ22/);
+});
+
+test('the applicant numbers are checked against the linked LC\'s conditions', () => {
+    const s = mergeSettings({});
+    const rec = record43();
+    const lc = { lcNumber: '320126011494', f47aConditions: [
+        { num: '02', text: 'ALL DOCUMENTS MUST SHOW IMPORTER NAME, ADDRESS, BIN NO.001173726-0403, TIN NO.358887309351, IRC NO.260326110775319 AND APPLICANT BANK TIN NO.166085152182 AND VAT REG NO.000060296-0202' },
+    ] };
+    const ok = lcCrossChecks(rec, lc, s).find(c => c.title === 'Applicant numbers match the LC');
+    assert.equal(ok.ok, true, ok.detail);
+    const changed = { ...lc, f47aConditions: [{ num: '02', text: 'BIN NO.001173726-0403, TIN NO.358887309351, IRC NO.260326110779999, BANK TIN NO.166085152182, VAT REG NO.000060296-0202' }] };
+    const bad = lcCrossChecks(rec, changed, s).find(c => c.title === 'Applicant numbers match the LC');
+    assert.equal(bad.ok, false);
+    assert.match(bad.detail, /IRC 260326110775319 not found in LC 320126011494/);
+    assert.equal(lcCrossChecks(rec, { lcNumber: 'X' }, s).find(c => c.title === 'Applicant numbers match the LC'), undefined, 'no LC text, no check');
 });
