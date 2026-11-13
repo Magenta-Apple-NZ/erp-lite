@@ -1757,7 +1757,7 @@ const Warehouse = (() => {
             </div>`;
         }
 
-        function renderShipDetailV3(s) {
+        function renderShipDetailV3(s, opts = {}) {
             currentDetailShipId = s.id;
             const totals  = computeShipTotalsV3(s, forex);
             const d       = totals.derived;
@@ -1789,6 +1789,7 @@ const Warehouse = (() => {
                 </div>
                 <div class="ship-detail-tabs no-print">
                     <button class="ship-detail-tab ship-detail-tab--active" data-tab="overview">Overview</button>
+                    <button class="ship-detail-tab" data-tab="docs">Export documents</button>
                     <button class="ship-detail-tab" data-tab="lc">Letter of Credit</button>
                 </div>
 
@@ -1938,28 +1939,59 @@ const Warehouse = (() => {
                 </div>
                 </div>
 
+                <div id="ship-tab-docs" class="ship-tab-panel" hidden></div>
+
                 <div id="ship-tab-lc" class="ship-tab-panel" hidden>
                     <div class="ship-lc-loading">Loading LC data…</div>
                 </div>
             </div>`;
 
             if (typeof initCharts === 'function') initCharts(body);
+            wireShipTabs(s, opts);
+        }
 
-            // Tab switching
-            body.querySelectorAll('.ship-detail-tab').forEach(function(btn) {
-                btn.addEventListener('click', function() {
-                    body.querySelectorAll('.ship-detail-tab').forEach(function(b) { b.classList.remove('ship-detail-tab--active'); });
-                    btn.classList.add('ship-detail-tab--active');
-                    var tab = btn.dataset.tab;
-                    body.querySelectorAll('.ship-tab-panel').forEach(function(p) { p.hidden = true; });
-                    var panel = body.querySelector('#ship-tab-' + tab);
-                    if (!panel) return;
-                    panel.hidden = false;
-                    if (tab === 'lc' && panel.querySelector('.ship-lc-loading')) {
-                        loadShipLcPanel(panel, s);
-                    }
-                });
+        // Tabs on a shipment's detail: Overview · Export documents · Letter
+        // of Credit. Export documents is the shipment's first stage (supplier
+        // PDFs → bales → Enviroware packing list + proforma); see shipdocs.js.
+        function wireShipTabs(s, opts = {}) {
+            const open = tab => {
+                body.querySelectorAll('.ship-detail-tab').forEach(b => b.classList.toggle('ship-detail-tab--active', b.dataset.tab === tab));
+                body.querySelectorAll('.ship-tab-panel').forEach(p => { p.hidden = p.id !== 'ship-tab-' + tab; });
+                const panel = body.querySelector('#ship-tab-' + tab);
+                if (!panel) return;
+                if (tab === 'lc' && panel.querySelector('.ship-lc-loading')) loadShipLcPanel(panel, s);
+                if (tab === 'docs' && !panel.dataset.loaded && typeof ShipDocs !== 'undefined') {
+                    panel.dataset.loaded = '1';
+                    // Only V3 shipments carry white / coloured raw kg that the
+                    // confirmed bales can replace; V2 weights are left alone.
+                    ShipDocs.renderPanel(panel, s, { applyShipPatch: s.schema === 3 ? p => applyShipPatch(s.id, p) : null });
+                }
+            };
+            body.querySelectorAll('.ship-detail-tab').forEach(btn => btn.addEventListener('click', () => open(btn.dataset.tab)));
+            if (opts.tab) open(opts.tab);
+        }
+
+        // Export documents → the shipment: confirmed bales set the Net Weight
+        // Breakdown (white / coloured raw kg); the supplier proforma, our
+        // export rate, the JPS invoice and Xero payments set cost-line rates,
+        // actual NZD and paid flags. Saved through the same whole-list POST as
+        // every other shipment edit so this view's copy never goes stale.
+        async function applyShipPatch(shipId, patch) {
+            const ship = (config.shipments || []).find(x => x.id === shipId);
+            if (!ship) throw new Error('Shipment not found');
+            if (patch.whiteRawKg  != null) ship.whiteRawKg  = Number(patch.whiteRawKg)  || 0;
+            if (patch.colourRawKg != null) ship.colourRawKg = Number(patch.colourRawKg) || 0;
+            if (patch.fixedLines) {
+                ship.fixedLines = { ...(ship.fixedLines || {}) };
+                for (const [key, fields] of Object.entries(patch.fixedLines)) ship.fixedLines[key] = { ...(ship.fixedLines[key] || {}), ...fields };
+            }
+            if (patch.sectionActuals) ship.sectionActuals = { ...(ship.sectionActuals || {}), ...patch.sectionActuals };
+            await api('/api/import/forecast', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ shipments: config.shipments, stageDefaults: config.stageDefaults, lineDefaults: config.lineDefaults || null }),
             });
+            if (currentDetailShipId === shipId) renderShipDetail(ship, { tab: 'docs' });
         }
 
         async function loadShipLcPanel(panel, s) {
@@ -2075,7 +2107,7 @@ const Warehouse = (() => {
             }
         }
 
-        function renderShipDetailNew(s) {
+        function renderShipDetailNew(s, opts = {}) {
             currentDetailShipId = s.id;
             const totals  = computeShipTotalsNew(s, forex);
             const total   = totals.total;
@@ -2110,7 +2142,12 @@ const Warehouse = (() => {
                         <span class="ship-status-badge">${statusMeta.l}</span>
                     </div>
                 </div>
+                <div class="ship-detail-tabs no-print">
+                    <button class="ship-detail-tab ship-detail-tab--active" data-tab="overview">Overview</button>
+                    <button class="ship-detail-tab" data-tab="docs">Export documents</button>
+                </div>
 
+                <div id="ship-tab-overview" class="ship-tab-panel">
                 <div class="ship-detail-layout">
                     <div class="ship-detail-main">
                         <div class="ship-detail-hdr">
@@ -2225,14 +2262,17 @@ const Warehouse = (() => {
 
                     ${buildPctChartHtml(totals.sectionTotals, total)}
                 </div>
+                </div>
+                <div id="ship-tab-docs" class="ship-tab-panel" hidden></div>
             </div>`;
+            wireShipTabs(s, opts);
         }
 
-        function renderShipDetail(s) {
+        function renderShipDetail(s, opts = {}) {
             // V3 framework — schema-tagged shipments use the new renderer.
-            if (s.schema === 3) return renderShipDetailV3(s);
+            if (s.schema === 3) return renderShipDetailV3(s, opts);
             // V2 rigid (Shipment #42 .. start of v3) — kept for legacy data.
-            if (s.seq) return renderShipDetailNew(s);
+            if (s.seq) return renderShipDetailNew(s, opts);
             currentDetailShipId = s.id;
             const lines = s.costLines || [];
             function lineNzdD(l) {
@@ -2680,10 +2720,12 @@ const Warehouse = (() => {
                             </div>
                         </div>
                         <p id="ship-yield-preview" class="imp-add-yield-preview"></p>
-                        <div style="display:flex;gap:0.4rem;margin-top:0.5rem">
+                        <div style="display:flex;gap:0.4rem;margin-top:0.5rem;flex-wrap:wrap;align-items:center">
                             <button class="btn-primary btn-sm" id="ship-save-btn">Add Shipment</button>
+                            <button class="btn-secondary btn-sm" id="ship-fromdocs-btn" title="Leave the weights blank: they fill in when you confirm the bales from Pistoni's packing list">Start from supplier documents →</button>
                             <button class="btn-secondary btn-sm" id="ship-cancel-btn">Cancel</button>
                         </div>
+                        <p class="imp-add-yield-preview" style="margin-top:0.4rem">Have Pistoni's packing list and proforma? Start from the documents — only the shipment number and start date are needed now.</p>
                     </div>
                     <div class="imp-upcoming-grid">
                         ${visibleShips.length
@@ -3029,7 +3071,10 @@ const Warehouse = (() => {
                 document.getElementById(id)?.addEventListener('input', refreshYieldPreview);
             });
 
-            document.getElementById('ship-save-btn')?.addEventListener('click', async () => {
+            // fromDocs: the first stage of a shipment is its export documents —
+            // create it without weights and open the Export documents tab; the
+            // confirmed bales then fill white / coloured kg.
+            const addShipment = async fromDocs => {
                 const seq         = parseInt(document.getElementById('ship-seq').value, 10);
                 const startDate   = document.getElementById('ship-startdate').value;
                 const whiteRawKg  = parseFloat(document.getElementById('ship-whitekg').value)  || 0;
@@ -3037,11 +3082,12 @@ const Warehouse = (() => {
                 const wastePct    = clampPct(document.getElementById('ship-wastepct').value, 10);
                 if (!Number.isFinite(seq) || seq < 1) { showToast('Please enter a shipment number'); return; }
                 if (!startDate) { showToast('Please pick a start date'); return; }
-                if (!whiteRawKg && !colourRawKg) { showToast('Enter white and/or coloured weight'); return; }
+                if (!fromDocs && !whiteRawKg && !colourRawKg) { showToast('Enter white and/or coloured weight'); return; }
                 if ((config.shipments || []).some(s => Number(s.seq) === seq)) {
-                    showToast(`Shipment #${seq} already exists — pick another number`); return;
+                    showToast(`Shipment #${seq} already exists — open it and use its Export documents tab`); return;
                 }
-                const btn = document.getElementById('ship-save-btn');
+                const btn = document.getElementById(fromDocs ? 'ship-fromdocs-btn' : 'ship-save-btn');
+                const btnLabel = btn.textContent;
                 btn.disabled = true; btn.textContent = 'Adding…';
                 try {
                     const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
@@ -3064,11 +3110,14 @@ const Warehouse = (() => {
                     config.shipments = shipments;
                     showToast(`Shipment #${seq} added`);
                     rebuild();
+                    if (fromDocs) renderShipDetail(newShip, { tab: 'docs' });
                 } catch (err) {
                     showToast('Save failed: ' + err.message);
-                    btn.disabled = false; btn.textContent = 'Add Shipment';
+                    btn.disabled = false; btn.textContent = btnLabel;
                 }
-            });
+            };
+            document.getElementById('ship-save-btn')?.addEventListener('click', () => addShipment(false));
+            document.getElementById('ship-fromdocs-btn')?.addEventListener('click', () => addShipment(true));
 
         }
 

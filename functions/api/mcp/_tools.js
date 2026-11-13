@@ -13,6 +13,8 @@ import { onRequestGet as stockLedgerGet } from '../stock/items/[id]/ledger.js';
 import { onRequestGet as consumablesGet } from '../stock/consumables-forecast.js';
 import { onRequestGet as shipmentsGet } from '../stock/shipments.js';
 import { onRequestGet as xeroAlertsGet } from '../xero/alerts.js';
+import { buildView as exportDocsView, loadShipments as loadRawShipments, loadAllRecords as loadExportDocRecords } from '../import/export-docs/_store.js';
+import { shipNumber } from '../stock/_engine.js';
 
 const STATUS_LABELS = { new: 'New', reviewed: 'Reviewed', sent_to_xero: 'Sent to Xero', dispatched: 'Complete' };
 
@@ -250,6 +252,69 @@ export const TOOLS = [
         annotations: RO,
         async run(_args, { env }) {
             return { shipments: await callHandler(shipmentsGet, env, '/api/stock/shipments') };
+        },
+    },
+    {
+        name: 'shipment_export_docs',
+        title: 'Shipment export documents',
+        description: 'The export-document stage of an import shipment (Pistoni packing list + proforma → Enviroware packing list + proforma invoice to JPS Enterprise). For one shipment: status (In review / Draft / LC issued / Final), the confirmed bales (bale number, net kg, white or coloured), totals, the supplier invoice (internal: EUR lines), the export invoice (number, date, USD rate per kg, amount), the JPS invoice split into LC deposit and handling & sorting, the three stage-1 invoices in Xero (Pistoni bill, our proforma, JPS bill) with status and NZD paid, cost-breakdown lines the documents would change, LC details, failing checks, what still blocks each document, and links to the generated documents and supplier PDFs (paths on the Hub). Omit shipment for a one-line summary of every shipment that has export documents.',
+        inputSchema: {
+            type: 'object',
+            properties: { shipment: { type: 'integer', description: 'Shipment number, e.g. 43' } },
+            additionalProperties: false,
+        },
+        annotations: RO,
+        async run(args, { env }) {
+            const ships = await loadRawShipments(env);
+            const base = id => `/api/import/export-docs/${encodeURIComponent(id)}`;
+            if (args.shipment == null) {
+                const records = await loadExportDocRecords(env);
+                const rows = [];
+                for (const r of records) {
+                    if (!ships.some(s => s.id === r.shipmentId)) continue;
+                    const v = await exportDocsView(env, r.shipmentId);
+                    rows.push({
+                        shipment: v.shipment.number, status: v.statusLabel,
+                        bales: v.confirmedTotals?.count ?? null, netKg: v.confirmedTotals?.netKg ?? null,
+                        exportInvoice: v.record.exportInvoice?.number || null, amount: v.amount,
+                        lcNumber: v.record.lc?.number || null, documents: (v.record.outputs || []).length,
+                    });
+                }
+                return { shipments: rows.sort((a, b) => (b.shipment ?? 0) - (a.shipment ?? 0)) };
+            }
+            const ship = ships.find(s => shipNumber(s) === Number(args.shipment));
+            if (!ship) throw new Error(`Shipment #${args.shipment} not found`);
+            const v = await exportDocsView(env, ship.id);
+            const r = v.record, c = r.confirmed, inv = c?.supplierInvoice;
+            return {
+                shipment: v.shipment.number, status: v.statusLabel,
+                confirmed: c ? { at: c.confirmedAt ? nzYmd(c.confirmedAt) : null, by: c.confirmedBy || null } : null,
+                unconfirmedChanges: v.unconfirmedChanges,
+                totals: v.confirmedTotals,
+                bales: c ? c.bales : [],
+                supplierInvoice: inv ? { number: inv.number, date: inv.date, currency: inv.currency, total: inv.total, netKg: inv.netKg, lines: (inv.lines || []).map(l => ({ description: l.description, colour: l.colour, kg: l.kg, unitPrice: l.unitPrice, amount: l.amount })) } : null,
+                exportInvoice: { number: r.exportInvoice.number, date: r.exportInvoice.date, currency: r.exportInvoice.currency, ratePerKg: r.exportInvoice.rate, amount: v.amount, numberConfirmed: r.exportInvoice.numberConfirmed, rateConfirmed: r.exportInvoice.rateConfirmed },
+                lc: { number: r.lc?.number || null, date: r.lc?.date || null, grossKg: r.lc?.grossKg ?? null, linkedLc: v.linkedLc?.lcNumber || null },
+                jpsInvoice: r.jps ? {
+                    number: r.jps.number, date: r.jps.date, currency: r.jps.currency, total: r.jps.total,
+                    lcDeposit: v.jpsSplit?.depositAmount ?? null, handlingAndSorting: v.jpsSplit?.handlingAmount ?? null, handlingPerKg: v.jpsSplit?.handlingRate ?? null,
+                } : null,
+                xero: v.xero.docs.map(d => ({
+                    document: d.label, inXero: d.inXero, status: d.pushed?.status || null, number: d.number || null,
+                    currency: d.currency || null, total: d.total ?? null, nzdPaid: d.pushed?.nzdPaid ?? null, link: d.url || null,
+                    ...(!d.inXero && d.issues.length && { blockedBy: d.issues }),
+                })),
+                costBreakdownChanges: (v.costPlan?.changes || []).map(c => `${c.label}: ${c.from} → ${c.to} (from ${c.source})`),
+                failingChecks: [...v.checks, ...(v.jpsChecks || []), ...v.lcChecks].filter(x => x.ok === false).map(x => ({ check: x.title, level: x.level, detail: x.detail })),
+                blockedBy: v.generation,
+                documents: (r.outputs || []).map(o => ({
+                    name: o.name, generated: nzYmd(o.at), by: o.by, filename: o.filename,
+                    ...(o.invoiceNumber && { invoiceNumber: o.invoiceNumber, amount: o.amount }),
+                    link: `${base(ship.id)}/render?out=${encodeURIComponent(o.key)}`,
+                    ...(o.doc === 'packing' && { xlsx: `${base(ship.id)}/xlsx?out=${encodeURIComponent(o.key)}` }),
+                })),
+                supplierFiles: Object.values(r.files || {}).map(f => ({ kind: f.kind, filename: f.filename, uploaded: nzYmd(f.uploadedAt), link: `${base(ship.id)}/file?key=${encodeURIComponent(f.key)}` })),
+            };
         },
     },
     {

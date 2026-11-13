@@ -14,6 +14,7 @@ const INSTRUCTIONS = `Read-only access to the Prime Ties / Enviroware Business H
 - Products are measured in kg: Prime Tie Bundled ("bundles") is the active line, sold in 10kg boxes and 1kg bags. Loose and eco Ties are parked.
 - All dates are Pacific/Auckland calendar dates (YYYY-MM-DD); the NZ financial year runs April–March.
 - Stock is derived (last committed count + shipments − sales), never stored; ask stock_item_ledger to explain a number.
+- A shipment starts with its export documents: Pistoni's packing list and proforma become Enviroware's packing list and proforma invoice to JPS (shipment_export_docs). Supplier EUR prices are internal and never printed on those documents.
 - Nothing here can create, change, print or send anything.`;
 
 const rpcResult = (id, result) => ({ jsonrpc: '2.0', id, result });
