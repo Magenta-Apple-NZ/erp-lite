@@ -24,6 +24,9 @@ const Admin = (() => {
         setTimeout(() => t.classList.remove('show'), 3000);
     }
 
+    // The pricing sheet the Prices tab links out to (prices are edited there, not here).
+    const ITEMS_SHEET_VIEW_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSf_VXDqVAC5KqHJZTil7H-2MoeK5lSqx5OWmCaigi6Xn7wNdznlp0mS-D5rgI35-X4Vh-itflowh1j/pubhtml?gid=0';
+
     function fmtPrice(v) { return v == null ? '<span class="cat-price-nil">—</span>' : '$' + Number(v).toFixed(2); }
 
     function renderPricesTab(body, items, onUpdate) {
