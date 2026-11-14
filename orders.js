@@ -279,6 +279,7 @@ const Orders = (() => {
                 </div>
             </div>
             <button class="btn-secondary btn-sm" id="orders-sync-pay" title="Check Xero for payments and mark orders paid" style="display:none;margin-left:auto">Sync payments</button>
+            <button class="btn-secondary btn-sm" id="orders-remittance" title="Upload a customer remittance PDF and post its payments + rebates to Xero" style="display:none">Remittance…</button>
         </div>
         <a href="#orders/new" class="orders-new-fab" aria-label="New order" title="New order">+</a>
         <div id="orders-list-body"><div class="orders-loading">Loading…</div></div>`;
@@ -551,6 +552,14 @@ const Orders = (() => {
                         syncBtn.disabled = false; syncBtn.textContent = label;
                     }
                 });
+            }
+            // Remittance PDF → credit notes + batch payment in Xero (admin only).
+            const remBtn = document.getElementById('orders-remittance');
+            if (remBtn && !isWarehouseRole() && typeof Remittance !== 'undefined') {
+                remBtn.style.display = '';
+                remBtn.addEventListener('click', () => Remittance.open({
+                    onApplied: () => reconcilePayments(true).then(r => refreshAfterReconcile(r)).catch(() => {}),
+                }));
             }
             // Automatic, non-blocking reconcile on load.
             reconcilePayments(false).then(r => refreshAfterReconcile(r)).catch(() => {});

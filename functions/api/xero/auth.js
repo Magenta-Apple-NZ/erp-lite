@@ -10,6 +10,8 @@ const SCOPES = [
     'accounting.invoices',                   // create + read invoices (push, alerts, reconcile)
     'accounting.contacts',                   // create + read contacts (push.js creates missing ones)
     'accounting.reports.profitandloss.read', // P&L dashboard widget
+    'accounting.payments',                   // batch payments (remittance apply)
+    'accounting.settings.read',              // chart of accounts — bank + rebate accounts (remittance)
     'offline_access',
 ].join(' ');
 
