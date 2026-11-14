@@ -7409,6 +7409,52 @@ a.db-row:hover { background: #f8fafc; border-color: #e2e8f0; }
 .rem-errs { margin: 0.35rem 0 0; padding-left: 1.1rem; }
 @media (max-width: 640px) { .rem-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 
+/* Settings tabs wrap on a phone instead of widening the page. */
+.admin-tabs { flex-wrap: wrap; }
+
+/* ── Settings → Integrations (integrations.js) ── */
+.int { font-size: 0.85rem; color: #1e293b; }
+.int-headline { display: inline-flex; align-items: center; gap: 0.5rem; }
+.int-actions a { text-decoration: none; }
+.int-muted { color: #64748b; font-size: 0.78rem; }
+.int-bar { display: flex; align-items: center; flex-wrap: wrap; gap: 0.6rem; padding: 0.7rem 0.9rem; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; }
+.int-bar .btn-sm { margin-left: auto; }
+.int-dot { width: 0.6rem; height: 0.6rem; border-radius: 50%; background: #10b981; flex: none; }
+.int-dot--warn { background: #f59e0b; }
+.int-dot--error { background: #ef4444; }
+.int-dot--off { background: #94a3b8; }
+.int-notice { padding: 0.6rem 0.9rem; border-radius: 8px; margin-bottom: 0.75rem; }
+.int-notice--ok { background: #dcfce7; color: #166534; }
+.int-notice--err { background: #fee2e2; color: #b91c1c; }
+.int-group { margin: 1.25rem 0 0.5rem; font-size: 0.72rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #64748b; }
+.int-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 340px), 1fr)); gap: 0.75rem; }
+.int-card { display: flex; flex-direction: column; gap: 0.45rem; padding: 0.85rem 1rem; background: #fff; border: 1px solid #e2e8f0; border-left: 4px solid #10b981; border-radius: 8px; min-width: 0; }
+.int-card--warn { border-left-color: #f59e0b; }
+.int-card--error { border-left-color: #ef4444; }
+.int-card--off { border-left-color: #cbd5e1; }
+.int-head { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; }
+.int-name { margin: 0; font-size: 0.95rem; font-weight: 600; }
+.int-pill { flex: none; padding: 0.1rem 0.55rem; border-radius: 999px; font-size: 0.72rem; font-weight: 600; white-space: nowrap; }
+.int-pill--ok { background: #dcfce7; color: #166534; }
+.int-pill--warn { background: #fef3c7; color: #92400e; }
+.int-pill--err { background: #fee2e2; color: #b91c1c; }
+.int-pill--off { background: #f1f5f9; color: #475569; }
+.int-summary { margin: 0; font-weight: 500; overflow-wrap: anywhere; }
+.int-used { margin: 0; color: #64748b; font-size: 0.78rem; }
+.int-details { display: flex; flex-direction: column; gap: 0.25rem; padding-top: 0.45rem; border-top: 1px solid #f1f5f9; }
+.int-row { display: grid; grid-template-columns: minmax(6.5rem, 38%) 1fr; gap: 0.5rem; }
+.int-k { color: #64748b; font-size: 0.78rem; }
+.int-v { overflow-wrap: anywhere; }
+.int-copy { margin-left: 0.25rem; padding: 0 0.4rem; font-size: 0.7rem; border: 1px solid #cbd5e1; border-radius: 4px; background: #fff; color: #475569; cursor: pointer; }
+.int-copy:hover { border-color: #3b82f6; color: #1d4ed8; }
+.int-perms { display: flex; flex-direction: column; gap: 0.2rem; padding-top: 0.45rem; border-top: 1px solid #f1f5f9; }
+.int-perm { display: flex; gap: 0.4rem; font-size: 0.8rem; }
+.int-perm-mark { width: 0.9rem; flex: none; color: #16a34a; font-weight: 700; }
+.int-perm--missing { color: #92400e; }
+.int-perm--missing .int-perm-mark { color: #d97706; }
+.int-actions { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-top: auto; padding-top: 0.35rem; }
+.int-foot { margin-top: 1.25rem; }
+
 /* ── Shipment export documents (shipdocs.js) ── */
 .sd { font-size: 0.85rem; color: #1e293b; }
 .sd-muted { color: #94a3b8; font-size: 0.78rem; }

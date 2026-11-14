@@ -4,6 +4,21 @@
 const TOKEN_KEY = 'tokens';
 const STATE_TTL = 600; // 10 min OAuth state window
 
+// What the Hub asks Xero for (auth.js) and why (Settings → Integrations shows
+// which of these the current connection actually has). This Xero app was
+// created after 2 Mar 2026, so it only has the NEW granular scopes — the broad
+// scopes (accounting.transactions / accounting.reports.read) are NOT available
+// to it and cause invalid_scope. Use the granular equivalents.
+export const XERO_SCOPES = [
+    { scope: 'openid',                                purpose: 'Sign-in' },
+    { scope: 'accounting.invoices',                   purpose: 'Invoices, bills and credit notes (orders, shipments, remittances)' },
+    { scope: 'accounting.contacts',                   purpose: 'Customers and suppliers (creates missing ones)' },
+    { scope: 'accounting.reports.profitandloss.read', purpose: 'P&L widget on the dashboard' },
+    { scope: 'accounting.payments',                   purpose: 'Batch payments (remittances)' },
+    { scope: 'accounting.settings.read',              purpose: 'Chart of accounts (remittance bank and rebate accounts)' },
+    { scope: 'offline_access',                        purpose: 'Stay connected between visits' },
+];
+
 export async function getValidToken(env) {
     const stored = await env.XERO_KV.get(TOKEN_KEY, { type: 'json' });
     if (!stored) {
@@ -65,15 +80,18 @@ export async function saveTokens(env, tokenData, tenantId) {
     return tokens;
 }
 
-export async function saveOAuthState(env, state) {
-    await env.XERO_KV.put('oauth_state:' + state, '1', { expirationTtl: STATE_TTL });
+// The state's value is where to land afterwards ('1' = the Orders list,
+// 'integrations' = Settings → Integrations).
+export async function saveOAuthState(env, state, value = '1') {
+    await env.XERO_KV.put('oauth_state:' + state, String(value), { expirationTtl: STATE_TTL });
 }
 
+// → the stored value (truthy) once, or null when unknown / expired.
 export async function validateOAuthState(env, state) {
     const val = await env.XERO_KV.get('oauth_state:' + state);
-    if (!val) return false;
+    if (!val) return null;
     await env.XERO_KV.delete('oauth_state:' + state);
-    return true;
+    return val;
 }
 
 export function xeroHeaders(token) {

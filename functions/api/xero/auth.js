@@ -1,23 +1,15 @@
 // GET /api/xero/auth — redirect browser to Xero OAuth consent screen
+//   ?return=integrations  land back on Settings → Integrations afterwards
 
-import { saveOAuthState } from '../_xero.js';
+import { saveOAuthState, XERO_SCOPES } from '../_xero.js';
 
-// This Xero app was created after 2 Mar 2026, so it only has the NEW granular
-// scopes — the broad scopes (accounting.transactions / accounting.reports.read)
-// are NOT available to it and cause invalid_scope. Use the granular equivalents.
-const SCOPES = [
-    'openid',
-    'accounting.invoices',                   // create + read invoices (push, alerts, reconcile)
-    'accounting.contacts',                   // create + read contacts (push.js creates missing ones)
-    'accounting.reports.profitandloss.read', // P&L dashboard widget
-    'accounting.payments',                   // batch payments (remittance apply)
-    'accounting.settings.read',              // chart of accounts — bank + rebate accounts (remittance)
-    'offline_access',
-].join(' ');
+// The scope list and what each is for live in _xero.js (granular scopes only).
+const SCOPES = XERO_SCOPES.map(s => s.scope).join(' ');
 
-export async function onRequestGet({ env }) {
+export async function onRequestGet({ env, request }) {
     const state = crypto.randomUUID();
-    await saveOAuthState(env, state);
+    const ret = new URL(request.url).searchParams.get('return') === 'integrations' ? 'integrations' : '1';
+    await saveOAuthState(env, state, ret);
 
     const params = new URLSearchParams({
         response_type: 'code',

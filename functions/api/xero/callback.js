@@ -8,16 +8,18 @@ export async function onRequestGet({ env, request }) {
     const state = url.searchParams.get('state');
     const error = url.searchParams.get('error');
 
+    // Where to land: Settings → Integrations when the connect started there.
+    const stateValue = state ? await validateOAuthState(env, state) : null;
+    const base = stateValue === 'integrations' ? '/#admin/integrations' : '/#orders';
+
     if (error) {
-        return htmlRedirect('/#orders?xero_error=' + encodeURIComponent(error));
+        return htmlRedirect(base + '?xero_error=' + encodeURIComponent(error));
     }
     if (!code || !state) {
-        return htmlRedirect('/#orders?xero_error=missing_params');
+        return htmlRedirect(base + '?xero_error=missing_params');
     }
-
-    const stateOk = await validateOAuthState(env, state);
-    if (!stateOk) {
-        return htmlRedirect('/#orders?xero_error=invalid_state');
+    if (!stateValue) {
+        return htmlRedirect(base + '?xero_error=invalid_state');
     }
 
     // Exchange code for tokens
@@ -35,7 +37,7 @@ export async function onRequestGet({ env, request }) {
 
     if (!tokenResp.ok) {
         const msg = await tokenResp.text();
-        return htmlRedirect('/#orders?xero_error=' + encodeURIComponent('token_exchange: ' + msg));
+        return htmlRedirect(base + '?xero_error=' + encodeURIComponent('token_exchange: ' + msg));
     }
 
     const tokenData = await tokenResp.json();
@@ -46,19 +48,19 @@ export async function onRequestGet({ env, request }) {
     });
 
     if (!connectionsResp.ok) {
-        return htmlRedirect('/#orders?xero_error=connections_failed');
+        return htmlRedirect(base + '?xero_error=connections_failed');
     }
 
     const connections = await connectionsResp.json();
     if (!connections.length) {
-        return htmlRedirect('/#orders?xero_error=no_xero_org');
+        return htmlRedirect(base + '?xero_error=no_xero_org');
     }
 
     // Use the first (and typically only) organisation
     const tenantId = connections[0].tenantId;
     await saveTokens(env, tokenData, tenantId);
 
-    return htmlRedirect('/#orders?xero_connected=1');
+    return htmlRedirect(base + '?xero_connected=1');
 }
 
 function htmlRedirect(url) {

@@ -649,21 +649,24 @@ const Admin = (() => {
         catch (e) { body.innerHTML = `<p class="cat-sub" style="padding:1rem;color:#b91c1c">Could not load stores: ${escHtml(e.message)}</p>`; }
     }
 
-    async function renderAdmin(container) {
+    // Settings tabs, in order. #admin/<key> opens one directly (e.g. #admin/integrations).
+    const TABS = [
+        ['prices', 'Prices'], ['stores', 'Stores'], ['printers', 'Printers'], ['salesdata', 'Sales Data'],
+        ['payroll', 'Payroll'], ['stock', 'Stock'], ['integrations', 'Integrations'],
+    ];
+
+    // params: URLSearchParams from the hash (e.g. ?xero_connected=1 after an OAuth round trip).
+    async function renderAdmin(container, initialTab = 'prices', params = null) {
+        const start = TABS.some(([k]) => k === initialTab) ? initialTab : 'prices';
         container.innerHTML = `
         <div class="view-header">
             <div>
                 <h1 class="view-title">Settings</h1>
-                <p class="view-subtitle">Pricing, stores, printers, sales data, payroll and stock.</p>
+                <p class="view-subtitle">Pricing, stores, printers, sales data, payroll, stock and integrations.</p>
             </div>
         </div>
-        <div class="imp-tabs">
-            <button class="imp-view-btn active" id="cat-tab-prices">Prices</button>
-            <button class="imp-view-btn" id="cat-tab-stores">Stores</button>
-            <button class="imp-view-btn" id="cat-tab-printers">Printers</button>
-            <button class="imp-view-btn" id="cat-tab-salesdata">Sales Data</button>
-            <button class="imp-view-btn" id="cat-tab-payroll">Payroll</button>
-            <button class="imp-view-btn" id="cat-tab-stock">Stock</button>
+        <div class="imp-tabs admin-tabs">
+            ${TABS.map(([k, label]) => `<button class="imp-view-btn${k === start ? ' active' : ''}" id="cat-tab-${k}">${label}</button>`).join('')}
         </div>
         <div id="admin-body"><div class="orders-loading">Loading…</div></div>`;
 
@@ -677,29 +680,22 @@ const Admin = (() => {
 
         const body = document.getElementById('admin-body');
 
-        function switchTab(tab) {
-            document.getElementById('cat-tab-prices').classList.toggle('active', tab === 'prices');
-            document.getElementById('cat-tab-stores').classList.toggle('active', tab === 'stores');
-            document.getElementById('cat-tab-printers').classList.toggle('active', tab === 'printers');
-            document.getElementById('cat-tab-salesdata').classList.toggle('active', tab === 'salesdata');
-            document.getElementById('cat-tab-payroll').classList.toggle('active', tab === 'payroll');
-            document.getElementById('cat-tab-stock').classList.toggle('active', tab === 'stock');
+        function switchTab(tab, tabParams = null) {
+            for (const [k] of TABS) document.getElementById('cat-tab-' + k).classList.toggle('active', k === tab);
+            // Keep the tab in the address (no hashchange, so no re-render) so a reload stays put.
+            history.replaceState(null, '', location.pathname + location.search + '#admin' + (tab === 'prices' ? '' : '/' + tab));
             if (tab === 'prices')         renderPricesTab(body, items, updated => { items = updated; });
             else if (tab === 'stores')    renderStoresTab(body, stores, updated => { stores = updated; });
             else if (tab === 'printers')  renderPrintersTab(body);
             else if (tab === 'salesdata') renderSalesDataTab(body);
             else if (tab === 'payroll')   renderPayrollTab(body);
             else if (tab === 'stock')     Stock.renderSettingsTab(body);
+            else if (tab === 'integrations') Integrations.renderSettingsTab(body, { params: tabParams, switchTab });
         }
 
-        document.getElementById('cat-tab-prices').addEventListener('click',     () => switchTab('prices'));
-        document.getElementById('cat-tab-stores').addEventListener('click',     () => switchTab('stores'));
-        document.getElementById('cat-tab-printers').addEventListener('click',   () => switchTab('printers'));
-        document.getElementById('cat-tab-salesdata').addEventListener('click',  () => switchTab('salesdata'));
-        document.getElementById('cat-tab-payroll').addEventListener('click',    () => switchTab('payroll'));
-        document.getElementById('cat-tab-stock').addEventListener('click',      () => switchTab('stock'));
+        for (const [k] of TABS) document.getElementById('cat-tab-' + k).addEventListener('click', () => switchTab(k));
 
-        switchTab('prices');
+        switchTab(start, params);
     }
 
     // ── Printers tab ──

@@ -16,6 +16,10 @@ export async function onRequestGet(context) {
     url.searchParams.set('scope', scope);
     url.searchParams.set('access_type', 'offline');
     url.searchParams.set('prompt', 'consent');
+    // ?return=integrations → land back on Settings → Integrations (see callback.js).
+    if (new URL(context.request.url).searchParams.get('return') === 'integrations') {
+        url.searchParams.set('state', 'integrations');
+    }
 
     return Response.redirect(url.toString(), 302);
 }

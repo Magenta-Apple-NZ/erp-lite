@@ -110,7 +110,7 @@ const Stock = (() => {
         <div class="view-header">
             <div>
                 <h1 class="view-title">Stock</h1>
-                <p class="view-subtitle">Stock on hand per item, reorder alerts, and physical counts. Items, packaging recipes and settings live in <a href="#admin">Settings → Stock</a>.</p>
+                <p class="view-subtitle">Stock on hand per item, reorder alerts, and physical counts. Items, packaging recipes and settings live in <a href="#admin/stock">Settings → Stock</a>.</p>
             </div>
         </div>
         <div class="imp-tabs">
@@ -669,7 +669,7 @@ const Stock = (() => {
                     <input name="date" type="date" value="${nzToday()}" min="${escHtml(settings.stockEpoch || '')}" required title="Counts start at the stock epoch (${escHtml(settings.stockEpoch || '')})">
                     <input name="label" type="text" placeholder="Label, e.g. Opening count" style="width:200px">
                     <button class="btn-primary btn-sm" type="submit">New count</button>
-                    <span class="cat-sub" style="flex-basis:100%;margin:0">Counts from <strong>${fmtDate(settings.stockEpoch)}</strong> (the stock epoch) — change it under <a href="#admin">Settings → Stock → Engine settings</a>.</span>
+                    <span class="cat-sub" style="flex-basis:100%;margin:0">Counts from <strong>${fmtDate(settings.stockEpoch)}</strong> (the stock epoch) — change it under <a href="#admin/stock">Settings → Stock → Engine settings</a>.</span>
                 </form>
             </div>
             ${counts.length ? `<table class="stk-table stk2-table"><thead><tr><th>Date</th><th>Label</th><th>Status</th><th></th></tr></thead><tbody>

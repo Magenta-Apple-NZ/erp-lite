@@ -817,10 +817,12 @@ async function handleRoute() {
         return;
     }
 
-    if (hash === 'admin') {
+    // #admin, #admin/<tab>, #admin/<tab>?xero_connected=1 (OAuth round trips land here).
+    const adminMatch = hash.match(/^admin(?:\/([a-z]+))?\/?(?:\?(.*))?$/);
+    if (adminMatch) {
         setActiveView('view-admin');
         setActiveNav('nav-admin');
-        await Admin.renderAdmin(document.getElementById('admin-container'));
+        await Admin.renderAdmin(document.getElementById('admin-container'), adminMatch[1] || 'prices', new URLSearchParams(adminMatch[2] || ''));
         return;
     }
 

@@ -3,9 +3,12 @@ export async function onRequestGet(context) {
     const url = new URL(request.url);
     const code = url.searchParams.get('code');
     const error = url.searchParams.get('error');
+    // state=integrations when the connect started on Settings → Integrations.
+    const fromSettings = url.searchParams.get('state') === 'integrations';
+    const home = 'https://hub.primetie.co.nz/' + (fromSettings ? '#admin/integrations' : '#calendar');
 
     if (error) {
-        return Response.redirect('https://hub.primetie.co.nz/#calendar?gcal_error=' + encodeURIComponent(error), 302);
+        return Response.redirect(home + '?gcal_error=' + encodeURIComponent(error), 302);
     }
     if (!code) {
         return new Response('Missing authorisation code', { status: 400 });
@@ -33,5 +36,5 @@ export async function onRequestGet(context) {
 
     await env.XERO_KV.put('gcal:tokens', JSON.stringify(tokens));
 
-    return Response.redirect('https://hub.primetie.co.nz/#calendar', 302);
+    return Response.redirect(fromSettings ? home + '?gcal_connected=1' : home, 302);
 }
