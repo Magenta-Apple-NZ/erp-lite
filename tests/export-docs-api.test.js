@@ -209,7 +209,7 @@ test('final packing list: LC details checked against the linked LC; status final
     assert.equal(v.linkedLc.lcNumber, '320126011494');
     assert.deepEqual(v.generation.packingFinal, ['LC number missing', 'LC date of issue missing', 'Gross weight missing']);
 
-    v = (await call(recordApi.onRequestPatch, 'PATCH', '/r', { lc: { number: '320126011494', date: '2026-12-01', grossKg: 18136 }, exportInvoice: { ...v.record.exportInvoice, numberConfirmed: true, rateConfirmed: true } })).body;
+    v = (await call(recordApi.onRequestPatch, 'PATCH', '/r', { lc: { number: '320126011494', date: '2026-12-01', grossKg: 18136 }, exportInvoice: { ...v.record.exportInvoice, date: '2026-11-13', numberConfirmed: true, rateConfirmed: true } })).body;
     assert.equal(v.status, 'lc_issued');
     assert.deepEqual(v.generation.packingFinal, []);
     assert.ok(v.lcChecks.every(c => c.ok), JSON.stringify(v.lcChecks));
