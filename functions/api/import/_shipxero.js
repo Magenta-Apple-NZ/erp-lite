@@ -340,9 +340,38 @@ export function xeroState(inv) {
     };
 }
 
+// Everything Xero says about a refused request: validation errors on the
+// invoice, on each line and on the contact, plus warnings.
+export function xeroErrorDetails(body) {
+    const out = [];
+    const walk = (o, where) => {
+        if (!o || typeof o !== 'object') return;
+        for (const v of o.ValidationErrors || []) if (v?.Message) out.push(where ? `${where}: ${v.Message}` : v.Message);
+        for (const w of o.Warnings || []) if (w?.Message) out.push(`Warning${where ? ' (' + where + ')' : ''}: ${w.Message}`);
+        (o.LineItems || []).forEach((l, i) => walk(l, `Line ${i + 1}`));
+        if (o.Contact) walk(o.Contact, 'Contact');
+    };
+    (body?.Elements || []).forEach(e => walk(e, ''));
+    return [...new Set(out)];
+}
+
 export function xeroValidationMessage(body) {
-    const errs = (body?.Elements || []).flatMap(e => e.ValidationErrors || []).map(e => e.Message).filter(Boolean);
-    return errs.length ? errs.join('; ') : (body?.Message || body?.Detail || '');
+    const errs = xeroErrorDetails(body).filter(m => !m.startsWith('Warning'));
+    return errs.length ? errs.join('; ') : (body?.Detail || body?.Message || body?.Title || '');
+}
+
+// What the Hub sent, in words, for the error log (no tokens, no IDs that matter).
+export function xeroSentSummary(payload, contactName) {
+    const p = payload || {};
+    return {
+        type: p.Type, status: p.Status, contact: contactName || null, number: p.InvoiceNumber || null,
+        date: p.Date || null, currency: p.CurrencyCode || null, reference: p.Reference || null,
+        lines: (p.LineItems || []).map(l => ({
+            description: String(l.Description || '').slice(0, 120), quantity: l.Quantity, unitAmount: l.UnitAmount,
+            accountCode: l.AccountCode || null, taxType: l.TaxType || null,
+        })),
+        total: round2((p.LineItems || []).reduce((t, l) => t + (Number(l.Quantity) || 0) * (Number(l.UnitAmount) || 0), 0)),
+    };
 }
 
 // ── Cost breakdown ───────────────────────────────────────────────────────

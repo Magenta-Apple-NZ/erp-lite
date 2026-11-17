@@ -40,7 +40,7 @@ const MODEL = {
         lastShipmentDate: '2027-06-15', expiryDate: '2027-06-30', containers: "1 x 40' FCL and 1 x 20' GP", notes: '' },
 };
 
-let env, realFetch, xeroCalls, xeroInvoices;
+let env, realFetch, xeroCalls, xeroInvoices, xeroRefuse;
 beforeEach(() => {
     env = {
         ANTHROPIC_API_KEY: 'k',
@@ -49,7 +49,7 @@ beforeEach(() => {
             milestones: [] }] } }),
         XERO_KV: kv({ tokens: { accessToken: 'at', refreshToken: 'rt', expiresAt: Date.now() + 3600e3, tenantId: 't1' } }),
     };
-    xeroCalls = []; xeroInvoices = new Map();
+    xeroCalls = []; xeroInvoices = new Map(); xeroRefuse = null;
     realFetch = globalThis.fetch;
     globalThis.fetch = async (url, init = {}) => {
         const u = String(url);
@@ -69,6 +69,7 @@ beforeEach(() => {
             }
             if (path === 'Contacts' && init.method === 'POST') return json({ Contacts: [{ ContactID: 'c-' + body.Contacts[0].Name.split(' ')[0].toLowerCase(), Name: body.Contacts[0].Name }] });
             if (path.startsWith('Invoices?') && init.method === 'POST') {
+                if (xeroRefuse) return xeroRefuse.raw ? new Response(xeroRefuse.raw, { status: xeroRefuse.status }) : json(xeroRefuse.body, xeroRefuse.status);
                 const inv = body.Invoices[0];
                 if (!inv.LineItems.every(l => l.AccountCode)) return json({ Type: 'ValidationException', Elements: [{ ValidationErrors: [{ Message: 'Account code is required' }] }] }, 400);
                 const total = Math.round(inv.LineItems.reduce((s, l) => s + Math.round(l.Quantity * l.UnitAmount * 100), 0)) / 100;
@@ -192,4 +193,55 @@ test('signed JPS proforma: terms read from their PDF, generated once your signat
 
     const preview = await (await renderApi.onRequestGet({ env, params: { id: SHIP }, request: new Request('https://hub.test/x?doc=jps') })).text();
     assert.match(preview, /Preview — use Generate/);
+});
+
+test('a refused invoice is logged with what Xero said and what was sent; the next success clears it', async () => {
+    await stageOne();
+    xeroRefuse = { status: 400, body: { ErrorNumber: 10, Type: 'ValidationException', Message: 'A validation exception occurred', Elements: [{
+        ValidationErrors: [{ Message: 'Organisation is not subscribed to currency USD' }],
+        LineItems: [{ ValidationErrors: [{ Message: "Account code '820' is not a valid code for this document." }] }, {}],
+    }] } };
+    const r = await call(xeroApi.onRequestPost, 'POST', { doc: 'jpsBill' });
+    assert.equal(r.status, 502);
+    assert.equal(r.body.error, "Xero 400: Organisation is not subscribed to currency USD; Line 1: Account code '820' is not a valid code for this document.");
+    const e = r.body.xeroError;
+    assert.deepEqual([e.step, e.xeroStatus, e.request, e.by], ['create', 400, 'POST Invoices', 'andrew@primetie.co.nz']);
+    assert.deepEqual(e.details, ['Organisation is not subscribed to currency USD', "Line 1: Account code '820' is not a valid code for this document."]);
+    assert.deepEqual([e.sent.type, e.sent.contact, e.sent.currency, e.sent.total], ['ACCPAY', 'JPS Enterprise', 'USD', 32815.3]);
+    assert.deepEqual(e.sent.lines.map(l => [l.accountCode, l.taxType]), [['820', 'NONE'], ['631', 'NONE']]);
+    assert.match(e.response, /not subscribed to currency USD/);
+
+    const v = (await call(recordApi.onRequestGet, 'GET')).body;
+    assert.equal(v.xero.errors.jpsBill.message, r.body.error);
+    assert.equal(v.record.log[0].action, `JPS bill not created in Xero (creating the invoice): ${r.body.error}`);
+    assert.equal(v.record.log[0].by, 'andrew@primetie.co.nz');
+
+    xeroRefuse = { status: 503, raw: '<html>Service Unavailable</html>' };
+    const down = await call(xeroApi.onRequestPost, 'POST', { doc: 'jpsBill' });
+    assert.equal(down.status, 502);
+    assert.match(down.body.error, /^Xero 503: <html>Service Unavailable/);
+    assert.equal(down.body.xeroError.response, '<html>Service Unavailable</html>');
+
+    xeroRefuse = null;
+    const ok = await call(xeroApi.onRequestPost, 'POST', { doc: 'jpsBill' });
+    assert.equal(ok.status, 200, JSON.stringify(ok.body));
+    assert.equal(ok.body.xero.errors.jpsBill, undefined, 'a success clears the last error');
+});
+
+test('a lapsed Xero connection is logged as a sign-in failure with where to reconnect', async () => {
+    await stageOne();
+    await env.XERO_KV.put('tokens', JSON.stringify({ accessToken: 'old', refreshToken: 'dead', expiresAt: 0, tenantId: 't1' }));
+    const realStub = globalThis.fetch;
+    globalThis.fetch = async (url, init) => String(url).startsWith('https://identity.xero.com')
+        ? new Response('{"error":"invalid_grant"}', { status: 400 }) : realStub(url, init);
+    const r = await call(xeroApi.onRequestPost, 'POST', { doc: 'supplierBill' });
+    globalThis.fetch = realStub;
+    assert.equal(r.status, 401);
+    assert.equal(r.body.error, 'Xero session expired — reconnect Xero in Settings → Integrations');
+    assert.equal(r.body.xeroError.step, 'auth');
+    const v = (await call(recordApi.onRequestGet, 'GET')).body;
+    assert.match(v.record.log[0].action, /^Pistoni bill not created in Xero \(signing in to Xero\): Xero session expired/);
+
+    const rf = await call(xeroApi.onRequestPost, 'POST', { refresh: true });
+    assert.equal(rf.status, 200, 'nothing in Xero yet, so nothing to refresh');
 });

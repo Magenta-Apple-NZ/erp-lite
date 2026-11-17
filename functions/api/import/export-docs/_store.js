@@ -151,6 +151,8 @@ export async function buildView(env, shipmentId) {
             docs: xeroDocs({ record: rec, settings, shipmentNumber: number, confirmedOk, jpsOk }),
             status: settings.xero?.status || 'DRAFT',
             refreshedAt: record.xeroRefreshedAt || null,
+            // The last failed attempt per invoice (and 'refresh'), until one succeeds.
+            errors: record.xeroErrors || {},
         },
         // Only V3 shipments have the cost lines the documents fill.
         costPlan: costPlan({ shipment: ship, record: rec }),

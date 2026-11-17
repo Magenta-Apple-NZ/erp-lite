@@ -303,6 +303,10 @@ export const TOOLS = [
                     document: d.label, inXero: d.inXero, status: d.pushed?.status || null, number: d.number || null,
                     currency: d.currency || null, total: d.total ?? null, nzdPaid: d.pushed?.nzdPaid ?? null, link: d.url || null,
                     ...(!d.inXero && d.issues.length && { blockedBy: d.issues }),
+                    ...(!d.inXero && v.xero.errors?.[d.key] && { lastError: {
+                        on: nzYmd(v.xero.errors[d.key].at), by: v.xero.errors[d.key].by, step: v.xero.errors[d.key].step,
+                        message: v.xero.errors[d.key].message, details: v.xero.errors[d.key].details, sent: v.xero.errors[d.key].sent,
+                    } }),
                 })),
                 costBreakdownChanges: (v.costPlan?.changes || []).map(c => `${c.label}: ${c.from} → ${c.to} (from ${c.source})`),
                 failingChecks: [...v.checks, ...(v.jpsChecks || []), ...v.lcChecks].filter(x => x.ok === false && !x.dismissed).map(x => ({ check: x.title, level: x.level, detail: x.detail })),

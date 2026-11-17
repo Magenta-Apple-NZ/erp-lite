@@ -7501,6 +7501,11 @@ a.db-row:hover { background: #f8fafc; border-color: #e2e8f0; }
 .sd-check--dismissed .sd-check-i { color: #94a3b8; }
 .sd-check--dismissed strong, .sd-check--dismissed .sd-check-d { color: #64748b; }
 .sd-check-dis { margin-top: 0.2rem; font-size: 0.75rem; color: #64748b; }
+.sd-xerr { margin: 0.35rem 0 0.5rem; padding: 0.5rem 0.7rem; background: #fef2f2; border: 1px solid #fecaca; border-radius: 6px; font-size: 0.8rem; color: #7f1d1d; display: grid; gap: 0.25rem; }
+.sd-xerr strong { color: #b91c1c; }
+.sd-xerr summary { cursor: pointer; color: #475569; }
+.sd-xerr-lines { margin: 0.2rem 0; padding-left: 1.1rem; color: #475569; }
+.sd-xerr-raw { margin: 0.3rem 0 0; padding: 0.45rem; max-height: 12rem; overflow: auto; background: #fff; border: 1px solid #fecaca; border-radius: 4px; font-size: 0.72rem; white-space: pre-wrap; word-break: break-word; color: #334155; }
 .sd-checks--compact .sd-check { padding: 0.3rem 0.55rem; }
 .sd-grid2, .sd-grid3, .sd-grid4 { display: grid; gap: 0.6rem 0.9rem; }
 .sd-grid2 { grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }

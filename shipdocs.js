@@ -13,7 +13,7 @@ const ShipDocs = (() => {
     async function api(path, opts = {}) {
         const res = await fetch(path, opts);
         const body = await res.json().catch(() => ({}));
-        if (!res.ok) { const e = new Error(body.error || body.extractError || res.statusText); e.body = body; e.status = res.status; throw e; }
+        if (!res.ok) { const e = new Error(body.error || body.extractError || `${res.status} ${res.statusText || 'error'}`.trim()); e.body = body; e.status = res.status; throw e; }
         return body;
     }
     const send = (path, method, body) => api(path, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
@@ -386,13 +386,35 @@ const ShipDocs = (() => {
 
     // ── Xero ─────────────────────────────────────────────────────────────
     const XERO_WORDS = { DRAFT: 'Draft', SUBMITTED: 'Awaiting approval', AUTHORISED: 'Awaiting payment', PAID: 'Paid', VOIDED: 'Voided', DELETED: 'Deleted' };
+    const XERO_STEPS = { check: 'checking the invoice', auth: 'signing in to Xero', contact: 'finding the contact', create: 'creating the invoice', refresh: 'reading back from Xero' };
+
+    // The last failed attempt, kept on the shipment until one succeeds: what
+    // Xero said, what was sent, and how far it got.
+    function xeroErrorHtml(e, what) {
+        if (!e) return '';
+        const sent = e.sent;
+        const more = (e.details || []).length || e.request || sent || e.response;
+        return `<div class="sd-xerr">
+            <div><strong>✗ ${esc(what)}</strong> <span class="sd-muted">${esc(when(e.at))} · ${esc(who(e.by))} · while ${esc(XERO_STEPS[e.step] || e.step || '')}</span></div>
+            <div>${esc(e.message)}</div>
+            ${more ? `<details><summary>What Xero said and what was sent</summary>
+                ${(e.details || []).length ? `<ul class="sd-issues">${e.details.map(d => `<li>${esc(d)}</li>`).join('')}</ul>` : ''}
+                ${e.request || e.xeroStatus != null ? `<div class="sd-muted">${esc(e.request || '')}${e.xeroStatus != null ? ` → Xero ${e.xeroStatus === 0 ? 'unreachable' : 'HTTP ' + e.xeroStatus}` : ''}</div>` : ''}
+                ${sent ? `<div class="sd-muted">Sent: ${esc(sent.type)} ${esc(sent.status)} · ${esc(sent.contact || '')} · no. ${esc(sent.number || '—')} · ${esc(sent.date || '')} · ${esc(sent.currency || '')} ${fmtMoney(sent.total)}</div>
+                    <ul class="sd-xerr-lines">${(sent.lines || []).map(l => `<li>${esc(l.description)} — ${fmtKg(l.quantity)} × ${fmtRate(l.unitAmount)} · account ${esc(l.accountCode || '—')} · tax ${esc(l.taxType || '—')}</li>`).join('')}</ul>` : ''}
+                ${e.response ? `<pre class="sd-xerr-raw">${esc(e.response)}</pre>` : ''}
+            </details>` : ''}</div>`;
+    }
+
     function xeroHtml(st) {
         const v = st.view, docs = v.xero?.docs || [];
+        const errs = v.xero?.errors || {};
         const any = docs.some(d => d.inXero);
         const statusWord = XERO_WORDS[v.xero?.status] || 'Draft';
         return `<div class="ship-det-hd"><h3 class="ship-det-title">6 · Invoices in Xero</h3>
                 ${any ? `<span><span class="sd-muted">${v.xero.refreshedAt ? 'Checked ' + esc(when(v.xero.refreshedAt)) : ''}</span> <button class="btn-link" data-act="xero-refresh">Refresh from Xero</button></span>` : ''}</div>
             <p class="sd-muted">Created as <strong>${esc(statusWord.toLowerCase())}</strong> when you click — approve and pay them in Xero; the Hub reads back what was paid in NZD.</p>
+            ${xeroErrorHtml(errs.refresh, 'Refresh from Xero failed')}
             <table class="sd-xero"><tbody>${docs.map(d => `<tr>
                 <td><strong>${esc(d.label)}</strong><div class="sd-muted">${esc(d.contactName || '—')} · ${d.type === 'ACCREC' ? 'sales invoice' : 'bill'}</div></td>
                 <td>${d.number ? esc(d.number) : '<span class="sd-muted">—</span>'}${d.date ? `<div class="sd-muted">${esc(longDate(d.date))}</div>` : ''}</td>
@@ -404,8 +426,8 @@ const ShipDocs = (() => {
                     : (d.issues.length ? `<ul class="sd-issues">${d.issues.map(i => `<li>${esc(i)}</li>`).join('')}</ul>` : '<span class="sd-ok">Ready</span>')}</td>
                 <td class="r">${d.inXero
                     ? `<a class="btn-link" href="${esc(d.url)}" target="_blank" rel="noopener">Open in Xero ↗</a>`
-                    : `<button class="btn-secondary btn-sm" data-act="xero-push" data-doc="${esc(d.key)}" ${d.issues.length ? 'disabled' : ''}>Create in Xero</button>`}</td>
-            </tr>`).join('')}</tbody></table>`;
+                    : `<button class="btn-secondary btn-sm" data-act="xero-push" data-doc="${esc(d.key)}" ${d.issues.length ? 'disabled' : ''}>${errs[d.key] ? 'Try again' : 'Create in Xero'}</button>`}</td>
+            </tr>${!d.inXero && errs[d.key] ? `<tr><td colspan="5">${xeroErrorHtml(errs[d.key], 'Not created in Xero')}</td></tr>` : ''}`).join('')}</tbody></table>`;
     }
 
     // ── Cost breakdown ───────────────────────────────────────────────────
@@ -646,13 +668,17 @@ const ShipDocs = (() => {
                 setView(st, await send(`${base(st.ship.id)}/xero`, 'POST', { doc: d.key }));
                 draw(st);
                 toast(`${d.label} created in Xero`);
-            } catch (e) { toast('Not created in Xero: ' + e.message); btn.disabled = false; btn.textContent = 'Create in Xero'; }
+            } catch (e) {
+                console.error('Xero: not created', d.key, e.body || e);
+                toast('Not created in Xero: ' + e.message);
+                await showLatest(st);
+            }
             return;
         }
         if (a === 'xero-refresh') {
             btn.disabled = true; btn.textContent = 'Checking Xero…';
             try { setView(st, await send(`${base(st.ship.id)}/xero`, 'POST', { refresh: true })); draw(st); }
-            catch (e) { toast('Could not read Xero: ' + e.message); btn.disabled = false; btn.textContent = 'Refresh from Xero'; }
+            catch (e) { console.error('Xero: refresh failed', e.body || e); toast('Could not read Xero: ' + e.message); await showLatest(st); }
             return;
         }
         if (a === 'apply-cost') {
@@ -703,6 +729,16 @@ const ShipDocs = (() => {
                 toast(`Generated ${view.generated.map(g => g.name.toLowerCase()).join(' and ')} — open each below to print or save as PDF`);
             } catch (e) { toast('Not generated: ' + e.message); btn.disabled = false; btn.textContent = label; }
         }
+    }
+
+    // After a failed Xero call: reload so the error the server saved shows up.
+    async function showLatest(st) {
+        try {
+            const y = window.scrollY;
+            setView(st, await api(base(st.ship.id)));
+            draw(st);
+            window.scrollTo(0, y);
+        } catch (_) { /* the toast already said what went wrong */ }
     }
 
     async function confirmBales(st, btn) {
