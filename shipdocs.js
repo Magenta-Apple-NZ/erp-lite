@@ -144,9 +144,21 @@ const ShipDocs = (() => {
     // A failing check that still stops confirm / generation (not dismissed).
     const blocking = c => c.level === 'block' && c.ok === false && !c.dismissed;
 
-    // Failing checks can be dismissed instead of corrected (logged, undoable);
-    // a dismissed one is shown greyed with who dismissed it.
+    // Only failing checks are listed (with Dismiss, or greyed with Undo once
+    // dismissed); the ones that pass sit behind a "✓ N checks passed" button
+    // that opens them in a popover.
     function checkListHtml(list, extraClass = '') {
+        const failing = list.filter(c => c.ok === false);
+        const passed = list.filter(c => c.ok !== false);
+        const nOk = passed.filter(c => c.ok === true).length, nNa = passed.length - nOk;
+        const label = [nOk && `${!failing.length && nOk > 1 ? 'All ' : ''}${nOk} check${nOk === 1 ? '' : 's'} passed`, nNa && `${nNa} not applicable`].filter(Boolean).join(' · ');
+        const pop = passed.length ? `<div class="sd-passed">
+            <button type="button" class="sd-passed-btn" data-act="toggle-passed" aria-expanded="false">✓ ${esc(label)}</button>
+            <div class="sd-passed-pop" hidden>${checkRowsHtml(passed, 'sd-checks--compact')}</div></div>` : '';
+        return (failing.length ? checkRowsHtml(failing, extraClass) : '') + pop;
+    }
+
+    function checkRowsHtml(list, extraClass = '') {
         const icon = c => c.dismissed ? '–' : c.ok === true ? '✓' : c.ok === false ? (c.level === 'block' ? '✗' : '!') : '–';
         const cls = c => c.dismissed ? 'dismissed' : c.ok === true ? 'ok' : c.ok === false ? (c.level === 'block' ? 'fail' : 'warn') : 'na';
         const tail = c => c.dismissed
@@ -688,6 +700,14 @@ const ShipDocs = (() => {
             catch (e) { toast('Could not update the cost breakdown: ' + e.message); btn.disabled = false; btn.textContent = 'Update cost breakdown'; }
             return;
         }
+        if (a === 'toggle-passed') {
+            const pop = btn.nextElementSibling;
+            const open = pop.hidden;
+            closePassedPopovers();
+            pop.hidden = !open;
+            btn.setAttribute('aria-expanded', String(open));
+            return;
+        }
         if (a === 'dismiss-check' || a === 'restore-check') {
             const id = btn.dataset.check;
             const all = [...(st.view.checks || []), ...(st.view.jpsChecks || []), ...(st.view.lcChecks || [])];
@@ -730,6 +750,17 @@ const ShipDocs = (() => {
             } catch (e) { toast('Not generated: ' + e.message); btn.disabled = false; btn.textContent = label; }
         }
     }
+
+    // Passed-checks popovers close on a click elsewhere or Escape.
+    function closePassedPopovers(except) {
+        document.querySelectorAll('.sd-passed-pop:not([hidden])').forEach(pop => {
+            if (except && pop.parentElement.contains(except)) return;
+            pop.hidden = true;
+            pop.previousElementSibling?.setAttribute('aria-expanded', 'false');
+        });
+    }
+    document.addEventListener('click', e => closePassedPopovers(e.target));
+    document.addEventListener('keydown', e => { if (e.key === 'Escape') closePassedPopovers(); });
 
     // After a failed Xero call: reload so the error the server saved shows up.
     async function showLatest(st) {
