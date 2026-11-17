@@ -5,7 +5,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
     parseStandardNumber, jpsFromExtraction, jpsSplit, jpsChecks, xeroDocs, xeroPayload, xeroState, xeroDate, xeroUrl,
-    xeroValidationMessage, costPlan, sanitiseJps,
+    xeroValidationMessage, costPlan, sanitiseJps, convertDocToNzd,
 } from '../functions/api/import/_shipxero.js';
 import { mergeSettings, reviewFromPackingExtraction, reviewFromProformaExtraction, sanitiseSettings } from '../functions/api/import/_exportdocs.js';
 
@@ -201,4 +201,16 @@ test('JPS checks can be dismissed, except the number, currency and deposit', () 
     assert.equal(n.dismissible, false);
     const short = rec({ jps: { ...jpsFromExtraction(JPS_EXTRACT), total: 20000, totalRaw: null, lines: [] } });
     assert.equal(jpsChecks(short, { settings: XERO_SETTINGS }).find(x => x.id === 'jps-deposit').dismissible, false);
+});
+
+test('converting a document to NZD: one line each, to the cent, original amount and rate kept', () => {
+    const d = { currency: 'EUR', total: 17262.75, lines: [{ Description: 'White toeclips — Shipment 43', Quantity: 4887, UnitAmount: 1.5, AccountCode: '630' }, { Description: 'Coloured', Quantity: 13243, UnitAmount: 0.75 }] };
+    const { doc, fx } = convertDocToNzd(d, 0.53, '2026-11-17');
+    assert.equal(doc.currency, 'NZD');
+    assert.deepEqual(doc.lines.map(l => [l.Quantity, l.UnitAmount, l.AccountCode]), [[1, 13831.13, '630'], [1, 18740.09, undefined]]);
+    assert.equal(doc.lines[0].Description, 'White toeclips — Shipment 43 — EUR 7,330.50 @ 1 NZD = 0.5300 EUR on 2026-11-17');
+    assert.equal(doc.total, 32571.22);
+    assert.deepEqual(fx, { currency: 'EUR', rate: 0.53, rateDate: '2026-11-17', foreignTotal: 17262.75 });
+    assert.deepEqual(convertDocToNzd({ currency: 'NZD', lines: [] }, 1).fx, null);
+    assert.throws(() => convertDocToNzd(d, undefined), /No EUR → NZD exchange rate available/);
 });

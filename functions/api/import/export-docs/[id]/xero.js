@@ -5,18 +5,25 @@
 // Only ever on a click. Amounts come from the confirmed bales, our export
 // invoice and the checked JPS invoice (see ../../_shipxero.js).
 //
+// With Document settings → Xero → currency "NZD" (the default: this Xero has
+// no multi-currency) EUR / USD documents go in as NZD at the day's rate from
+// the Hub's forex feed; the original amount and rate are kept on each line
+// and in record.xero[doc].fx.
+//
 // Every failure is recorded on the shipment (record.xeroErrors[doc], shown
 // under the invoice in section 6 until an attempt succeeds), in its activity
 // log and in the Functions log: what Xero said, what was sent, how far it got.
 
 import { getValidToken, xeroHeaders, jsonResponse, errResponse, XeroAuthError } from '../../../_xero.js';
 import { buildView, loadRecord, saveRecord, loadSettings, whoami, viewError, NotFound } from '../_store.js';
-import { XERO_DOCS, xeroPayload, xeroState, xeroErrorDetails, xeroValidationMessage, xeroSentSummary } from '../../_shipxero.js';
+import { XERO_DOCS, xeroPayload, xeroState, xeroErrorDetails, xeroValidationMessage, xeroSentSummary, convertDocToNzd } from '../../_shipxero.js';
 import { fmtMoney } from '../../_exportdocs.js';
+import { loadForex } from '../../_cost.js';
+import { nzToday } from '../../../_dates.js';
 
 const API = 'https://api.xero.com/api.xro/2.0/';
 const STATUS_WORDS = { DRAFT: 'draft', SUBMITTED: 'awaiting approval', AUTHORISED: 'awaiting payment', PAID: 'paid', VOIDED: 'voided', DELETED: 'deleted' };
-const STEP_WORDS = { check: 'checking the invoice', auth: 'signing in to Xero', contact: 'finding the contact', create: 'creating the invoice', refresh: 'reading back from Xero' };
+const STEP_WORDS = { check: 'checking the invoice', rate: 'getting the exchange rate', auth: 'signing in to Xero', contact: 'finding the contact', create: 'creating the invoice', refresh: 'reading back from Xero' };
 
 class XeroRefused extends Error {}
 
@@ -133,11 +140,17 @@ export async function onRequestPost({ env, params, request }) {
         }
 
         const settings = await loadSettings(env);
+        let doc = d, fx = null;
+        if ((settings.xero?.currencyMode || 'nzd') === 'nzd' && d.currency && d.currency !== 'NZD') {
+            ctx.step = 'rate';
+            const rates = await loadForex(env);
+            ({ doc, fx } = convertDocToNzd(d, rates?.[d.currency], nzToday()));
+        }
         ctx.step = 'auth';
         const token = await getValidToken(env);
         ctx.step = 'contact';
         const contactId = await findOrCreateContact(token, d.contactName);
-        const payload = xeroPayload(d, contactId, settings.xero?.status);
+        const payload = xeroPayload(doc, contactId, settings.xero?.status);
         ctx.sent = xeroSentSummary(payload, d.contactName);
         ctx.step = 'create';
         const data = await xeroFetch(token, 'Invoices?unitdp=4', { method: 'POST', body: JSON.stringify({ Invoices: [payload] }) });
@@ -151,9 +164,10 @@ export async function onRequestPost({ env, params, request }) {
 
         const rec = await loadRecord(env, params.id);
         const st = xeroState(inv);
-        rec.xero = { ...(rec.xero || {}), [d.key]: { ...st, type: d.type, contactName: d.contactName, pushedAt: new Date().toISOString(), by: who } };
+        rec.xero = { ...(rec.xero || {}), [d.key]: { ...st, type: d.type, contactName: d.contactName, pushedAt: new Date().toISOString(), by: who, ...(fx && { fx }) } };
         if (rec.xeroErrors?.[d.key]) delete rec.xeroErrors[d.key];
-        await saveRecord(env, rec, who, `Created the ${d.label} in Xero (${STATUS_WORDS[st.status] || st.status}): ${st.currency || d.currency} ${fmtMoney(st.total ?? d.total)}`);
+        await saveRecord(env, rec, who, `Created the ${d.label} in Xero (${STATUS_WORDS[st.status] || st.status}): ${st.currency || doc.currency} ${fmtMoney(st.total ?? doc.total)}`
+            + (fx ? ` (${fx.currency} ${fmtMoney(fx.foreignTotal)} @ 1 NZD = ${fx.rate.toFixed(4)} ${fx.currency})` : ''));
         return jsonResponse(await buildView(env, params.id));
     } catch (e) {
         return fail(env, params.id, body.doc, e, who, ctx);

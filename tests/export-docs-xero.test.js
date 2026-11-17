@@ -54,6 +54,7 @@ beforeEach(() => {
     globalThis.fetch = async (url, init = {}) => {
         const u = String(url);
         const json = (b, s = 200) => new Response(JSON.stringify(b), { status: s, headers: { 'Content-Type': 'application/json' } });
+        if (u.startsWith('https://open.er-api.com/v6/latest/NZD')) return json({ result: 'success', rates: { NZD: 1, EUR: 0.53, USD: 0.6 } });
         if (u.startsWith('https://api.anthropic.com')) {
             const text = JSON.parse(init.body).messages[0].content[1].text;
             const kind = /JPS Enterprise \(Dhaka/.test(text) ? 'jpsInvoice' : /packing list/i.test(text) ? 'packingList' : 'proforma';
@@ -89,11 +90,14 @@ const req = (method, body) => new Request('https://hub.test/x', { method, header
 const call = async (h, method, body) => { const r = await h({ env, params: { id: SHIP }, request: req(method, body) }); return { status: r.status, body: await r.json() }; };
 const B64 = Buffer.from('%PDF fake').toString('base64');
 
-async function stageOne({ accounts = true } = {}) {
+// currencyMode 'foreign' = invoices in EUR / USD (needs multi-currency in Xero);
+// 'nzd' (the default) = converted at the day's rate.
+async function stageOne({ accounts = true, currencyMode = 'foreign' } = {}) {
     for (const kind of ['packingList', 'proforma']) assert.equal((await call(extractApi.onRequestPost, 'POST', { kind, filename: kind + '.pdf', data: B64 })).status, 200);
     assert.equal((await call(confirmApi.onRequestPost, 'POST', {})).status, 200);
     const s = (await call(settingsApi.onRequestGet, 'GET')).body.settings;
     if (accounts) s.xero.accounts = { rawProduct: '630', lcDeposit: '820', handling: '631', exportSale: '200' };
+    s.xero.currencyMode = currencyMode;
     await call(settingsApi.onRequestPut, 'PUT', { settings: s });
     const v = (await call(recordApi.onRequestGet, 'GET')).body;
     await call(recordApi.onRequestPatch, 'PATCH', { exportInvoice: { ...v.record.exportInvoice, numberConfirmed: true, rateConfirmed: true } });
@@ -244,4 +248,43 @@ test('a lapsed Xero connection is logged as a sign-in failure with where to reco
 
     const rf = await call(xeroApi.onRequestPost, 'POST', { refresh: true });
     assert.equal(rf.status, 200, 'nothing in Xero yet, so nothing to refresh');
+});
+
+test('NZD mode (no multi-currency in Xero): EUR and USD documents go in as NZD at the day\'s rate', async () => {
+    await stageOne({ currencyMode: 'nzd' });
+    await env.ORDERS_KV.put('fx:nzd:latest', JSON.stringify({ rates: { EUR: 0.5, USD: 0.6 }, at: '2026-11-16T20:00:00Z' }));
+    let v = (await call(recordApi.onRequestGet, 'GET')).body;
+    assert.equal(v.xero.currencyMode, 'nzd');
+    assert.deepEqual(v.xero.docs.map(d => d.nzdEstimate?.total), [34525.5, 35655.67, 54692.17], 'estimates at the last known rate');
+
+    for (const doc of ['supplierBill', 'salesInvoice', 'jpsBill']) {
+        const r = await call(xeroApi.onRequestPost, 'POST', { doc });
+        assert.equal(r.status, 200, doc + ': ' + JSON.stringify(r.body));
+    }
+    const [bill, sale, jps] = xeroCalls.filter(c => c.method === 'POST' && c.path.startsWith('Invoices')).map(p => p.body.Invoices[0]);
+    // Today's rate from the forex feed (EUR 0.53, USD 0.6), not the cached one
+    assert.deepEqual([bill.CurrencyCode, sale.CurrencyCode, jps.CurrencyCode], ['NZD', 'NZD', 'NZD']);
+    assert.deepEqual(bill.LineItems.map(l => [l.Quantity, l.UnitAmount, l.AccountCode]), [[1, 13831.13, '630'], [1, 18740.09, '630']]);
+    assert.match(bill.LineItems[0].Description, /— EUR 7,330\.50 @ 1 NZD = 0\.5300 EUR on \d{4}-\d{2}-\d{2}$/);
+    assert.deepEqual(sale.LineItems.map(l => [l.Quantity, l.UnitAmount]), [[1, 35655.67]]);          // USD 21,393.40 / 0.6
+    assert.deepEqual(jps.LineItems.map(l => [l.Quantity, l.UnitAmount, l.AccountCode]), [[1, 35655.67, '820'], [1, 19036.5, '631']]);  // 21,393.40 + 11,421.90 USD
+
+    v = (await call(recordApi.onRequestGet, 'GET')).body;
+    const pushed = Object.fromEntries(v.xero.docs.map(d => [d.key, d]));
+    assert.deepEqual(pushed.supplierBill.pushed.fx, { currency: 'EUR', rate: 0.53, rateDate: pushed.supplierBill.pushed.fx.rateDate, foreignTotal: 17262.75 });
+    assert.equal(pushed.supplierBill.pushed.currency, 'NZD');
+    assert.ok(v.xero.docs.every(d => d.inXero && !d.changedSincePush), 'NZD totals are not mistaken for a change');
+    assert.match(v.record.log.find(l => /Created the Pistoni bill/.test(l.action)).action, /NZD 32,571\.22 \(EUR 17,262\.75 @ 1 NZD = 0\.5300 EUR\)$/);
+});
+
+test('NZD mode with no exchange rate at all: logged, nothing sent to Xero', async () => {
+    await stageOne({ currencyMode: 'nzd' });
+    const realStub = globalThis.fetch;
+    globalThis.fetch = async (url, init) => String(url).startsWith('https://open.er-api.com') ? new Response('down', { status: 503 }) : realStub(url, init);
+    const r = await call(xeroApi.onRequestPost, 'POST', { doc: 'supplierBill' });
+    globalThis.fetch = realStub;
+    assert.equal(r.status, 500);
+    assert.equal(r.body.error, 'No EUR → NZD exchange rate available');
+    assert.equal(r.body.xeroError.step, 'rate');
+    assert.ok(!xeroCalls.some(c => c.path.startsWith('Invoices')), 'nothing reached Xero');
 });

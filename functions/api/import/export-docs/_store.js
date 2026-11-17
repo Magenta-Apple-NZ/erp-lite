@@ -15,7 +15,7 @@ import {
     mergeSettings, emptyReview, runChecks, baleTotals, invoiceAmount, exportInvoiceDefaults,
     generationIssues, lcCrossChecks, deriveStatus, STATUS_LABELS, hasUnconfirmedChanges, missingSettings, blockingFailures,
 } from '../_exportdocs.js';
-import { jpsChecks, jpsSplit, xeroDocs, costPlan } from '../_shipxero.js';
+import { jpsChecks, jpsSplit, xeroDocs, costPlan, convertDocToNzd } from '../_shipxero.js';
 import { nzToday } from '../../_dates.js';
 
 export { getJson, putJson, whoami };
@@ -96,8 +96,9 @@ export class NotFound extends Error {}
 // Everything the Export documents tab needs, derived on read. Read-only:
 // the MCP server calls this with a KV that refuses writes.
 export async function buildView(env, shipmentId) {
-    const [record, settings, shipments, lc, all, hasSignature] = await Promise.all([
+    const [record, settings, shipments, lc, all, hasSignature, fxSnap] = await Promise.all([
         loadRecord(env, shipmentId), loadSettings(env), loadShipments(env), loadLinkedLc(env, shipmentId), loadAllRecords(env), hasAsset(env, 'signature'),
+        getJson(env, 'fx:nzd:latest', null),
     ]);
     const ship = shipments.find(s => s.id === shipmentId);
     if (!ship) throw new NotFound('Shipment not found');
@@ -148,8 +149,9 @@ export async function buildView(env, shipmentId) {
         jpsSplit: jpsSplit(rec),
         jpsTypical: prior ? { shipment: prior.n, rate: prior.split.handlingRate } : { shipment: null, rate: Number(settings.jpsMarginPerKg) || null },
         xero: {
-            docs: xeroDocs({ record: rec, settings, shipmentNumber: number, confirmedOk, jpsOk }),
+            docs: withNzdEstimate(xeroDocs({ record: rec, settings, shipmentNumber: number, confirmedOk, jpsOk }), settings, fxSnap),
             status: settings.xero?.status || 'DRAFT',
+            currencyMode: settings.xero?.currencyMode || 'nzd',
             refreshedAt: record.xeroRefreshedAt || null,
             // The last failed attempt per invoice (and 'refresh'), until one succeeds.
             errors: record.xeroErrors || {},
@@ -163,6 +165,19 @@ export async function buildView(env, shipmentId) {
             missingPacking: missingSettings(settings, 'packing'), missingProforma: missingSettings(settings, 'proforma'),
         },
     };
+}
+
+// In NZD mode, what each EUR / USD document would come to at the last known
+// rate (the real rate is fetched when it's created).
+function withNzdEstimate(docs, settings, fxSnap) {
+    if ((settings.xero?.currencyMode || 'nzd') !== 'nzd') return docs;
+    return docs.map(d => {
+        if (d.inXero || !d.currency || d.currency === 'NZD' || !d.lines) return d;
+        try {
+            const { doc, fx } = convertDocToNzd(d, fxSnap?.rates?.[d.currency]);
+            return { ...d, nzdEstimate: { total: doc.total, rate: fx.rate, at: fxSnap.at || null } };
+        } catch { return d; }
+    });
 }
 
 export function viewError(e) {

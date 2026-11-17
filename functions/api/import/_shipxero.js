@@ -283,12 +283,37 @@ export function xeroDocs({ record, settings, shipmentNumber, confirmedOk = true,
     for (const d of docs) {
         if (live(d.pushed)) {
             d.inXero = true;
-            d.changedSincePush = d.total != null && d.pushed.total != null && cents(d.total) !== cents(d.pushed.total);
+            // Posted in NZD: compare the original EUR / USD amount, not Xero's NZD total.
+            const sent = d.pushed.fx ? d.pushed.fx.foreignTotal : d.pushed.total;
+            d.changedSincePush = d.total != null && sent != null && cents(d.total) !== cents(sent);
         } else {
             d.inXero = false;
         }
     }
     return docs;
+}
+
+// The organisation's Xero takes NZD only (no multi-currency), so EUR / USD
+// documents go in as NZD at the day's rate: each line becomes one NZD amount
+// (to the cent), its description keeping the original amount and the rate.
+// rate = foreign units per NZD, as the Hub's forex feed quotes it.
+// → { doc, fx: { currency, rate, rateDate, foreignTotal } | null }
+export function convertDocToNzd(doc, rate, rateDate = null) {
+    if (!doc || !doc.currency || doc.currency === 'NZD') return { doc, fx: null };
+    const r = Number(rate);
+    if (!(r > 0)) throw new Error(`No ${doc.currency} → NZD exchange rate available`);
+    const rateText = `1 NZD = ${r.toFixed(4)} ${doc.currency}${rateDate ? ` on ${rateDate}` : ''}`;
+    let foreignCents = 0;
+    const lines = (doc.lines || []).map(l => {
+        const fc = Math.round((Number(l.Quantity) || 0) * Math.round((Number(l.UnitAmount) || 0) * 10000) / 100);
+        foreignCents += fc;
+        return { ...l, Description: `${l.Description} — ${doc.currency} ${fmtMoney(fc / 100)} @ ${rateText}`, Quantity: 1, UnitAmount: round2(fc / 100 / r) };
+    });
+    const total = round2(lines.reduce((t, l) => t + cents(l.UnitAmount), 0) / 100);
+    return {
+        doc: { ...doc, currency: 'NZD', lines, total },
+        fx: { currency: doc.currency, rate: r, rateDate, foreignTotal: round2(foreignCents / 100) },
+    };
 }
 
 // Xero Invoice body for a doc from xeroDocs(). Due on the document date:

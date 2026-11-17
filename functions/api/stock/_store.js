@@ -10,6 +10,7 @@
 //   stock:movements:index     [itemId]
 //   stock:movements:<itemId>  [Movement]   (append-only)
 
+import { userFromRequest } from '../_users.js';
 import { DEFAULT_SETTINGS, productValueFromShipments, SHIPMENT_PRODUCT_ID } from './_engine.js';
 import { costShipments } from '../import/_cost.js';
 
@@ -34,8 +35,10 @@ export async function putJson(env, key, value) {
 
 // Who is acting — Cloudflare Access stamps the authenticated email on every
 // request that reaches the Functions.
+// The signed-in user's email: the Access header when the app forwards it,
+// otherwise the Access JWT (always present behind Access) — see _users.js.
 export function whoami(request) {
-    return request?.headers?.get('cf-access-authenticated-user-email') || 'unknown';
+    return userFromRequest(request).email || 'unknown';
 }
 
 export function newId(prefix) {

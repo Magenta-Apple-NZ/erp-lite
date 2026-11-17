@@ -590,3 +590,14 @@ test('amounts in words', () => {
     assert.equal(amountInWords(32050), 'US Dollars Thirty-Two Thousand and Fifty Only');
     assert.equal(amountInWords(1000.01), 'US Dollars One Thousand and One Cent Only');
 });
+
+test("Pistoni's document number read as our GST number is flagged", () => {
+    const r = review43();
+    assert.equal(runChecks(r, { shipmentNumber: 43 }).find(c => c.id === 'supplier-number').ok, true);
+    r.supplierInvoice.number = '129544112';
+    const c = runChecks(r, { shipmentNumber: 43, settings: mergeSettings({}) }).find(x => x.id === 'supplier-number');
+    assert.deepEqual([c.ok, c.level], [false, 'warn']);
+    assert.equal(c.detail, "129544112 is Enviroware's GST no., not Pistoni's document number — correct the Document no. below");
+    r.supplierInvoice.number = '';
+    assert.match(runChecks(r, { shipmentNumber: 43 }).find(x => x.id === 'supplier-number').detail, /^Missing/);
+});

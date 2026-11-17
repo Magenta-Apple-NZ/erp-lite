@@ -398,7 +398,7 @@ const ShipDocs = (() => {
 
     // ── Xero ─────────────────────────────────────────────────────────────
     const XERO_WORDS = { DRAFT: 'Draft', SUBMITTED: 'Awaiting approval', AUTHORISED: 'Awaiting payment', PAID: 'Paid', VOIDED: 'Voided', DELETED: 'Deleted' };
-    const XERO_STEPS = { check: 'checking the invoice', auth: 'signing in to Xero', contact: 'finding the contact', create: 'creating the invoice', refresh: 'reading back from Xero' };
+    const XERO_STEPS = { check: 'checking the invoice', rate: 'getting the exchange rate', auth: 'signing in to Xero', contact: 'finding the contact', create: 'creating the invoice', refresh: 'reading back from Xero' };
 
     // The last failed attempt, kept on the shipment until one succeeds: what
     // Xero said, what was sent, and how far it got.
@@ -425,12 +425,14 @@ const ShipDocs = (() => {
         const statusWord = XERO_WORDS[v.xero?.status] || 'Draft';
         return `<div class="ship-det-hd"><h3 class="ship-det-title">6 · Invoices in Xero</h3>
                 ${any ? `<span><span class="sd-muted">${v.xero.refreshedAt ? 'Checked ' + esc(when(v.xero.refreshedAt)) : ''}</span> <button class="btn-link" data-act="xero-refresh">Refresh from Xero</button></span>` : ''}</div>
-            <p class="sd-muted">Created as <strong>${esc(statusWord.toLowerCase())}</strong> when you click — approve and pay them in Xero; the Hub reads back what was paid in NZD.</p>
+            <p class="sd-muted">Created as <strong>${esc(statusWord.toLowerCase())}</strong> when you click${v.xero?.currencyMode === 'foreign' ? ', in their own currency' : ', in <strong>NZD</strong> at the day\'s exchange rate (the EUR / USD amount and rate are kept on each line)'} — approve and pay them in Xero; the Hub reads back what was paid in NZD.</p>
             ${xeroErrorHtml(errs.refresh, 'Refresh from Xero failed')}
             <table class="sd-xero"><tbody>${docs.map(d => `<tr>
                 <td><strong>${esc(d.label)}</strong><div class="sd-muted">${esc(d.contactName || '—')} · ${d.type === 'ACCREC' ? 'sales invoice' : 'bill'}</div></td>
                 <td>${d.number ? esc(d.number) : '<span class="sd-muted">—</span>'}${d.date ? `<div class="sd-muted">${esc(longDate(d.date))}</div>` : ''}</td>
-                <td class="r">${d.total != null ? `${esc(d.currency || '')} ${fmtMoney(d.total)}` : '<span class="sd-muted">—</span>'}</td>
+                <td class="r">${d.total != null ? `${esc(d.currency || '')} ${fmtMoney(d.total)}` : '<span class="sd-muted">—</span>'}
+                    ${d.inXero && d.pushed.fx ? `<div class="sd-muted">NZD ${fmtMoney(d.pushed.total)} in Xero @ ${esc(d.pushed.fx.rate.toFixed(4))}</div>`
+                        : !d.inXero && d.nzdEstimate ? `<div class="sd-muted">≈ NZD ${fmtMoney(d.nzdEstimate.total)} at today's rate</div>` : ''}</td>
                 <td>${d.inXero
                     ? `<span class="sd-xs sd-xs--${esc((d.pushed.status || '').toLowerCase())}">${esc(XERO_WORDS[d.pushed.status] || d.pushed.status)}</span>
                        ${d.pushed.nzdPaid ? `<div class="sd-muted">NZD ${fmtMoney(d.pushed.nzdPaid)} paid${d.pushed.paidOn ? ' · ' + esc(longDate(d.pushed.paidOn)) : ''}</div>` : ''}
@@ -861,6 +863,8 @@ const ShipDocs = (() => {
                 <div class="sd-grid1">${ta('Proforma terms & conditions (one per line)', 'terms', s.terms, 7)}</div>`,
             xero: `
                 <div class="sd-grid3">${inp('Pistoni contact', 'xero.supplierContact', s.xero.supplierContact)}${inp('JPS contact', 'xero.buyerContact', s.xero.buyerContact)}
+                    <label class="sd-field"><span class="imp-field-label">Currency in Xero</span><select class="sd-input" data-s="xero.currencyMode">
+                    ${[['nzd', 'NZD, converted at the day\'s rate'], ['foreign', 'EUR / USD (needs multi-currency in Xero)']].map(([v, l]) => `<option value="${v}" ${(s.xero.currencyMode || 'nzd') === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
                     <label class="sd-field"><span class="imp-field-label">Create invoices as</span><select class="sd-input" data-s="xero.status">
                     ${[['DRAFT', 'Draft'], ['SUBMITTED', 'Awaiting approval'], ['AUTHORISED', 'Awaiting payment']].map(([v, l]) => `<option value="${v}" ${s.xero.status === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label></div>
                 <h4 class="sd-h4">Account codes <span class="sd-muted">your accountant's choice — nothing goes to Xero until they're set</span></h4>

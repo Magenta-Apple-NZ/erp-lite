@@ -83,7 +83,7 @@ ${NUMBER_RULE}`;
 export const PROFORMA_PROMPT = `This PDF is a proforma invoice from Pistoni SRL (Italy) to Enviroware Ltd for toeclips (knitted nylon stocking offcuts). Headings are in Italian.
 
 Extract:
-- documentNumber: Pistoni's own document number (e.g. "23"). This is not the shipment number.
+- documentNumber: Pistoni's own document number (e.g. "23"), printed next to "N." / "Numero" / "Proforma n.". Never the shipment number, and never a VAT, GST or tax number (Enviroware's GST no. 129-544-112 is printed in the customer block; Pistoni's P.IVA is theirs): those are not document numbers. Use null if you cannot find it.
 - documentDate: the document date as YYYY-MM-DD; documentDateRaw as printed (dates are dd/mm/yyyy).
 - currency: three-letter code of the invoice currency (e.g. EUR).
 - lines: each goods line in order. description verbatim; colour "white" for white / bianco goods, "coloured" for coloured / colored / colorato goods, otherwise "unknown"; kg, unitPrice and amount with their raw printed strings. Do not include totals, VAT or transport rows as lines.

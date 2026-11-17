@@ -131,6 +131,9 @@ export const SETTINGS_SEED = {
         supplierContact: 'Pistoni SRL',
         buyerContact: 'JPS Enterprise',
         status: 'DRAFT',
+        // 'nzd': EUR / USD documents go in as NZD at the day's rate (this Xero
+        // has no multi-currency). 'foreign': in their own currency.
+        currencyMode: 'nzd',
         accounts: { rawProduct: '', lcDeposit: '', handling: '', exportSale: '' },
         taxTypes: { purchases: 'NONE', exportSale: 'ZERORATEDOUTPUT' },
     },
@@ -485,6 +488,23 @@ export function runChecks(review, ctx = {}) {
         }
         checks.push(check('invoice-lines', 'block', 'Supplier invoice lines and total add up', !issues.length,
             issues.length ? issues.join('; ') : `${(inv.lines || []).length} lines = ${inv.currency || ''} ${fmtMoney(inv.total)}`, { dismissible: !!inv }));
+    }
+
+    // 4a. Pistoni's document number (the Pistoni bill's number in Xero) isn't
+    // one of our own registration numbers — Shipment 43's was read as
+    // Enviroware's GST no. 129-544-112, printed in the customer block.
+    if (inv) {
+        const digits = v => String(v || '').replace(/\D/g, '');
+        const idn = settings.identifiers || {};
+        const ours = [["Enviroware's GST no.", settings.seller?.gstNumber], ['the IRC no.', idn.irc], ["JPS's TIN", idn.applicantTin],
+            ["JPS's BIN", idn.applicantBin], ["the bank's TIN", idn.bankTin], ["the bank's BIN", idn.bankBin], ["the bank's VAT reg no.", idn.bankVatReg]]
+            .filter(([, v]) => digits(v).length >= 6);
+        const n = String(inv.number || '').trim();
+        const clash = n && ours.find(([, v]) => digits(v) === digits(n));
+        checks.push(check('supplier-number', 'warn', "Pistoni's document number", !!n && !clash,
+            !n ? "Missing — it becomes the Pistoni bill's number in Xero"
+                : clash ? `${n} is ${clash[0]}, not Pistoni's document number — correct the Document no. below`
+                    : n));
     }
 
     // 4b. Printed strings agree with the numbers (Italian locale rule)
@@ -1202,6 +1222,7 @@ export function sanitiseSettings(input) {
             supplierContact: cleanStr(base.xero?.supplierContact, 120),
             buyerContact: cleanStr(base.xero?.buyerContact, 120),
             status: ['DRAFT', 'SUBMITTED', 'AUTHORISED'].includes(base.xero?.status) ? base.xero.status : 'DRAFT',
+            currencyMode: base.xero?.currencyMode === 'foreign' ? 'foreign' : 'nzd',
             accounts: sec(base.xero?.accounts, ['rawProduct', 'lcDeposit', 'handling', 'exportSale']),
             taxTypes: sec(base.xero?.taxTypes, ['purchases', 'exportSale']),
         },
