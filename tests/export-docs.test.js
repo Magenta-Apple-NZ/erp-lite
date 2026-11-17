@@ -315,7 +315,7 @@ test('generation waits for missing settings and the rate and number ticks', () =
     assert.deepEqual(generationIssues({ record: rec, settings: SETTINGS_FILLED, doc: 'packing', stage: 'draft', shipmentNumber: 43 }), []);
 
     const unticked = record43({ exportInvoice: { ...rec.exportInvoice, rateConfirmed: false } });
-    assert.ok(generationIssues({ record: unticked, settings: SETTINGS_FILLED, doc: 'proforma', shipmentNumber: 43 }).includes('Tick to confirm the export rate'));
+    assert.ok(generationIssues({ record: unticked, settings: SETTINGS_FILLED, doc: 'proforma', shipmentNumber: 43 }).includes('Confirm our proforma invoice in section 3'));
 
     const dup = generationIssues({ record: rec, settings: SETTINGS_FILLED, doc: 'proforma', shipmentNumber: 43, otherInvoiceNumbers: [{ shipmentNumber: 44, number: '102/2026' }] });
     assert.ok(dup.some(i => /already used on Shipment #44/.test(i)));
@@ -576,12 +576,14 @@ test('signed JPS proforma waits for the JPS invoice, its terms, its checks and y
     const s = mergeSettings({});
     const issues = rec => generationIssues({ record: rec, settings: s, doc: 'jps', shipmentNumber: 43, hasSignature: true });
     assert.deepEqual(issues(record43()), ['Upload or enter the JPS invoice first']);
-    assert.deepEqual(issues(record43({ jps: JPS_43 })), []);
-    assert.deepEqual(issues(record43({ jps: { ...JPS_43, contract: {} } })), ['Last date of shipment missing', 'Expiry date missing']);
-    assert.deepEqual(issues(record43({ jps: { ...JPS_43, number: '', lines: [] } })), ['JPS invoice number missing', 'JPS invoice lines need kg, unit price and amount']);
-    assert.deepEqual(generationIssues({ record: record43({ jps: JPS_43 }), settings: s, doc: 'jps', hasSignature: false }), ['Upload your signature in Document settings → Enviroware']);
-    assert.deepEqual(generationIssues({ record: record43({ jps: JPS_43 }), settings: s, doc: 'jps', hasSignature: true, jpsFailures: ['Printed figures read correctly'] }), ['JPS invoice fails: Printed figures read correctly']);
-    assert.deepEqual(generationIssues({ record: record43({ jps: JPS_43 }), settings: mergeSettings({ jps: { signatory: ' ' } }), doc: 'jps', hasSignature: true }), [], 'blank saved values keep the seed');
+    assert.deepEqual(issues(record43({ jps: JPS_43 })), ["Confirm JPS's proforma invoice in section 5"]);
+    assert.deepEqual(issues(record43({ jps: JPS_43, jpsConfirmed: { at: '2026-11-17T01:00:00Z', by: 'andrew@primetie.co.nz' } })), []);
+    const ok = { jpsConfirmed: { at: '2026-11-17T01:00:00Z', by: 'andrew@primetie.co.nz' } };
+    assert.deepEqual(issues(record43({ ...ok, jps: { ...JPS_43, contract: {} } })), ['Last date of shipment missing', 'Expiry date missing']);
+    assert.deepEqual(issues(record43({ ...ok, jps: { ...JPS_43, number: '', lines: [] } })), ['JPS invoice number missing', 'JPS invoice lines need kg, unit price and amount']);
+    assert.deepEqual(generationIssues({ record: record43({ ...ok, jps: JPS_43 }), settings: s, doc: 'jps', hasSignature: false }), ['Upload your signature in Document settings → Enviroware']);
+    assert.deepEqual(generationIssues({ record: record43({ ...ok, jps: JPS_43 }), settings: s, doc: 'jps', hasSignature: true, jpsFailures: ['Printed figures read correctly'] }), ['JPS invoice fails: Printed figures read correctly']);
+    assert.deepEqual(generationIssues({ record: record43({ ...ok, jps: JPS_43 }), settings: mergeSettings({ jps: { signatory: ' ' } }), doc: 'jps', hasSignature: true }), [], 'blank saved values keep the seed');
 });
 
 test('amounts in words', () => {

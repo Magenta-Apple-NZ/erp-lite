@@ -10,7 +10,7 @@
 // JPS's margin (Handling & Sorting) is the only real cost of the round trip;
 // the deposit and the LC refund cancel out.
 
-import { baleTotals, invoiceAmount, round2, cents, fmtKg, fmtMoney, fmtRate, normaliseColour, stripDecorations, check, applyDismissals } from './_exportdocs.js';
+import { baleTotals, invoiceAmount, round2, cents, fmtKg, fmtMoney, fmtRate, normaliseColour, stripDecorations, check, applyDismissals, shortDate } from './_exportdocs.js';
 
 const isYmd = s => /^\d{4}-\d{2}-\d{2}$/.test(String(s || ''));
 const toNum = v => (v === '' || v == null || !Number.isFinite(Number(v))) ? null : Number(v);
@@ -163,6 +163,13 @@ function jpsChecksRaw(record, { settings = {}, typicalMargin = null } = {}) {
               : 'JPS total missing', { dismissible: false }));
     }
 
+    // JPS invoice after ours: they invoice once they have our proforma
+    if (isYmd(j.date) && isYmd(ei.date)) {
+        out.push(check('jps-date', 'warn', 'JPS invoice dated after our proforma invoice', j.date >= ei.date,
+            j.date >= ei.date ? `Ours ${shortDate(ei.date)}, JPS ${shortDate(j.date)}`
+                : `JPS's is dated ${shortDate(j.date)}, before ours (${shortDate(ei.date)}) — one of the two dates is wrong`));
+    }
+
     // Weight on the JPS invoice = our net weight
     {
         const stated = j.netKg ?? (j.lines || []).find(l => l.kg != null)?.kg ?? null;
@@ -180,10 +187,88 @@ function jpsChecksRaw(record, { settings = {}, typicalMargin = null } = {}) {
     return out;
 }
 
+// ── Reconciliation ───────────────────────────────────────────────────────
+// The three proforma invoices side by side — Pistoni's (what we pay for the
+// raw product), ours to JPS (the LC amount) and JPS's (ours + handling &
+// sorting) — with kg, rate, amount, date and NZD at the given rates, and
+// what the differences come to. Uses the confirmed bales once confirmed.
+// status: 'ok' a real comparison passed · 'warn' doesn't match, or a document
+// is in but can't be compared · 'wait' a document isn't in yet.
+export function reconcile(record, { typicalMargin = null, settings = {}, fxRates = null } = {}) {
+    const r = record || {};
+    const data = r.confirmed || r.review || {};
+    const t = baleTotals(data.bales || []);
+    const inv = data.supplierInvoice || null, ei = r.exportInvoice || {}, j = r.jps || null;
+    const nzd = (amount, ccy) => {
+        const rate = Number(fxRates?.[ccy]);
+        return amount != null && rate > 0 ? round2(amount / rate) : null;
+    };
+    const perKg = (amount, kg) => (Number(amount) > 0 && Number(kg) > 0 ? r4(amount / kg) : null);
+    const supKg = inv ? (inv.netKg ?? ((inv.lines || []).reduce((a, l) => a + (Number(l.kg) || 0), 0) || null)) : null;
+    const jpsKg = j ? (j.netKg ?? (j.lines || []).find(l => l.kg != null)?.kg ?? null) : null;
+    const oursAmount = t.count && Number(ei.rate) > 0 ? invoiceAmount(t.netKg, ei.rate) : null;
+
+    const docs = [
+        { key: 'packing', label: "Pistoni's packing list", present: t.count > 0, number: null, date: null, kg: t.count ? t.netKg : null, bales: t.count || null, currency: null, rate: null, amount: null },
+        { key: 'supplier', label: "Pistoni's proforma invoice", present: !!inv, number: inv?.number || null, date: inv?.date || null, kg: supKg, currency: inv?.currency || null,
+            rate: perKg(inv?.total, supKg), rateIsAverage: (inv?.lines || []).length > 1, amount: inv?.total ?? null, internal: true },
+        { key: 'ours', label: 'Our proforma invoice', present: !!(t.count && ei.number), number: ei.number || null, date: ei.date || null, kg: t.count ? t.netKg : null,
+            currency: ei.currency || 'USD', rate: Number(ei.rate) || null, amount: oursAmount, confirmed: !!(ei.numberConfirmed && ei.rateConfirmed) },
+        { key: 'jps', label: "JPS's proforma invoice", present: !!j, number: j?.number || null, date: j?.date || null, kg: jpsKg, currency: j?.currency || null,
+            rate: (j?.lines || []).length === 1 && j.lines[0].unitPrice != null ? Number(j.lines[0].unitPrice) : perKg(j?.total, jpsKg), amount: j?.total ?? null },
+    ];
+    for (const d of docs) d.nzd = nzd(d.amount, d.currency);
+
+    const diffs = [];
+    // Weight: every document that's in shows the same kg
+    {
+        const inDocs = docs.filter(d => d.present);
+        const noKg = inDocs.filter(d => d.kg == null);
+        const withKg = inDocs.filter(d => d.kg != null);
+        const base = withKg.find(d => d.key === 'packing') || withKg[0];
+        const off = withKg.filter(d => Math.abs(d.kg - base.kg) >= 0.0005);
+        let status, text;
+        if (withKg.length < 2 && !noKg.length) { status = 'wait'; text = 'Needs at least two documents'; }
+        else if (off.length) { status = 'warn'; text = off.map(d => `${d.label} ${fmtKg(d.kg)} kg is ${fmtKg(Math.abs(d.kg - base.kg))} kg ${d.kg > base.kg ? 'more' : 'less'} than the ${base.label.replace(/^Pistoni's /, '')} (${fmtKg(base.kg)} kg)`).join('; '); }
+        else if (noKg.length) { status = 'warn'; text = `${noKg.map(d => d.label).join(' and ')} show${noKg.length === 1 ? 's' : ''} no weight — can't compare`; }
+        else { status = 'ok'; text = `${withKg.length === 4 ? 'All four' : withKg.map(d => d.label).join(', ')} agree: ${fmtKg(base.kg)} kg`; }
+        if (status === 'ok' && !docs.find(d => d.key === 'jps').present) text += " (JPS's not in yet)";
+        diffs.push({ id: 'kg', label: 'Weight', status, text });
+    }
+    // JPS over ours = handling & sorting, against the usual rate
+    {
+        const ours = docs.find(d => d.key === 'ours'), jd = docs.find(d => d.key === 'jps');
+        let status = 'wait', text = !jd.present ? "Waiting for JPS's proforma invoice" : 'Waiting for our proforma invoice';
+        if (ours.amount != null && jd.amount != null) {
+            if (ours.currency !== jd.currency) { status = 'warn'; text = `Different currencies: ours ${ours.currency}, JPS's ${jd.currency}`; }
+            else {
+                const diff = round2(jd.amount - ours.amount);
+                const rate = t.netKg ? r4(diff / t.netKg) : null;
+                const typical = typicalMargin ?? (Number(settings.jpsMarginPerKg) > 0 ? Number(settings.jpsMarginPerKg) : null);
+                status = rate != null && diff >= 0 && (typical == null || Math.abs(rate - typical) <= 0.10) ? 'ok' : 'warn';
+                text = diff < 0
+                    ? `JPS's is ${jd.currency} ${fmtMoney(-diff)} less than ours — it must at least cover the LC deposit`
+                    : `JPS's is ${jd.currency} ${fmtMoney(diff)} more than ours = ${jd.currency} ${fmtRate(rate)}/kg handling & sorting${typical != null ? ` (usual ${fmtRate(typical)}/kg)` : ''}`;
+            }
+        }
+        diffs.push({ id: 'margin', label: "JPS's over ours", status, text });
+    }
+    // Dates: Pistoni's, then ours, then JPS's
+    {
+        const seq = docs.filter(d => d.key !== 'packing' && d.present && isYmd(d.date));
+        const wrong = [];
+        const mid = l => l.replace(/^Our /, 'our ');
+        for (let i = 1; i < seq.length; i++) if (seq[i].date < seq[i - 1].date) wrong.push(`${seq[i].label} (${shortDate(seq[i].date)}) is dated before ${mid(seq[i - 1].label)} (${shortDate(seq[i - 1].date)})`);
+        diffs.push({ id: 'dates', label: 'Dates', status: seq.length < 2 ? 'wait' : wrong.length ? 'warn' : 'ok',
+            text: seq.length < 2 ? 'Needs at least two dated documents' : wrong.length ? wrong.join('; ') + ' — one of the dates is wrong' : seq.map(d => `${d.label.replace(/ proforma invoice$/, '')} ${shortDate(d.date)}`).join(' → ') });
+    }
+    return { docs, diffs, netKg: t.count ? t.netKg : null, usesConfirmed: !!r.confirmed, fxAt: null };
+}
+
 // ── Xero ─────────────────────────────────────────────────────────────────
 export const XERO_DOCS = {
     supplierBill: { label: 'Pistoni bill', type: 'ACCPAY' },
-    salesInvoice: { label: 'Our proforma to JPS', type: 'ACCREC' },
+    salesInvoice: { label: 'Our proforma invoice', type: 'ACCREC' },
     jpsBill:      { label: 'JPS bill', type: 'ACCPAY' },
 };
 export const XERO_DONE = ['AUTHORISED', 'PAID', 'SUBMITTED', 'DRAFT'];
@@ -249,7 +334,7 @@ export function xeroDocs({ record, settings, shipmentNumber, confirmedOk = true,
                     AccountCode: acc.exportSale || '', TaxType: tax.exportSale || 'ZERORATEDOUTPUT',
                 }],
             });
-            if (!ei.numberConfirmed || !ei.rateConfirmed) d.issues.push('Tick the invoice number and export rate first');
+            if (!ei.numberConfirmed || !ei.rateConfirmed) d.issues.push('Confirm our proforma invoice in section 3');
         }
         if (!acc.exportSale) d.issues.push('Set the export sale account in Document settings → Xero');
         if (!d.contactName) d.issues.push('Set the JPS contact in Document settings → Xero');
@@ -265,6 +350,7 @@ export function xeroDocs({ record, settings, shipmentNumber, confirmedOk = true,
         if (!r.jps) d.issues.push('Upload or enter the JPS invoice');
         else if (!sp) d.issues.push('JPS invoice total missing');
         else if (!jpsOk) d.issues.push('JPS invoice fails a check');
+        else if (!r.jpsConfirmed) d.issues.push("Confirm JPS's proforma invoice in section 5");
         if (sp) {
             Object.assign(d, {
                 currency: sp.currency, date: r.jps.date, number: r.jps.number, total: sp.total,

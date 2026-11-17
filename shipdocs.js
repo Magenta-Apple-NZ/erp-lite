@@ -18,14 +18,26 @@ const ShipDocs = (() => {
     }
     const send = (path, method, body) => api(path, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
 
-    const fmtKg = n => (Number(n) || 0).toLocaleString('en-NZ', { maximumFractionDigits: 3 });
-    const fmtMoney = n => (Number(n) || 0).toLocaleString('en-NZ', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-    const fmtRate = n => (Number(n) || 0).toLocaleString('en-NZ', { minimumFractionDigits: 2, maximumFractionDigits: 4 });
-    const amountOf = (kg, rate) => Math.round((Number(kg) || 0) * Math.round((Number(rate) || 0) * 10000) / 100) / 100;
-    const when = iso => iso ? new Date(iso).toLocaleString('en-NZ', { timeZone: 'Pacific/Auckland', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' }) : '';
-    const who = e => String(e || '').split('@')[0];
-    const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
-    const longDate = ymd => { const m = String(ymd || '').match(/^(\d{4})-(\d{2})-(\d{2})$/); if (!m) return ''; const d = Number(m[3]); const t = d % 100; const suf = t >= 11 && t <= 13 ? 'th' : ({ 1: 'st', 2: 'nd', 3: 'rd' }[d % 10] || 'th'); return `${d}${suf} ${MONTHS[Number(m[2]) - 1]} ${m[1]}`; };
+    // One way to show figures and dates everywhere on this tab: thousands
+    // separators, money to 2 dp with its currency, weights with "kg", rates
+    // per kg, dates as "17 Nov 2026" (timestamps add the time).
+    const nf = (n, min, max) => (Number(n) || 0).toLocaleString('en-NZ', { minimumFractionDigits: min, maximumFractionDigits: max });
+    const blank = v => v == null || v === '';
+    const fmtKg = n => nf(n, 0, 3);
+    const fmtMoney = n => nf(n, 2, 2);
+    const fmtRate = n => nf(n, 2, 4);
+    const kg = n => blank(n) ? '—' : `${fmtKg(n)} kg`;
+    const money = (n, ccy) => blank(n) ? '—' : `${ccy ? ccy + ' ' : ''}${fmtMoney(n)}`;
+    const perKg = (n, ccy) => blank(n) ? '—' : `${ccy ? ccy + ' ' : ''}${fmtRate(n)}/kg`;
+    const amountOf = (kgs, rate) => Math.round((Number(kgs) || 0) * Math.round((Number(rate) || 0) * 10000) / 100) / 100;
+    const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const day = ymd => { const m = String(ymd || '').match(/^(\d{4})-(\d{2})-(\d{2})/); return m ? `${Number(m[3])} ${MON[Number(m[2]) - 1]} ${m[1]}` : ''; };
+    const nzYmd = iso => new Date(iso).toLocaleDateString('en-CA', { timeZone: 'Pacific/Auckland' });
+    const when = iso => iso ? `${day(nzYmd(iso))}, ${new Date(iso).toLocaleTimeString('en-NZ', { timeZone: 'Pacific/Auckland', hour: 'numeric', minute: '2-digit' })}` : '';
+    // "andrew@primetie.co.nz" → "Andrew"; nobody recorded → nothing shown.
+    const who = e => { const n = String(e || '').split('@')[0]; return !n || n === 'unknown' ? '' : n.split('.').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' '); };
+    const by = e => (who(e) ? ' by ' + who(e) : '');
+    const longDate = day;
     const num = v => (v === '' || v == null || !Number.isFinite(Number(v))) ? null : Number(v);
 
     // Editing a supplier figure by hand drops the "as printed" string the
@@ -37,7 +49,8 @@ const ShipDocs = (() => {
     // actuals and paid flags to the shipment through the Imports view's own
     // save (V3 shipments only; null otherwise).
     function renderPanel(panel, ship, opts = {}) {
-        const st = { panel, ship, opts, view: null, review: null, jps: null, saveTimer: null, jpsTimer: null };
+        // editing: printed figures the user chose to correct (✎), shown as inputs.
+        const st = { panel, ship, opts, view: null, review: null, jps: null, saveTimer: null, jpsTimer: null, editing: new Set() };
         panel.innerHTML = '<div class="ship-lc-loading">Loading export documents…</div>';
         wireOnce(st);
         load(st);
@@ -69,9 +82,10 @@ const ShipDocs = (() => {
         <div class="sd">
             ${stepsHtml(v)}
             ${settingsBannerHtml(v)}
+            ${reconHtml(v)}
             <section class="ship-det-section">
-                <div class="ship-det-hd"><h3 class="ship-det-title">1 · Supplier documents</h3>
-                    <span class="sd-muted">From Pistoni — read by AI, checked by you</span></div>
+                ${sectionHd(1, "Pistoni's documents", sectionStatus(st)[1])}
+                <p class="sd-muted sd-lead">Read by AI — you check the figures in section 2.</p>
                 <div class="sd-uploads">
                     ${uploadCardHtml(v, 'packingList', 'Supplier packing list', 'The PACKING LIST TOECLIPS sheet with the WHITE and COLORED tables')}
                     ${uploadCardHtml(v, 'proforma', 'Supplier proforma invoice', 'Pistoni\'s proforma addressed to Enviroware')}
@@ -96,7 +110,7 @@ const ShipDocs = (() => {
             ['Supplier documents', !!(r.files?.packingList && r.files?.proforma)],
             ['Bales confirmed', !!r.confirmed],
             ['Draft documents', has('packing', 'draft') && has('proforma', 'draft')],
-            ['JPS invoice', !!(r.jps && Number(r.jps.total) > 0 && !(v.jpsChecks || []).some(blocking))],
+            ["JPS's proforma", !!r.jpsConfirmed],
             ['In Xero', (v.xero?.docs || []).every(d => d.inXero)],
             ['LC details', v.status === 'lc_issued' || v.status === 'final'],
             ['Final packing list', has('packing', 'final')],
@@ -118,21 +132,111 @@ const ShipDocs = (() => {
         </div>`;
     }
 
+    // ── Section status ───────────────────────────────────────────────────
+    // Every numbered section says where it stands: done (a real check passed
+    // or the step is confirmed / generated), needs attention, to do, or
+    // waiting for an earlier section. Green is only ever "done".
+    const STAT_ICON = { done: '✓', attention: '!', open: '○', waiting: '…' };
+    function sectionHd(n, title, stat, extra = '') {
+        return `<div class="ship-det-hd"><h3 class="ship-det-title">${n ? n + ' · ' : ''}${esc(title)}</h3>
+            <span class="sd-hd-right">${stat ? `<span class="sd-sstat sd-sstat--${stat.kind}" id="sd-stat-${n}">${STAT_ICON[stat.kind]} ${esc(stat.text)}</span>` : ''}${extra}</span></div>`;
+    }
+    const failing = list => (list || []).filter(c => c.ok === false && !c.dismissed);
+    const REVIEW_CHECKS = c => !['rate-confirmed', 'number-confirmed'].includes(c.id);
+    const eiConfirmed = ei => !!(ei && ei.numberConfirmed && ei.rateConfirmed);
+    const latestOut = (r, doc, stage) => (r.outputs || []).find(o => o.doc === doc && (o.stage || 'draft') === stage);
+
+    function sectionStatus(st) {
+        const v = st.view, r = v.record, s = {};
+        const needs = n => ({ kind: 'attention', text: `Needs attention (${n})` });
+        // 1 · Pistoni's documents
+        const files = ['packingList', 'proforma'].map(k => ({ f: r.files?.[k], x: r.extractions?.[k] }));
+        s[1] = files.some(({ f, x }) => f && x?.error && x.fileKey === f.key) ? { kind: 'attention', text: "A PDF couldn't be read" }
+            : files.every(({ f }) => f) ? { kind: 'done', text: 'Both read' }
+            : { kind: 'open', text: files.some(({ f }) => f) ? '1 of 2 uploaded' : 'To do' };
+        // 2 · Bales and Pistoni's figures
+        const started = (st.review.bales || []).length || st.review.supplierInvoice;
+        const f2 = failing(v.checks.filter(REVIEW_CHECKS));
+        s[2] = r.confirmed && !v.unconfirmedChanges ? { kind: 'done', text: `Confirmed ${day(nzYmd(r.confirmed.confirmedAt))}` }
+            : !started ? { kind: 'waiting', text: "Waiting for Pistoni's documents" }
+            : f2.length ? needs(f2.length) : { kind: 'open', text: r.confirmed ? 'Changed since confirmed' : 'Ready to confirm' };
+        // 3 · Our proforma invoice
+        const ei = r.exportInvoice;
+        s[3] = !r.confirmed ? { kind: 'waiting', text: 'Waiting for section 2' }
+            : eiConfirmed(ei) ? { kind: 'done', text: `Confirmed${ei.confirmedAt ? ' ' + day(nzYmd(ei.confirmedAt)) : ''}` }
+            : { kind: 'open', text: 'Not confirmed' };
+        // 4 · Draft documents
+        const g = v.generation || {};
+        const pd = latestOut(r, 'packing', 'draft'), pf = latestOut(r, 'proforma', 'draft');
+        const g4 = [...(g.packingDraft || []), ...(g.proforma || [])];
+        s[4] = !r.confirmed || !eiConfirmed(ei) ? { kind: 'waiting', text: 'Waiting for sections 2 and 3' }
+            : pd && pf ? { kind: 'done', text: `Generated ${day(nzYmd(pd.at < pf.at ? pf.at : pd.at))}` }
+            : g4.length ? needs(new Set(g4).size) : { kind: 'open', text: 'Ready to generate' };
+        // 5 · JPS's proforma invoice
+        const f5 = failing(v.jpsChecks);
+        s[5] = !r.confirmed ? { kind: 'waiting', text: 'Waiting for section 2' }
+            : r.jpsConfirmed ? { kind: 'done', text: `Confirmed ${day(nzYmd(r.jpsConfirmed.at))}` }
+            : !r.jps ? { kind: 'open', text: 'To do' }
+            : f5.length ? needs(f5.length) : { kind: 'open', text: 'Ready to confirm' };
+        // 6 · Xero
+        const docs = v.xero?.docs || [], errs = v.xero?.errors || {};
+        const inX = docs.filter(d => d.inXero).length;
+        s[6] = inX === docs.length && docs.length ? { kind: 'done', text: 'All three in Xero' }
+            : docs.some(d => !d.inXero && errs[d.key]) || errs.refresh ? { kind: 'attention', text: 'Last attempt failed' }
+            : docs.some(d => d.inXero && d.changedSincePush) ? { kind: 'attention', text: 'Changed since sent' }
+            : { kind: inX ? 'open' : (docs.every(d => d.issues.length) ? 'waiting' : 'open'), text: `${inX} of ${docs.length} in Xero` };
+        // 7 · Final
+        const fin = latestOut(r, 'packing', 'final');
+        s[7] = fin ? { kind: 'done', text: `Generated ${day(nzYmd(fin.at))}` }
+            : !r.confirmed ? { kind: 'waiting', text: 'Waiting for section 2' }
+            : (g.packingFinal || []).length ? { kind: 'open', text: 'Waiting for the LC' } : { kind: 'open', text: 'Ready to generate' };
+        // Cost breakdown
+        const ch = (v.costPlan?.changes || []).length;
+        s.cost = !r.confirmed ? { kind: 'waiting', text: 'Waiting for section 2' }
+            : ch ? { kind: 'attention', text: `${ch} change${ch === 1 ? '' : 's'} to apply` } : { kind: 'done', text: 'Matches' };
+        return s;
+    }
+
+    // ── Figures side by side ─────────────────────────────────────────────
+    // The three proforma invoices (and the packing list's weight) in one table,
+    // with the differences worked out on the server (reconcile()). ✓ only for
+    // a comparison that passed; ! when it doesn't match or can't be checked.
+    function reconHtml(v) {
+        const rc = v.reconciliation;
+        if (!rc || !rc.docs.some(d => d.present)) return '';
+        const ICON = { ok: '✓', warn: '!', wait: '…' };
+        const row = d => d.present
+            ? `<tr><th>${esc(d.label)}${d.internal ? ' <span class="sd-internal">internal</span>' : ''}</th>
+                <td>${esc(d.number || '—')}</td><td>${esc(day(d.date) || '—')}</td>
+                <td class="r">${kg(d.kg)}${d.bales ? `<div class="sd-muted">${d.bales} bales</div>` : ''}</td>
+                <td class="r">${perKg(d.rate, d.currency)}${d.rate != null && d.rateIsAverage ? '<div class="sd-muted">average</div>' : ''}</td>
+                <td class="r"><strong>${money(d.amount, d.currency)}</strong></td>
+                <td class="r sd-muted">${money(d.nzd, 'NZD')}</td></tr>`
+            : `<tr class="sd-rc-wait"><th>${esc(d.label)}</th><td colspan="6">Not in yet</td></tr>`;
+        return `<section class="ship-det-section sd-rc" id="sd-rc">
+            ${sectionHd('', 'Figures side by side', null, `<span class="sd-muted">${rc.usesConfirmed ? 'From the confirmed bales' : 'From the bales as reviewed — not confirmed yet'}</span>`)}
+            <div class="sd-table-wrap"><table class="sd-rc-table">
+                <thead><tr><th>Document</th><th>Number</th><th>Date</th><th class="r">Weight</th><th class="r">Rate</th><th class="r">Amount</th><th class="r">≈ NZD today</th></tr></thead>
+                <tbody>${rc.docs.map(row).join('')}</tbody></table></div>
+            <ul class="sd-rc-diffs">${rc.diffs.map(d => `<li class="sd-rc-${d.status}"><span class="sd-rc-i">${ICON[d.status]}</span><span><strong>${esc(d.label)}</strong> — ${esc(d.text)}</span></li>`).join('')}</ul>
+        </section>`;
+    }
+
     function uploadCardHtml(v, kind, title, hint) {
         const f = v.record.files?.[kind];
         const x = v.record.extractions?.[kind];
         const ok = x && !x.error && x.fileKey === f?.key;
-        const summary = !ok ? '' : kind === 'packingList'
+        // Plain facts about what was read (not a check, so no tick); JPS's
+        // figures are shown once, in the fields below.
+        const summary = !ok || kind === 'jpsInvoice' ? '' : kind === 'packingList'
             ? `${(x.result?.bales || []).length} bales read${x.result?.shipmentNumber != null ? ` · shipment ${esc(x.result.shipmentNumber)}` : ''}`
-            : kind === 'jpsInvoice'
-                ? `Invoice ${esc(x.result?.invoiceNumber || '?')} · ${esc(x.result?.currency || '')} ${fmtMoney(x.result?.total)}`
-                : `Document ${esc(x.result?.documentNumber || '?')} · ${esc(x.result?.currency || '')} ${fmtMoney(x.result?.total)}`;
-        return `<label class="sd-upload" data-kind="${kind}">
+            : `Document ${esc(x.result?.documentNumber || '?')} · ${esc(money(x.result?.total, x.result?.currency))}`;
+        return `<label class="sd-upload${f ? ' sd-upload--has' : ''}" data-kind="${kind}">
             <input type="file" accept="application/pdf" hidden data-upload="${kind}">
             <div class="sd-upload-title">${esc(title)}</div>
             ${f ? `<div class="sd-upload-file">📄 <a href="${base(v.shipment.id)}/file?key=${encodeURIComponent(f.key)}" target="_blank" rel="noopener" data-stop>${esc(f.filename)}</a></div>
-                   <div class="sd-muted">${esc(when(f.uploadedAt))} · ${esc(who(f.by))}</div>
-                   ${ok ? `<div class="sd-ok">✓ ${summary}</div>` : ''}
+                   <div class="sd-muted">Uploaded ${esc(when(f.uploadedAt))}${esc(by(f.by))}</div>
+                   ${summary ? `<div class="sd-upload-sum">${summary}</div>` : ''}
                    ${x?.error && x.fileKey === f.key ? `<div class="sd-err">✗ ${esc(x.error)} — try again or enter the figures by hand below</div>` : ''}
                    <span class="btn-link sd-upload-cta">Replace PDF</span>`
                 : `<div class="sd-muted">${esc(hint)}</div><span class="btn-secondary btn-sm sd-upload-cta">Choose PDF</span><div class="sd-muted sd-drop-hint">or drop it here</div>`}
@@ -148,21 +252,21 @@ const ShipDocs = (() => {
     // dismissed); the ones that pass sit behind a "✓ N checks passed" button
     // that opens them in a popover.
     function checkListHtml(list, extraClass = '') {
-        const failing = list.filter(c => c.ok === false);
+        const failingList = list.filter(c => c.ok === false);
         const passed = list.filter(c => c.ok !== false);
         const nOk = passed.filter(c => c.ok === true).length, nNa = passed.length - nOk;
-        const label = [nOk && `${!failing.length && nOk > 1 ? 'All ' : ''}${nOk} check${nOk === 1 ? '' : 's'} passed`, nNa && `${nNa} not applicable`].filter(Boolean).join(' · ');
+        const label = [nOk && `${!failingList.length && nOk > 1 ? 'All ' : ''}${nOk} check${nOk === 1 ? '' : 's'} passed`, nNa && `${nNa} not applicable`].filter(Boolean).join(' · ');
         const pop = passed.length ? `<div class="sd-passed">
             <button type="button" class="sd-passed-btn" data-act="toggle-passed" aria-expanded="false">✓ ${esc(label)}</button>
             <div class="sd-passed-pop" hidden>${checkRowsHtml(passed, 'sd-checks--compact')}</div></div>` : '';
-        return (failing.length ? checkRowsHtml(failing, extraClass) : '') + pop;
+        return (failingList.length ? checkRowsHtml(failingList, extraClass) : '') + pop;
     }
 
     function checkRowsHtml(list, extraClass = '') {
         const icon = c => c.dismissed ? '–' : c.ok === true ? '✓' : c.ok === false ? (c.level === 'block' ? '✗' : '!') : '–';
         const cls = c => c.dismissed ? 'dismissed' : c.ok === true ? 'ok' : c.ok === false ? (c.level === 'block' ? 'fail' : 'warn') : 'na';
         const tail = c => c.dismissed
-            ? `<div class="sd-check-dis">Dismissed by ${esc(who(c.dismissed.by))}${c.dismissed.at ? ' · ' + esc(when(c.dismissed.at)) : ''} · <button class="btn-link" data-act="restore-check" data-check="${esc(c.id)}">Undo</button></div>`
+            ? `<div class="sd-check-dis">Dismissed${esc(by(c.dismissed.by))}${c.dismissed.at ? ' · ' + esc(when(c.dismissed.at)) : ''} · <button class="btn-link" data-act="restore-check" data-check="${esc(c.id)}">Undo</button></div>`
             : c.ok === false && c.dismissible ? `<button class="btn-link sd-check-x" data-act="dismiss-check" data-check="${esc(c.id)}" title="Leave it as it is — this stops it ${c.level === 'block' ? 'blocking' : 'showing as a warning'}">Dismiss</button>` : '';
         return `<ul class="sd-checks ${extraClass}">${list.map(c => `
             <li class="sd-check sd-check--${cls(c)}"><span class="sd-check-i">${icon(c)}</span>
@@ -174,52 +278,91 @@ const ShipDocs = (() => {
         const r = st.review;
         const p = r.packing || {};
         const started = (r.bales || []).length || r.supplierInvoice || p.whiteTotalKg != null || p.colouredTotalKg != null || p.packages != null;
-        if (!started) return '<p class="sd-muted">The checks run once there is something to check: upload Pistoni\'s two PDFs above, or enter the bales and supplier figures below.</p>';
-        return checkListHtml(st.view.checks.filter(c => !['rate-confirmed', 'number-confirmed'].includes(c.id)));
+        if (!started) return '<p class="sd-muted">The checks run once there is something to check: upload Pistoni\'s two PDFs above, or enter the bales and figures below.</p>';
+        return checkListHtml(st.view.checks.filter(REVIEW_CHECKS));
     }
 
     function totalsLine(t) {
         if (!t || !t.count) return 'No bales yet';
-        return `${t.count} bales · white ${fmtKg(t.whiteKg)} kg (${t.whiteCount}) · coloured ${fmtKg(t.colouredKg)} kg (${t.colouredCount}) · <strong>net ${fmtKg(t.netKg)} kg</strong>`;
+        return `${t.count} bales · white ${kg(t.whiteKg)} in ${t.whiteCount} bales · coloured ${kg(t.colouredKg)} in ${t.colouredCount} bales · <strong>net ${kg(t.netKg)}</strong>`;
     }
 
+    // A figure printed on a PDF: shown as text with ✎ to correct it (a
+    // deliberate override, tagged "corrected" afterwards). Typed figures and
+    // ones being corrected are inputs; a locked section shows text only.
+    function figure(st, store, path, value, raw, fmt, { fromPdf = false, locked = false } = {}) {
+        const key = store + ':' + path;
+        const attr = store === 'jps' ? 'data-jps' : 'data-path';
+        if (locked) return `<span class="sd-val">${blank(value) ? '—' : esc(fmt(value))}</span>`;
+        if (!blank(raw) && !blank(value) && !st.editing.has(key)) {
+            return `<span class="sd-val">${esc(fmt(value))}</span><button class="sd-pencil" data-act="edit-field" data-field="${esc(key)}" title="Correct this figure (read from the PDF)" aria-label="Correct">✎</button>`;
+        }
+        const corrected = fromPdf && blank(raw) && !blank(value);
+        const dp = /amount|total/i.test(path) ? 2 : /unitPrice/.test(path) ? 4 : 3;
+        return `${numInput(attr, path, value, dp)}${corrected ? '<span class="sd-tag">corrected</span>' : ''}`;
+    }
+
+    // A typed figure: a text box that shows "7,330.50" and plain digits while
+    // you type in it (see the focus handlers in wireOnce). dp = decimals shown
+    // (2 for money, up to 3 for kg, up to 4 for rates).
+    const showNum = (v, dp) => blank(v) || !Number.isFinite(Number(v)) ? (v ?? '') : nf(v, dp === 2 ? 2 : 0, dp);
+    function numInput(attr, path, value, dp) {
+        return `<input class="sd-input sd-num" type="text" inputmode="decimal" data-num="${dp}" ${attr}="${esc(path)}" value="${esc(showNum(value, dp))}">`;
+    }
+    const readNum = el => num(String(el.value).replace(/[,\s]/g, ''));
+    // A printed figure opened with ✎ and changed is tagged "corrected" straight away.
+    function markCorrected(st, el, key) {
+        if (!st.editing.has(key) || el.nextElementSibling?.classList.contains('sd-tag')) return;
+        el.insertAdjacentHTML('afterend', '<span class="sd-tag">corrected</span>');
+    }
+
+    // Description and colour: one name per line (the colour only when the
+    // description doesn't already say it).
+    const colourTag = (desc, colour) => colour && !/bianc|white|color|colour/i.test(desc || '') ? ` <span class="sd-tag">${esc(colour)}</span>` : '';
+
     function reviewHtml(st) {
-        const v = st.view, r = st.review, p = r.packing || {};
-        const rawHint = raw => raw ? `<span class="sd-raw" title="As printed on the supplier document">printed “${esc(raw)}”</span>` : '';
-        const field = (label, path, val, raw, attrs = '') => `<label class="sd-field"><span class="imp-field-label">${esc(label)}</span>
-            <input class="sd-input" data-path="${path}" value="${val ?? ''}" ${attrs}>${rawHint(raw)}</label>`;
-        return `
-            <div class="ship-det-hd"><h3 class="ship-det-title">2 · Review bales and supplier figures</h3>
-                <span class="sd-muted" id="sd-savestate"></span></div>
+        const v = st.view, r = st.review, p = r.packing || {}, c = v.record.confirmed;
+        const locked = !!(c && !v.unconfirmedChanges);
+        const fromPdf = !!v.record.extractions?.packingList;
+        const extra = locked ? '<button class="btn-secondary btn-sm" data-act="unlock-bales">Unlock to edit</button>' : '<span class="sd-muted" id="sd-savestate"></span>';
+        const fld = (label, path, val, raw, fmt) => `<div class="sd-field"><span class="imp-field-label">${esc(label)}</span><div class="sd-fig">${figure(st, 'review', path, val, raw, fmt, { fromPdf, locked })}</div></div>`;
+        return `${sectionHd(2, "Bales and Pistoni's figures", sectionStatus(st)[2], extra)}
+            ${locked ? `<p class="sd-lockline">🔒 Confirmed ${esc(when(c.confirmedAt))}${esc(by(c.confirmedBy))}. These are the figures the documents use; unlocking clears the confirmation until you confirm again.</p>` : ''}
             <div id="sd-checks">${checksHtml(st)}</div>
-            <h4 class="sd-h4">Supplier packing list</h4>
+            <h4 class="sd-h4">Pistoni's packing list</h4>
             <div class="sd-grid4">
-                ${field('Shipment no. (as printed)', 'shipmentNumber', r.shipmentNumber, null, 'type="number" step="1"')}
-                ${field('White total kg', 'packing.whiteTotalKg', p.whiteTotalKg, p.whiteTotalRaw, 'type="number" step="any"')}
-                ${field('Coloured total kg', 'packing.colouredTotalKg', p.colouredTotalKg, p.colouredTotalRaw, 'type="number" step="any"')}
-                ${field('Packages', 'packing.packages', p.packages, p.packagesRaw, 'type="number" step="1"')}
+                ${locked ? `<div class="sd-field"><span class="imp-field-label">Shipment no. (as printed)</span><div class="sd-fig"><span class="sd-val">${esc(r.shipmentNumber ?? '—')}</span></div></div>`
+                    : `<label class="sd-field"><span class="imp-field-label">Shipment no. (as printed)</span><input class="sd-input sd-num" data-path="shipmentNumber" type="number" step="1" value="${r.shipmentNumber ?? ''}"></label>`}
+                ${fld('White total (as printed)', 'packing.whiteTotalKg', p.whiteTotalKg, p.whiteTotalRaw, kg)}
+                ${fld('Coloured total (as printed)', 'packing.colouredTotalKg', p.colouredTotalKg, p.colouredTotalRaw, kg)}
+                ${fld('Packages (as printed)', 'packing.packages', p.packages, p.packagesRaw, n => `${fmtKg(n)} bales`)}
             </div>
             <div class="sd-bales-hd">
                 <h4 class="sd-h4">Bales <span class="sd-muted" id="sd-bale-totals">${totalsLine(v.reviewTotals)}</span></h4>
-                <span><button class="btn-link" data-act="add-bale">+ Add bale</button> · <button class="btn-link" data-act="paste-bales">Paste bales…</button></span>
+                ${locked ? '' : '<span><button class="btn-link" data-act="add-bale">+ Add bale</button> · <button class="btn-link" data-act="paste-bales">Paste bales…</button></span>'}
             </div>
-            <div class="sd-paste" hidden>
+            ${locked ? '' : `<div class="sd-paste" hidden>
                 <textarea class="sd-paste-ta" rows="6" placeholder="One bale per line: number, kg, colour — e.g.&#10;1, 442, white&#10;2, 495, coloured"></textarea>
                 <div><button class="btn-secondary btn-sm" data-act="paste-apply">Replace bales with these</button> <button class="btn-link" data-act="paste-cancel">Cancel</button></div>
-            </div>
-            <div class="sd-bales" id="sd-bales">${balesHtml(st)}</div>
-            <h4 class="sd-h4">Supplier proforma <span class="sd-internal">Internal — never printed on Enviroware's documents</span></h4>
-            ${supplierInvoiceHtml(st)}
+            </div>`}
+            <div class="sd-bales${locked ? ' sd-bales--locked' : ''}" id="sd-bales">${balesHtml(st, locked)}</div>
+            <h4 class="sd-h4">Pistoni's proforma invoice <span class="sd-internal">Internal — never printed on Enviroware's documents</span></h4>
+            ${supplierInvoiceHtml(st, locked)}
             <div id="sd-confirm">${confirmHtml(st)}</div>`;
     }
 
-    function balesHtml(st) {
+    function balesHtml(st, locked = false) {
         const { min, max } = st.view.baleRange || { min: 150, max: 650 };
         const bales = st.review.bales || [];
-        if (!bales.length) return '<p class="sd-muted">Upload the supplier packing list, or add / paste bales by hand.</p>';
+        if (!bales.length) return '<p class="sd-muted">Upload Pistoni\'s packing list, or add / paste bales by hand.</p>';
         return bales.map((b, i) => {
             const odd = b.kg != null && (b.kg < min || b.kg > max);
-            return `<div class="sd-bale sd-bale--${b.colour || 'none'}${odd ? ' sd-bale--odd' : ''}" title="${odd ? 'Outside ' + min + '–' + max + ' kg — check for a misread' : ''}">
+            const cls = `sd-bale sd-bale--${b.colour || 'none'}${odd ? ' sd-bale--odd' : ''}`;
+            const title = odd ? `Outside ${min}–${max} kg — check for a misread` : '';
+            if (locked) {
+                return `<div class="${cls} sd-bale--ro" title="${title}"><span class="sd-bale-n">${esc(b.n ?? '')}</span><span class="sd-bale-kgv">${esc(kg(b.kg))}</span><span class="sd-bale-cv">${b.colour === 'white' ? 'White' : b.colour === 'coloured' ? 'Coloured' : '?'}</span></div>`;
+            }
+            return `<div class="${cls}" title="${title}">
                 <input class="sd-bale-n" data-path="bales.${i}.n" type="number" step="1" value="${b.n ?? ''}" aria-label="Bale number">
                 <input class="sd-bale-kg" data-path="bales.${i}.kg" type="number" step="any" value="${b.kg ?? ''}" aria-label="Net kg">
                 <select class="sd-bale-c" data-path="bales.${i}.colour" aria-label="Colour">
@@ -232,30 +375,33 @@ const ShipDocs = (() => {
         }).join('');
     }
 
-    function supplierInvoiceHtml(st) {
+    function supplierInvoiceHtml(st, locked = false) {
         const inv = st.review.supplierInvoice;
-        if (!inv) return `<p class="sd-muted">Upload the supplier proforma, or <button class="btn-link" data-act="manual-invoice">enter its figures by hand</button>.</p>`;
-        const raw = r => r ? `<span class="sd-raw">“${esc(r)}”</span>` : '';
+        if (!inv) return locked ? '<p class="sd-muted">None entered.</p>' : `<p class="sd-muted">Upload Pistoni's proforma, or <button class="btn-link" data-act="manual-invoice">enter its figures by hand</button>.</p>`;
+        const fromPdf = !!st.view.record.extractions?.proforma;
+        const ccy = inv.currency || '';
+        const fig = (path, val, raw, fmt) => figure(st, 'review', path, val, raw, fmt, { fromPdf, locked });
+        const txt = (label, html) => `<div class="sd-field"><span class="imp-field-label">${esc(label)}</span><div class="sd-fig">${html}</div></div>`;
         return `<div class="sd-grid4">
-                <label class="sd-field"><span class="imp-field-label">Document no.</span><input class="sd-input" data-path="supplierInvoice.number" value="${esc(inv.number)}"></label>
-                <label class="sd-field"><span class="imp-field-label">Date</span><input class="sd-input" type="date" data-path="supplierInvoice.date" value="${esc(inv.date)}">${raw(inv.dateRaw)}</label>
-                <label class="sd-field"><span class="imp-field-label">Currency</span><input class="sd-input" data-path="supplierInvoice.currency" value="${esc(inv.currency)}" maxlength="3"></label>
-                <label class="sd-field"><span class="imp-field-label">Net weight kg</span><input class="sd-input" type="number" step="any" data-path="supplierInvoice.netKg" value="${inv.netKg ?? ''}">${raw(inv.netKgRaw)}</label>
+                ${locked ? txt('Document no.', `<span class="sd-val">${esc(inv.number || '—')}</span>`) : `<label class="sd-field"><span class="imp-field-label">Document no.</span><input class="sd-input" data-path="supplierInvoice.number" value="${esc(inv.number)}"></label>`}
+                ${locked ? txt('Date', `<span class="sd-val">${esc(day(inv.date) || '—')}</span>`) : `<label class="sd-field"><span class="imp-field-label">Date</span><input class="sd-input" type="date" data-path="supplierInvoice.date" value="${esc(inv.date)}"></label>`}
+                ${locked ? txt('Currency', `<span class="sd-val">${esc(ccy || '—')}</span>`) : `<label class="sd-field"><span class="imp-field-label">Currency</span><input class="sd-input" data-path="supplierInvoice.currency" value="${esc(ccy)}" maxlength="3"></label>`}
+                ${txt('Net weight (as printed)', fig('supplierInvoice.netKg', inv.netKg, inv.netKgRaw, kg))}
             </div>
             <table class="sd-lines">
-                <thead><tr><th>Line</th><th>Colour</th><th class="r">kg</th><th class="r">Unit price</th><th class="r">Amount</th><th></th></tr></thead>
+                <thead><tr><th>Line (as printed)</th><th class="r">Weight</th><th class="r">Unit price</th><th class="r">Amount</th>${locked ? '' : '<th class="sd-x-col"></th>'}</tr></thead>
                 <tbody>${(inv.lines || []).map((l, i) => `<tr>
-                    <td><input class="sd-input" data-path="supplierInvoice.lines.${i}.description" value="${esc(l.description)}"></td>
-                    <td><select class="sd-input" data-path="supplierInvoice.lines.${i}.colour">
-                        <option value="" ${!l.colour ? 'selected' : ''}>—</option><option value="white" ${l.colour === 'white' ? 'selected' : ''}>White</option><option value="coloured" ${l.colour === 'coloured' ? 'selected' : ''}>Coloured</option></select></td>
-                    <td class="r"><input class="sd-input sd-num" type="number" step="any" data-path="supplierInvoice.lines.${i}.kg" value="${l.kg ?? ''}">${raw(l.kgRaw)}</td>
-                    <td class="r"><input class="sd-input sd-num" type="number" step="any" data-path="supplierInvoice.lines.${i}.unitPrice" value="${l.unitPrice ?? ''}">${raw(l.unitPriceRaw)}</td>
-                    <td class="r"><input class="sd-input sd-num" type="number" step="any" data-path="supplierInvoice.lines.${i}.amount" value="${l.amount ?? ''}">${raw(l.amountRaw)}</td>
-                    <td><button class="sd-bale-x" data-act="del-line" data-i="${i}" title="Remove line">×</button></td></tr>`).join('')}
+                    <td>${locked ? `${esc(l.description || '—')}${colourTag(l.description, l.colour)}`
+                        : `<div class="sd-line-desc"><input class="sd-input" data-path="supplierInvoice.lines.${i}.description" value="${esc(l.description)}" placeholder="As printed, e.g. TOECLIPS BIANCHI">
+                           <select class="sd-input sd-colour" data-path="supplierInvoice.lines.${i}.colour" aria-label="Colour"><option value="" ${!l.colour ? 'selected' : ''}>Colour?</option><option value="white" ${l.colour === 'white' ? 'selected' : ''}>White</option><option value="coloured" ${l.colour === 'coloured' ? 'selected' : ''}>Coloured</option></select></div>`}</td>
+                    <td class="r">${fig(`supplierInvoice.lines.${i}.kg`, l.kg, l.kgRaw, kg)}</td>
+                    <td class="r">${fig(`supplierInvoice.lines.${i}.unitPrice`, l.unitPrice, l.unitPriceRaw, n => perKg(n, ccy))}</td>
+                    <td class="r">${fig(`supplierInvoice.lines.${i}.amount`, l.amount, l.amountRaw, n => money(n, ccy))}</td>
+                    ${locked ? '' : `<td class="sd-x-col"><button class="sd-bale-x" data-act="del-line" data-i="${i}" title="Remove line">×</button></td>`}</tr>`).join('')}
                 </tbody>
-                <tfoot><tr><td colspan="4" class="r"><button class="btn-link" data-act="add-line">+ Add line</button> &nbsp; <strong>Total</strong></td>
-                    <td class="r"><input class="sd-input sd-num" type="number" step="any" data-path="supplierInvoice.total" value="${inv.total ?? ''}">${raw(inv.totalRaw)}</td><td></td></tr></tfoot>
+                <tfoot><tr><th colspan="3" class="r">Total (as printed)</th><td class="r">${fig('supplierInvoice.total', inv.total, inv.totalRaw, n => money(n, ccy))}</td>${locked ? '' : '<td></td>'}</tr></tfoot>
             </table>
+            ${locked ? '' : '<div class="sd-table-foot"><button class="btn-link" data-act="add-line">+ Add line</button></div>'}
             ${inv.destination || inv.deliveryTerms ? `<p class="sd-muted">Destination: ${esc(inv.destination || '—')} · Terms: ${esc(inv.deliveryTerms || '—')}${inv.hsCode ? ' · HS ' + esc(inv.hsCode) : ''}</p>` : ''}`;
     }
 
@@ -267,133 +413,168 @@ const ShipDocs = (() => {
         const s = v.shipment;
         const weightsDiffer = st.opts.applyShipPatch && t.count && (Math.round(s.whiteRawKg) !== Math.round(t.whiteKg) || Math.round(s.colourRawKg) !== Math.round(t.colouredKg));
         if (c && !v.unconfirmedChanges) {
-            return `<div class="sd-confirmed">✓ Confirmed ${esc(when(c.confirmedAt))} by ${esc(who(c.confirmedBy))} — ${totalsLine(v.confirmedTotals)}
-                ${weightsDiffer ? `<div class="sd-muted">This shipment's Net Weight Breakdown still shows white ${fmtKg(s.whiteRawKg)} / coloured ${fmtKg(s.colourRawKg)} kg. <button class="btn-link" data-act="apply-weights">Update it to ${fmtKg(t.whiteKg)} / ${fmtKg(t.colouredKg)} kg</button></div>` : ''}</div>`;
+            return weightsDiffer ? `<div class="sd-note">This shipment's Net Weight Breakdown still shows white ${kg(s.whiteRawKg)} / coloured ${kg(s.colourRawKg)}. <button class="btn-link" data-act="apply-weights">Update it to ${kg(t.whiteKg)} / ${kg(t.colouredKg)}</button></div>` : '';
         }
         return `<div class="sd-confirm-bar">
-            ${c ? '<div class="sd-warn-text">You have changes since the last confirm. Documents use the confirmed figures until you confirm again.</div>' : ''}
+            ${c ? '<div class="sd-warn-text">Changed since the last confirm — the documents use the confirmed figures until you confirm again.</div>' : ''}
             ${weightsDiffer ? `<label class="sd-check-line"><input type="checkbox" id="sd-apply-weights" checked>
-                Also update this shipment's Net Weight Breakdown: white ${fmtKg(s.whiteRawKg)} → <strong>${fmtKg(t.whiteKg)}</strong> kg, coloured ${fmtKg(s.colourRawKg)} → <strong>${fmtKg(t.colouredKg)}</strong> kg</label>` : ''}
-            <button class="btn-primary" data-act="confirm" ${fails.length || !t.count ? 'disabled' : ''}>Confirm ${t.count || ''} bales</button>
-            ${fails.length ? `<span class="sd-err">Fix ${fails.length} failing check${fails.length > 1 ? 's' : ''} first</span>` : ''}
+                Also update this shipment's Net Weight Breakdown: white ${kg(s.whiteRawKg)} → <strong>${kg(t.whiteKg)}</strong>, coloured ${kg(s.colourRawKg)} → <strong>${kg(t.colouredKg)}</strong></label>` : ''}
+            <div class="sd-confirm-row"><button class="btn-primary" data-act="confirm" ${fails.length || !t.count ? 'disabled' : ''}>Confirm ${t.count || ''} bales</button>
+                <span class="sd-muted">${fails.length ? `<span class="sd-err">Fix or dismiss ${fails.length} failing check${fails.length > 1 ? 's' : ''} first.</span> ` : ''}Locks this section; our proforma invoice (section 3) and the documents use these figures.</span></div>
         </div>`;
     }
 
-    // ── Export invoice ───────────────────────────────────────────────────
+    // ── Our proforma invoice ─────────────────────────────────────────────
     function invoiceHtml(st) {
-        const v = st.view, ei = v.record.exportInvoice, d = v.defaults, t = v.confirmedTotals;
-        if (!v.record.confirmed) return `<div class="ship-det-hd"><h3 class="ship-det-title">3 · Export invoice</h3></div><p class="sd-muted">Confirm the bales first.</p>`;
-        return `<div class="ship-det-hd"><h3 class="ship-det-title">3 · Export invoice to JPS</h3></div>
+        const v = st.view, r = v.record, ei = r.exportInvoice, d = v.defaults, t = v.confirmedTotals;
+        const stat = sectionStatus(st)[3];
+        if (!r.confirmed) return `${sectionHd(3, 'Our proforma invoice to JPS', stat)}<p class="sd-muted">Confirm the bales in section 2 first — the amount comes from their net weight.</p>`;
+        const amount = `${kg(t.netKg)} × ${perKg(ei.rate, ei.currency)} = <strong>${money(amountOf(t.netKg, ei.rate), ei.currency)}</strong>`;
+        const field = (label, html, note = '') => `<div class="sd-field"><span class="imp-field-label">${esc(label)}</span><div class="sd-fig">${html}</div>${note ? `<span class="sd-muted">${note}</span>` : ''}</div>`;
+        if (eiConfirmed(ei)) {
+            return `${sectionHd(3, 'Our proforma invoice to JPS', stat, '<button class="btn-secondary btn-sm" data-act="unlock-ei">Unlock to edit</button>')}
+                <p class="sd-lockline">🔒 Confirmed${ei.confirmedAt ? ' ' + esc(when(ei.confirmedAt)) : ''}${esc(by(ei.confirmedBy))}.</p>
+                <div class="sd-grid4">
+                    ${field('Invoice no.', `<span class="sd-val">${esc(ei.number)}</span>`)}
+                    ${field('Date', `<span class="sd-val">${esc(day(ei.date))}</span>`, 'Printed on the draft packing list and our proforma')}
+                    ${field('Rate', `<span class="sd-val">${esc(perKg(ei.rate, ei.currency))}</span>`)}
+                    ${field('Amount (calculated)', `<span class="sd-val">${amount}</span>`)}
+                </div>`;
+        }
+        const numOk = /^\d+\s*\/\s*\d{4}$/.test(String(ei.number || '').trim()), rateOk = Number(ei.rate) > 0;
+        return `${sectionHd(3, 'Our proforma invoice to JPS', stat)}
             <div class="sd-grid4">
                 <label class="sd-field"><span class="imp-field-label">Invoice no.</span><input class="sd-input" id="sd-ei-number" value="${esc(ei.number)}">
-                    <span class="sd-muted">Suggested ${esc(d.number)} (previous + 1)</span></label>
-                <label class="sd-field"><span class="imp-field-label">Document date</span><input class="sd-input" type="date" id="sd-ei-date" value="${esc(ei.date)}">
-                    <span class="sd-muted">${esc(longDate(ei.date))} · both documents</span></label>
-                <label class="sd-field"><span class="imp-field-label">Rate (${esc(ei.currency)}/kg)</span><input class="sd-input" type="number" step="0.0001" id="sd-ei-rate" value="${ei.rate ?? ''}">
-                    <span class="sd-muted">Default ${fmtRate(d.rate)} from ${esc(d.rateSource)}</span></label>
-                <div class="sd-field"><span class="imp-field-label">Amount</span>
-                    <div class="sd-amount" id="sd-ei-amount">${fmtKg(t.netKg)} kg × ${esc(ei.currency)} ${fmtRate(ei.rate)} = <strong>${esc(ei.currency)} ${fmtMoney(amountOf(t.netKg, ei.rate))}</strong></div></div>
+                    ${d.number && d.number !== ei.number ? `<span class="sd-muted">Next in sequence: ${esc(d.number)} · <button class="btn-link" data-act="use-suggested">Use it</button></span>` : ''}</label>
+                <label class="sd-field"><span class="imp-field-label">Date</span><input class="sd-input" type="date" id="sd-ei-date" value="${esc(ei.date)}">
+                    <span class="sd-muted">Printed on the draft packing list and our proforma</span></label>
+                <label class="sd-field"><span class="imp-field-label">Rate (${esc(ei.currency)}/kg)</span><input class="sd-input sd-num" type="number" step="0.0001" id="sd-ei-rate" value="${ei.rate ?? ''}">
+                    ${d.rate != null && Number(d.rate) !== Number(ei.rate) ? `<span class="sd-muted">Usual ${esc(perKg(d.rate, ei.currency))} (${esc(d.rateSource || '')})</span>` : ''}</label>
+                ${field('Amount (calculated)', `<span class="sd-val" id="sd-ei-amount">${amount}</span>`)}
             </div>
-            <div class="sd-ticks">
-                <label class="sd-check-line ${ei.numberConfirmed ? '' : 'sd-unconfirmed'}"><input type="checkbox" id="sd-ei-numok" ${ei.numberConfirmed ? 'checked' : ''}> Invoice number ${esc(ei.number)} is right${ei.numberConfirmed ? '' : ' <em>(not yet confirmed)</em>'}</label>
-                <label class="sd-check-line ${ei.rateConfirmed ? '' : 'sd-unconfirmed'}"><input type="checkbox" id="sd-ei-rateok" ${ei.rateConfirmed ? 'checked' : ''}> Export rate ${esc(ei.currency)} ${fmtRate(ei.rate)}/kg is right for this shipment${ei.rateConfirmed ? '' : ' <em>(not yet confirmed)</em>'}</label>
-            </div>`;
+            <div class="sd-confirm-row"><button class="btn-primary" data-act="confirm-ei" ${numOk && rateOk ? '' : 'disabled'}>Confirm our proforma invoice</button>
+                <span class="sd-muted">${!numOk ? '<span class="sd-err">The number must look like 102/2026.</span> ' : ''}${!rateOk ? '<span class="sd-err">Enter the rate.</span> ' : ''}Needed before generating the draft documents and creating it in Xero.</span></div>`;
     }
 
-    // ── Draft documents ──────────────────────────────────────────────────
+    // ── Documents ────────────────────────────────────────────────────────
+    // Every document row is the same: what it is, whether a copy has been
+    // generated, and Preview · Download PDF · .xlsx · Generate.
     function issuesHtml(list) {
-        return list.length ? `<ul class="sd-issues">${list.map(i => `<li>${esc(i)}</li>`).join('')}</ul>` : '<div class="sd-ok">✓ Ready to generate</div>';
+        return list.length ? `<ul class="sd-issues">${list.map(i => `<li>${esc(i)}</li>`).join('')}</ul>` : '';
     }
+    function docRowHtml(st, { name, doc, stage, issues = [], xlsx = false, preview, gen, genLabel, note = '' }) {
+        const v = st.view, b = base(v.shipment.id);
+        const out = latestOut(v.record, doc, stage);
+        return `<div class="sd-docrow">
+            <div><strong>${esc(name)}</strong>
+                <div class="sd-muted">${out ? `Copy generated ${esc(when(out.at))}${esc(by(out.by))}` : 'No copy generated yet'}${note ? ' · ' + note : ''}</div>
+                ${issuesHtml(issues)}</div>
+            <div class="sd-docrow-act">
+                <a class="btn-secondary btn-sm" href="${b}/render?${preview}" target="_blank" rel="noopener" title="How it would print with today's figures — not an issued copy">Preview</a>
+                ${out ? `<a class="btn-secondary btn-sm" href="${b}/render?out=${encodeURIComponent(out.key)}&download=1" target="_blank" rel="noopener" title="${esc(out.filename || '')}">Download PDF</a>` : ''}
+                ${xlsx ? `<a class="btn-secondary btn-sm" href="${b}/xlsx${out ? '?out=' + encodeURIComponent(out.key) : ''}">.xlsx</a>` : ''}
+                ${gen ? `<button class="btn-primary btn-sm" data-act="${gen}" ${issues.length ? 'disabled' : ''}>${out ? 'Generate again' : esc(genLabel)}</button>` : ''}
+            </div></div>`;
+    }
+
     function docsHtml(st) {
-        const v = st.view, g = v.generation, b = base(v.shipment.id);
-        if (!v.record.confirmed) return `<div class="ship-det-hd"><h3 class="ship-det-title">4 · Draft documents</h3></div><p class="sd-muted">Confirm the bales first.</p>`;
+        const v = st.view, r = v.record, g = v.generation;
+        const stat = sectionStatus(st)[4];
+        if (!r.confirmed || !eiConfirmed(r.exportInvoice)) {
+            return `${sectionHd(4, 'Draft documents for Paul', stat)}<p class="sd-muted">${!r.confirmed ? 'Confirm the bales (section 2) and our proforma invoice (section 3) first.' : 'Confirm our proforma invoice (section 3) first.'}</p>`;
+        }
         const ready = !g.packingDraft.length && !g.proforma.length;
-        return `<div class="ship-det-hd"><h3 class="ship-det-title">4 · Draft documents for Paul</h3></div>
-            <div class="sd-docrow"><div><strong>Draft packing list</strong>${issuesHtml(g.packingDraft)}</div>
-                <div class="sd-docrow-act"><a class="btn-secondary btn-sm" href="${b}/render?doc=packing&stage=draft" target="_blank" rel="noopener">Preview</a>
-                <a class="btn-secondary btn-sm" href="${b}/xlsx">.xlsx</a></div></div>
-            <div class="sd-docrow"><div><strong>Proforma invoice</strong>${issuesHtml(g.proforma)}</div>
-                <div class="sd-docrow-act"><a class="btn-secondary btn-sm" href="${b}/render?doc=proforma" target="_blank" rel="noopener">Preview</a></div></div>
-            <div class="sd-gen"><button class="btn-primary" data-act="gen-draft" ${ready ? '' : 'disabled'}>Generate draft documents</button>
-                <span class="sd-muted">Keeps a fixed copy of each. Open one, then Print → Save as PDF to share. Nothing is emailed or put in Drive.</span></div>`;
+        return `${sectionHd(4, 'Draft documents for Paul', stat)}
+            ${docRowHtml(st, { name: 'Draft packing list', doc: 'packing', stage: 'draft', issues: g.packingDraft, xlsx: true, preview: 'doc=packing&stage=draft' })}
+            ${docRowHtml(st, { name: 'Our proforma invoice', doc: 'proforma', stage: 'draft', issues: g.proforma, preview: 'doc=proforma' })}
+            <div class="sd-gen"><button class="btn-primary" data-act="gen-draft" ${ready ? '' : 'disabled'}>${latestOut(r, 'packing', 'draft') ? 'Generate both again' : 'Generate both'}</button>
+                <span class="sd-muted">Keeps a fixed copy of each to download and send to Paul. Nothing is emailed or put in Drive.</span></div>`;
     }
 
     // ── LC details and final ─────────────────────────────────────────────
     function finalHtml(st) {
-        const v = st.view, lc = v.record.lc || {}, g = v.generation, b = base(v.shipment.id), L = v.linkedLc;
-        if (!v.record.confirmed) return `<div class="ship-det-hd"><h3 class="ship-det-title">7 · LC details and final packing list</h3></div><p class="sd-muted">After the draft documents have gone to Paul and JPS has opened the LC.</p>`;
+        const v = st.view, lc = v.record.lc || {}, g = v.generation, L = v.linkedLc;
+        const stat = sectionStatus(st)[7];
+        if (!v.record.confirmed) return `${sectionHd(7, 'LC details and final packing list', stat)}<p class="sd-muted">After the draft documents have gone to Paul and JPS has opened the LC.</p>`;
         const useLc = L && (L.lcNumber !== lc.number || (L.issuedDate && L.issuedDate !== lc.date));
-        return `<div class="ship-det-hd"><h3 class="ship-det-title">7 · LC details and final packing list</h3></div>
-            ${L ? `<p class="sd-muted">Linked LC on the Letter of Credit tab: <strong>${esc(L.lcNumber)}</strong>${L.issuedDate ? `, issued ${esc(longDate(L.issuedDate))}` : ''}${useLc ? ` · <button class="btn-link" data-act="use-lc">Use these</button>` : ''}</p>` : '<p class="sd-muted">No LC is linked to this shipment yet (Letter of Credit tab). You can still enter the details here.</p>'}
+        return `${sectionHd(7, 'LC details and final packing list', stat)}
+            ${L ? `<p class="sd-muted">Linked LC on the Letter of Credit tab: <strong>${esc(L.lcNumber)}</strong>${L.issuedDate ? `, issued ${esc(day(L.issuedDate))}` : ''}${useLc ? ` · <button class="btn-link" data-act="use-lc">Use these</button>` : ''}</p>` : '<p class="sd-muted">No LC is linked to this shipment yet (Letter of Credit tab). You can still enter the details here.</p>'}
             <div class="sd-grid4">
                 <label class="sd-field"><span class="imp-field-label">LC no.</span><input class="sd-input" id="sd-lc-number" value="${esc(lc.number || '')}"></label>
                 <label class="sd-field"><span class="imp-field-label">LC date of issue</span><input class="sd-input" type="date" id="sd-lc-date" value="${esc(lc.date || '')}"></label>
-                <label class="sd-field"><span class="imp-field-label">Gross weight kg</span><input class="sd-input" type="number" step="any" id="sd-lc-gross" value="${lc.grossKg ?? ''}">
-                    <span class="sd-muted">Net is ${fmtKg(v.confirmedTotals.netKg)} kg</span></label>
+                <label class="sd-field"><span class="imp-field-label">Gross weight (kg)</span><input class="sd-input sd-num" type="number" step="any" id="sd-lc-gross" value="${lc.grossKg ?? ''}">
+                    <span class="sd-muted">Net is ${kg(v.confirmedTotals.netKg)}</span></label>
                 <div class="sd-field sd-field--btn"><button class="btn-secondary btn-sm" data-act="save-lc">Save LC details</button></div>
             </div>
             ${v.lcChecks.length ? checkListHtml(v.lcChecks, 'sd-checks--compact') : ''}
-            <div class="sd-docrow"><div><strong>Final packing list</strong>${issuesHtml(g.packingFinal)}</div>
-                <div class="sd-docrow-act"><a class="btn-secondary btn-sm" href="${b}/render?doc=packing&stage=final" target="_blank" rel="noopener">Preview</a>
-                <a class="btn-secondary btn-sm" href="${b}/xlsx">.xlsx</a>
-                <button class="btn-primary btn-sm" data-act="gen-final" ${g.packingFinal.length ? 'disabled' : ''}>Generate final</button></div></div>`;
+            ${docRowHtml(st, { name: 'Final packing list', doc: 'packing', stage: 'final', issues: g.packingFinal, xlsx: true, preview: 'doc=packing&stage=final', gen: 'gen-final', genLabel: 'Generate final' })}`;
     }
 
-    // ── JPS invoice ──────────────────────────────────────────────────────
+    // ── JPS's proforma invoice ───────────────────────────────────────────
     function splitHtml(v) {
         const sp = v.jpsSplit, ei = v.record.exportInvoice || {};
         if (!sp) return '';
         return `<div class="sd-split">
-            <div><strong>${esc(sp.currency)} ${fmtMoney(sp.total)}</strong> on the JPS invoice =</div>
-            <div class="sd-split-row"><span>LC deposit</span><span>${esc(sp.currency)} ${fmtMoney(sp.depositAmount)}</span><span class="sd-muted">${fmtKg(sp.netKg)} kg × ${fmtRate(sp.depositRate)} — our invoice ${esc(ei.number || '')}; the LC pays this back</span></div>
-            <div class="sd-split-row"><span>Handling &amp; sorting</span><span>${esc(sp.currency)} ${fmtMoney(sp.handlingAmount)}</span><span class="sd-muted">${esc(sp.currency)} ${fmtRate(sp.handlingRate)}/kg — JPS's margin, the real cost</span></div>
+            <div><strong>${money(sp.total, sp.currency)}</strong> on JPS's proforma invoice is made up of</div>
+            <div class="sd-split-row"><span>LC deposit</span><span>${money(sp.depositAmount, sp.currency)}</span><span class="sd-muted">${kg(sp.netKg)} × ${perKg(sp.depositRate, sp.currency)} — our proforma invoice ${esc(ei.number || '')}; the LC pays this back</span></div>
+            <div class="sd-split-row"><span>Handling &amp; sorting</span><span>${money(sp.handlingAmount, sp.currency)}</span><span class="sd-muted">${perKg(sp.handlingRate, sp.currency)} — JPS's margin, the real cost</span></div>
         </div>`;
     }
 
     function jpsHtml(st) {
-        const v = st.view, j = st.jps;
-        const hd = `<div class="ship-det-hd"><h3 class="ship-det-title">5 · JPS invoice</h3><span class="sd-muted">Paying it gets JPS to open the LC</span></div>`;
-        if (!v.record.confirmed) return hd + '<p class="sd-muted">Confirm the bales first.</p>';
-        const raw = r => r ? `<span class="sd-raw">“${esc(r)}”</span>` : '';
-        const typical = v.jpsTypical?.rate != null ? `Usual handling & sorting: ${esc(v.record.exportInvoice?.currency || 'USD')} ${fmtRate(v.jpsTypical.rate)}/kg${v.jpsTypical.shipment ? ` (Shipment #${v.jpsTypical.shipment})` : ' (settings)'}` : '';
+        const v = st.view, j = st.jps, r = v.record;
+        const locked = !!r.jpsConfirmed;
+        const extra = locked ? '<button class="btn-secondary btn-sm" data-act="unlock-jps">Unlock to edit</button>' : '<span class="sd-muted" id="sd-jps-savestate"></span>';
+        const hd = `${sectionHd(5, "JPS's proforma invoice", sectionStatus(st)[5], j ? extra : '')}
+            <p class="sd-callout">Paying this invoice is what gets JPS to open the LC. It is our proforma amount (the LC deposit) plus JPS's handling &amp; sorting.</p>`;
+        if (!r.confirmed) return hd + '<p class="sd-muted">Confirm the bales in section 2 first.</p>';
+        const fromPdf = !!r.extractions?.jpsInvoice;
+        const ccy = j?.currency || '';
+        const fig = (path, val, raw, fmt) => figure(st, 'jps', path, val, raw, fmt, { fromPdf, locked });
+        const txt = (label, html) => `<div class="sd-field"><span class="imp-field-label">${esc(label)}</span><div class="sd-fig">${html}</div></div>`;
+        const inp = (label, path, val, attrs = '', placeholder = '') => locked
+            ? txt(label, `<span class="sd-val">${esc(attrs.includes('date') ? day(val) || '—' : (val || '—'))}</span>`)
+            : `<label class="sd-field"><span class="imp-field-label">${esc(label)}</span><input class="sd-input" data-jps="${path}" value="${esc(val || '')}" ${attrs}${placeholder ? ` placeholder="${esc(placeholder)}"` : ''}></label>`;
+        const fails = (v.jpsChecks || []).filter(blocking);
         return `${hd}
-            <div class="sd-uploads sd-uploads--one">${uploadCardHtml(v, 'jpsInvoice', 'JPS invoice', "JPS Enterprise's invoice to Enviroware: our proforma amount plus handling & sorting")}</div>
-            ${!j ? `<p class="sd-muted">Or <button class="btn-link" data-act="manual-jps">enter it by hand</button>. ${esc(typical)}</p>` : `
-            <div class="sd-grid4" style="margin-top:0.75rem">
-                <label class="sd-field"><span class="imp-field-label">Invoice no.</span><input class="sd-input" data-jps="number" value="${esc(j.number)}"></label>
-                <label class="sd-field"><span class="imp-field-label">Date</span><input class="sd-input" type="date" data-jps="date" value="${esc(j.date)}">${raw(j.dateRaw)}</label>
-                <label class="sd-field"><span class="imp-field-label">Currency</span><input class="sd-input" data-jps="currency" value="${esc(j.currency)}" maxlength="3"></label>
-                <label class="sd-field"><span class="imp-field-label">Total</span><input class="sd-input sd-num" type="number" step="any" data-jps="total" value="${j.total ?? ''}">${raw(j.totalRaw)}</label>
+            <div class="sd-uploads sd-uploads--one">${uploadCardHtml(v, 'jpsInvoice', "JPS's proforma invoice (PDF)", "JPS Enterprise's sales proforma invoice to Enviroware")}</div>
+            ${!j ? `<p class="sd-muted">Or <button class="btn-link" data-act="manual-jps">enter it by hand</button>.</p>` : `
+            ${locked ? `<p class="sd-lockline">🔒 Confirmed ${esc(when(r.jpsConfirmed.at))}${esc(by(r.jpsConfirmed.by))}. The JPS bill and the signed copy use these figures.</p>` : ''}
+            <div class="sd-grid4">
+                ${inp('Invoice no.', 'number', j.number)}
+                ${inp('Date', 'date', j.date, 'type="date"')}
+                ${inp('Currency', 'currency', j.currency, 'maxlength="3"')}
+                ${txt('Total (as printed)', fig('total', j.total, j.totalRaw, n => money(n, ccy)))}
             </div>
             ${(j.lines || []).length ? `<table class="sd-lines">
-                <thead><tr><th>Line</th><th class="r">kg</th><th class="r">Unit price</th><th class="r">Amount</th><th></th></tr></thead>
+                <thead><tr><th>Line (as printed)</th><th class="r">Weight</th><th class="r">Unit price</th><th class="r">Amount</th>${locked ? '' : '<th class="sd-x-col"></th>'}</tr></thead>
                 <tbody>${j.lines.map((l, i) => `<tr>
-                    <td><input class="sd-input" data-jps="lines.${i}.description" value="${esc(l.description)}"></td>
-                    <td class="r"><input class="sd-input sd-num" type="number" step="any" data-jps="lines.${i}.kg" value="${l.kg ?? ''}">${raw(l.kgRaw)}</td>
-                    <td class="r"><input class="sd-input sd-num" type="number" step="any" data-jps="lines.${i}.unitPrice" value="${l.unitPrice ?? ''}">${raw(l.unitPriceRaw)}</td>
-                    <td class="r"><input class="sd-input sd-num" type="number" step="any" data-jps="lines.${i}.amount" value="${l.amount ?? ''}">${raw(l.amountRaw)}</td>
-                    <td><button class="sd-bale-x" data-act="jps-del-line" data-i="${i}" title="Remove line">×</button></td></tr>`).join('')}</tbody>
+                    <td>${locked ? esc(l.description || '—') : `<input class="sd-input" data-jps="lines.${i}.description" value="${esc(l.description)}">`}</td>
+                    <td class="r">${fig(`lines.${i}.kg`, l.kg, l.kgRaw, kg)}</td>
+                    <td class="r">${fig(`lines.${i}.unitPrice`, l.unitPrice, l.unitPriceRaw, n => perKg(n, ccy))}</td>
+                    <td class="r">${fig(`lines.${i}.amount`, l.amount, l.amountRaw, n => money(n, ccy))}</td>
+                    ${locked ? '' : `<td class="sd-x-col"><button class="sd-bale-x" data-act="jps-del-line" data-i="${i}" title="Remove line">×</button></td>`}</tr>`).join('')}</tbody>
             </table>` : ''}
-            <div class="sd-muted"><button class="btn-link" data-act="jps-add-line">+ Add line</button> <span id="sd-jps-savestate"></span></div>
+            ${locked ? '' : '<div class="sd-table-foot"><button class="btn-link" data-act="jps-add-line">+ Add line</button></div>'}
             <div id="sd-jps-checks">${checkListHtml(v.jpsChecks || [], 'sd-checks--compact')}</div>
             <div id="sd-jps-split">${splitHtml(v)}</div>
-            <h4 class="sd-h4">Their contract terms <span class="sd-muted">read from their PDF — printed on the signed copy</span></h4>
+            <h4 class="sd-h4">Contract terms <span class="sd-muted">read from their PDF, printed on the signed copy</span></h4>
             <div class="sd-grid3">
-                <label class="sd-field"><span class="imp-field-label">Last date of shipment</span><input class="sd-input" type="date" data-jps="contract.lastShipmentDate" value="${esc(j.contract?.lastShipmentDate || '')}"></label>
-                <label class="sd-field"><span class="imp-field-label">Expiry date</span><input class="sd-input" type="date" data-jps="contract.expiryDate" value="${esc(j.contract?.expiryDate || '')}"></label>
-                <label class="sd-field"><span class="imp-field-label">Containers</span><input class="sd-input" data-jps="contract.containers" value="${esc(j.contract?.containers || '')}" placeholder="1 x 40' FCL"></label>
+                ${inp('Last date of shipment', 'contract.lastShipmentDate', j.contract?.lastShipmentDate, 'type="date"')}
+                ${inp('Expiry date', 'contract.expiryDate', j.contract?.expiryDate, 'type="date"')}
+                ${inp('Containers', 'contract.containers', j.contract?.containers, '', "1 x 40' FCL")}
             </div>
+            ${locked ? '' : `<div class="sd-confirm-row" id="sd-jps-confirm"><button class="btn-primary" data-act="confirm-jps" ${fails.length ? 'disabled' : ''}>Confirm JPS's proforma invoice</button>
+                <span class="sd-muted">${fails.length ? `<span class="sd-err">Fix or dismiss ${fails.length} failing check${fails.length > 1 ? 's' : ''} first.</span> ` : ''}Needed before the JPS bill goes to Xero and before the signed copy.</span></div>`}
             <div id="sd-jps-doc">${jpsDocHtml(st)}</div>`}`;
     }
 
     // Our corrected, signed copy of JPS's sales proforma (their template has
     // the wrong street number, typos, duplicated terms).
     function jpsDocHtml(st) {
-        const v = st.view, g = v.generation?.jpsContract || [], b = base(v.shipment.id);
-        return `<div class="sd-docrow"><div><strong>Signed JPS proforma invoice</strong>
-                <div class="sd-muted">Their sales proforma rewritten without the errors, signed and sealed by you — send it to Paul for his signature</div>${issuesHtml(g)}</div>
-            <div class="sd-docrow-act"><a class="btn-secondary btn-sm" href="${b}/render?doc=jps" target="_blank" rel="noopener">Preview</a>
-                <button class="btn-primary btn-sm" data-act="gen-jps" ${g.length ? 'disabled' : ''}>Generate signed copy</button></div></div>`;
+        const g = st.view.generation?.jpsContract || [];
+        return docRowHtml(st, { name: "JPS's proforma invoice — signed copy", doc: 'jps', stage: 'contract', issues: g, preview: 'doc=jps', gen: 'gen-jps', genLabel: 'Generate signed copy',
+            note: 'their document rewritten without the errors, signed and sealed by you — send it to Paul to sign' });
     }
 
     // ── Xero ─────────────────────────────────────────────────────────────
@@ -423,21 +604,20 @@ const ShipDocs = (() => {
         const errs = v.xero?.errors || {};
         const any = docs.some(d => d.inXero);
         const statusWord = XERO_WORDS[v.xero?.status] || 'Draft';
-        return `<div class="ship-det-hd"><h3 class="ship-det-title">6 · Invoices in Xero</h3>
-                ${any ? `<span><span class="sd-muted">${v.xero.refreshedAt ? 'Checked ' + esc(when(v.xero.refreshedAt)) : ''}</span> <button class="btn-link" data-act="xero-refresh">Refresh from Xero</button></span>` : ''}</div>
+        return `${sectionHd(6, 'Invoices in Xero', sectionStatus(st)[6], any ? `<span class="sd-muted">${v.xero.refreshedAt ? 'Checked ' + esc(when(v.xero.refreshedAt)) : ''}</span> <button class="btn-link" data-act="xero-refresh">Refresh from Xero</button>` : '')}
             <p class="sd-muted">Created as <strong>${esc(statusWord.toLowerCase())}</strong> when you click${v.xero?.currencyMode === 'foreign' ? ', in their own currency' : ', in <strong>NZD</strong> at the day\'s exchange rate (the EUR / USD amount and rate are kept on each line)'} — approve and pay them in Xero; the Hub reads back what was paid in NZD.</p>
             ${xeroErrorHtml(errs.refresh, 'Refresh from Xero failed')}
             <table class="sd-xero"><tbody>${docs.map(d => `<tr>
                 <td><strong>${esc(d.label)}</strong><div class="sd-muted">${esc(d.contactName || '—')} · ${d.type === 'ACCREC' ? 'sales invoice' : 'bill'}</div></td>
-                <td>${d.number ? esc(d.number) : '<span class="sd-muted">—</span>'}${d.date ? `<div class="sd-muted">${esc(longDate(d.date))}</div>` : ''}</td>
-                <td class="r">${d.total != null ? `${esc(d.currency || '')} ${fmtMoney(d.total)}` : '<span class="sd-muted">—</span>'}
-                    ${d.inXero && d.pushed.fx ? `<div class="sd-muted">NZD ${fmtMoney(d.pushed.total)} in Xero @ ${esc(d.pushed.fx.rate.toFixed(4))}</div>`
-                        : !d.inXero && d.nzdEstimate ? `<div class="sd-muted">≈ NZD ${fmtMoney(d.nzdEstimate.total)} at today's rate</div>` : ''}</td>
+                <td>${d.number ? esc(d.number) : '<span class="sd-muted">—</span>'}${d.date ? `<div class="sd-muted">${esc(day(d.date))}</div>` : ''}</td>
+                <td class="r">${d.total != null ? esc(money(d.total, d.currency)) : '<span class="sd-muted">—</span>'}
+                    ${d.inXero && d.pushed.fx ? `<div class="sd-muted">${esc(money(d.pushed.total, 'NZD'))} in Xero (1 NZD = ${esc(d.pushed.fx.rate.toFixed(4))} ${esc(d.pushed.fx.currency)})</div>`
+                        : !d.inXero && d.nzdEstimate ? `<div class="sd-muted">≈ ${esc(money(d.nzdEstimate.total, 'NZD'))} at today's rate</div>` : ''}</td>
                 <td>${d.inXero
                     ? `<span class="sd-xs sd-xs--${esc((d.pushed.status || '').toLowerCase())}">${esc(XERO_WORDS[d.pushed.status] || d.pushed.status)}</span>
-                       ${d.pushed.nzdPaid ? `<div class="sd-muted">NZD ${fmtMoney(d.pushed.nzdPaid)} paid${d.pushed.paidOn ? ' · ' + esc(longDate(d.pushed.paidOn)) : ''}</div>` : ''}
-                       ${d.changedSincePush ? `<div class="sd-warn-text">Hub total now ${esc(d.currency)} ${fmtMoney(d.total)} — update it in Xero</div>` : ''}`
-                    : (d.issues.length ? `<ul class="sd-issues">${d.issues.map(i => `<li>${esc(i)}</li>`).join('')}</ul>` : '<span class="sd-ok">Ready</span>')}</td>
+                       ${d.pushed.nzdPaid ? `<div class="sd-muted">${esc(money(d.pushed.nzdPaid, 'NZD'))} paid${d.pushed.paidOn ? ' · ' + esc(day(d.pushed.paidOn)) : ''}</div>` : ''}
+                       ${d.changedSincePush ? `<div class="sd-warn-text">Hub total now ${esc(money(d.total, d.currency))} — update it in Xero</div>` : ''}`
+                    : (d.issues.length ? `<ul class="sd-issues">${d.issues.map(i => `<li>${esc(i)}</li>`).join('')}</ul>` : '<span class="sd-muted">Not in Xero yet</span>')}</td>
                 <td class="r">${d.inXero
                     ? `<a class="btn-link" href="${esc(d.url)}" target="_blank" rel="noopener">Open in Xero ↗</a>`
                     : `<button class="btn-secondary btn-sm" data-act="xero-push" data-doc="${esc(d.key)}" ${d.issues.length ? 'disabled' : ''}>${errs[d.key] ? 'Try again' : 'Create in Xero'}</button>`}</td>
@@ -447,9 +627,9 @@ const ShipDocs = (() => {
     // ── Cost breakdown ───────────────────────────────────────────────────
     function costHtml(st) {
         const plan = st.view.costPlan || { changes: [] };
-        const hd = `<div class="ship-det-hd"><h3 class="ship-det-title">Cost breakdown</h3><span class="sd-muted">The shipment's Overview, filled from these documents</span></div>`;
+        const hd = `${sectionHd('', 'Cost breakdown', sectionStatus(st).cost)}<p class="sd-muted sd-lead">The shipment's Overview, filled from these documents and Xero.</p>`;
         if (!st.view.record.confirmed) return hd + '<p class="sd-muted">Confirm the bales first.</p>';
-        if (!plan.changes.length) return hd + '<div class="sd-ok">✓ The cost breakdown matches these documents and Xero.</div>';
+        if (!plan.changes.length) return hd + '<p class="sd-muted">Every cost line already matches these documents and Xero.</p>';
         return `${hd}
             <table class="sd-xero"><tbody>${plan.changes.map(c => `<tr>
                 <td><strong>${esc(c.label)}</strong><div class="sd-muted">from ${esc(c.source)}</div></td>
@@ -457,20 +637,22 @@ const ShipDocs = (() => {
             ${st.opts.applyShipPatch ? `<div class="sd-gen"><button class="btn-primary btn-sm" data-act="apply-cost">Update cost breakdown</button></div>` : ''}`;
     }
 
+    const DOC_NAMES = { 'packing:draft': 'Draft packing list', 'packing:final': 'Final packing list', 'proforma:draft': 'Our proforma invoice', 'jps:contract': "JPS's proforma invoice — signed copy" };
+
     function historyHtml(st) {
         const v = st.view, r = v.record, b = base(v.shipment.id);
         const outs = r.outputs || [];
         return `<section class="ship-det-section">
-            <div class="ship-det-hd"><h3 class="ship-det-title">Generated documents</h3></div>
+            ${sectionHd('', 'Generated documents', null)}
             ${outs.length ? `<table class="sd-outs"><tbody>${outs.map(o => `<tr>
-                <td><strong>${esc(o.name)}</strong><div class="sd-muted">${esc(o.filename)}</div></td>
-                <td>${o.invoiceNumber ? `${esc(o.invoiceNumber)} · ${esc(o.currency || '')} ${fmtMoney(o.amount)}` : ''}${o.lcNumber ? `LC ${esc(o.lcNumber)} · gross ${fmtKg(o.grossKg)} kg` : ''}${!o.invoiceNumber && !o.lcNumber ? `${o.packages} bales · ${fmtKg(o.netKg)} kg` : ''}</td>
-                <td class="sd-muted">${esc(when(o.at))} · ${esc(who(o.by))}</td>
-                <td class="r"><a class="btn-link" href="${b}/render?out=${encodeURIComponent(o.key)}" target="_blank" rel="noopener">Open</a>${o.doc === 'packing' ? ` · <a class="btn-link" href="${b}/xlsx?out=${encodeURIComponent(o.key)}">.xlsx</a>` : ''}</td></tr>`).join('')}</tbody></table>`
+                <td><strong>${esc(DOC_NAMES[`${o.doc}:${o.stage || 'draft'}`] || o.name)}</strong><div class="sd-muted">${esc(o.filename)}</div></td>
+                <td>${o.invoiceNumber ? `${esc(o.invoiceNumber)} · ${esc(money(o.amount, o.currency))}` : ''}${o.lcNumber ? `LC ${esc(o.lcNumber)} · gross ${esc(kg(o.grossKg))}` : ''}${!o.invoiceNumber && !o.lcNumber ? `${o.packages} bales · ${esc(kg(o.netKg))}` : ''}</td>
+                <td class="sd-muted">${esc(when(o.at))}${esc(by(o.by))}</td>
+                <td class="r sd-outs-act"><a class="btn-link" href="${b}/render?out=${encodeURIComponent(o.key)}" target="_blank" rel="noopener">Open</a> · <a class="btn-link" href="${b}/render?out=${encodeURIComponent(o.key)}&download=1" target="_blank" rel="noopener">Download PDF</a>${o.doc === 'packing' ? ` · <a class="btn-link" href="${b}/xlsx?out=${encodeURIComponent(o.key)}">.xlsx</a>` : ''}</td></tr>`).join('')}</tbody></table>`
                 : '<p class="sd-muted">None yet.</p>'}
             <details class="sd-details"><summary>Supplier files and activity</summary>
-                ${(r.fileHistory || []).map(f => `<div class="sd-muted">📄 <a href="${b}/file?key=${encodeURIComponent(f.key)}" target="_blank" rel="noopener">${esc(f.filename)}</a> · ${esc(f.kind === 'proforma' ? 'proforma' : 'packing list')} · ${esc(when(f.uploadedAt))} · ${esc(who(f.by))}</div>`).join('') || '<div class="sd-muted">No files yet.</div>'}
-                <ul class="sd-log">${(r.log || []).map(l => `<li><span class="sd-muted">${esc(when(l.at))} · ${esc(who(l.by))}</span> ${esc(l.action)}</li>`).join('')}</ul>
+                ${(r.fileHistory || []).map(f => `<div class="sd-muted">📄 <a href="${b}/file?key=${encodeURIComponent(f.key)}" target="_blank" rel="noopener">${esc(f.filename)}</a> · ${esc({ proforma: "Pistoni's proforma", packingList: "Pistoni's packing list", jpsInvoice: "JPS's proforma" }[f.kind] || f.kind)} · ${esc(when(f.uploadedAt))}${esc(by(f.by))}</div>`).join('') || '<div class="sd-muted">No files yet.</div>'}
+                <ul class="sd-log">${(r.log || []).map(l => `<li><span class="sd-muted">${esc(when(l.at))}${esc(by(l.by))}</span> ${esc(l.action)}</li>`).join('')}</ul>
             </details>
         </section>`;
     }
@@ -496,12 +678,10 @@ const ShipDocs = (() => {
         const rate = $(st, '#sd-ei-rate');
         if (rate) {
             const t = st.view.confirmedTotals, ccy = st.view.record.exportInvoice.currency;
-            rate.addEventListener('input', () => { $(st, '#sd-ei-amount').innerHTML = `${fmtKg(t.netKg)} kg × ${esc(ccy)} ${fmtRate(rate.value)} = <strong>${esc(ccy)} ${fmtMoney(amountOf(t.netKg, rate.value))}</strong>`; });
-            rate.addEventListener('change', () => saveInvoice(st, { rate: num(rate.value), rateConfirmed: false }));
-            $(st, '#sd-ei-number').addEventListener('change', e => saveInvoice(st, { number: e.target.value.trim(), numberConfirmed: false }));
+            rate.addEventListener('input', () => { $(st, '#sd-ei-amount').innerHTML = `${kg(t.netKg)} × ${esc(perKg(rate.value, ccy))} = <strong>${esc(money(amountOf(t.netKg, rate.value), ccy))}</strong>`; });
+            rate.addEventListener('change', () => saveInvoice(st, { rate: num(rate.value) }));
+            $(st, '#sd-ei-number').addEventListener('change', e => saveInvoice(st, { number: e.target.value.trim() }));
             $(st, '#sd-ei-date').addEventListener('change', e => saveInvoice(st, { date: e.target.value }));
-            $(st, '#sd-ei-numok').addEventListener('change', e => saveInvoice(st, { numberConfirmed: e.target.checked }));
-            $(st, '#sd-ei-rateok').addEventListener('change', e => saveInvoice(st, { rateConfirmed: e.target.checked }));
         }
     }
 
@@ -514,6 +694,9 @@ const ShipDocs = (() => {
             else if (e.target.dataset.jps) onJpsEdit(st, e.target);
         });
         p.addEventListener('change', e => { if (e.target.dataset.path && e.target.tagName === 'SELECT') onEdit(st, e.target); });
+        // Typed figures: plain digits while editing, separators otherwise.
+        p.addEventListener('focusin', e => { const el = e.target; if (el.dataset?.num !== undefined) el.value = el.value.replace(/[,\s]/g, ''); });
+        p.addEventListener('focusout', e => { const el = e.target; if (el.dataset?.num !== undefined) el.value = showNum(readNum(el), Number(el.dataset.num)); });
         p.addEventListener('click', e => {
             const btn = e.target.closest('[data-act]');
             if (btn && p.contains(btn)) { e.preventDefault(); act(st, btn.dataset.act, btn); }
@@ -531,9 +714,10 @@ const ShipDocs = (() => {
 
     function onEdit(st, el) {
         const path = el.dataset.path;
-        const numeric = el.type === 'number';
-        setPath(st.review, path, numeric ? num(el.value) : el.value);
+        const numeric = el.type === 'number' || el.dataset.num !== undefined;
+        setPath(st.review, path, numeric ? (el.dataset.num !== undefined ? readNum(el) : num(el.value)) : el.value);
         if (/^bales\.\d+\.colour$/.test(path)) el.closest('.sd-bale').className = `sd-bale sd-bale--${el.value || 'none'}`;
+        markCorrected(st, el, 'review:' + path);
         scheduleSave(st);
     }
 
@@ -557,7 +741,18 @@ const ShipDocs = (() => {
     }
 
     // Re-render checks, totals and the confirm bar without touching inputs.
+    function refreshStatus(st) {
+        const s = sectionStatus(st);
+        for (const n of [2, 3, 4, 5, 6]) {
+            const el = $(st, '#sd-stat-' + n);
+            if (el && s[n]) { el.className = `sd-sstat sd-sstat--${s[n].kind}`; el.textContent = `${STAT_ICON[s[n].kind]} ${s[n].text}`; }
+        }
+        const rc = $(st, '#sd-rc'), html = reconHtml(st.view);
+        if (rc && html) rc.outerHTML = html;
+    }
+
     function refreshReviewBits(st) {
+        refreshStatus(st);
         const c = $(st, '#sd-checks'); if (c) c.innerHTML = checksHtml(st);
         const t = $(st, '#sd-bale-totals'); if (t) t.innerHTML = totalsLine(st.view.reviewTotals);
         const cf = $(st, '#sd-confirm'); if (cf) cf.innerHTML = confirmHtml(st);
@@ -574,7 +769,8 @@ const ShipDocs = (() => {
     }
 
     function onJpsEdit(st, el) {
-        setPath(st.jps, el.dataset.jps, el.type === 'number' ? num(el.value) : el.value);
+        setPath(st.jps, el.dataset.jps, el.dataset.num !== undefined ? readNum(el) : el.type === 'number' ? num(el.value) : el.value);
+        markCorrected(st, el, 'jps:' + el.dataset.jps);
         clearTimeout(st.jpsTimer);
         const ss = $(st, '#sd-jps-savestate'); if (ss) ss.textContent = 'Unsaved…';
         st.jpsTimer = setTimeout(() => { st.jpsTimer = null; saveJps(st); }, 600);
@@ -588,6 +784,9 @@ const ShipDocs = (() => {
             const c = $(st, '#sd-jps-checks'); if (c) c.innerHTML = checkListHtml(st.view.jpsChecks || [], 'sd-checks--compact');
             const sp = $(st, '#sd-jps-split'); if (sp) sp.innerHTML = splitHtml(st.view);
             const jd = $(st, '#sd-jps-doc'); if (jd) jd.innerHTML = jpsDocHtml(st);
+            const jc = $(st, '#sd-jps-confirm');
+            if (jc) { const f = (st.view.jpsChecks || []).filter(blocking).length; jc.querySelector('button').disabled = !!f; }
+            refreshStatus(st);
             const x = $(st, '#sd-xero'); if (x) x.innerHTML = xeroHtml(st);
             const co = $(st, '#sd-cost'); if (co) co.innerHTML = costHtml(st);
             if (ss) ss.textContent = 'Saved';
@@ -619,8 +818,10 @@ const ShipDocs = (() => {
         await flushSave(st);
         try {
             const ei = { ...st.view.record.exportInvoice, ...patch };
+            const y = window.scrollY;
             const view = await send(base(st.ship.id), 'PATCH', { exportInvoice: ei });
             setView(st, view); draw(st);
+            window.scrollTo(0, y);
         } catch (e) { toast('Save failed: ' + e.message); }
     }
 
@@ -634,7 +835,8 @@ const ShipDocs = (() => {
     }
 
     async function act(st, a, btn) {
-        if (['settings', 'save-lc', 'gen-draft', 'gen-final', 'gen-jps', 'apply-weights', 'apply-cost', 'xero-push', 'xero-refresh', 'dismiss-check', 'restore-check'].includes(a)) await flushSave(st);
+        if (['settings', 'save-lc', 'gen-draft', 'gen-final', 'gen-jps', 'apply-weights', 'apply-cost', 'xero-push', 'xero-refresh', 'dismiss-check', 'restore-check',
+            'unlock-bales', 'confirm-ei', 'unlock-ei', 'use-suggested', 'confirm-jps', 'unlock-jps'].includes(a)) await flushSave(st);
         const r = st.review;
         if (a === 'settings') return openSettings(() => load(st));
         if (a === 'add-bale') {
@@ -658,8 +860,8 @@ const ShipDocs = (() => {
         }
         if (a === 'manual-invoice') {
             r.supplierInvoice = { number: '', date: '', currency: 'EUR', lines: [
-                { description: 'White toeclips', colour: 'white', kg: null, unitPrice: null, amount: null },
-                { description: 'Coloured toeclips', colour: 'coloured', kg: null, unitPrice: null, amount: null },
+                { description: '', colour: 'white', kg: null, unitPrice: null, amount: null },
+                { description: '', colour: 'coloured', kg: null, unitPrice: null, amount: null },
             ], netKg: null, total: null };
             $(st, '#sd-review').innerHTML = reviewHtml(st);
             return scheduleSave(st, 0);
@@ -701,6 +903,31 @@ const ShipDocs = (() => {
             try { await st.opts.applyShipPatch(st.view.costPlan.patch); toast('Cost breakdown updated'); }
             catch (e) { toast('Could not update the cost breakdown: ' + e.message); btn.disabled = false; btn.textContent = 'Update cost breakdown'; }
             return;
+        }
+        if (a === 'edit-field') {
+            // ✎ on a printed figure: switch it to an input, keep the page where it is
+            const [store, ...rest] = btn.dataset.field.split(':');
+            const path = rest.join(':');
+            st.editing.add(btn.dataset.field);
+            if (store === 'jps') $(st, '#sd-jps').innerHTML = jpsHtml(st); else $(st, '#sd-review').innerHTML = reviewHtml(st);
+            const inp = st.panel.querySelector(`[data-${store === 'jps' ? 'jps' : 'path'}="${CSS.escape(path)}"]`);
+            if (inp) { inp.focus(); inp.select?.(); }
+            return;
+        }
+        if (a === 'unlock-bales') {
+            if (!confirm("Unlock section 2 to edit the bales and Pistoni's figures?\n\nThe confirmation is cleared: documents and Xero wait until you confirm again. Copies already generated and invoices already in Xero are not changed.")) return;
+            return redrawWith(st, send(`${base(st.ship.id)}/confirm`, 'POST', { unlock: true }), 'Section 2 unlocked');
+        }
+        if (a === 'confirm-ei') return saveInvoice(st, { numberConfirmed: true, rateConfirmed: true });
+        if (a === 'unlock-ei') {
+            if (!confirm('Unlock our proforma invoice to edit it?\n\nIts confirmation is cleared until you confirm it again.')) return;
+            return saveInvoice(st, { numberConfirmed: false, rateConfirmed: false });
+        }
+        if (a === 'use-suggested') return saveInvoice(st, { number: st.view.defaults.number });
+        if (a === 'confirm-jps') return redrawWith(st, send(base(st.ship.id), 'PATCH', { jpsConfirm: true }), "JPS's proforma invoice confirmed");
+        if (a === 'unlock-jps') {
+            if (!confirm("Unlock JPS's proforma invoice to edit it?\n\nIts confirmation is cleared: the JPS bill and the signed copy wait until you confirm it again.")) return;
+            return redrawWith(st, send(base(st.ship.id), 'PATCH', { jpsConfirm: false }), "JPS's proforma invoice unlocked");
         }
         if (a === 'toggle-passed') {
             const pop = btn.nextElementSibling;
@@ -763,6 +990,18 @@ const ShipDocs = (() => {
     }
     document.addEventListener('click', e => closePassedPopovers(e.target));
     document.addEventListener('keydown', e => { if (e.key === 'Escape') closePassedPopovers(); });
+
+    // Run a request that returns the view, redraw in place, say what happened.
+    async function redrawWith(st, promise, done) {
+        try {
+            const y = window.scrollY;
+            setView(st, await promise);
+            st.editing.clear();
+            draw(st);
+            window.scrollTo(0, y);
+            if (done) toast(done);
+        } catch (e) { toast('Not done: ' + e.message); }
+    }
 
     // After a failed Xero call: reload so the error the server saved shows up.
     async function showLatest(st) {

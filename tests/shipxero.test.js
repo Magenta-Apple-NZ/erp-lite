@@ -5,7 +5,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
     parseStandardNumber, jpsFromExtraction, jpsSplit, jpsChecks, xeroDocs, xeroPayload, xeroState, xeroDate, xeroUrl,
-    xeroValidationMessage, costPlan, sanitiseJps, convertDocToNzd,
+    xeroValidationMessage, costPlan, sanitiseJps, convertDocToNzd, reconcile,
 } from '../functions/api/import/_shipxero.js';
 import { mergeSettings, reviewFromPackingExtraction, reviewFromProformaExtraction, sanitiseSettings } from '../functions/api/import/_exportdocs.js';
 
@@ -36,7 +36,7 @@ function rec(extra = {}) {
     return {
         confirmed: c, review: c,
         exportInvoice: { number: '102/2026', date: '2026-11-13', rate: 1.18, currency: 'USD', numberConfirmed: true, rateConfirmed: true },
-        jps: jpsFromExtraction(JPS_EXTRACT), lc: {}, outputs: [], xero: {}, ...extra,
+        jps: jpsFromExtraction(JPS_EXTRACT), jpsConfirmed: { at: '2026-11-20T01:00:00Z', by: 'andrew@primetie.co.nz' }, lc: {}, outputs: [], xero: {}, ...extra,
     };
 }
 
@@ -107,7 +107,7 @@ test('three Xero documents with the right type, contact, currency and totals', (
 test('Xero documents wait for account codes, ticks and a JPS invoice', () => {
     const docs = xeroDocs({ record: rec({ jps: null, exportInvoice: { number: '102/2026', date: '2026-11-13', rate: 1.18, currency: 'USD' } }), settings: mergeSettings({}), shipmentNumber: 43 });
     assert.ok(docs[0].issues.includes('Set the raw product account in Document settings → Xero'));
-    assert.ok(docs[1].issues.includes('Tick the invoice number and export rate first'));
+    assert.ok(docs[1].issues.includes('Confirm our proforma invoice in section 3'));
     assert.ok(docs[2].issues.includes('Upload or enter the JPS invoice'));
 });
 
@@ -213,4 +213,33 @@ test('converting a document to NZD: one line each, to the cent, original amount 
     assert.deepEqual(fx, { currency: 'EUR', rate: 0.53, rateDate: '2026-11-17', foreignTotal: 17262.75 });
     assert.deepEqual(convertDocToNzd({ currency: 'NZD', lines: [] }, 1).fx, null);
     assert.throws(() => convertDocToNzd(d, undefined), /No EUR → NZD exchange rate available/);
+});
+
+test('reconciliation flags JPS dated before ours, a weight that differs, an unusual margin, and waits honestly', () => {
+    // Shipment 43 as it came: JPS's dated 10 Nov at USD 1.82/kg, ours dated 17 Nov
+    const r43 = rec({
+        exportInvoice: { number: '102/2026', date: '2026-11-17', rate: 1.18, currency: 'USD', numberConfirmed: true, rateConfirmed: true },
+        jps: { ...jpsFromExtraction(JPS_EXTRACT), number: 'JPSE-102/2026', date: '2026-11-10', total: 32996.6, lines: [{ kg: 18130, unitPrice: 1.82, amount: 32996.6 }] },
+    });
+    const rc = reconcile(r43, { typicalMargin: 0.63, fxRates: { EUR: 0.5, USD: 0.6 } });
+    const by = Object.fromEntries(rc.diffs.map(d => [d.id, d]));
+    assert.equal(by.kg.status, 'ok');
+    assert.equal(by.margin.status, 'ok');
+    assert.equal(by.margin.text, "JPS's is USD 11,603.20 more than ours = USD 0.64/kg handling & sorting (usual 0.63/kg)");
+    assert.equal(by.dates.status, 'warn');
+    assert.match(by.dates.text, /JPS's proforma invoice \(10 Nov 2026\) is dated before our proforma invoice \(17 Nov 2026\)/);
+    assert.deepEqual(rc.docs.map(d => d.nzd), [null, 34525.5, 35655.67, 54994.33]);
+    assert.equal(rc.docs.find(d => d.key === 'jps').rate, 1.82);
+
+    const short = reconcile(rec({ jps: { ...jpsFromExtraction(JPS_EXTRACT), netKg: 18000, lines: [] } }), { typicalMargin: 0.63 });
+    assert.equal(short.diffs[0].status, 'warn');
+    assert.match(short.diffs[0].text, /JPS's proforma invoice 18,000 kg is 130 kg less than the packing list \(18,130 kg\)/);
+
+    const high = reconcile(rec({ jps: { ...jpsFromExtraction(JPS_EXTRACT), total: 40000, lines: [] } }), { typicalMargin: 0.63 });
+    assert.equal(high.diffs[1].status, 'warn');
+
+    const none = reconcile(rec({ jps: null }), { typicalMargin: 0.63 });
+    assert.deepEqual(none.diffs.map(d => d.status), ['ok', 'wait', 'ok']);
+    assert.equal(none.diffs[1].text, "Waiting for JPS's proforma invoice");
+    assert.match(none.diffs[0].text, /\(JPS's not in yet\)$/);
 });

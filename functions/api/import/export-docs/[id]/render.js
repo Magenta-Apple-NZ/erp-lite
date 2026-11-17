@@ -2,7 +2,9 @@
 // the browser; no PDF library on Workers).
 //   GET  ?doc=packing&stage=draft|final | ?doc=proforma | ?doc=jps   live preview
 //        (jps = our signed rewrite of JPS's sales proforma invoice)
-//   GET  ?out=<key>                                       a generated copy
+//   GET  ?out=<key>[&download=1]                          a generated copy, with a
+//        Download PDF button (html2pdf in the browser, as the packing slips do);
+//        &download=1 starts the download as soon as the page loads
 //   POST { docs: [{ doc, stage }] }                       generate: re-check,
 //        freeze the HTML and its data in KV, log it on the shipment
 // Nothing is emailed or written to Drive; sharing stays manual.
@@ -13,7 +15,7 @@ import { renderPackingList, renderProforma, renderJpsContract, docFilename, bale
 
 const html = (body, status = 200) => new Response(body, { status, headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'private, no-store' } });
 const DOCS = { 'packing:draft': 'packingDraft', 'packing:final': 'packingFinal', 'proforma:draft': 'proforma', 'jps:contract': 'jpsContract' };
-const NAMES = { 'packing:draft': 'Draft packing list', 'packing:final': 'Final packing list', 'proforma:draft': 'Proforma invoice', 'jps:contract': 'Signed JPS proforma invoice' };
+const NAMES = { 'packing:draft': 'Draft packing list', 'packing:final': 'Final packing list', 'proforma:draft': 'Our proforma invoice', 'jps:contract': "JPS's proforma invoice — signed copy" };
 const docOf = d => (d === 'proforma' || d === 'jps' ? d : 'packing');
 const docKey = (doc, stage) => doc === 'jps' ? 'jps:contract' : `${doc}:${doc === 'proforma' ? 'draft' : (stage === 'final' ? 'final' : 'draft')}`;
 
@@ -21,6 +23,41 @@ function render(dk, { record, settings, assets, shipmentNumber, banner }) {
     if (dk === 'jps:contract') return renderJpsContract({ record, settings, assets, shipmentNumber, banner });
     if (dk === 'proforma:draft') return renderProforma({ record, settings, assets, shipmentNumber, banner });
     return renderPackingList({ record, settings, assets, stage: dk.endsWith('final') ? 'final' : 'draft', shipmentNumber, banner });
+}
+
+// The Download PDF button for a generated copy: the page renders itself to an
+// A4 PDF named like the files Andrew keeps (docFilename). Added when served,
+// so copies generated before it existed get it too.
+export function withDownload(page, filename, auto) {
+    const name = JSON.stringify(filename || 'document.pdf').replace(/</g, '\\u003c');
+    const tail = `<style>.pdf-capture .sheet { margin: 0 !important; box-shadow: none !important; min-height: 0 !important; height: 296mm; overflow: hidden; }</style>
+<script src="https://cdn.jsdelivr.net/npm/html2pdf.js@0.10.2/dist/html2pdf.bundle.min.js"></script>
+<script>
+(() => {
+  const name = ${name};
+  const bar = document.querySelector('.toolbar');
+  const btn = document.createElement('button');
+  btn.type = 'button'; btn.textContent = 'Download PDF'; btn.id = 'download-pdf';
+  if (bar) bar.insertBefore(btn, bar.querySelector('button'));
+  async function download() {
+    if (typeof html2pdf === 'undefined') { alert('The PDF tool did not load — check the connection and try again'); return; }
+    btn.disabled = true; btn.textContent = 'Preparing PDF…';
+    document.body.classList.add('pdf-capture');
+    try {
+      await html2pdf().set({
+        margin: 0, filename: name, image: { type: 'jpeg', quality: 0.95 },
+        html2canvas: { scale: 2, backgroundColor: '#ffffff', useCORS: true, logging: false },
+        jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }, pagebreak: { mode: 'avoid-all' },
+      }).from(document.querySelector('.sheet')).save();
+    } finally {
+      document.body.classList.remove('pdf-capture'); btn.disabled = false; btn.textContent = 'Download PDF';
+    }
+  }
+  btn.addEventListener('click', download);
+  ${auto ? "window.addEventListener('load', () => setTimeout(download, 300));" : ''}
+})();
+</script>`;
+    return page.includes('</body>') ? page.replace('</body>', tail + '\n</body>') : page + tail;
 }
 
 function messagePage(msg) {
@@ -33,8 +70,10 @@ export async function onRequestGet({ env, params, request }) {
         const out = url.searchParams.get('out');
         if (out) {
             if (!out.startsWith(params.id + ':')) return html(messagePage('Not found'), 404);
-            const snap = await getJson(env, K.out(out), null);
-            return snap ? html(snap.html) : html(messagePage('Not found'), 404);
+            const [snap, rec] = await Promise.all([getJson(env, K.out(out), null), loadRecord(env, params.id)]);
+            if (!snap) return html(messagePage('Not found'), 404);
+            const meta = (rec.outputs || []).find(o => o.key === out);
+            return html(withDownload(snap.html, meta?.filename, url.searchParams.get('download') === '1'));
         }
         const dk = docKey(docOf(url.searchParams.get('doc')), url.searchParams.get('stage'));
         const view = await buildView(env, params.id);

@@ -274,6 +274,11 @@ export function longDate(ymd) {
     return `${ordinal(Number(m[3]))} ${MONTHS[Number(m[2]) - 1]} ${m[1]}`;
 }
 const isYmd = s => /^\d{4}-\d{2}-\d{2}$/.test(String(s || ''));
+// "2026-11-17" → "17 Nov 2026": the one date format on screen (documents keep longDate).
+export function shortDate(ymd) {
+    const m = String(ymd || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    return m ? `${Number(m[3])} ${MONTHS[Number(m[2]) - 1].slice(0, 3)} ${m[1]}` : '';
+}
 
 // ── Bales ────────────────────────────────────────────────────────────────
 export function normaliseColour(c) {
@@ -614,8 +619,7 @@ export function generationIssues({ record, settings, doc, stage = 'draft', shipm
     if (doc === 'proforma') {
         if (!parseInvoiceNumber(ei.number)) out.push('Invoice number must look like 102/2026');
         if (!(Number(ei.rate) > 0)) out.push('Export rate missing');
-        if (!ei.rateConfirmed) out.push('Tick to confirm the export rate');
-        if (!ei.numberConfirmed) out.push('Tick to confirm the invoice number');
+        if (!ei.rateConfirmed || !ei.numberConfirmed) out.push('Confirm our proforma invoice in section 3');
         const dup = otherInvoiceNumbers.find(o => String(o.number || '').replace(/\s/g, '') === String(ei.number || '').replace(/\s/g, ''));
         if (dup) out.push(`Invoice ${ei.number} is already used on Shipment #${dup.shipmentNumber}`);
     }
@@ -626,6 +630,7 @@ export function generationIssues({ record, settings, doc, stage = 'draft', shipm
         if (!isYmd(j.date)) out.push('JPS invoice date missing');
         if (!(j.lines || []).some(l => Number(l.kg) > 0 && Number(l.unitPrice) > 0 && Number(l.amount) > 0)) out.push('JPS invoice lines need kg, unit price and amount');
         if (jpsFailures.length) out.push(`JPS invoice fails: ${jpsFailures.join('; ')}`);
+        else if (!r.jpsConfirmed) out.push("Confirm JPS's proforma invoice in section 5");
         const c = j.contract || {};
         if (!isYmd(c.lastShipmentDate)) out.push('Last date of shipment missing');
         if (!isYmd(c.expiryDate)) out.push('Expiry date missing');

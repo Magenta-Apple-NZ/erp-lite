@@ -15,7 +15,7 @@ import {
     mergeSettings, emptyReview, runChecks, baleTotals, invoiceAmount, exportInvoiceDefaults,
     generationIssues, lcCrossChecks, deriveStatus, STATUS_LABELS, hasUnconfirmedChanges, missingSettings, blockingFailures,
 } from '../_exportdocs.js';
-import { jpsChecks, jpsSplit, xeroDocs, costPlan, convertDocToNzd } from '../_shipxero.js';
+import { jpsChecks, jpsSplit, xeroDocs, costPlan, convertDocToNzd, reconcile } from '../_shipxero.js';
 import { nzToday } from '../../_dates.js';
 
 export { getJson, putJson, whoami };
@@ -119,7 +119,8 @@ export async function buildView(env, shipmentId) {
         .map(r => ({ n: numberOf(r.shipmentId), split: jpsSplit(r) }))
         .filter(x => x.split && x.n != null && (number == null || x.n < number))
         .sort((a, b) => b.n - a.n)[0];
-    const jChecks = jpsChecks(rec, { settings, typicalMargin: prior ? prior.split.handlingRate : null });
+    const typicalMargin = prior ? prior.split.handlingRate : null;
+    const jChecks = jpsChecks(rec, { settings, typicalMargin });
     const confirmedOk = record.confirmed ? !blockingFailures(runChecks(record.confirmed, { settings, shipmentNumber: number, dismissed: record.dismissed })).length : false;
     const jpsOk = !blockingFailures(jChecks).length;
     const jpsFailures = blockingFailures(jChecks).map(c => c.title);
@@ -148,6 +149,7 @@ export async function buildView(env, shipmentId) {
         jpsChecks: jChecks,
         jpsSplit: jpsSplit(rec),
         jpsTypical: prior ? { shipment: prior.n, rate: prior.split.handlingRate } : { shipment: null, rate: Number(settings.jpsMarginPerKg) || null },
+        reconciliation: { ...reconcile(rec, { typicalMargin, settings, fxRates: fxSnap?.rates || null }), fxAt: fxSnap?.at || null },
         xero: {
             docs: withNzdEstimate(xeroDocs({ record: rec, settings, shipmentNumber: number, confirmedOk, jpsOk }), settings, fxSnap),
             status: settings.xero?.status || 'DRAFT',

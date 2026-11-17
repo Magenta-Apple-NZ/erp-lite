@@ -53,6 +53,7 @@ export async function onRequestPost({ env, params, request }) {
         let summary;
         if (kind === 'jpsInvoice') {
             rec.jps = jpsFromExtraction(ext.fields);
+            rec.jpsConfirmed = null;   // a new PDF has to be checked and confirmed again
             summary = `invoice ${rec.jps.number || '?'}, ${rec.jps.currency} ${fmtMoney(rec.jps.total)}`;
             await saveRecord(env, rec, who, `Read the ${LABEL[kind]} (${summary})`);
             return jsonResponse(await buildView(env, params.id));

@@ -103,7 +103,9 @@ async function stageOne({ accounts = true, currencyMode = 'foreign' } = {}) {
     await call(recordApi.onRequestPatch, 'PATCH', { exportInvoice: { ...v.record.exportInvoice, numberConfirmed: true, rateConfirmed: true } });
     const j = await call(extractApi.onRequestPost, 'POST', { kind: 'jpsInvoice', filename: 'JPS-118.pdf', data: B64 });
     assert.equal(j.status, 200, JSON.stringify(j.body));
-    return j.body;
+    const c = await call(recordApi.onRequestPatch, 'PATCH', { jpsConfirm: true });
+    assert.equal(c.status, 200, JSON.stringify(c.body));
+    return c.body;
 }
 
 test('JPS invoice is read, split and checked', async () => {
@@ -111,7 +113,9 @@ test('JPS invoice is read, split and checked', async () => {
     assert.equal(v.record.jps.number, 'JPS-118');
     assert.deepEqual([v.jpsSplit.depositAmount, v.jpsSplit.handlingAmount, v.jpsSplit.handlingRate], [21393.4, 11421.9, 0.63]);
     for (const c of v.jpsChecks) assert.notEqual(c.ok, false, `${c.id}: ${c.detail}`);
-    assert.match(v.record.log[0].action, /Read the JPS invoice \(invoice JPS-118, USD 32,815\.30\)/);
+    assert.ok(v.record.log.some(l => /Read the JPS invoice \(invoice JPS-118, USD 32,815\.30\)/.test(l.action)));
+    assert.equal(v.record.log[0].action, "Confirmed JPS's proforma invoice JPS-118 (USD 32,815.30)");
+    assert.ok(v.record.jpsConfirmed.at);
     // Cost plan: weights from the bales; rates already right
     assert.deepEqual(v.costPlan.changes.map(c => c.label), ['Net Weight Breakdown']);
 });
@@ -187,8 +191,8 @@ test('signed JPS proforma: terms read from their PDF, generated once your signat
     assert.equal(gen.status, 200, JSON.stringify(gen.body));
     const m = gen.body.generated[0];
     assert.deepEqual([m.name, m.filename, m.invoiceNumber, m.currency, m.amount],
-        ['Signed JPS proforma invoice', 'JPS Proforma Invoice - #43 - 20112026 - Signed.pdf', 'JPS-118', 'USD', 32815.3]);
-    assert.match(gen.body.record.log[0].action, /^Generated Signed JPS proforma invoice JPS-118/);
+        ["JPS's proforma invoice — signed copy", 'JPS Proforma Invoice - #43 - 20112026 - Signed.pdf', 'JPS-118', 'USD', 32815.3]);
+    assert.match(gen.body.record.log[0].action, /^Generated JPS's proforma invoice — signed copy JPS-118/);
     const page = await (await renderApi.onRequestGet({ env, params: { id: SHIP }, request: new Request('https://hub.test/x?out=' + encodeURIComponent(m.key)) })).text();
     assert.match(page, /SALES PROFORMA INVOICE/);
     assert.match(page, /data:image\/png;base64,U0lH/);
@@ -287,4 +291,27 @@ test('NZD mode with no exchange rate at all: logged, nothing sent to Xero', asyn
     assert.equal(r.body.error, 'No EUR → NZD exchange rate available');
     assert.equal(r.body.xeroError.step, 'rate');
     assert.ok(!xeroCalls.some(c => c.path.startsWith('Invoices')), 'nothing reached Xero');
+});
+
+test("JPS's proforma invoice: confirm locks it, unlock clears it, a new PDF needs confirming again", async () => {
+    const v = await stageOne();
+    assert.equal(v.xero.docs.find(d => d.key === 'jpsBill').issues.length, 0);
+    const edit = await call(recordApi.onRequestPatch, 'PATCH', { jps: { ...v.record.jps, total: 1 } });
+    assert.equal(edit.status, 409, 'locked while confirmed');
+    const un = await call(recordApi.onRequestPatch, 'PATCH', { jpsConfirm: false });
+    assert.equal(un.body.record.jpsConfirmed, null);
+    assert.deepEqual(un.body.xero.docs.find(d => d.key === 'jpsBill').issues, ["Confirm JPS's proforma invoice in section 5"]);
+    assert.match(un.body.record.log[0].action, /Unlocked JPS's proforma invoice/);
+    await call(recordApi.onRequestPatch, 'PATCH', { jpsConfirm: true });
+    const again = await call(extractApi.onRequestPost, 'POST', { kind: 'jpsInvoice', filename: 'JPS-118b.pdf', data: B64 });
+    assert.equal(again.body.record.jpsConfirmed, null);
+});
+
+test('reconciliation: the three proformas side by side, differences worked out', async () => {
+    const v = await stageOne();
+    const rc = v.reconciliation;
+    assert.deepEqual(rc.docs.map(d => [d.key, d.kg, d.currency, d.amount]), [
+        ['packing', 18130, null, null], ['supplier', 18130, 'EUR', 17262.75], ['ours', 18130, 'USD', 21393.4], ['jps', 18130, 'USD', 32815.3]]);
+    assert.deepEqual(rc.diffs.map(d => [d.id, d.status]), [['kg', 'ok'], ['margin', 'ok'], ['dates', 'ok']]);
+    assert.equal(rc.diffs[1].text, "JPS's is USD 11,421.90 more than ours = USD 0.63/kg handling & sorting (usual 0.63/kg)");
 });

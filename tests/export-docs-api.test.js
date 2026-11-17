@@ -189,13 +189,27 @@ test('dismiss a failing check instead of correcting it: logged, confirm goes thr
     assert.match(ticks.body.error, /can't be dismissed/);
 });
 
+test('unlock clears the bales confirmation; confirming again restores it', async () => {
+    await uploadBoth();
+    assert.equal((await call(confirmApi.onRequestPost, 'POST', '/c')).status, 200);
+    const un = await call(confirmApi.onRequestPost, 'POST', '/c', { unlock: true });
+    assert.equal(un.status, 200);
+    assert.equal(un.body.record.confirmed, null);
+    assert.equal(un.body.status, 'review');
+    assert.equal(un.body.record.review.bales.length, 45, 'the figures stay, ready to edit');
+    assert.match(un.body.record.log[0].action, /^Unlocked the bales and supplier figures for editing/);
+    const again = await call(confirmApi.onRequestPost, 'POST', '/c');
+    assert.equal(again.status, 200);
+    assert.equal(again.body.status, 'draft');
+});
+
 test('generation: the proforma waits for the rate/number ticks; then frozen copies + xlsx', async () => {
     await uploadBoth();
     await call(confirmApi.onRequestPost, 'POST', '/c');
 
     const early = await call(renderApi.onRequestPost, 'POST', '/g', { docs: [{ doc: 'packing', stage: 'draft' }, { doc: 'proforma' }] });
     assert.equal(early.status, 422);
-    assert.match(early.body.error, /Tick to confirm the export rate/);
+    assert.match(early.body.error, /Confirm our proforma invoice in section 3/);
     assert.doesNotMatch(early.body.error, /Draft packing list/, 'the packing list is ready from the seeded settings');
 
     await fillSettings();
@@ -214,6 +228,10 @@ test('generation: the proforma waits for the rate/number ticks; then frozen copi
     const snap = await renderApi.onRequestGet({ env, params: { id: SHIP }, request: req('GET', `/r?out=${encodeURIComponent(pf.key)}`) });
     const html = await snap.text();
     assert.match(html, /USD 21,393\.40/);
+    assert.match(html, /const name = "Proforma Invoice - #43 - \d{8}\.pdf";/, 'Download PDF named like the kept files');
+    assert.doesNotMatch(html, /addEventListener\('load'/, 'no automatic download unless asked');
+    const auto = await (await renderApi.onRequestGet({ env, params: { id: SHIP }, request: req('GET', `/r?out=${encodeURIComponent(pf.key)}&download=1`) })).text();
+    assert.match(auto, /addEventListener\('load'/);
     assert.doesNotMatch(html, /Preview/);
 
     // Later edits don't change an issued copy
@@ -223,7 +241,7 @@ test('generation: the proforma waits for the rate/number ticks; then frozen copi
     assert.match(again, /USD 21,393\.40/);
 
     const live = await renderApi.onRequestGet({ env, params: { id: SHIP }, request: req('GET', '/r?doc=proforma') });
-    assert.match(await live.text(), /Preview only — not ready to issue: Tick to confirm the export rate/);
+    assert.match(await live.text(), /Preview only — not ready to issue: Confirm our proforma invoice in section 3/);
 
     const x = await xlsxApi.onRequestGet({ env, params: { id: SHIP }, request: req('GET', '/x') });
     assert.equal(x.status, 200);

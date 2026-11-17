@@ -1,3 +1,6 @@
+// POST /api/import/export-docs/:shipmentId/confirm   { unlock: true } clears the
+// confirmation instead (the bales become editable again; documents and
+// Xero wait until they're confirmed again).
 // POST /api/import/export-docs/:shipmentId/confirm
 // Makes the reviewed bales and supplier figures the shipment's confirmed
 // data — refused while any blocking check fails. Returns the view plus the
@@ -14,6 +17,15 @@ export async function onRequestPost({ env, params, request }) {
         const ship = (await loadShipments(env)).find(s => s.id === params.id);
         if (!ship) return errResponse('Shipment not found', 404);
         const [rec, settings] = await Promise.all([loadRecord(env, params.id), loadSettings(env)]);
+        const body = await request.json().catch(() => ({}));
+        if (body.unlock) {
+            if (rec.confirmed) {
+                if (!rec.review) rec.review = structuredClone(rec.confirmed);
+                rec.confirmed = null;
+                await saveRecord(env, rec, whoami(request), 'Unlocked the bales and supplier figures for editing — confirmation cleared');
+            }
+            return jsonResponse(await buildView(env, params.id));
+        }
         if (!rec.review || !(rec.review.bales || []).length) return errResponse('Nothing to confirm yet', 400);
         const checks = runChecks(rec.review, { settings, shipmentNumber: shipNumber(ship), dismissed: rec.dismissed });
         const fails = blockingFailures(checks);
