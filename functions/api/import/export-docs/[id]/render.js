@@ -1,6 +1,7 @@
 // The Enviroware documents as print-ready HTML (print / save as PDF from
 // the browser; no PDF library on Workers).
-//   GET  ?doc=packing&stage=draft|final | ?doc=proforma   live preview
+//   GET  ?doc=packing&stage=draft|final | ?doc=proforma | ?doc=jps   live preview
+//        (jps = our signed rewrite of JPS's sales proforma invoice)
 //   GET  ?out=<key>                                       a generated copy
 //   POST { docs: [{ doc, stage }] }                       generate: re-check,
 //        freeze the HTML and its data in KV, log it on the shipment
@@ -8,16 +9,18 @@
 
 import { jsonResponse, errResponse } from '../../../_xero.js';
 import { K, buildView, loadRecord, saveRecord, loadSettings, loadAssets, getJson, putJson, whoami, viewError } from '../_store.js';
-import { renderPackingList, renderProforma, docFilename, baleTotals, invoiceAmount } from '../../_exportdocs.js';
+import { renderPackingList, renderProforma, renderJpsContract, docFilename, baleTotals, invoiceAmount, cents } from '../../_exportdocs.js';
 
 const html = (body, status = 200) => new Response(body, { status, headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'private, no-store' } });
-const DOCS = { 'packing:draft': 'packingDraft', 'packing:final': 'packingFinal', 'proforma:draft': 'proforma' };
-const NAMES = { 'packing:draft': 'Draft packing list', 'packing:final': 'Final packing list', 'proforma:draft': 'Proforma invoice' };
-const docKey = (doc, stage) => `${doc}:${doc === 'proforma' ? 'draft' : (stage === 'final' ? 'final' : 'draft')}`;
+const DOCS = { 'packing:draft': 'packingDraft', 'packing:final': 'packingFinal', 'proforma:draft': 'proforma', 'jps:contract': 'jpsContract' };
+const NAMES = { 'packing:draft': 'Draft packing list', 'packing:final': 'Final packing list', 'proforma:draft': 'Proforma invoice', 'jps:contract': 'Signed JPS proforma invoice' };
+const docOf = d => (d === 'proforma' || d === 'jps' ? d : 'packing');
+const docKey = (doc, stage) => doc === 'jps' ? 'jps:contract' : `${doc}:${doc === 'proforma' ? 'draft' : (stage === 'final' ? 'final' : 'draft')}`;
 
 function render(dk, { record, settings, assets, shipmentNumber, banner }) {
+    if (dk === 'jps:contract') return renderJpsContract({ record, settings, assets, shipmentNumber, banner });
     if (dk === 'proforma:draft') return renderProforma({ record, settings, assets, shipmentNumber, banner });
-    return renderPackingList({ record, settings, stage: dk.endsWith('final') ? 'final' : 'draft', shipmentNumber, banner });
+    return renderPackingList({ record, settings, assets, stage: dk.endsWith('final') ? 'final' : 'draft', shipmentNumber, banner });
 }
 
 function messagePage(msg) {
@@ -33,7 +36,7 @@ export async function onRequestGet({ env, params, request }) {
             const snap = await getJson(env, K.out(out), null);
             return snap ? html(snap.html) : html(messagePage('Not found'), 404);
         }
-        const dk = docKey(url.searchParams.get('doc') === 'proforma' ? 'proforma' : 'packing', url.searchParams.get('stage'));
+        const dk = docKey(docOf(url.searchParams.get('doc')), url.searchParams.get('stage'));
         const view = await buildView(env, params.id);
         if (!view.record.confirmed) return html(messagePage('Confirm the bales on the Export documents tab first.'), 409);
         const [settings, assets] = await Promise.all([loadSettings(env), loadAssets(env)]);
@@ -48,7 +51,7 @@ export async function onRequestGet({ env, params, request }) {
 export async function onRequestPost({ env, params, request }) {
     try {
         const body = await request.json();
-        const wanted = [...new Set((Array.isArray(body.docs) ? body.docs : []).map(d => docKey(d?.doc === 'proforma' ? 'proforma' : 'packing', d?.stage)))];
+        const wanted = [...new Set((Array.isArray(body.docs) ? body.docs : []).map(d => docKey(docOf(d?.doc), d?.stage)))];
         if (!wanted.length) return errResponse('docs required', 400);
         const view = await buildView(env, params.id);
         const issues = Object.fromEntries(wanted.map(dk => [dk, view.generation[DOCS[dk]]]).filter(([, v]) => v.length));
@@ -65,13 +68,14 @@ export async function onRequestPost({ env, params, request }) {
             const [doc, stage] = dk.split(':');
             const at = new Date().toISOString();
             const key = `${params.id}:${doc}-${stage}:${Date.now().toString(36)}${metas.length}`;
-            const data = { shipmentNumber: view.shipment.number, confirmed: rec.confirmed, exportInvoice: rec.exportInvoice, lc: rec.lc || {}, settings };
+            const data = { shipmentNumber: view.shipment.number, confirmed: rec.confirmed, exportInvoice: rec.exportInvoice, lc: rec.lc || {}, jps: rec.jps || null, settings };
             const page = render(dk, { record: data, settings, assets, shipmentNumber: view.shipment.number, banner: '' });
             await putJson(env, K.out(key), { html: page, data });
             const meta = {
                 key, doc, stage, at, by: who, name: NAMES[dk],
-                filename: docFilename({ doc, stage, shipmentNumber: view.shipment.number, date: rec.exportInvoice.date }),
-                date: rec.exportInvoice.date, packages: t.count, netKg: t.netKg,
+                filename: docFilename({ doc, stage, shipmentNumber: view.shipment.number, date: doc === 'jps' ? rec.jps.date : rec.exportInvoice.date }),
+                date: doc === 'jps' ? rec.jps.date : rec.exportInvoice.date, packages: t.count, netKg: t.netKg,
+                ...(doc === 'jps' && { invoiceNumber: rec.jps.number, currency: rec.jps.currency, amount: (rec.jps.lines || []).reduce((a, l) => a + cents(l.amount), 0) / 100 || rec.jps.total }),
                 ...(doc === 'proforma' && { invoiceNumber: rec.exportInvoice.number, rate: rec.exportInvoice.rate, currency: rec.exportInvoice.currency, amount: invoiceAmount(t.netKg, rec.exportInvoice.rate) }),
                 ...(stage === 'final' && doc === 'packing' && { lcNumber: rec.lc?.number, lcDate: rec.lc?.date, grossKg: rec.lc?.grossKg }),
             };

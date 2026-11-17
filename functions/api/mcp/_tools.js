@@ -305,7 +305,8 @@ export const TOOLS = [
                     ...(!d.inXero && d.issues.length && { blockedBy: d.issues }),
                 })),
                 costBreakdownChanges: (v.costPlan?.changes || []).map(c => `${c.label}: ${c.from} → ${c.to} (from ${c.source})`),
-                failingChecks: [...v.checks, ...(v.jpsChecks || []), ...v.lcChecks].filter(x => x.ok === false).map(x => ({ check: x.title, level: x.level, detail: x.detail })),
+                failingChecks: [...v.checks, ...(v.jpsChecks || []), ...v.lcChecks].filter(x => x.ok === false && !x.dismissed).map(x => ({ check: x.title, level: x.level, detail: x.detail })),
+                dismissedChecks: [...v.checks, ...(v.jpsChecks || []), ...v.lcChecks].filter(x => x.dismissed).map(x => ({ check: x.title, detail: x.detail, dismissedBy: x.dismissed.by, dismissedOn: x.dismissed.at ? nzYmd(x.dismissed.at) : null })),
                 blockedBy: v.generation,
                 documents: (r.outputs || []).map(o => ({
                     name: o.name, generated: nzYmd(o.at), by: o.by, filename: o.filename,

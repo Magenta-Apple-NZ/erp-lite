@@ -8,7 +8,7 @@ import {
     reviewFromPackingExtraction, reviewFromProformaExtraction, runChecks, blockingFailures,
     nextInvoiceNumber, exportInvoiceDefaults, deriveStatus, generationIssues, lcCrossChecks,
     renderPackingList, renderProforma, packingListWorkbookSpec, mergeSettings, missingSettings,
-    hasUnconfirmedChanges, docFilename, SETTINGS_SEED,
+    hasUnconfirmedChanges, docFilename, SETTINGS_SEED, renderJpsContract, amountInWords,
 } from '../functions/api/import/_exportdocs.js';
 import { buildXlsx, crc32 } from '../functions/api/import/_xlsx.js';
 
@@ -172,14 +172,18 @@ test('Shipment 43: rendered draft packing list and proforma carry the expected v
     const rec = record43();
     const pl = renderPackingList({ record: rec, settings: SETTINGS_FILLED, stage: 'draft', shipmentNumber: 43 });
     assert.match(pl, /DRAFT PACKING LIST/);
-    assert.match(pl, /No\. of Packages<\/th><td>45</);
-    assert.match(pl, /Net Weight<\/th><td>18,130 kg/);
-    assert.match(pl, /13th November 2026/);
+    // One summary row, as on the Shipment 43 draft
+    assert.match(pl, /<th>Shipment<\/th><th>No\. of Packages<\/th><th>Net Weight<\/th><th>Date<\/th><\/tr><\/thead>\s*<tbody><tr><td>43<\/td><td>45<\/td><td>18,130<\/td><td>13\/11\/2026<\/td>/);
     assert.doesNotMatch(pl, /Gross Weight/);
     assert.doesNotMatch(pl, /Applicant:/);
-    // bale 23 is the last left-hand row's left cell; 24 starts the right column
-    assert.match(pl, /<td class="n">1<\/td><td class="kg">442<\/td><td class="gap"><\/td><td class="n">24<\/td><td class="kg">348<\/td>/);
-    assert.match(pl, /<td class="n">23<\/td><td class="kg">331<\/td><td class="gap"><\/td><td class="n"><\/td>/);
+    // Two columns: bales 1–23 on the left, 24–45 on the right
+    const cols = pl.match(/<table class="col">[\s\S]*?<\/table>/g);
+    assert.equal(cols.length, 2);
+    assert.match(cols[0], /<tbody><tr><td class="n">1<\/td><td class="kg">442<\/td><\/tr>/);
+    assert.match(cols[0], /<td class="n">23<\/td><td class="kg">331<\/td>/);
+    assert.match(cols[1], /<tbody><tr><td class="n">24<\/td><td class="kg">348<\/td><\/tr>/);
+    assert.match(cols[1], /<td class="n">45<\/td><td class="kg">457<\/td><\/tr><tr><td class="n"><\/td>/);
+    assert.match(pl, /Packing Specification: Standard Export Seaworthy/);
 
     const pf = renderProforma({ record: rec, settings: SETTINGS_FILLED, shipmentNumber: 43 });
     assert.match(pf, /102\/2026/);
@@ -212,12 +216,13 @@ test('supplier cost never reaches an output: no EUR, no Pistoni, no white/colour
 test('final packing list adds gross weight, applicant, LC number and date', () => {
     const rec = record43({ lc: { number: '320126011494', date: '2026-12-01', grossKg: 18136 } });
     const html = renderPackingList({ record: rec, settings: SETTINGS_FILLED, stage: 'final', shipmentNumber: 43 });
-    assert.match(html, /Final Packing List/);
-    assert.match(html, /Gross Weight<\/th><td>18,136 kg/);
-    assert.match(html, /Applicant:<\/strong> JPS Enterprise, Komolapur, Holding no:533 Birulia, Savar, Dhaka-1340, Bangladesh/);
-    assert.match(html, /LC no\.<\/th><td>320126011494/);
-    assert.match(html, /LC date of issue<\/th><td>1st December 2026/);
-    assert.match(html, /EXPORT STANDARD ROAD \/ SEA WORTHY CONDITION/);
+    assert.match(html, /<h1 class="title">Final Packing List<\/h1>/);
+    assert.match(html, /<th>Gross Weight<\/th><th>Date<\/th>/);
+    assert.match(html, /<td>18,130<\/td><td>18,136<\/td><td>13\/11\/2026<\/td>/);
+    assert.match(html, /<td class="ltr">AA\.<\/td><td colspan="2">Applicant: JPS Enterprise, Komolapur, Holding no:533 Birulia, Savar, Dhaka-1340, Bangladesh<\/td>/);
+    assert.match(html, /<td class="ltr">HH\.<\/td><th>LC NO:<\/th><td>320126011494/);
+    assert.match(html, /<td class="ltr">II\.<\/td><th>LC DATE OF ISSUE:<\/th><td>01\/12\/2026/);
+    assert.match(html, /Packing Specification: EXPORT STANDARD ROAD \/ SEA WORTHY CONDITION/);
 });
 
 // ── Checks that should fail ──────────────────────────────────────────────
@@ -302,10 +307,10 @@ test('status: review → draft → LC issued → final', () => {
 
 test('generation waits for missing settings and the rate and number ticks', () => {
     const rec = record43();
-    // Straight from the commercial invoice seed: the packing lists are ready,
-    // the proforma only waits for Enviroware's bank details.
+    // Straight from the seed (commercial invoice + JPS's proforma for the bank): everything is ready.
     assert.deepEqual(generationIssues({ record: rec, settings: mergeSettings({}), doc: 'packing', stage: 'draft', shipmentNumber: 43 }), []);
-    assert.deepEqual(generationIssues({ record: rec, settings: mergeSettings({}), doc: 'proforma', shipmentNumber: 43 }), ['Settings incomplete: Bank name, Bank SWIFT']);
+    assert.deepEqual(generationIssues({ record: rec, settings: mergeSettings({}), doc: 'proforma', shipmentNumber: 43 }), []);
+    assert.deepEqual(generationIssues({ record: rec, settings: mergeSettings({ bank: { name: '', swift: '' } }), doc: 'proforma', shipmentNumber: 43 }), [], 'blank saved values keep the seed');
     assert.deepEqual(generationIssues({ record: rec, settings: SETTINGS_FILLED, doc: 'proforma', shipmentNumber: 43 }), []);
     assert.deepEqual(generationIssues({ record: rec, settings: SETTINGS_FILLED, doc: 'packing', stage: 'draft', shipmentNumber: 43 }), []);
 
@@ -335,9 +340,7 @@ test('Shipment 42 (40 bales): gross over net is accepted for the final', () => {
     assert.match(pf, /USD 22,129\.72/);
     assert.match(pf, /101\/2026/);
     const pl = renderPackingList({ record: rec, settings: SETTINGS_FILLED, stage: 'final', shipmentNumber: 42 });
-    assert.match(pl, /Net Weight<\/th><td>18,754 kg/);
-    assert.match(pl, /Gross Weight<\/th><td>18,760 kg/);
-    assert.match(pl, /No\. of Packages<\/th><td>40</);
+    assert.match(pl, /<td>42<\/td><td>40<\/td><td>18,754<\/td><td>18,760<\/td><td>06\/06\/2026<\/td>/);
 });
 
 test('unconfirmed edits are noticed', () => {
@@ -367,7 +370,7 @@ test('settings merge keeps the seed and reports blanks', () => {
     assert.equal(s.seller.phone, '123');
     assert.deepEqual(s.terms, ['Only one']);
     assert.deepEqual(missingSettings(s, 'packing'), [], 'the identifiers come seeded');
-    assert.deepEqual(missingSettings(s, 'proforma'), ['Bank name', 'Bank SWIFT']);
+    assert.deepEqual(missingSettings(s, 'proforma'), [], 'the bank comes seeded too');
     // A blank saved value never hides a seeded one
     const blanked = mergeSettings({ seller: { phone: '' }, identifiers: { irc: '  ' }, buyer: { addressLines: [] } });
     assert.equal(blanked.seller.phone, '+64-27-6312070');
@@ -425,41 +428,165 @@ test('settings are seeded from Commercial Invoice 101/2026', () => {
     assert.equal(s.seller.phone, '+64-27-6312070');
     assert.equal(s.seller.gstNumber, '129-544-112');
     assert.deepEqual(s.buyer.addressLines, ['Komolapur, Holding no:533 Birulia', 'Savar', 'Dhaka-1340,', 'Bangladesh']);
-    assert.deepEqual(s.identifiers, { irc: '260326110775319', applicantTin: '358887309351', applicantBin: '001173726-0403', bankName: 'SBAC Bank', bankTin: '166085152182', bankBin: '000060296-0202' });
+    assert.deepEqual(s.identifiers, { irc: '260326110775319', applicantTin: '358887309351', applicantBin: '001173726-0403', bankName: 'SBAC Bank', bankTin: '166085152182', bankBin: '000000203-0002', bankVatReg: '000060296-0202' });
+    assert.deepEqual([s.bank.name, s.bank.swift], ['ANZ Bank New Zealand Ltd', 'ANZBNZ22']);
 });
 
-test('documents print the seeded numbers; the bank BIN doubles as the VAT reg no.', () => {
+test('settings saved with the old merged bank number are split; layout sections always come from the code', () => {
+    const s = mergeSettings({
+        identifiers: { irc: '260326110775319', bankName: 'SBAC Bank', bankBin: '000060296-0202' },
+        identifierRows: { draft: [{ label: 'IRC no.', field: 'irc' }], final: [] },
+        signOff: { packingTitle: 'Director' },
+    });
+    assert.equal(s.identifiers.bankBin, '000000203-0002');
+    assert.equal(s.identifiers.bankVatReg, '000060296-0202');
+    assert.equal(s.identifierRows.draft.length, 7);
+    assert.equal(s.signOff.packingTitle, 'DIRECTOR');
+    // A bank BIN someone typed in on purpose is kept
+    assert.equal(mergeSettings({ identifiers: { bankBin: '000000999-0001' } }).identifiers.bankBin, '000000999-0001');
+});
+
+test('documents print the seeded numbers, lettered as on the Shipment 43 draft', () => {
     const s = mergeSettings({});
     const rec = record43({ lc: { number: '320126011494', date: '2026-12-01', grossKg: 18136 } });
     const draft = renderPackingList({ record: rec, settings: s, stage: 'draft', shipmentNumber: 43 });
-    assert.match(draft, /193 Mount Smart Road, Onehunga, 1061, New Zealand/);
-    assert.match(draft, /BIN no\. \(SBAC Bank\)<\/th><td>000060296-0202/);
+    assert.match(draft, /<div>193 Mount Smart Road<\/div><div>Onehunga, 1061\. NEW ZEALAND<\/div>/);
+    assert.match(draft, /<div>Phone \+64-27-6312070<\/div><div>andrew@primetie\.co\.nz<\/div>/);
+    const ids = [...draft.matchAll(/<td class="ltr">([A-Z]{2}\.)<\/td><th>([^<]*)<\/th><td>([^<]*)<\/td>/g)].map(m => m.slice(1).join(' ').trim());
+    assert.deepEqual(ids, [
+        'AA. IRC NO 260326110775319',
+        'BB. TIN NO. 358887309351',
+        'CC. BIN NO. 001173726-0403 (APPLICANT)',
+        'DD. BIN NO. 000000203-0002 (SBAC Bank)',
+        'EE. HS CODE NO. 6002.90.00',
+        'FF. LC NO: 320126011494',
+        'GG. LC DATE OF ISSUE: 01/12/2026',
+    ]);
+    assert.match(draft, /Andrew McLeod<\/div>\s*<div><strong>DIRECTOR<\/strong><\/div>\s*<div>Enviroware Ltd/);
+    const signed = renderPackingList({ record: rec, settings: s, stage: 'draft', shipmentNumber: 43, assets: { signature: { mediaType: 'image/png', data: 'U0lH' }, seal: { mediaType: 'image/png', data: 'U0VBTA==' } } });
+    assert.match(signed, /<img class="sig-img" src="data:image\/png;base64,U0lH"/);
+    assert.match(signed, /<img class="seal-img" src="data:image\/png;base64,U0VBTA=="/);
     const final = renderPackingList({ record: rec, settings: s, stage: 'final', shipmentNumber: 43 });
-    assert.match(final, /VAT reg no\.<\/th><td>000060296-0202/);
-    assert.match(final, /Applicant's bank TIN<\/th><td>166085152182/);
-    assert.match(final, /Applicant:<\/strong> JPS Enterprise, Komolapur, Holding no:533 Birulia, Savar, Dhaka-1340, Bangladesh</);
+    assert.match(final, /<th>VAT REG NO\.<\/th><td>000060296-0202/);
+    assert.match(final, /<th>APPLICANT'S BANK TIN NO\.<\/th><td>166085152182<\/td>/);
+    assert.match(final, /<td colspan="2">Applicant: JPS Enterprise, Komolapur, Holding no:533 Birulia, Savar, Dhaka-1340, Bangladesh</);
     const pf = renderProforma({ record: rec, settings: s, shipmentNumber: 43 });
     assert.match(pf, /<strong>PRIME TIE<\/strong> – <em>the stretchy loop tie<\/em>/);
     assert.match(pf, /GST No\.: 129-544-112/);
     assert.match(pf, /<span class="lbl">Phone<\/span>\+64-27-6312070/);
     assert.match(pf, /JPS Enterprise<br>Komolapur, Holding no:533 Birulia<br>Savar<br>Dhaka-1340,<br>Bangladesh/);
     assert.match(pf, /ANDREW FRASER MCLEOD<\/div>\s*<div><strong>DIRECTOR<\/strong><\/div>\s*<div>For and on behalf of Enviroware Ltd/);
-    assert.doesNotMatch(pf.replace(/<style>[\s\S]*?<\/style>/, ''), /Bank:/, 'no bank block until it is filled in');
-    const withBank = renderProforma({ record: rec, settings: mergeSettings({ bank: { name: 'ANZ Bank New Zealand Ltd', swift: 'ANZBNZ22' } }), shipmentNumber: 43 });
-    assert.match(withBank, /Bank: ANZ Bank New Zealand Ltd<\/div><div>SWIFT: ANZBNZ22/);
+    assert.match(pf, /Bank: ANZ Bank New Zealand Ltd<\/div><div>23-29 Albert Street<\/div><div>Auckland, New Zealand<\/div><div>SWIFT: ANZBNZ22/);
 });
 
 test('the applicant numbers are checked against the linked LC\'s conditions', () => {
     const s = mergeSettings({});
     const rec = record43();
     const lc = { lcNumber: '320126011494', f47aConditions: [
-        { num: '02', text: 'ALL DOCUMENTS MUST SHOW IMPORTER NAME, ADDRESS, BIN NO.001173726-0403, TIN NO.358887309351, IRC NO.260326110775319 AND APPLICANT BANK TIN NO.166085152182 AND VAT REG NO.000060296-0202' },
+        { num: '02', text: 'ALL DOCUMENTS MUST SHOW IMPORTER NAME, ADDRESS, BIN NO.001173726-0403, TIN NO.358887309351, IRC NO.260326110775319 AND APPLICANT BANK TIN NO.166085152182, BIN NO.000000203-0002 AND VAT REG NO.000060296-0202' },
     ] };
     const ok = lcCrossChecks(rec, lc, s).find(c => c.title === 'Applicant numbers match the LC');
     assert.equal(ok.ok, true, ok.detail);
-    const changed = { ...lc, f47aConditions: [{ num: '02', text: 'BIN NO.001173726-0403, TIN NO.358887309351, IRC NO.260326110779999, BANK TIN NO.166085152182, VAT REG NO.000060296-0202' }] };
+    const changed = { ...lc, f47aConditions: [{ num: '02', text: 'BIN NO.001173726-0403, TIN NO.358887309351, IRC NO.260326110779999, BANK TIN NO.166085152182, BIN NO.000000203-0002, VAT REG NO.000060296-0202' }] };
     const bad = lcCrossChecks(rec, changed, s).find(c => c.title === 'Applicant numbers match the LC');
     assert.equal(bad.ok, false);
     assert.match(bad.detail, /IRC 260326110775319 not found in LC 320126011494/);
     assert.equal(lcCrossChecks(rec, { lcNumber: 'X' }, s).find(c => c.title === 'Applicant numbers match the LC'), undefined, 'no LC text, no check');
+});
+
+// ── Dismissing a check instead of correcting it ─────────────────────────
+test('a dismissed check stops blocking until it fails in a different way', () => {
+    const r = review43();
+    r.packing.whiteTotalKg = 4.887;   // printed-numbers and colour-totals fail
+    const pn = runChecks(r, { shipmentNumber: 43 }).find(c => c.id === 'printed-numbers');
+    assert.equal(pn.dismissible, true);
+    const dismissed = { 'printed-numbers': { detail: pn.detail, title: pn.title, by: 'andrew@primetie.co.nz', at: '2026-11-17T01:00:00Z' } };
+    const after = runChecks(r, { shipmentNumber: 43, dismissed });
+    assert.deepEqual(after.find(c => c.id === 'printed-numbers').dismissed, { by: 'andrew@primetie.co.nz', at: '2026-11-17T01:00:00Z' });
+    assert.deepEqual(blockingFailures(after).map(c => c.id), ['colour-totals']);
+
+    r.packing.colouredTotalKg = 13.243;  // a second misread in the same check
+    assert.ok(blockingFailures(runChecks(r, { shipmentNumber: 43, dismissed })).some(c => c.id === 'printed-numbers'));
+});
+
+test('what the documents need cannot be dismissed', () => {
+    const ticks = runChecks(review43(), { shipmentNumber: 43, exportInvoice: { number: '102/2026', rate: 1.18 } });
+    assert.equal(ticks.find(c => c.id === 'rate-confirmed').dismissible, false);
+    assert.equal(ticks.find(c => c.id === 'number-confirmed').dismissible, false);
+
+    const gap = review43();
+    gap.bales = gap.bales.filter(b => b.n !== 12);
+    assert.equal(runChecks(gap, { shipmentNumber: 43 }).find(c => c.id === 'bale-sequence').dismissible, true, 'a gap in Pistoni\'s numbering can be dismissed');
+
+    const noColour = review43();
+    noColour.bales[0] = { ...noColour.bales[0], colour: '' };
+    const seq = runChecks(noColour, { shipmentNumber: 43 }).find(c => c.id === 'bale-sequence');
+    assert.equal(seq.dismissible, false, 'a bale with no colour cannot');
+    const forced = runChecks(noColour, { shipmentNumber: 43, dismissed: { 'bale-sequence': { detail: seq.detail } } });
+    assert.ok(blockingFailures(forced).some(c => c.id === 'bale-sequence'));
+
+    const noInvoice = runChecks({ ...review43(), supplierInvoice: null }, { shipmentNumber: 43 });
+    assert.equal(noInvoice.find(c => c.id === 'net-weight').dismissible, false);
+});
+
+test('Italian figures with currency and unit marks still parse', () => {
+    for (const [raw, n] of [['€ 1,50', 1.5], ['1,50 €/kg', 1.5], ['EUR 7.330,50', 7330.5], ['18.130 kg', 18130]]) assert.equal(parseItalianNumber(raw), n, raw);
+    assert.equal(parseItalianNumber('1.50'), null, 'a misplaced thousands dot is still refused');
+});
+
+// ── Our signed rewrite of JPS's sales proforma invoice ──────────────────
+const JPS_43 = {
+    number: 'JPSE-102/2026', date: '2026-11-10', currency: 'USD', total: 32996.6,
+    lines: [{ description: 'Sorted Knitted Nylon Stocking Material (Toeclip) a by-product from the manufacture of stockings, and Wastage (after sorting)', kg: 18130, unitPrice: 1.82, amount: 32996.6 }],
+    contract: { lastShipmentDate: '2027-06-15', expiryDate: '2027-06-30', containers: "1 x 40' FCL and 1 x 20' GP" },
+};
+
+test('signed JPS proforma: their document without the errors, amount in words, terms once, our signature and seal', () => {
+    const rec = record43({ jps: JPS_43 });
+    const html = renderJpsContract({ record: rec, settings: mergeSettings({}), shipmentNumber: 43,
+        assets: { signature: { mediaType: 'image/png', data: 'U0lH' }, seal: { mediaType: 'image/png', data: 'U0VBTA==' } } });
+    const text = html.replace(/<style>[\s\S]*?<\/style>/, '');
+    assert.match(text, /SALES PROFORMA INVOICE/);
+    assert.match(text, /No\. <strong>JPSE-102\/2026<\/strong> &nbsp;·&nbsp; Date: <strong>10th November 2026<\/strong>/);
+    assert.match(text, /<div class="lh-name">JPS Enterprise<\/div>/);
+    assert.match(text, /Phone: \+880 1817 011668, \+880 1726 624893/);
+    assert.match(text, /<div>193 Mount Smart Road, Onehunga, 1061, New Zealand<\/div>/);
+    assert.match(text, /GST No\.: 129-544-112/);
+    assert.match(text, /Buyer's bank: ANZ Bank New Zealand Ltd, 23-29 Albert Street, Auckland, New Zealand\. SWIFT: ANZBNZ22/);
+    assert.match(text, /Sorted knitted nylon stocking material \(toeclip\), a by-product of the manufacture of stockings, and wastage after sorting<div class="hs">HS code: 6002\.90\.00/);
+    assert.match(text, /<td class="r">18,130<\/td><td class="r">1\.82<\/td><td class="r">32,996\.60<\/td>/);
+    assert.match(text, /US\$ 32,996\.60/);
+    assert.match(text, /US Dollars Thirty-Two Thousand Nine Hundred and Ninety-Six and Sixty Cents Only\./);
+    assert.match(text, /Exporter's bank:<\/th><td>SBAC Bank PLC, Galaxy Bhaban \(1st Floor\), Plot 29-30, Block 6, Mirpur-10, Dhaka, Bangladesh\. SWIFT: SBACBDDH/);
+    assert.match(text, /Port of loading:<\/th><td>ICD Kamlapur, Dhaka, via Chattogram, Bangladesh/);
+    assert.match(text, /Destination:<\/th><td>Tauranga, New Zealand/);
+    assert.match(text, /Last date of shipment:<\/th><td>15th June 2027/);
+    assert.match(text, /Expiry date:<\/th><td>30th June 2027/);
+    assert.match(text, /Container size:<\/th><td>1 x 40' FCL and 1 x 20' GP/);
+    assert.equal(text.match(/Payment:/g).length, 1, 'the payment term once, not twice');
+    assert.doesNotMatch(text, /Buyerer|SWFIT|Tauraqnga|Chattragarm|139 Mount|Proform |Dt :/);
+    assert.match(text, /<strong>Sudipto Sarkar \(Paul\)<\/strong><\/div>\s*<div>For and on behalf of JPS Enterprise/);
+    assert.match(text, /<img class="sig-img" src="data:image\/png;base64,U0lH" alt=""><img class="seal-img"/);
+    assert.match(text, /<strong>ANDREW FRASER MCLEOD<\/strong><\/div>\s*<div>For and on behalf of Enviroware Ltd/);
+    assert.doesNotMatch(text, /Pistoni|EUR|€|7,330|17,262/);
+    assert.equal(docFilename({ doc: 'jps', shipmentNumber: 43, date: '2026-11-10' }), 'JPS Proforma Invoice - #43 - 10112026 - Signed.pdf');
+});
+
+test('signed JPS proforma waits for the JPS invoice, its terms, its checks and your signature', () => {
+    const s = mergeSettings({});
+    const issues = rec => generationIssues({ record: rec, settings: s, doc: 'jps', shipmentNumber: 43, hasSignature: true });
+    assert.deepEqual(issues(record43()), ['Upload or enter the JPS invoice first']);
+    assert.deepEqual(issues(record43({ jps: JPS_43 })), []);
+    assert.deepEqual(issues(record43({ jps: { ...JPS_43, contract: {} } })), ['Last date of shipment missing', 'Expiry date missing']);
+    assert.deepEqual(issues(record43({ jps: { ...JPS_43, number: '', lines: [] } })), ['JPS invoice number missing', 'JPS invoice lines need kg, unit price and amount']);
+    assert.deepEqual(generationIssues({ record: record43({ jps: JPS_43 }), settings: s, doc: 'jps', hasSignature: false }), ['Upload your signature in Document settings → Enviroware']);
+    assert.deepEqual(generationIssues({ record: record43({ jps: JPS_43 }), settings: s, doc: 'jps', hasSignature: true, jpsFailures: ['Printed figures read correctly'] }), ['JPS invoice fails: Printed figures read correctly']);
+    assert.deepEqual(generationIssues({ record: record43({ jps: JPS_43 }), settings: mergeSettings({ jps: { signatory: ' ' } }), doc: 'jps', hasSignature: true }), [], 'blank saved values keep the seed');
+});
+
+test('amounts in words', () => {
+    assert.equal(amountInWords(32996.6), 'US Dollars Thirty-Two Thousand Nine Hundred and Ninety-Six and Sixty Cents Only');
+    assert.equal(amountInWords(21393.4), 'US Dollars Twenty-One Thousand Three Hundred and Ninety-Three and Forty Cents Only');
+    assert.equal(amountInWords(32050), 'US Dollars Thirty-Two Thousand and Fifty Only');
+    assert.equal(amountInWords(1000.01), 'US Dollars One Thousand and One Cent Only');
 });

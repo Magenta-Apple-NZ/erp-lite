@@ -8,6 +8,8 @@ import * as extractApi from '../functions/api/import/export-docs/[id]/extract.js
 import * as confirmApi from '../functions/api/import/export-docs/[id]/confirm.js';
 import * as xeroApi from '../functions/api/import/export-docs/[id]/xero.js';
 import * as settingsApi from '../functions/api/import/export-docs/settings.js';
+import * as assetApi from '../functions/api/import/export-docs/settings/[asset].js';
+import * as renderApi from '../functions/api/import/export-docs/[id]/render.js';
 
 function kv(entries = {}) {
     const store = new Map(Object.entries(entries).map(([k, v]) => [k, typeof v === 'string' ? v : JSON.stringify(v)]));
@@ -34,7 +36,8 @@ const MODEL = {
         netWeightKg: 18130, netWeightRaw: '18.130', total: 17262.75, totalRaw: '17.262,75', destination: '', deliveryTerms: '', hsCode: '', notes: '' },
     jpsInvoice: { invoiceNumber: 'JPS-118', invoiceDate: '2026-11-20', invoiceDateRaw: '20/11/2026', currency: 'USD',
         lines: [{ description: 'LC deposit and handling — 18,130 kg', kg: 18130, kgRaw: '18,130', unitPrice: 1.81, unitPriceRaw: '1.81', amount: 32815.3, amountRaw: '32,815.30' }],
-        netWeightKg: 18130, netWeightRaw: '18,130', total: 32815.3, totalRaw: '32,815.30', notes: '' },
+        netWeightKg: 18130, netWeightRaw: '18,130', total: 32815.3, totalRaw: '32,815.30',
+        lastShipmentDate: '2027-06-15', expiryDate: '2027-06-30', containers: "1 x 40' FCL and 1 x 20' GP", notes: '' },
 };
 
 let env, realFetch, xeroCalls, xeroInvoices;
@@ -157,4 +160,36 @@ test('nothing reaches Xero until the account codes are set', async () => {
     assert.equal(r.status, 422);
     assert.match(r.body.error, /Set the raw product account/);
     assert.equal(xeroCalls.length, 0);
+});
+
+test('signed JPS proforma: terms read from their PDF, generated once your signature is uploaded', async () => {
+    await stageOne();
+    let v = (await call(recordApi.onRequestGet, 'GET')).body;
+    assert.deepEqual(v.record.jps.contract, { lastShipmentDate: '2027-06-15', expiryDate: '2027-06-30', containers: "1 x 40' FCL and 1 x 20' GP" });
+    assert.equal(v.hasSignature, false);
+    assert.deepEqual(v.generation.jpsContract, ['Upload your signature in Document settings → Enviroware']);
+    assert.equal((await call(renderApi.onRequestPost, 'POST', { docs: [{ doc: 'jps' }] })).status, 422);
+
+    for (const [asset, data] of [['signature', 'U0lH'], ['seal', 'U0VBTA==']]) {
+        const r = await assetApi.onRequestPost({ env, params: { asset }, request: req('POST', { mediaType: 'image/png', data }) });
+        assert.equal(r.status, 200);
+    }
+    v = (await call(recordApi.onRequestGet, 'GET')).body;
+    assert.equal(v.hasSignature, true);
+    assert.deepEqual(v.generation.jpsContract, []);
+
+    const gen = await call(renderApi.onRequestPost, 'POST', { docs: [{ doc: 'jps' }] });
+    assert.equal(gen.status, 200, JSON.stringify(gen.body));
+    const m = gen.body.generated[0];
+    assert.deepEqual([m.name, m.filename, m.invoiceNumber, m.currency, m.amount],
+        ['Signed JPS proforma invoice', 'JPS Proforma Invoice - #43 - 20112026 - Signed.pdf', 'JPS-118', 'USD', 32815.3]);
+    assert.match(gen.body.record.log[0].action, /^Generated Signed JPS proforma invoice JPS-118/);
+    const page = await (await renderApi.onRequestGet({ env, params: { id: SHIP }, request: new Request('https://hub.test/x?out=' + encodeURIComponent(m.key)) })).text();
+    assert.match(page, /SALES PROFORMA INVOICE/);
+    assert.match(page, /data:image\/png;base64,U0lH/);
+    assert.match(page, /Thirty-Two Thousand Eight Hundred and Fifteen and Thirty Cents Only/);
+    assert.match(page, /Last date of shipment:<\/th><td>15th June 2027/);
+
+    const preview = await (await renderApi.onRequestGet({ env, params: { id: SHIP }, request: new Request('https://hub.test/x?doc=jps') })).text();
+    assert.match(preview, /Preview — use Generate/);
 });

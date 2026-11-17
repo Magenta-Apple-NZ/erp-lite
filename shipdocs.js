@@ -58,6 +58,7 @@ const ShipDocs = (() => {
         st.review = structuredClone(view.record.review || { shipmentNumber: null, bales: [], packing: {}, supplierInvoice: null });
         st.review.packing = st.review.packing || {};
         st.jps = view.record.jps ? structuredClone(view.record.jps) : null;
+        if (st.jps) st.jps.contract = { lastShipmentDate: '', expiryDate: '', containers: '', ...(st.jps.contract || {}) };
     }
 
     const $ = (st, sel) => st.panel.querySelector(sel);
@@ -95,7 +96,7 @@ const ShipDocs = (() => {
             ['Supplier documents', !!(r.files?.packingList && r.files?.proforma)],
             ['Bales confirmed', !!r.confirmed],
             ['Draft documents', has('packing', 'draft') && has('proforma', 'draft')],
-            ['JPS invoice', !!(r.jps && Number(r.jps.total) > 0 && !(v.jpsChecks || []).some(c => c.level === 'block' && c.ok === false))],
+            ['JPS invoice', !!(r.jps && Number(r.jps.total) > 0 && !(v.jpsChecks || []).some(blocking))],
             ['In Xero', (v.xero?.docs || []).every(d => d.inXero)],
             ['LC details', v.status === 'lc_issued' || v.status === 'final'],
             ['Final packing list', has('packing', 'final')],
@@ -140,12 +141,21 @@ const ShipDocs = (() => {
     }
 
     // ── Review ───────────────────────────────────────────────────────────
+    // A failing check that still stops confirm / generation (not dismissed).
+    const blocking = c => c.level === 'block' && c.ok === false && !c.dismissed;
+
+    // Failing checks can be dismissed instead of corrected (logged, undoable);
+    // a dismissed one is shown greyed with who dismissed it.
     function checkListHtml(list, extraClass = '') {
-        const icon = c => c.ok === true ? '✓' : c.ok === false ? (c.level === 'block' ? '✗' : '!') : '–';
-        const cls = c => c.ok === true ? 'ok' : c.ok === false ? (c.level === 'block' ? 'fail' : 'warn') : 'na';
+        const icon = c => c.dismissed ? '–' : c.ok === true ? '✓' : c.ok === false ? (c.level === 'block' ? '✗' : '!') : '–';
+        const cls = c => c.dismissed ? 'dismissed' : c.ok === true ? 'ok' : c.ok === false ? (c.level === 'block' ? 'fail' : 'warn') : 'na';
+        const tail = c => c.dismissed
+            ? `<div class="sd-check-dis">Dismissed by ${esc(who(c.dismissed.by))}${c.dismissed.at ? ' · ' + esc(when(c.dismissed.at)) : ''} · <button class="btn-link" data-act="restore-check" data-check="${esc(c.id)}">Undo</button></div>`
+            : c.ok === false && c.dismissible ? `<button class="btn-link sd-check-x" data-act="dismiss-check" data-check="${esc(c.id)}" title="Leave it as it is — this stops it ${c.level === 'block' ? 'blocking' : 'showing as a warning'}">Dismiss</button>` : '';
         return `<ul class="sd-checks ${extraClass}">${list.map(c => `
             <li class="sd-check sd-check--${cls(c)}"><span class="sd-check-i">${icon(c)}</span>
-            <span><strong>${esc(c.title)}</strong>${c.level === 'block' ? '' : ' <span class="sd-muted">(warning)</span>'}<br><span class="sd-check-d">${esc(c.detail)}</span></span></li>`).join('')}</ul>`;
+            <span class="sd-check-body"><strong>${esc(c.title)}</strong>${c.level === 'block' ? '' : ' <span class="sd-muted">(warning)</span>'}<br><span class="sd-check-d">${esc(c.detail)}</span>${c.dismissed ? tail(c) : ''}</span>
+            ${c.dismissed ? '' : tail(c)}</li>`).join('')}</ul>`;
     }
 
     function checksHtml(st) {
@@ -239,7 +249,7 @@ const ShipDocs = (() => {
 
     function confirmHtml(st) {
         const v = st.view;
-        const fails = v.checks.filter(c => c.level === 'block' && c.ok === false);
+        const fails = v.checks.filter(blocking);
         const c = v.record.confirmed;
         const t = v.reviewTotals;
         const s = v.shipment;
@@ -310,7 +320,7 @@ const ShipDocs = (() => {
                     <span class="sd-muted">Net is ${fmtKg(v.confirmedTotals.netKg)} kg</span></label>
                 <div class="sd-field sd-field--btn"><button class="btn-secondary btn-sm" data-act="save-lc">Save LC details</button></div>
             </div>
-            ${v.lcChecks.length ? `<ul class="sd-checks sd-checks--compact">${v.lcChecks.map(c => `<li class="sd-check sd-check--${c.ok ? 'ok' : 'warn'}"><span class="sd-check-i">${c.ok ? '✓' : '!'}</span><span><strong>${esc(c.title)}</strong><br><span class="sd-check-d">${esc(c.detail)}</span></span></li>`).join('')}</ul>` : ''}
+            ${v.lcChecks.length ? checkListHtml(v.lcChecks, 'sd-checks--compact') : ''}
             <div class="sd-docrow"><div><strong>Final packing list</strong>${issuesHtml(g.packingFinal)}</div>
                 <div class="sd-docrow-act"><a class="btn-secondary btn-sm" href="${b}/render?doc=packing&stage=final" target="_blank" rel="noopener">Preview</a>
                 <a class="btn-secondary btn-sm" href="${b}/xlsx">.xlsx</a>
@@ -354,7 +364,24 @@ const ShipDocs = (() => {
             </table>` : ''}
             <div class="sd-muted"><button class="btn-link" data-act="jps-add-line">+ Add line</button> <span id="sd-jps-savestate"></span></div>
             <div id="sd-jps-checks">${checkListHtml(v.jpsChecks || [], 'sd-checks--compact')}</div>
-            <div id="sd-jps-split">${splitHtml(v)}</div>`}`;
+            <div id="sd-jps-split">${splitHtml(v)}</div>
+            <h4 class="sd-h4">Their contract terms <span class="sd-muted">read from their PDF — printed on the signed copy</span></h4>
+            <div class="sd-grid3">
+                <label class="sd-field"><span class="imp-field-label">Last date of shipment</span><input class="sd-input" type="date" data-jps="contract.lastShipmentDate" value="${esc(j.contract?.lastShipmentDate || '')}"></label>
+                <label class="sd-field"><span class="imp-field-label">Expiry date</span><input class="sd-input" type="date" data-jps="contract.expiryDate" value="${esc(j.contract?.expiryDate || '')}"></label>
+                <label class="sd-field"><span class="imp-field-label">Containers</span><input class="sd-input" data-jps="contract.containers" value="${esc(j.contract?.containers || '')}" placeholder="1 x 40' FCL"></label>
+            </div>
+            <div id="sd-jps-doc">${jpsDocHtml(st)}</div>`}`;
+    }
+
+    // Our corrected, signed copy of JPS's sales proforma (their template has
+    // the wrong street number, typos, duplicated terms).
+    function jpsDocHtml(st) {
+        const v = st.view, g = v.generation?.jpsContract || [], b = base(v.shipment.id);
+        return `<div class="sd-docrow"><div><strong>Signed JPS proforma invoice</strong>
+                <div class="sd-muted">Their sales proforma rewritten without the errors, signed and sealed by you — send it to Paul for his signature</div>${issuesHtml(g)}</div>
+            <div class="sd-docrow-act"><a class="btn-secondary btn-sm" href="${b}/render?doc=jps" target="_blank" rel="noopener">Preview</a>
+                <button class="btn-primary btn-sm" data-act="gen-jps" ${g.length ? 'disabled' : ''}>Generate signed copy</button></div></div>`;
     }
 
     // ── Xero ─────────────────────────────────────────────────────────────
@@ -524,6 +551,7 @@ const ShipDocs = (() => {
             st.view = await send(base(st.ship.id), 'PATCH', { jps: st.jps });
             const c = $(st, '#sd-jps-checks'); if (c) c.innerHTML = checkListHtml(st.view.jpsChecks || [], 'sd-checks--compact');
             const sp = $(st, '#sd-jps-split'); if (sp) sp.innerHTML = splitHtml(st.view);
+            const jd = $(st, '#sd-jps-doc'); if (jd) jd.innerHTML = jpsDocHtml(st);
             const x = $(st, '#sd-xero'); if (x) x.innerHTML = xeroHtml(st);
             const co = $(st, '#sd-cost'); if (co) co.innerHTML = costHtml(st);
             if (ss) ss.textContent = 'Saved';
@@ -570,7 +598,7 @@ const ShipDocs = (() => {
     }
 
     async function act(st, a, btn) {
-        if (['settings', 'save-lc', 'gen-draft', 'gen-final', 'apply-weights', 'apply-cost', 'xero-push', 'xero-refresh'].includes(a)) await flushSave(st);
+        if (['settings', 'save-lc', 'gen-draft', 'gen-final', 'gen-jps', 'apply-weights', 'apply-cost', 'xero-push', 'xero-refresh', 'dismiss-check', 'restore-check'].includes(a)) await flushSave(st);
         const r = st.review;
         if (a === 'settings') return openSettings(() => load(st));
         if (a === 'add-bale') {
@@ -603,7 +631,7 @@ const ShipDocs = (() => {
         if (a === 'add-line') { r.supplierInvoice.lines.push({ description: '', colour: '', kg: null, unitPrice: null, amount: null }); $(st, '#sd-review').innerHTML = reviewHtml(st); return scheduleSave(st, 0); }
         if (a === 'del-line') { r.supplierInvoice.lines.splice(Number(btn.dataset.i), 1); $(st, '#sd-review').innerHTML = reviewHtml(st); return scheduleSave(st, 0); }
         if (a === 'manual-jps') {
-            st.jps = { number: '', date: '', currency: st.view.record.exportInvoice?.currency || 'USD', lines: [], netKg: null, total: null };
+            st.jps = { number: '', date: '', currency: st.view.record.exportInvoice?.currency || 'USD', lines: [], netKg: null, total: null, contract: { lastShipmentDate: '', expiryDate: '', containers: '' } };
             $(st, '#sd-jps').innerHTML = jpsHtml(st);
             return saveJps(st);
         }
@@ -634,6 +662,22 @@ const ShipDocs = (() => {
             catch (e) { toast('Could not update the cost breakdown: ' + e.message); btn.disabled = false; btn.textContent = 'Update cost breakdown'; }
             return;
         }
+        if (a === 'dismiss-check' || a === 'restore-check') {
+            const id = btn.dataset.check;
+            const all = [...(st.view.checks || []), ...(st.view.jpsChecks || []), ...(st.view.lcChecks || [])];
+            const c = all.find(x => x.id === id);
+            if (a === 'dismiss-check' && c && c.level === 'block'
+                && !confirm(`Dismiss "${c.title}"?\n\n${c.detail}\n\nIt will stop blocking, and the dismissal is logged under your name. If these figures change and the check fails differently, it comes back.`)) return;
+            btn.disabled = true;
+            try {
+                const y = window.scrollY;
+                setView(st, await send(base(st.ship.id), 'PATCH', a === 'dismiss-check' ? { dismiss: id } : { restore: id }));
+                draw(st);
+                window.scrollTo(0, y);
+                toast(a === 'dismiss-check' ? `Dismissed: ${c ? c.title : 'check'}` : `Check restored`);
+            } catch (e) { toast('Not changed: ' + e.message); btn.disabled = false; }
+            return;
+        }
         if (a === 'confirm') return confirmBales(st, btn);
         if (a === 'apply-weights') return applyWeights(st, st.view.confirmedTotals);
         if (a === 'use-lc') {
@@ -650,10 +694,10 @@ const ShipDocs = (() => {
             } catch (e) { toast('Save failed: ' + e.message); btn.disabled = false; }
             return;
         }
-        if (a === 'gen-draft' || a === 'gen-final') {
+        if (a === 'gen-draft' || a === 'gen-final' || a === 'gen-jps') {
             btn.disabled = true; const label = btn.textContent; btn.textContent = 'Generating…';
             try {
-                const docs = a === 'gen-draft' ? [{ doc: 'packing', stage: 'draft' }, { doc: 'proforma' }] : [{ doc: 'packing', stage: 'final' }];
+                const docs = a === 'gen-draft' ? [{ doc: 'packing', stage: 'draft' }, { doc: 'proforma' }] : a === 'gen-jps' ? [{ doc: 'jps' }] : [{ doc: 'packing', stage: 'final' }];
                 const view = await send(`${base(st.ship.id)}/render`, 'POST', { docs });
                 setView(st, view); draw(st);
                 toast(`Generated ${view.generated.map(g => g.name.toLowerCase()).join(' and ')} — open each below to print or save as PDF`);
@@ -703,8 +747,9 @@ const ShipDocs = (() => {
         const gaps = { enviroware: [], jps: [], documents: [], xero: [] };
         [['Phone', s.seller.phone], ['Email', s.seller.email], ['GST no.', s.seller.gstNumber], ['Bank name', s.bank.name], ['Bank SWIFT', s.bank.swift]]
             .forEach(([l, v]) => blank(v) && gaps.enviroware.push(l));
-        [['Address', s.buyer.addressLines], ['IRC no.', s.identifiers.irc], ['Applicant TIN', s.identifiers.applicantTin], ['Applicant BIN', s.identifiers.applicantBin], ['Bank TIN', s.identifiers.bankTin], ['Bank BIN / VAT reg no.', s.identifiers.bankBin]]
+        [['Address', s.buyer.addressLines], ['IRC no.', s.identifiers.irc], ['Applicant TIN', s.identifiers.applicantTin], ['Applicant BIN', s.identifiers.applicantBin], ['Bank TIN', s.identifiers.bankTin], ['Bank BIN', s.identifiers.bankBin], ['Bank VAT reg no.', s.identifiers.bankVatReg]]
             .forEach(([l, v]) => blank(v) && gaps.jps.push(l));
+        [["Their bank", s.jps?.bank?.name], ["Their SWIFT", s.jps?.bank?.swift], ['Signs for JPS', s.jps?.signatory]].forEach(([l, v]) => blank(v) && gaps.jps.push(l));
         [['HS code', s.hsCode], ['Terms', s.terms]].forEach(([l, v]) => blank(v) && gaps.documents.push(l));
         const a = s.xero.accounts || {};
         if (['rawProduct', 'lcDeposit', 'handling', 'exportSale'].some(k => blank(a[k]))) gaps.xero.push('Account codes');
@@ -731,13 +776,18 @@ const ShipDocs = (() => {
                 <h4 class="sd-h4">Bank <span class="sd-muted">printed on the proforma</span></h4>
                 <div class="sd-grid3">${inp('Bank', 'bank.name', s.bank.name, 'placeholder="ANZ Bank New Zealand Ltd"')}${inp('SWIFT', 'bank.swift', s.bank.swift)}${inp('Account no.', 'bank.accountNumber', s.bank.accountNumber)}
                     ${ta('Bank address (optional)', 'bank.addressLines', s.bank.addressLines, 2)}</div>
-                <h4 class="sd-h4">Signature and seal <span class="sd-muted">on the proforma</span></h4>
+                <h4 class="sd-h4">Signature and seal <span class="sd-muted">on the packing lists, the proforma and the signed JPS contract</span></h4>
                 <div class="sd-images">${image('signature')}${image('seal')}</div>`,
             jps: `
                 <div class="sd-grid3">${inp('Name', 'buyer.name', s.buyer.name)}${ta('Address (one line each)', 'buyer.addressLines', s.buyer.addressLines, 4)}</div>
                 <h4 class="sd-h4">Applicant numbers <span class="sd-muted">checked against each shipment's LC</span></h4>
                 <div class="sd-grid3">${inp('IRC no.', 'identifiers.irc', s.identifiers.irc)}${inp('Applicant TIN', 'identifiers.applicantTin', s.identifiers.applicantTin)}${inp('Applicant BIN', 'identifiers.applicantBin', s.identifiers.applicantBin)}
-                    ${inp("Applicant's bank", 'identifiers.bankName', s.identifiers.bankName)}${inp('Bank TIN', 'identifiers.bankTin', s.identifiers.bankTin)}${inp('Bank BIN / VAT reg no.', 'identifiers.bankBin', s.identifiers.bankBin)}</div>`,
+                    ${inp("Applicant's bank", 'identifiers.bankName', s.identifiers.bankName)}${inp('Bank TIN', 'identifiers.bankTin', s.identifiers.bankTin)}${inp('Bank BIN', 'identifiers.bankBin', s.identifiers.bankBin)}
+                    ${inp('Bank VAT reg no.', 'identifiers.bankVatReg', s.identifiers.bankVatReg)}</div>
+                <h4 class="sd-h4">Their own details <span class="sd-muted">on the signed copy of their sales proforma</span></h4>
+                <div class="sd-grid3">${inp('Phone', 'jps.phone', s.jps.phone)}${inp('Email', 'jps.email', s.jps.email)}${inp('Signs for JPS', 'jps.signatory', s.jps.signatory)}
+                    ${inp('Their bank', 'jps.bank.name', s.jps.bank.name)}${inp('SWIFT', 'jps.bank.swift', s.jps.bank.swift)}${ta('Bank address', 'jps.bank.addressLines', s.jps.bank.addressLines, 2)}
+                    ${inp('Port of loading', 'jps.portOfLoading', s.jps.portOfLoading)}${inp('Destination', 'jps.destination', s.jps.destination)}${inp('Freight terms', 'jps.freightTerms', s.jps.freightTerms)}</div>`,
             documents: `
                 <div class="sd-grid3">${inp('HS code', 'hsCode', s.hsCode)}${inp('Packing — draft packing list', 'packingSpec.draft', s.packingSpec.draft)}${inp('Packing — final packing list', 'packingSpec.final', s.packingSpec.final)}</div>
                 <p class="sd-warn-text">Match the packing wording in this shipment's LC — earlier LCs required exactly “export standard seaworthy packaging”.</p>

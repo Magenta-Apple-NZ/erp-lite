@@ -15,7 +15,7 @@ export async function onRequestPost({ env, params, request }) {
         if (!ship) return errResponse('Shipment not found', 404);
         const [rec, settings] = await Promise.all([loadRecord(env, params.id), loadSettings(env)]);
         if (!rec.review || !(rec.review.bales || []).length) return errResponse('Nothing to confirm yet', 400);
-        const checks = runChecks(rec.review, { settings, shipmentNumber: shipNumber(ship) });
+        const checks = runChecks(rec.review, { settings, shipmentNumber: shipNumber(ship), dismissed: rec.dismissed });
         const fails = blockingFailures(checks);
         if (fails.length) return jsonResponse({ error: 'Checks failing: ' + fails.map(f => f.title).join('; '), checks }, 422);
 

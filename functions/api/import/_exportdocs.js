@@ -32,17 +32,19 @@ export const SETTINGS_SEED = {
         email: 'andrew@primetie.co.nz',
         gstNumber: '129-544-112',
     },
-    // Enviroware's bank, printed on the proforma letterhead.
-    bank: { name: '', addressLines: [], swift: '', accountNumber: '' },
+    // Enviroware's bank, printed on the proforma letterhead (as JPS has it on
+    // their proforma for Shipment 43).
+    bank: { name: 'ANZ Bank New Zealand Ltd', addressLines: ['23-29 Albert Street', 'Auckland, New Zealand'], swift: 'ANZBNZ22', accountNumber: '' },
     buyer: {
         name: 'JPS Enterprise',
         addressLines: ['Komolapur, Holding no:533 Birulia', 'Savar', 'Dhaka-1340,', 'Bangladesh'],
     },
-    // The applicant's numbers as printed on Commercial Invoice 101/2026. The
-    // bank's BIN is its VAT registration number (000060296-0202).
+    // The applicant's numbers: IRC, TIN, BIN and bank TIN / VAT reg no. as on
+    // Commercial Invoice 101/2026; the SBAC Bank BIN as on the Shipment 43
+    // draft packing list (a different number from the VAT reg no.).
     identifiers: {
         irc: '260326110775319', applicantTin: '358887309351', applicantBin: '001173726-0403',
-        bankName: 'SBAC Bank', bankTin: '166085152182', bankBin: '000060296-0202',
+        bankName: 'SBAC Bank', bankTin: '166085152182', bankBin: '000000203-0002', bankVatReg: '000060296-0202',
     },
     hsCode: '6002.90.00',
     goods: {
@@ -54,28 +56,47 @@ export const SETTINGS_SEED = {
         draft: 'Standard Export Seaworthy',
         final: 'EXPORT STANDARD ROAD / SEA WORTHY CONDITION',
     },
-    // Identifier rows printed on the packing list (Draft and Final word them
-    // differently). `field` picks the value.
+    // Identifier rows on the packing list, lettered AA, BB, CC… as on the
+    // Shipment 43 draft and the Shipment 42 final (they word them
+    // differently). `field` picks the value; `suffix` follows it ({bankName} =
+    // the applicant's bank); `span` prints label and value as one line.
     identifierRows: {
         draft: [
-            { label: 'IRC no.', field: 'irc' },
-            { label: 'TIN no.', field: 'applicantTin' },
-            { label: 'BIN no.', field: 'applicantBin' },
-            { label: 'BIN no. (SBAC Bank)', field: 'bankBin' },
-            { label: 'HS code', field: 'hsCode' },
-            { label: 'LC no.', field: 'lcNumber' },
-            { label: 'LC date', field: 'lcDate' },
+            { label: 'IRC NO', field: 'irc' },
+            { label: 'TIN NO.', field: 'applicantTin' },
+            { label: 'BIN NO.', field: 'applicantBin', suffix: '(APPLICANT)' },
+            { label: 'BIN NO.', field: 'bankBin', suffix: '({bankName})' },
+            { label: 'HS CODE NO.', field: 'hsCode' },
+            { label: 'LC NO:', field: 'lcNumber' },
+            { label: 'LC DATE OF ISSUE:', field: 'lcDate' },
         ],
         final: [
-            { label: 'IRC no.', field: 'irc' },
-            { label: "Applicant's TIN", field: 'applicantTin' },
-            { label: "Applicant's BIN", field: 'applicantBin' },
-            { label: "Applicant's bank TIN", field: 'bankTin' },
-            { label: 'VAT reg no.', field: 'bankBin' },
-            { label: 'HS code', field: 'hsCode' },
-            { label: 'LC no.', field: 'lcNumber' },
-            { label: 'LC date of issue', field: 'lcDate' },
+            { label: 'Applicant:', field: 'applicant', span: true },
+            { label: 'IRC NO', field: 'irc' },
+            { label: "APPLICANT'S TIN NO.", field: 'applicantTin' },
+            { label: "APPLICANT'S BIN NO.", field: 'applicantBin' },
+            { label: "APPLICANT'S BANK TIN NO.", field: 'bankTin' },
+            { label: 'VAT REG NO.', field: 'bankVatReg' },
+            { label: 'HS CODE NO.', field: 'hsCode' },
+            { label: 'LC NO:', field: 'lcNumber' },
+            { label: 'LC DATE OF ISSUE:', field: 'lcDate' },
         ],
+    },
+    // JPS Enterprise's own details, for our rewrite of their sales proforma
+    // invoice (their template is full of typos). From their proforma for
+    // Shipment 43, corrected. Letterhead name and address are buyer.* above.
+    jps: {
+        phone: '+880 1817 011668, +880 1726 624893',
+        email: 'jpsenterprise@gmail.com',
+        signatory: 'Sudipto Sarkar (Paul)',
+        bank: { name: 'SBAC Bank PLC', addressLines: ['Galaxy Bhaban (1st Floor), Plot 29-30, Block 6, Mirpur-10', 'Dhaka, Bangladesh'], swift: 'SBACBDDH' },
+        portOfLoading: 'ICD Kamlapur, Dhaka, via Chattogram, Bangladesh',
+        destination: 'Tauranga, New Zealand',
+        freightTerms: 'FOB',
+        modeOfShipment: 'By sea',
+        payment: '100% in advance by bank T/T before shipment',
+        origin: 'Italy',
+        goodsDescription: 'Sorted knitted nylon stocking material (toeclip), a by-product of the manufacture of stockings, and wastage after sorting',
     },
     terms: [
         'Country of Origin: Italy',
@@ -88,7 +109,7 @@ export const SETTINGS_SEED = {
     ],
     signOff: {
         packingName: 'Andrew McLeod',
-        packingTitle: 'Director',
+        packingTitle: 'DIRECTOR',
         company: 'Enviroware Ltd',
         proformaName: 'ANDREW FRASER MCLEOD',
         proformaTitle: 'DIRECTOR',
@@ -115,16 +136,25 @@ export const SETTINGS_SEED = {
     },
 };
 
-export const IDENTIFIER_FIELDS = ['irc', 'applicantTin', 'applicantBin', 'bankBin', 'bankTin', 'bankVatReg', 'hsCode', 'lcNumber', 'lcDate'];
+export const IDENTIFIER_FIELDS = ['applicant', 'irc', 'applicantTin', 'applicantBin', 'bankBin', 'bankTin', 'bankVatReg', 'hsCode', 'lcNumber', 'lcDate'];
 
 const isObj = v => v && typeof v === 'object' && !Array.isArray(v);
 
 // Saved settings over the seed, two levels of sections deep (arrays
-// replace). A blank saved value never hides a seeded one.
+// replace). A blank saved value never hides a seeded one. The sections the
+// settings window doesn't edit always come from the code.
 const isBlank = v => v == null || (typeof v === 'string' && !v.trim()) || (Array.isArray(v) && !v.length);
+const CODE_OWNED = ['identifierRows', 'goods', 'signOff'];
+// Until 17 Nov 2026 the seed had the VAT reg no. as the bank's BIN.
+const OLD_BANK_BIN = '000060296-0202';
 export function mergeSettings(saved) {
     const out = structuredClone(SETTINGS_SEED);
     if (!isObj(saved)) return out;
+    saved = { ...saved };
+    for (const k of CODE_OWNED) delete saved[k];
+    if (isObj(saved.identifiers) && String(saved.identifiers.bankBin || '').trim() === OLD_BANK_BIN && !saved.identifiers.bankVatReg) {
+        saved.identifiers = { ...saved.identifiers, bankBin: '', bankVatReg: OLD_BANK_BIN };
+    }
     const into = (dst, src) => {
         for (const [k, v] of Object.entries(src)) {
             if (isObj(v) && isObj(dst[k])) into(dst[k], v);
@@ -146,7 +176,16 @@ export function missingSettings(settings, doc) {
     need(s.seller?.phone, 'Seller phone');
     need(s.seller?.email, 'Seller email');
     need(s.hsCode, 'HS code');
-    if (doc === 'proforma') {
+    if (doc === 'jps') {
+        need(s.seller?.gstNumber, 'GST no.');
+        need(s.bank?.name, 'Bank name');
+        need(s.bank?.swift, 'Bank SWIFT');
+        need(s.buyer?.name, 'JPS name');
+        need(s.buyer?.addressLines, 'JPS address');
+        need(s.jps?.bank?.name, "JPS's bank");
+        need(s.jps?.bank?.swift, "JPS's bank SWIFT");
+        need(s.jps?.signatory, 'JPS signatory');
+    } else if (doc === 'proforma') {
         need(s.seller?.gstNumber, 'GST no.');
         need(s.bank?.name, 'Bank name');
         need(s.bank?.swift, 'Bank SWIFT');
@@ -154,9 +193,9 @@ export function missingSettings(settings, doc) {
         need(s.buyer?.addressLines, 'Buyer address');
         need(s.terms, 'Terms & conditions');
     } else {
-        const labels = { irc: 'IRC no.', applicantTin: 'Applicant TIN', applicantBin: 'Applicant BIN', bankBin: 'Bank BIN / VAT reg no.', bankTin: 'Bank TIN' };
+        const labels = { irc: 'IRC no.', applicantTin: 'Applicant TIN', applicantBin: 'Applicant BIN', bankBin: 'Bank BIN', bankVatReg: 'Bank VAT reg no.', bankTin: 'Bank TIN' };
         const rows = [...(s.identifierRows?.draft || []), ...(s.identifierRows?.final || [])];
-        for (const f of new Set(rows.map(r => (r.field === 'bankVatReg' ? 'bankBin' : r.field)))) {
+        for (const f of new Set(rows.map(r => r.field))) {
             if (labels[f]) need(s.identifiers?.[f], labels[f]);
         }
     }
@@ -164,6 +203,19 @@ export function missingSettings(settings, doc) {
 }
 
 // ── Numbers ──────────────────────────────────────────────────────────────
+// Currency and unit decorations either side of a printed figure:
+// "USD$1.82", "US$ 32,815.30", "€ 1,50", "1,50 €/kg", "18.130 kg".
+export function stripDecorations(raw) {
+    let s = String(raw).trim();
+    for (let i = 0; i < 3; i++) {
+        const before = s;
+        s = s.replace(/^(?:USD|US|NZD|AUD|EUR|BDT|TK\.?|KGS?\.?)\s*/i, '').replace(/^[$€৳]\s*/, '')
+             .replace(/\s*(?:\/\s*kgs?\.?|per\s+kgs?\.?|kgs?\.?|USD|NZD|EUR|BDT|€|\$)$/i, '').trim();
+        if (s === before) break;
+    }
+    return s.replace(/\s+/g, '');
+}
+
 // Italian formatting: dot groups thousands, comma marks decimals.
 //   "4.887" → 4887   "7.330,50" → 7330.5   "0,75" → 0.75   "18130" → 18130
 // Anything that isn't valid Italian formatting returns null (e.g. "1.50",
@@ -171,7 +223,7 @@ export function missingSettings(settings, doc) {
 export function parseItalianNumber(raw) {
     if (raw == null) return null;
     let s = String(raw).replace(/ /g, ' ').trim();
-    s = s.replace(/^(EUR|€|USD|\$|KG)\s*/i, '').replace(/\s*(EUR|€|kg|kgs|kgs\.|kg\.)$/i, '').replace(/\s+/g, '');
+    s = stripDecorations(s);
     let neg = false;
     if (s.startsWith('-')) { neg = true; s = s.slice(1); }
     if (!/^\d{1,3}(\.\d{3})*(,\d+)?$/.test(s) && !/^\d+(,\d+)?$/.test(s)) return null;
@@ -312,7 +364,24 @@ export function emptyReview() {
 // ── Review checks ────────────────────────────────────────────────────────
 // level 'block' stops confirm and generation; 'warn' is shown, not enforced.
 // ok: true pass, false fail, null not applicable.
-function check(id, level, title, ok, detail) { return { id, level, title, ok, detail: detail || '' }; }
+// dismissible: a failing check the user may dismiss instead of correcting
+// (paperwork that disagrees with itself). Not for data the documents need.
+export function check(id, level, title, ok, detail, { dismissible = true } = {}) {
+    return { id, level, title, ok, detail: detail || '', dismissible: !!dismissible };
+}
+
+// record.dismissed = { [checkId]: { detail, title, by, at } }. A dismissal
+// holds only while the check fails with exactly the same detail, so a
+// different problem in the same check shows up again.
+export function applyDismissals(checks, dismissed) {
+    const d = dismissed || {};
+    return (checks || []).map(c => {
+        const x = d[c.id];
+        return c.ok === false && c.dismissible && x && x.detail === c.detail
+            ? { ...c, dismissed: { by: x.by || null, at: x.at || null } }
+            : c;
+    });
+}
 
 // Printed strings the model read, re-parsed with the Italian rule; any that
 // disagree with the number it returned are the classic 4.887 → 4.887 trap.
@@ -353,23 +422,24 @@ export function runChecks(review, ctx = {}) {
         const issues = [];
         if (!bales.length) issues.push('No bales yet');
         const nums = bales.map(b => b.n);
-        if (nums.some(n => n == null)) issues.push('A bale has no number');
+        let hard = !bales.length;
+        if (nums.some(n => n == null)) { issues.push('A bale has no number'); hard = true; }
         const seen = new Set(), dupes = new Set();
         nums.forEach(n => { if (n != null) { if (seen.has(n)) dupes.add(n); seen.add(n); } });
-        if (dupes.size) issues.push(`Duplicate bale ${[...dupes].join(', ')}`);
+        if (dupes.size) { issues.push(`Duplicate bale ${[...dupes].join(', ')}`); hard = true; }
         const max = Math.max(0, ...nums.filter(n => n != null));
         const missing = [];
         for (let i = 1; i <= max; i++) if (!seen.has(i)) missing.push(i);
         if (missing.length) issues.push(`Missing bale ${missing.slice(0, 10).join(', ')}${missing.length > 10 ? '…' : ''}`);
-        if (nums.some(n => n != null && n < 1)) issues.push('Bale numbers must start at 1');
+        if (nums.some(n => n != null && n < 1)) { issues.push('Bale numbers must start at 1'); hard = true; }
         const noKg = bales.filter(b => !(Number(b.kg) > 0)).map(b => b.n);
-        if (noKg.length) issues.push(`No weight on bale ${noKg.join(', ')}`);
+        if (noKg.length) { issues.push(`No weight on bale ${noKg.join(', ')}`); hard = true; }
         const noColour = bales.filter(b => !b.colour).map(b => b.n);
-        if (noColour.length) issues.push(`No colour on bale ${noColour.join(', ')}`);
+        if (noColour.length) { issues.push(`No colour on bale ${noColour.join(', ')}`); hard = true; }
         if (p.packages == null) issues.push("Supplier's package count missing");
         else if (Number(p.packages) !== bales.length) issues.push(`${bales.length} bales but the supplier states ${p.packages} packages`);
         checks.push(check('bale-sequence', 'block', 'Bales numbered 1 to N, N = supplier package count', !issues.length,
-            issues.length ? issues.join('; ') : `Bales 1–${bales.length}, matching ${p.packages} packages`));
+            issues.length ? issues.join('; ') : `Bales 1–${bales.length}, matching ${p.packages} packages`, { dismissible: !hard }));
     }
 
     // 2. White and coloured bale sums = supplier's stated totals
@@ -391,7 +461,7 @@ export function runChecks(review, ctx = {}) {
         else if (inv.netKg == null) detail = 'Net weight missing from the supplier proforma';
         else if (!kgEq(t.netKg, inv.netKg)) detail = `Bales sum to ${fmtKg(t.netKg)} kg, proforma states ${fmtKg(inv.netKg)} kg`;
         else { ok = true; detail = `${fmtKg(t.netKg)} kg on both`; }
-        checks.push(check('net-weight', 'block', 'Bales sum to the supplier proforma net weight', ok, detail));
+        checks.push(check('net-weight', 'block', 'Bales sum to the supplier proforma net weight', ok, detail, { dismissible: !!inv }));
     }
 
     // 4. Each supplier line kg × unit price = amount; lines sum to the total
@@ -414,7 +484,7 @@ export function runChecks(review, ctx = {}) {
             if (lines.length && inv.netKg != null && !kgEq(lineKg, inv.netKg)) issues.push(`Line kg sum to ${fmtKg(lineKg)}, net weight printed ${fmtKg(inv.netKg)}`);
         }
         checks.push(check('invoice-lines', 'block', 'Supplier invoice lines and total add up', !issues.length,
-            issues.length ? issues.join('; ') : `${(inv.lines || []).length} lines = ${inv.currency || ''} ${fmtMoney(inv.total)}`));
+            issues.length ? issues.join('; ') : `${(inv.lines || []).length} lines = ${inv.currency || ''} ${fmtMoney(inv.total)}`, { dismissible: !!inv }));
     }
 
     // 4b. Printed strings agree with the numbers (Italian locale rule)
@@ -448,14 +518,14 @@ export function runChecks(review, ctx = {}) {
     const ei = ctx.exportInvoice;
     if (ei) {
         checks.push(check('rate-confirmed', 'warn', 'Export rate confirmed', !!ei.rateConfirmed,
-            ei.rateConfirmed ? `USD ${fmtRate(ei.rate)}/kg` : `USD ${fmtRate(ei.rate)}/kg not yet confirmed`));
+            ei.rateConfirmed ? `USD ${fmtRate(ei.rate)}/kg` : `USD ${fmtRate(ei.rate)}/kg not yet confirmed`, { dismissible: false }));
         checks.push(check('number-confirmed', 'warn', 'Invoice number confirmed', !!ei.numberConfirmed,
-            ei.numberConfirmed ? String(ei.number || '') : `${ei.number || '—'} not yet confirmed`));
+            ei.numberConfirmed ? String(ei.number || '') : `${ei.number || '—'} not yet confirmed`, { dismissible: false }));
     }
-    return checks;
+    return applyDismissals(checks, ctx.dismissed);
 }
 
-export const blockingFailures = checks => (checks || []).filter(c => c.level === 'block' && c.ok === false);
+export const blockingFailures = checks => (checks || []).filter(c => c.level === 'block' && c.ok === false && !c.dismissed);
 
 // ── Export invoice defaults ──────────────────────────────────────────────
 export function parseInvoiceNumber(s) {
@@ -509,13 +579,15 @@ export function hasUnconfirmedChanges(record) {
 
 // Why a document can't be generated yet ([] = ready).
 // doc: 'packing' | 'proforma'; stage: 'draft' | 'final' (packing only).
-export function generationIssues({ record, settings, doc, stage = 'draft', shipmentNumber = null, otherInvoiceNumbers = [] }) {
+// doc 'jps' (our signed rewrite of JPS's sales proforma) also takes the
+// titles of JPS checks still blocking and whether a signature is uploaded.
+export function generationIssues({ record, settings, doc, stage = 'draft', shipmentNumber = null, otherInvoiceNumbers = [], jpsFailures = [], hasSignature = false }) {
     const r = record || {};
     const out = [];
     const miss = missingSettings(settings, doc);
     if (miss.length) out.push(`Settings incomplete: ${miss.join(', ')}`);
     if (!r.confirmed) { out.push('Confirm the bales first'); return out; }
-    const fails = blockingFailures(runChecks(r.confirmed, { settings, shipmentNumber }));
+    const fails = blockingFailures(runChecks(r.confirmed, { settings, shipmentNumber, dismissed: r.dismissed }));
     if (fails.length) out.push(`Confirmed data fails: ${fails.map(f => f.title).join('; ')}`);
     const ei = r.exportInvoice || {};
     if (!isYmd(ei.date)) out.push('Document date missing');
@@ -526,6 +598,18 @@ export function generationIssues({ record, settings, doc, stage = 'draft', shipm
         if (!ei.numberConfirmed) out.push('Tick to confirm the invoice number');
         const dup = otherInvoiceNumbers.find(o => String(o.number || '').replace(/\s/g, '') === String(ei.number || '').replace(/\s/g, ''));
         if (dup) out.push(`Invoice ${ei.number} is already used on Shipment #${dup.shipmentNumber}`);
+    }
+    if (doc === 'jps') {
+        const j = r.jps;
+        if (!j) { out.push('Upload or enter the JPS invoice first'); return out; }
+        if (!String(j.number || '').trim()) out.push('JPS invoice number missing');
+        if (!isYmd(j.date)) out.push('JPS invoice date missing');
+        if (!(j.lines || []).some(l => Number(l.kg) > 0 && Number(l.unitPrice) > 0 && Number(l.amount) > 0)) out.push('JPS invoice lines need kg, unit price and amount');
+        if (jpsFailures.length) out.push(`JPS invoice fails: ${jpsFailures.join('; ')}`);
+        const c = j.contract || {};
+        if (!isYmd(c.lastShipmentDate)) out.push('Last date of shipment missing');
+        if (!isYmd(c.expiryDate)) out.push('Expiry date missing');
+        if (!hasSignature) out.push('Upload your signature in Document settings → Enviroware');
     }
     if (doc === 'packing' && stage === 'final') {
         const lc = r.lc || {};
@@ -545,7 +629,8 @@ export function lcCrossChecks(record, lc, settings) {
     const t = baleTotals(record.confirmed.bales);
     const ei = record.exportInvoice || {};
     const amount = invoiceAmount(t.netKg, ei.rate);
-    const add = (title, ok, detail) => out.push(check('lc-' + out.length, 'warn', title, ok, detail));
+    const slug = t => 'lc-' + String(t).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+    const add = (title, ok, detail) => out.push(check(slug(title), 'warn', title, ok, detail));
     const norm = s => String(s || '').replace(/[^a-z0-9]/gi, '').toLowerCase();
     if (record.lc?.number && lc.lcNumber) add('LC number matches the linked LC', norm(record.lc.number) === norm(lc.lcNumber), `Entered ${record.lc.number}; LC record ${lc.lcNumber}`);
     if (record.lc?.date && lc.issuedDate) add('LC date matches the linked LC', record.lc.date === lc.issuedDate, `Entered ${record.lc.date}; LC record ${lc.issuedDate}`);
@@ -563,14 +648,14 @@ export function lcCrossChecks(record, lc, settings) {
     if (lcText.trim()) {
         const digits = v => String(v || '').replace(/\D/g, '');
         const runs = (lcText.match(/\d[\d\s.\-/:]*\d/g) || []).map(digits);
-        const ids = [['IRC', idn.irc], ['applicant TIN', idn.applicantTin], ['applicant BIN', idn.applicantBin], ['bank TIN', idn.bankTin], ['bank BIN / VAT reg', idn.bankBin]]
+        const ids = [['IRC', idn.irc], ['applicant TIN', idn.applicantTin], ['applicant BIN', idn.applicantBin], ['bank TIN', idn.bankTin], ['bank BIN', idn.bankBin], ['bank VAT reg no.', idn.bankVatReg]]
             .filter(([, v]) => digits(v).length >= 6);
         const missing = ids.filter(([, v]) => !runs.some(r => r.includes(digits(v))));
         if (ids.length) add('Applicant numbers match the LC', !missing.length, missing.length
             ? `${missing.map(([l, v]) => `${l} ${v}`).join(', ')} not found in LC ${lc.lcNumber || ''} — check Document settings → JPS Enterprise`
             : `IRC, TIN, BIN and bank numbers all appear in LC ${lc.lcNumber || ''}`);
     }
-    return out;
+    return applyDismissals(out, record.dismissed);
 }
 
 // ── Document rendering ───────────────────────────────────────────────────
@@ -589,20 +674,45 @@ export const DOC_TITLES = {
     'packing:draft': 'DRAFT PACKING LIST',
     'packing:final': 'Final Packing List',
     'proforma:draft': 'PROFORMA INVOICE',
+    'jps:contract': 'SALES PROFORMA INVOICE',
 };
 
 export function docFilename({ doc, stage, shipmentNumber, date, ext = 'pdf' }) {
     const d = isYmd(date) ? date.slice(8, 10) + date.slice(5, 7) + date.slice(0, 4) : '';
+    if (doc === 'jps') return `JPS Proforma Invoice - #${shipmentNumber ?? ''} - ${d} - Signed.${ext}`;
     const base = doc === 'proforma' ? 'Proforma Invoice' : (stage === 'final' ? 'Final Packing List' : 'Packing List');
     return `${base} - #${shipmentNumber ?? ''} - ${d}.${ext}`;
 }
 
+const dmy = ymd => (isYmd(ymd) ? `${ymd.slice(8, 10)}/${ymd.slice(5, 7)}/${ymd.slice(0, 4)}` : '');
+
 function identifierValue(field, { settings, record }) {
     if (field === 'hsCode') return settings.hsCode || '';
-    if (field === 'bankVatReg') return settings.identifiers?.bankVatReg || settings.identifiers?.bankBin || '';
     if (field === 'lcNumber') return record.lc?.number || '';
-    if (field === 'lcDate') return record.lc?.date ? longDate(record.lc.date) : '';
+    if (field === 'lcDate') return record.lc?.date ? dmy(record.lc.date) : '';
+    if (field === 'applicant') return joinLine([settings.buyer?.name, ...lines(settings.buyer?.addressLines)]);
     return settings.identifiers?.[field] || '';
+}
+
+// The lettered identifier block: [{ letter: 'AA.', label, value }].
+export function identifierLines({ settings, record, stage = 'draft' }) {
+    const s = settings || SETTINGS_SEED;
+    return (s.identifierRows?.[stage === 'final' ? 'final' : 'draft'] || []).map((row, i) => {
+        const v = identifierValue(row.field, { settings: s, record: record || {} });
+        const suffix = row.suffix ? fill(row.suffix, { bankName: s.identifiers?.bankName || '' }).replace(/\(\s*\)/, '').trim() : '';
+        const letter = String.fromCharCode(65 + (i % 26));
+        return { letter: letter + letter + '.', label: row.label, value: v && suffix ? `${v} ${suffix}` : v, span: !!row.span };
+    });
+}
+
+
+// Right-hand letterhead lines: "193 Mount Smart Road" / "Onehunga, 1061. NEW ZEALAND".
+function addressBlock(addressLines) {
+    const ls = lines(addressLines).map(l => l.replace(/,\s*$/, ''));
+    if (ls.length < 2) return ls;
+    const rest = ls.slice(1);
+    rest[rest.length - 1] = rest[rest.length - 1].toUpperCase();
+    return [ls[0], rest.join('. ')];
 }
 
 // Shared page chrome: A4, single page, a screen-only toolbar with Print.
@@ -634,8 +744,11 @@ ${body.css}
 </body></html>`;
 }
 
-// Enviroware packing list, Draft or Final. Arial, one A4 page.
-export function renderPackingList({ record, settings, stage = 'draft', shipmentNumber = null, banner = '' }) {
+// Enviroware packing list, Draft or Final, laid out like the Shipment 43
+// draft: name and strapline left, address right; one summary row; the bales
+// in two light columns; the lettered identifier block (AA. IRC NO …); packing
+// specification; signature and seal. Arial, one A4 page.
+export function renderPackingList({ record, settings, assets = {}, stage = 'draft', shipmentNumber = null, banner = '' }) {
     const s = settings || SETTINGS_SEED;
     const r = record || {};
     const conf = r.confirmed || emptyReview();
@@ -645,76 +758,79 @@ export function renderPackingList({ record, settings, stage = 'draft', shipmentN
     const isFinal = stage === 'final';
     const ei = r.exportInvoice || {};
     const rows = Math.max(left.length, right.length);
-    // One A4 page (269 mm printable): the bale rows share what the fixed
-    // blocks leave — measured at ~131 mm on the Draft and ~147 mm on the
-    // Final (gross weight, applicant line, extra identifier row). 45 bales
-    // print at ~5 mm a row; the Draft fits ~68 bales, the Final ~62. Font
-    // steps down with the row height.
-    const budget = isFinal ? 112 : 124;
-    const rowH = Math.max(3.4, Math.min(6, budget / (rows + 1)));
-    const baleFont = rowH >= 4.6 ? 9.5 : rowH >= 4 ? 8.5 : 7.5;
-    const baleRows = [];
-    for (let i = 0; i < rows; i++) {
-        const a = left[i], b = right[i];
-        baleRows.push(`<tr><td class="n">${a ? a.n : ''}</td><td class="kg">${a ? fmtKg(a.kg) : ''}</td><td class="gap"></td><td class="n">${b ? b.n : ''}</td><td class="kg">${b ? fmtKg(b.kg) : ''}</td></tr>`);
-    }
-    const ids = (s.identifierRows?.[isFinal ? 'final' : 'draft'] || [])
-        .map(row => `<tr><th>${esc(row.label)}</th><td>${esc(identifierValue(row.field, { settings: s, record: r }))}</td></tr>`).join('');
+    // One A4 page (269 mm printable). The bale rows share what the fixed
+    // blocks leave (measured in Chrome: ~150 mm Draft, ~160 mm Final with the
+    // applicant line and an extra identifier row). 45 bales print at ~4.4 mm a
+    // row as on the Shipment 43 draft; ~60 bales still fit. Font steps down
+    // with the row height.
+    const budget = isFinal ? 100 : 114;
+    const rowH = Math.max(3.2, Math.min(4.4, budget / (rows + 1)));
+    const baleFont = rowH >= 4 ? 8 : rowH >= 3.6 ? 7.5 : 7;
+    const col = list => {
+        const body = [];
+        for (let i = 0; i < rows; i++) {
+            const b = list[i];
+            body.push(`<tr><td class="n">${b ? b.n : ''}</td><td class="kg">${b ? fmtKg(b.kg) : ''}</td></tr>`);
+        }
+        return `<table class="col"><thead><tr><th class="n">Bale #</th><th class="kg">Net Weight</th></tr></thead><tbody>${body.join('')}</tbody></table>`;
+    };
+    const ids = identifierLines({ settings: s, record: r, stage })
+        .map(x => x.span
+            ? `<tr><td class="ltr">${esc(x.letter)}</td><td colspan="2">${esc(x.label)} ${esc(x.value)}</td></tr>`
+            : `<tr><td class="ltr">${esc(x.letter)}</td><th>${esc(x.label)}</th><td>${esc(x.value)}</td></tr>`).join('');
     const seller = s.seller || {};
-    const applicant = joinLine([s.buyer?.name, ...lines(s.buyer?.addressLines)]);
     const title = DOC_TITLES[`packing:${isFinal ? 'final' : 'draft'}`];
+    const img = (a, cls) => a && a.data ? `<img class="${cls}" src="data:${esc(a.mediaType || 'image/png')};base64,${a.data}" alt="">` : '';
+    const sign = s.signOff || {};
     const html = `
 <header class="lh">
-  <div class="lh-name">${esc(seller.name)}</div>
-  <div class="lh-strap">${straplineHtml(seller.strapline)}</div>
-  <div class="lh-addr">${esc(joinLine(seller.addressLines))}</div>
-  <div class="lh-addr">${seller.phone ? 'Phone: ' + esc(seller.phone) : ''}${seller.phone && seller.email ? ' &nbsp;|&nbsp; ' : ''}${seller.email ? 'Email: ' + esc(seller.email) : ''}</div>
+  <div class="lh-l"><div class="lh-name">${esc(seller.name)}</div><div class="lh-strap">${esc(seller.strapline)}</div></div>
+  <div class="lh-r">${addressBlock(seller.addressLines).map(l => `<div>${esc(l)}</div>`).join('')}
+    ${seller.phone ? `<div>Phone ${esc(seller.phone)}</div>` : ''}${seller.email ? `<div>${esc(seller.email)}</div>` : ''}</div>
 </header>
 <h1 class="title">${esc(title)}</h1>
 <table class="summary">
-  <tr><th>Shipment</th><td>${esc(shipNo)}</td></tr>
-  <tr><th>No. of Packages</th><td>${t.count}</td></tr>
-  <tr><th>Net Weight</th><td>${fmtKg(t.netKg)} kg</td></tr>
-  ${isFinal ? `<tr><th>Gross Weight</th><td>${r.lc?.grossKg ? fmtKg(r.lc.grossKg) + ' kg' : ''}</td></tr>` : ''}
-  <tr><th>Date</th><td>${esc(longDate(ei.date))}</td></tr>
+  <thead><tr><th>Shipment</th><th>No. of Packages</th><th>Net Weight</th>${isFinal ? '<th>Gross Weight</th>' : ''}<th>Date</th></tr></thead>
+  <tbody><tr><td>${esc(shipNo)}</td><td>${t.count}</td><td>${fmtKg(t.netKg)}</td>${isFinal ? `<td>${r.lc?.grossKg ? fmtKg(r.lc.grossKg) : ''}</td>` : ''}<td>${esc(dmy(ei.date))}</td></tr></tbody>
 </table>
 <h2 class="subtitle">${esc(s.goods?.subtitle)}</h2>
-<table class="bales">
-  <thead><tr><th>Bale #</th><th>Net Weight (kg)</th><th class="gap"></th><th>Bale #</th><th>Net Weight (kg)</th></tr></thead>
-  <tbody>${baleRows.join('')}</tbody>
-</table>
-${isFinal && applicant ? `<p class="applicant"><strong>Applicant:</strong> ${esc(applicant)}</p>` : ''}
+<div class="bales">${col(left)}${col(right)}</div>
 <table class="ids">${ids}</table>
-<p class="spec"><strong>Packing:</strong> ${esc(s.packingSpec?.[isFinal ? 'final' : 'draft'])}</p>
+<p class="spec${isFinal ? ' spec--final' : ''}">Packing Specification: ${esc(s.packingSpec?.[isFinal ? 'final' : 'draft'])}</p>
 <div class="sign">
-  <div class="sign-line"></div>
-  <div>${esc(s.signOff?.packingName)}</div>
-  <div>${esc(s.signOff?.packingTitle)}</div>
-  <div>${esc(s.signOff?.company || seller.name)}</div>
+  <div class="sign-row"><div class="sig">${img(assets.signature, 'sig-img') || '<div class="sig-line"></div>'}</div>${img(assets.seal, 'seal-img')}</div>
+  <div>${esc(sign.packingName)}</div>
+  <div><strong>${esc(sign.packingTitle)}</strong></div>
+  <div>${esc(sign.company || seller.name)}</div>
 </div>`;
     const css = `
-.lh { text-align: center; border-bottom: 1.5pt solid #000; padding-bottom: 2mm; margin-bottom: 3mm; line-height: 1.25; }
-.lh-name { font-size: 16pt; font-weight: bold; }
-.lh-strap { font-size: 9pt; }
-.lh-addr { font-size: 8.5pt; }
-.title { text-align: center; font-size: 13pt; margin: 1mm 0 3mm; letter-spacing: .03em; }
-.summary { margin: 0 auto 3mm; min-width: 95mm; }
-.summary th, .summary td { border: 0.75pt solid #000; padding: 0.6mm 3mm; text-align: left; font-size: 10pt; line-height: 1.2; }
-.summary th { width: 42mm; background: #f2f2f2; }
-.subtitle { text-align: center; font-size: 11pt; margin: 0 0 2mm; }
-.bales { margin: 0 auto 3mm; }
-.bales th, .bales td { border: 0.75pt solid #000; padding: 0 4mm; font-size: ${baleFont}pt; line-height: 1; height: ${rowH.toFixed(2)}mm; white-space: nowrap; }
-.bales th { background: #f2f2f2; }
-.bales td.n { text-align: center; width: 16mm; }
-.bales td.kg { text-align: right; width: 30mm; }
-.bales .gap { border: 0; width: 10mm; background: none; padding: 0; }
-.applicant { margin: 0 0 1.5mm; font-size: 9.5pt; }
-.ids { margin: 0 0 2mm; }
-.ids th, .ids td { padding: 0.25mm 3mm 0.25mm 0; text-align: left; font-size: 9pt; line-height: 1.2; vertical-align: top; }
-.ids th { font-weight: bold; white-space: nowrap; }
-.spec { margin: 0 0 3mm; font-size: 9.5pt; }
-.sign { font-size: 9.5pt; line-height: 1.25; }
-.sign-line { width: 55mm; border-bottom: 0.75pt solid #000; height: 9mm; margin-bottom: 1mm; }`;
+.sheet { padding-left: 20mm; padding-right: 20mm; }
+.lh { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 9mm; }
+.lh-name { font-size: 16pt; font-weight: bold; line-height: 1.15; }
+.lh-strap { font-size: 8.5pt; }
+.lh-r { text-align: right; font-size: 8pt; line-height: 1.45; }
+.title { text-align: center; font-size: 12pt; margin: 0 0 3.5mm; }
+.summary { margin: 0 auto 8mm; }
+.summary th, .summary td { border: 0.75pt solid #000; padding: 0.3mm 2.5mm; text-align: center; font-size: 9pt; line-height: 1.25; }
+.summary th { font-weight: bold; }
+.subtitle { text-align: center; font-size: 9.5pt; margin: 0 0 4mm; }
+.bales { display: flex; justify-content: space-between; width: 128mm; margin: 0 auto 7mm; }
+.col th, .col td { padding: 0 1.5mm; font-size: ${baleFont}pt; line-height: 1; height: ${rowH.toFixed(2)}mm; white-space: nowrap; }
+.col th { font-size: 7pt; font-weight: bold; }
+.col .n { text-align: right; width: 12mm; }
+.col .kg { text-align: right; width: 22mm; }
+.ids { margin: 0 0 6mm 14mm; width: calc(100% - 14mm); }
+.ids th, .ids td { padding: 0.15mm 0; text-align: left; font-size: 8pt; line-height: 1.3; vertical-align: top; font-weight: normal; }
+.ids .ltr { width: 8mm; font-size: 7pt; }
+.ids th { width: 50mm; }
+.spec { text-align: center; margin: 0 0 5mm; font-size: 8.5pt; }
+.spec--final { font-weight: bold; }
+.sign { font-size: 8.5pt; line-height: 1.4; }
+.sign-row { display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 2mm; }
+.sig { width: 60mm; }
+.sig-img { max-height: 22mm; max-width: 60mm; display: block; }
+.sig-line { width: 55mm; border-bottom: 0.75pt solid #000; height: 14mm; }
+.seal-img { max-height: 27mm; max-width: 30mm; }`;
     return page({ title: `${title} – Shipment #${shipNo}`, font: 'Arial, Helvetica, sans-serif', body: { html, css }, banner });
 }
 
@@ -801,6 +917,144 @@ export function renderProforma({ record, settings, assets = {}, shipmentNumber =
 // Same content as renderPackingList, as a sheet spec for _xlsx.js. Package
 // count and net weight are formulas over the bale cells, like the
 // reference workbook; a Final tab is added once the LC details are in.
+// ── Amount in words ──────────────────────────────────────────────────────
+// 32996.6 → "Thirty-Two Thousand Nine Hundred and Ninety-Six and Sixty Cents"
+const ONES = ['', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten', 'Eleven', 'Twelve',
+    'Thirteen', 'Fourteen', 'Fifteen', 'Sixteen', 'Seventeen', 'Eighteen', 'Nineteen'];
+const TENS = ['', '', 'Twenty', 'Thirty', 'Forty', 'Fifty', 'Sixty', 'Seventy', 'Eighty', 'Ninety'];
+const under100 = n => (n < 20 ? ONES[n] : TENS[Math.floor(n / 10)] + (n % 10 ? '-' + ONES[n % 10] : ''));
+export function numberToWords(n) {
+    n = Math.floor(Math.abs(Number(n) || 0));
+    if (!n) return 'Zero';
+    const scales = ['', 'Thousand', 'Million', 'Billion'];
+    const chunks = [];
+    for (let i = 0; n > 0 && i < scales.length; i++, n = Math.floor(n / 1000)) chunks.push(n % 1000);
+    const parts = [];
+    for (let i = chunks.length - 1; i >= 0; i--) {
+        const c = chunks[i];
+        if (!c) continue;
+        const h = Math.floor(c / 100), r = c % 100;
+        let w = h ? ONES[h] + ' Hundred' : '';
+        if (r) w += (h ? ' and ' : (i === 0 && parts.length ? 'and ' : '')) + under100(r);
+        parts.push(w + (scales[i] ? ' ' + scales[i] : ''));
+    }
+    return parts.join(' ');
+}
+export function amountInWords(amount, currency = 'USD') {
+    const c = cents(amount);
+    const whole = Math.floor(c / 100), frac = c % 100;
+    const name = { USD: 'US Dollars', NZD: 'New Zealand Dollars', EUR: 'Euros' }[currency] || currency;
+    return `${name} ${numberToWords(whole)}${frac ? ` and ${numberToWords(frac)} Cent${frac === 1 ? '' : 's'}` : ''} Only`;
+}
+
+// Our rewrite of JPS Enterprise's sales proforma invoice (their template has
+// the wrong street number, "Buyerer's", "SWFIT", "Tauraqnga"…): JPS
+// letterhead, Enviroware as buyer with its bank, the goods line(s) from the
+// JPS invoice as captured on the shipment, the amount in words, the terms
+// once each, and Enviroware's signature and seal. JPS's side is left for
+// Paul to sign. Times New Roman, one A4 page.
+export function renderJpsContract({ record, settings, assets = {}, shipmentNumber = null, banner = '' }) {
+    const s = settings || SETTINGS_SEED;
+    const r = record || {};
+    const j = r.jps || {};
+    const jp = s.jps || {};
+    const c = j.contract || {};
+    const seller = s.seller || {}, bank = s.bank || {}, sign = s.signOff || {};
+    const cur = j.currency || 'USD';
+    const sym = cur === 'USD' ? 'US$' : cur;
+    const ls = (j.lines || []).filter(l => l.kg != null || l.amount != null);
+    const single = ls.length === 1;
+    const totalKg = ls.reduce((a, l) => a + (Number(l.kg) || 0), 0);
+    const total = ls.length ? ls.reduce((a, l) => a + cents(l.amount), 0) / 100 : (Number(j.total) || 0);
+    const img = (a, cls) => a && a.data ? `<img class="${cls}" src="data:${esc(a.mediaType || 'image/png')};base64,${a.data}" alt="">` : '';
+    const bankLine = b => [b?.name, ...lines(b?.addressLines)].filter(Boolean).map(x => x.replace(/,\s*$/, '')).join(', ') + (b?.swift ? `. SWIFT: ${b.swift}` : '');
+    const terms = [
+        ['Payment', jp.payment],
+        ['Country of origin', jp.origin],
+        ["Exporter's bank", bankLine(jp.bank)],
+        ['Port of loading', jp.portOfLoading],
+        ['Destination', jp.destination],
+        ['Freight terms', jp.freightTerms],
+        ['Mode of shipment', jp.modeOfShipment],
+        ['Last date of shipment', isYmd(c.lastShipmentDate) ? longDate(c.lastShipmentDate) : ''],
+        ['Expiry date', isYmd(c.expiryDate) ? longDate(c.expiryDate) : ''],
+        ['Container size', c.containers],
+    ].filter(([, v]) => String(v || '').trim());
+    const title = DOC_TITLES['jps:contract'];
+    const html = `
+<header class="lh">
+  <div class="lh-name">${esc(s.buyer?.name)}</div>
+  <div>${esc(joinLine(s.buyer?.addressLines))}</div>
+  <div>${jp.phone ? 'Phone: ' + esc(jp.phone) : ''}${jp.phone && jp.email ? ' &nbsp;·&nbsp; ' : ''}${jp.email ? 'Email: ' + esc(jp.email) : ''}</div>
+</header>
+<div class="doc-hd">
+  <h1>${esc(title)}</h1>
+  <div class="doc-no">No. <strong>${esc(j.number)}</strong> &nbsp;·&nbsp; Date: <strong>${esc(longDate(j.date))}</strong></div>
+</div>
+<p class="contract">This sales contract is made between the exporter and the buyer.</p>
+<div class="buyer">
+  <div class="k">Buyer</div>
+  <div><strong>${esc(seller.name)}</strong></div>
+  <div>${esc(joinLine(seller.addressLines))}</div>
+  <div>${[seller.phone && 'Phone: ' + esc(seller.phone), seller.email && 'Email: ' + esc(seller.email), seller.gstNumber && 'GST No.: ' + esc(seller.gstNumber)].filter(Boolean).join(' &nbsp;·&nbsp; ')}</div>
+  <div>Buyer's bank: ${esc(bankLine(bank))}</div>
+</div>
+<table class="goods">
+  <thead><tr><th>Description of goods</th><th class="r">Weight (kg)</th><th class="r">Unit price (${esc(sym)})</th><th class="r">Value (${esc(sym)})</th></tr></thead>
+  <tbody>${ls.map(l => `<tr>
+    <td>${esc(single ? jp.goodsDescription || l.description : l.description)}${single || ls.indexOf(l) === ls.length - 1 ? `<div class="hs">HS code: ${esc(s.hsCode)}</div>` : ''}</td>
+    <td class="r">${l.kg != null ? fmtKg(l.kg) : ''}</td><td class="r">${l.unitPrice != null ? fmtRate(l.unitPrice) : ''}</td><td class="r">${l.amount != null ? fmtMoney(l.amount) : ''}</td></tr>`).join('')}</tbody>
+  <tfoot><tr><th>Total</th><th class="r">${totalKg ? fmtKg(totalKg) : ''}</th><th></th><th class="r">${esc(sym)} ${fmtMoney(total)}</th></tr></tfoot>
+</table>
+<p class="words"><strong>Amount in words:</strong> ${esc(amountInWords(total, cur))}.</p>
+<h2>Terms and conditions</h2>
+<table class="terms">${terms.map(([k, v]) => `<tr><th>${esc(k)}:</th><td>${esc(v)}</td></tr>`).join('')}</table>
+<div class="sigs">
+  <div class="sig-col">
+    <div class="sig-space"></div>
+    <div class="sig-rule"></div>
+    <div><strong>${esc(jp.signatory)}</strong></div>
+    <div>For and on behalf of ${esc(s.buyer?.name)}</div>
+    <div class="k">Exporter</div>
+  </div>
+  <div class="sig-col sig-col--us">
+    <div class="sig-space">${img(assets.signature, 'sig-img')}${img(assets.seal, 'seal-img')}</div>
+    <div class="sig-rule"></div>
+    <div><strong>${esc(sign.proformaName)}</strong></div>
+    <div>${esc(sign.proformaFor || 'For and on behalf of ' + (seller.name || ''))}</div>
+    <div class="k">Buyer</div>
+  </div>
+</div>`;
+    const css = `
+.lh { text-align: center; line-height: 1.35; font-size: 10.5pt; border-bottom: 1.25pt solid #000; padding-bottom: 3mm; margin-bottom: 4mm; }
+.lh-name { font-size: 24pt; font-weight: bold; line-height: 1.15; }
+.doc-hd { display: flex; justify-content: space-between; align-items: baseline; gap: 6mm; }
+.doc-hd h1 { font-size: 13pt; margin: 0; letter-spacing: .02em; }
+.doc-no { font-size: 10.5pt; }
+.contract { margin: 1mm 0 4mm; font-style: italic; }
+.k { font-size: 8.5pt; text-transform: uppercase; letter-spacing: .06em; color: #333; }
+.buyer { line-height: 1.4; margin-bottom: 5mm; }
+.goods { width: 100%; margin-bottom: 3mm; }
+.goods th, .goods td { border: 0.75pt solid #000; padding: 1.5mm 2.5mm; vertical-align: top; text-align: left; }
+.goods thead th { background: #f2f2f2; }
+.goods .r { text-align: right; white-space: nowrap; }
+.goods td:first-child { width: 52%; }
+.goods tbody td { height: 24mm; }
+.hs { margin-top: 2mm; }
+.words { margin: 0 0 5mm; }
+h2 { font-size: 11pt; margin: 0 0 1.5mm; }
+.terms { margin-bottom: 8mm; }
+.terms th, .terms td { text-align: left; vertical-align: top; padding: 0.4mm 0; line-height: 1.35; }
+.terms th { font-weight: normal; white-space: nowrap; padding-right: 4mm; }
+.sigs { display: flex; justify-content: space-between; gap: 12mm; }
+.sig-col { width: 46%; line-height: 1.4; }
+.sig-space { height: 26mm; display: flex; align-items: flex-end; gap: 4mm; }
+.sig-img { max-height: 20mm; max-width: 50mm; }
+.seal-img { max-height: 25mm; max-width: 28mm; margin-left: auto; }
+.sig-rule { border-top: 0.75pt solid #000; margin: 1mm 0 1.5mm; }`;
+    return page({ title: `${title} ${j.number || ''} – Shipment #${shipmentNumber ?? ''}`, font: '"Times New Roman", Times, serif', body: { html, css }, banner });
+}
+
 export function packingListSheet({ record, settings, stage = 'draft', shipmentNumber = null }) {
     const s = settings || SETTINGS_SEED;
     const r = record || {};
@@ -836,7 +1090,7 @@ export function packingListSheet({ record, settings, stage = 'draft', shipmentNu
     pair('No. of Packages', { f: ranges ? `COUNT(${ranges})` : null, v: t.count }, 'valueInt');
     pair('Net Weight', { f: ranges ? `SUM(${ranges})` : null, v: t.netKg }, 'valueKg');
     if (isFinal) pair('Gross Weight', Number(r.lc?.grossKg) || '', 'valueKg');
-    pair('Date', longDate(r.exportInvoice?.date));
+    pair('Date', dmy(r.exportInvoice?.date));
     blank();
     full(s.goods?.subtitle, 'subtitle');
     blank();
@@ -849,17 +1103,14 @@ export function packingListSheet({ record, settings, stage = 'draft', shipmentNu
         ]);
     }
     blank();
-    if (isFinal) {
-        const applicant = joinLine([s.buyer?.name, ...lines(s.buyer?.addressLines)]);
-        if (applicant) full('Applicant: ' + applicant, 'default');
-    }
-    for (const row of (s.identifierRows?.[isFinal ? 'final' : 'draft'] || [])) {
+    for (const x of identifierLines({ settings: s, record: r, stage })) {
         const i = rows.length + 1;
-        rows.push([{ v: row.label, s: 'bold' }, null, { v: identifierValue(row.field, { settings: s, record: r }) }]);
+        if (x.span) { rows.push([{ v: `${x.letter} ${x.label} ${x.value}` }]); merges.push(`A${i}:E${i}`); continue; }
+        rows.push([{ v: `${x.letter} ${x.label}`, s: 'bold' }, null, { v: x.value }]);
         merges.push(`A${i}:B${i}`, `C${i}:E${i}`);
     }
     blank();
-    full('Packing: ' + (s.packingSpec?.[isFinal ? 'final' : 'draft'] || ''), 'default');
+    full('Packing Specification: ' + (s.packingSpec?.[isFinal ? 'final' : 'draft'] || ''), 'default');
     blank(); blank(); blank();
     rows.push(['______________________________']);
     rows.push([s.signOff?.packingName || '']);
@@ -927,19 +1178,19 @@ export function sanitiseSettings(input) {
     const x = isObj(input) ? input : {};
     const base = mergeSettings(x);
     const strs = (a, max = 20) => (Array.isArray(a) ? a : String(a || '').split('\n')).map(s => cleanStr(s, 300)).filter(Boolean).slice(0, max);
-    const rows = a => (Array.isArray(a) ? a : []).filter(r => IDENTIFIER_FIELDS.includes(r?.field)).map(r => ({ label: cleanStr(r.label, 80), field: r.field })).slice(0, 20);
     const sec = (obj, keys) => Object.fromEntries(keys.map(k => [k, cleanStr(obj?.[k], 300)]));
     return {
         seller: { ...sec(base.seller, ['name', 'strapline', 'phone', 'email', 'gstNumber']), addressLines: strs(base.seller.addressLines, 6) },
         bank: { ...sec(base.bank, ['name', 'swift', 'accountNumber']), addressLines: strs(base.bank.addressLines, 6) },
         buyer: { name: cleanStr(base.buyer.name), addressLines: strs(base.buyer.addressLines, 6) },
-        identifiers: sec(base.identifiers, ['irc', 'applicantTin', 'applicantBin', 'bankName', 'bankBin', 'bankTin']),
+        identifiers: sec(base.identifiers, ['irc', 'applicantTin', 'applicantBin', 'bankName', 'bankBin', 'bankVatReg', 'bankTin']),
         hsCode: cleanStr(base.hsCode, 30),
-        goods: sec(base.goods, ['subtitle', 'proformaDescription', 'proformaLine']),
         packingSpec: sec(base.packingSpec, ['draft', 'final']),
-        identifierRows: { draft: rows(base.identifierRows.draft), final: rows(base.identifierRows.final) },
         terms: strs(base.terms, 15),
-        signOff: sec(base.signOff, ['packingName', 'packingTitle', 'company', 'proformaName', 'proformaTitle', 'proformaFor']),
+        jps: {
+            ...sec(base.jps, ['phone', 'email', 'signatory', 'portOfLoading', 'destination', 'freightTerms']),
+            bank: { ...sec(base.jps?.bank, ['name', 'swift']), addressLines: strs(base.jps?.bank?.addressLines, 4) },
+        },
         currency: cleanStr(base.currency || 'USD', 3).toUpperCase(),
         defaultRate: toNum(base.defaultRate),
         defaultRateSource: cleanStr(base.defaultRateSource, 60),

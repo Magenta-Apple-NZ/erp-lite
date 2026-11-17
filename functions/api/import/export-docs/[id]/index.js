@@ -1,6 +1,8 @@
 // /api/import/export-docs/:shipmentId — a shipment's export documents.
 //   GET    → everything the Export documents tab shows (derived on read)
 //   PATCH  { review?, jps?, exportInvoice?, lc? } → save, returns the same view
+//   PATCH  { dismiss: checkId } / { restore: checkId } → dismiss a failing check
+//          instead of correcting it (logged; holds while the check fails the same way)
 // `review` is the unconfirmed working copy (autosaved as the user edits);
 // only POST …/confirm makes it the data documents are printed from.
 
@@ -21,6 +23,7 @@ export async function onRequestPatch({ env, params, request }) {
     try {
         if (!(await loadShipments(env)).some(s => s.id === params.id)) return errResponse('Shipment not found', 404);
         const body = await request.json();
+        if (body.dismiss || body.restore) return await dismissal(env, params.id, body, whoami(request));
         const rec = await loadRecord(env, params.id);
         const actions = [];
         if (body.review !== undefined) rec.review = sanitiseReview(body.review);
@@ -46,4 +49,26 @@ export async function onRequestPatch({ env, params, request }) {
     } catch (e) {
         return viewError(e);
     }
+}
+
+// The check is found in the view the user is looking at (review, JPS, LC) and
+// its current detail is stored, so the dismissal covers exactly that problem.
+async function dismissal(env, shipmentId, body, who) {
+    const rec = await loadRecord(env, shipmentId);
+    const id = String(body.dismiss || body.restore);
+    if (body.restore) {
+        const prev = rec.dismissed?.[id];
+        if (!prev) return errResponse('That check is not dismissed', 404);
+        delete rec.dismissed[id];
+        await saveRecord(env, rec, who, `Restored the check "${prev.title}"`);
+        return jsonResponse(await buildView(env, shipmentId));
+    }
+    const view = await buildView(env, shipmentId);
+    const c = [...view.checks, ...(view.jpsChecks || []), ...(view.lcChecks || [])].find(x => x.id === id);
+    if (!c) return errResponse('Unknown check', 404);
+    if (c.ok !== false) return errResponse(`"${c.title}" isn't failing`, 409);
+    if (!c.dismissible) return errResponse(`"${c.title}" can't be dismissed — the documents need it fixed`, 409);
+    rec.dismissed = { ...(rec.dismissed || {}), [id]: { detail: c.detail, title: c.title, level: c.level, by: who, at: new Date().toISOString() } };
+    await saveRecord(env, rec, who, `Dismissed "${c.title}": ${c.detail}`);
+    return jsonResponse(await buildView(env, shipmentId));
 }

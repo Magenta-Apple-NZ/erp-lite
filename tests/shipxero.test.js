@@ -178,3 +178,27 @@ test('a line whose rate and currency both change shows as one row', () => {
     assert.deepEqual(plan.patch.fixedLines.rawWhite, { rate: 1.5, ccy: 'EUR' }, 'the currency is still written');
     assert.deepEqual(plan.patch.fixedLines.lcRefund, { rate: -1.18, ccy: 'USD' });
 });
+
+test('JPS figures printed with currency marks read as numbers ("USD$1.82")', () => {
+    for (const [raw, n] of [['USD$1.82', 1.82], ['US$32,996.60', 32996.6], ['US$ 32,996.60', 32996.6], ['1.82/kg', 1.82], ['1.82 USD/kg', 1.82], ['18,130 kg', 18130]]) {
+        assert.equal(parseStandardNumber(raw), n, raw);
+    }
+    assert.equal(parseStandardNumber('1.8x'), null);
+    const r = rec({ jps: { ...jpsFromExtraction(JPS_EXTRACT), lines: [{ description: 'Toeclip', kg: 18130, kgRaw: '18,130', unitPrice: 1.81, unitPriceRaw: 'USD$1.81', amount: 32815.3, amountRaw: 'US$32,815.30' }] } });
+    assert.equal(jpsChecks(r, { settings: XERO_SETTINGS }).find(x => x.id === 'jps-printed').ok, true);
+});
+
+test('JPS checks can be dismissed, except the number, currency and deposit', () => {
+    const typo = rec({ jps: { ...jpsFromExtraction(JPS_EXTRACT), totalRaw: '32,851.30' } });
+    const c = jpsChecks(typo, { settings: XERO_SETTINGS }).find(x => x.id === 'jps-printed');
+    assert.equal(c.ok, false);
+    const dismissed = { 'jps-printed': { detail: c.detail, by: 'andrew@primetie.co.nz', at: '2026-11-17T01:00:00Z' } };
+    const after = jpsChecks({ ...typo, dismissed }, { settings: XERO_SETTINGS }).find(x => x.id === 'jps-printed');
+    assert.equal(after.dismissed.by, 'andrew@primetie.co.nz');
+
+    const noNumber = rec({ jps: { ...jpsFromExtraction(JPS_EXTRACT), number: '' } });
+    const n = jpsChecks(noNumber, { settings: XERO_SETTINGS }).find(x => x.id === 'jps-number');
+    assert.equal(n.dismissible, false);
+    const short = rec({ jps: { ...jpsFromExtraction(JPS_EXTRACT), total: 20000, totalRaw: null, lines: [] } });
+    assert.equal(jpsChecks(short, { settings: XERO_SETTINGS }).find(x => x.id === 'jps-deposit').dismissible, false);
+});

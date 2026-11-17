@@ -32,7 +32,7 @@ export const ASSET_NAMES = ['signature', 'seal'];
 export const KINDS = ['packingList', 'proforma', 'jpsInvoice'];
 
 export function blankRecord(shipmentId) {
-    return { shipmentId, files: {}, fileHistory: [], extractions: {}, review: null, confirmed: null, exportInvoice: null, jps: null, xero: {}, lc: {}, outputs: [], log: [] };
+    return { shipmentId, files: {}, fileHistory: [], extractions: {}, review: null, confirmed: null, exportInvoice: null, jps: null, xero: {}, lc: {}, dismissed: {}, outputs: [], log: [] };
 }
 
 export async function loadRecord(env, shipmentId) {
@@ -57,6 +57,16 @@ export async function loadAllRecords(env) {
 
 export async function loadSettings(env) {
     return mergeSettings(await getJson(env, K.settings, null));
+}
+
+// Whether an image is uploaded, without loading it (the view only needs yes / no).
+export async function hasAsset(env, name) {
+    try {
+        const res = await env.ORDERS_KV.list({ prefix: K.asset(name) });
+        return (res?.keys || []).some(k => k.name === K.asset(name));
+    } catch {
+        return !!(await getJson(env, K.asset(name), null));
+    }
 }
 
 export async function loadAssets(env) {
@@ -86,8 +96,8 @@ export class NotFound extends Error {}
 // Everything the Export documents tab needs, derived on read. Read-only:
 // the MCP server calls this with a KV that refuses writes.
 export async function buildView(env, shipmentId) {
-    const [record, settings, shipments, lc, all] = await Promise.all([
-        loadRecord(env, shipmentId), loadSettings(env), loadShipments(env), loadLinkedLc(env, shipmentId), loadAllRecords(env),
+    const [record, settings, shipments, lc, all, hasSignature] = await Promise.all([
+        loadRecord(env, shipmentId), loadSettings(env), loadShipments(env), loadLinkedLc(env, shipmentId), loadAllRecords(env), hasAsset(env, 'signature'),
     ]);
     const ship = shipments.find(s => s.id === shipmentId);
     if (!ship) throw new NotFound('Shipment not found');
@@ -100,7 +110,6 @@ export async function buildView(env, shipmentId) {
     const otherInvoiceNumbers = others.filter(o => o.exportInvoice?.number).map(o => ({ shipmentNumber: o.shipmentNumber, number: o.exportInvoice.number }));
     const review = record.review || emptyReview();
     const confirmedTotals = record.confirmed ? baleTotals(record.confirmed.bales) : null;
-    const gen = (doc, stage) => generationIssues({ record: rec, settings, doc, stage, shipmentNumber: number, otherInvoiceNumbers });
     const status = deriveStatus(rec);
 
     // JPS invoice: judged against the previous shipment's handling rate.
@@ -110,8 +119,10 @@ export async function buildView(env, shipmentId) {
         .filter(x => x.split && x.n != null && (number == null || x.n < number))
         .sort((a, b) => b.n - a.n)[0];
     const jChecks = jpsChecks(rec, { settings, typicalMargin: prior ? prior.split.handlingRate : null });
-    const confirmedOk = record.confirmed ? !blockingFailures(runChecks(record.confirmed, { settings, shipmentNumber: number })).length : false;
+    const confirmedOk = record.confirmed ? !blockingFailures(runChecks(record.confirmed, { settings, shipmentNumber: number, dismissed: record.dismissed })).length : false;
     const jpsOk = !blockingFailures(jChecks).length;
+    const jpsFailures = blockingFailures(jChecks).map(c => c.title);
+    const gen = (doc, stage) => generationIssues({ record: rec, settings, doc, stage, shipmentNumber: number, otherInvoiceNumbers, jpsFailures, hasSignature });
     return {
         shipment: {
             id: ship.id, number, label: shipLabel(ship), startDate: ship.startDate || null,
@@ -120,12 +131,13 @@ export async function buildView(env, shipmentId) {
         status, statusLabel: STATUS_LABELS[status],
         record: rec,
         defaults,
-        checks: runChecks(review, { settings, shipmentNumber: number, exportInvoice }),
+        checks: runChecks(review, { settings, shipmentNumber: number, exportInvoice, dismissed: record.dismissed }),
         reviewTotals: baleTotals(review.bales),
         confirmedTotals,
         amount: confirmedTotals ? invoiceAmount(confirmedTotals.netKg, exportInvoice.rate) : null,
         unconfirmedChanges: hasUnconfirmedChanges(record),
-        generation: { packingDraft: gen('packing', 'draft'), proforma: gen('proforma'), packingFinal: gen('packing', 'final') },
+        generation: { packingDraft: gen('packing', 'draft'), proforma: gen('proforma'), packingFinal: gen('packing', 'final'), jpsContract: gen('jps') },
+        hasSignature,
         linkedLc: lc ? {
             id: lc.id, lcNumber: lc.lcNumber || '', issuedDate: lc.issuedDate || '', proformaRef: lc.proformaRef || '',
             proformaDate: lc.proformaDate || '', amount: lc.amount || null, currency: lc.currency || '',

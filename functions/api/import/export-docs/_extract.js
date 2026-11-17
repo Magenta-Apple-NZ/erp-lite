@@ -59,6 +59,9 @@ export const JPS_SCHEMA = obj({
     },
     netWeightKg: nnum, netWeightRaw: nstr,
     total: nnum, totalRaw: nstr,
+    lastShipmentDate: nstr,
+    expiryDate: nstr,
+    containers: nstr,
     notes: str,
 });
 
@@ -91,7 +94,7 @@ Extract:
 
 ${NUMBER_RULE}`;
 
-export const JPS_PROMPT = `This PDF is an invoice from JPS Enterprise (Dhaka, Bangladesh) to Enviroware Ltd for an import shipment of knitted nylon stocking material (toeclips). It is usually priced per kg in USD and covers the LC deposit plus handling and sorting.
+export const JPS_PROMPT = `This PDF is an invoice from JPS Enterprise (Dhaka, Bangladesh) to Enviroware Ltd for an import shipment of knitted nylon stocking material (toeclips), often titled "Sales Proform Invoice". It is usually priced per kg in USD and covers the LC deposit plus handling and sorting.
 
 Extract:
 - invoiceNumber: JPS's invoice number exactly as printed.
@@ -100,6 +103,8 @@ Extract:
 - lines: each charge line in order: description verbatim, kg (quantity in kg if the line has one), unitPrice (price per kg if printed), amount — each with its raw printed string. Do not include subtotal or total rows as lines.
 - netWeightKg: the total net weight in kg if printed.
 - total: the total amount payable.
+- lastShipmentDate and expiryDate: the last date of shipment and the expiry date from the terms, as YYYY-MM-DD (dates are day/month/year).
+- containers: the container size as printed (e.g. "1 x 40' FCL and 1 x 20' GP").
 - notes: anything unclear. Empty string if nothing.
 
 Numbers are printed in standard English format: a comma separates thousands and a dot marks decimals ("32,815.30" is 32815.30).

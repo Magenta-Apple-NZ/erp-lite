@@ -157,13 +157,44 @@ test('confirm is refused while a blocking check fails, then accepted', async () 
     assert.equal(ok.body.record.log[0].by, 'andrew@primetie.co.nz');
 });
 
-test('generation: the proforma waits for bank details and the rate/number ticks; then frozen copies + xlsx', async () => {
+test('dismiss a failing check instead of correcting it: logged, confirm goes through, undo brings it back', async () => {
+    const view = await uploadBoth();
+    const odd = structuredClone(view.record.review);
+    odd.supplierInvoice.lines[0].unitPriceRaw = '1,50 ca.';   // printed oddly; the number itself is right
+    await call(recordApi.onRequestPatch, 'PATCH', '/r', { review: odd });
+    assert.equal((await call(confirmApi.onRequestPost, 'POST', '/c')).status, 422);
+
+    assert.equal((await call(recordApi.onRequestPatch, 'PATCH', '/r', { dismiss: 'net-weight' })).status, 409, 'not failing');
+    assert.equal((await call(recordApi.onRequestPatch, 'PATCH', '/r', { dismiss: 'nope' })).status, 404);
+
+    const d = await call(recordApi.onRequestPatch, 'PATCH', '/r', { dismiss: 'printed-numbers' });
+    assert.equal(d.status, 200, JSON.stringify(d.body));
+    const c = d.body.checks.find(x => x.id === 'printed-numbers');
+    assert.equal(c.ok, false);
+    assert.equal(c.dismissed.by, 'andrew@primetie.co.nz');
+    assert.match(d.body.record.log[0].action, /^Dismissed "Printed totals read correctly \(Italian number format\)": Line 1 unit price: printed "1,50 ca\."/);
+
+    const ok = await call(confirmApi.onRequestPost, 'POST', '/c');
+    assert.equal(ok.status, 200, JSON.stringify(ok.body));
+    assert.ok(!ok.body.generation.packingDraft.some(i => /Confirmed data fails/.test(i)));
+
+    const r = await call(recordApi.onRequestPatch, 'PATCH', '/r', { restore: 'printed-numbers' });
+    assert.equal(r.status, 200);
+    assert.ok(!r.body.checks.find(x => x.id === 'printed-numbers').dismissed);
+    assert.match(r.body.generation.packingDraft.join(' '), /Confirmed data fails: Printed totals read correctly/);
+    assert.match(r.body.record.log[0].action, /^Restored the check "Printed totals/);
+
+    const ticks = await call(recordApi.onRequestPatch, 'PATCH', '/r', { dismiss: 'rate-confirmed' });
+    assert.equal(ticks.status, 409);
+    assert.match(ticks.body.error, /can't be dismissed/);
+});
+
+test('generation: the proforma waits for the rate/number ticks; then frozen copies + xlsx', async () => {
     await uploadBoth();
     await call(confirmApi.onRequestPost, 'POST', '/c');
 
     const early = await call(renderApi.onRequestPost, 'POST', '/g', { docs: [{ doc: 'packing', stage: 'draft' }, { doc: 'proforma' }] });
     assert.equal(early.status, 422);
-    assert.match(early.body.error, /Proforma invoice: Settings incomplete: Bank name, Bank SWIFT/);
     assert.match(early.body.error, /Tick to confirm the export rate/);
     assert.doesNotMatch(early.body.error, /Draft packing list/, 'the packing list is ready from the seeded settings');
 

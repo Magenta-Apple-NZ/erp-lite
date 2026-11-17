@@ -10,7 +10,7 @@
 // JPS's margin (Handling & Sorting) is the only real cost of the round trip;
 // the deposit and the LC refund cancel out.
 
-import { baleTotals, invoiceAmount, round2, cents, fmtKg, fmtMoney, fmtRate, normaliseColour } from './_exportdocs.js';
+import { baleTotals, invoiceAmount, round2, cents, fmtKg, fmtMoney, fmtRate, normaliseColour, stripDecorations, check, applyDismissals } from './_exportdocs.js';
 
 const isYmd = s => /^\d{4}-\d{2}-\d{2}$/.test(String(s || ''));
 const toNum = v => (v === '' || v == null || !Number.isFinite(Number(v))) ? null : Number(v);
@@ -20,8 +20,7 @@ const isObj = v => v && typeof v === 'object' && !Array.isArray(v);
 // ── Numbers on the JPS invoice: standard format (comma thousands, dot decimals)
 export function parseStandardNumber(raw) {
     if (raw == null) return null;
-    let s = String(raw).replace(/ /g, ' ').trim();
-    s = s.replace(/^(USD|US\$|\$|BDT|Tk\.?|KG)\s*/i, '').replace(/\s*(USD|kg|kgs|kgs\.|kg\.)$/i, '').replace(/\s+/g, '');
+    let s = stripDecorations(String(raw).replace(/\u00a0/g, ' '));
     let neg = false;
     if (/^\(.*\)$/.test(s)) { neg = true; s = s.slice(1, -1); }
     if (s.startsWith('-')) { neg = true; s = s.slice(1); }
@@ -31,8 +30,12 @@ export function parseStandardNumber(raw) {
 }
 
 // ── JPS invoice ──────────────────────────────────────────────────────────
+// contract: the terms that change per shipment on JPS's sales proforma
+// (printed on our signed rewrite of it).
+const emptyContract = () => ({ lastShipmentDate: '', expiryDate: '', containers: '' });
+
 export function emptyJps() {
-    return { number: '', date: '', dateRaw: null, currency: 'USD', lines: [], netKg: null, netKgRaw: null, total: null, totalRaw: null };
+    return { number: '', date: '', dateRaw: null, currency: 'USD', lines: [], netKg: null, netKgRaw: null, total: null, totalRaw: null, contract: emptyContract() };
 }
 
 export function jpsFromExtraction(x) {
@@ -50,6 +53,11 @@ export function jpsFromExtraction(x) {
         })),
         netKg: toNum(e.netWeightKg), netKgRaw: e.netWeightRaw ?? null,
         total: toNum(e.total), totalRaw: e.totalRaw ?? null,
+        contract: {
+            lastShipmentDate: isYmd(e.lastShipmentDate) ? e.lastShipmentDate : '',
+            expiryDate: isYmd(e.expiryDate) ? e.expiryDate : '',
+            containers: e.containers ? String(e.containers).trim().slice(0, 120) : '',
+        },
     };
 }
 
@@ -67,6 +75,11 @@ export function sanitiseJps(j) {
         })),
         netKg: toNum(j.netKg), netKgRaw: rawOrNull(j.netKgRaw),
         total: toNum(j.total), totalRaw: rawOrNull(j.totalRaw),
+        contract: {
+            lastShipmentDate: isYmd(j.contract?.lastShipmentDate) ? j.contract.lastShipmentDate : '',
+            expiryDate: isYmd(j.contract?.expiryDate) ? j.contract.expiryDate : '',
+            containers: clean(j.contract?.containers, 120),
+        },
     };
 }
 
@@ -85,19 +98,23 @@ export function jpsSplit(record) {
     };
 }
 
-function check(id, level, title, ok, detail) { return { id, level, title, ok, detail: detail || '' }; }
-
 // ctx.typicalMargin: the previous shipment's Handling & Sorting rate, else settings.
-export function jpsChecks(record, { settings = {}, typicalMargin = null } = {}) {
-    const j = record?.jps;
-    if (!j) return [];
+// Dismissals (record.dismissed) apply; the number, currency and deposit can't
+// be dismissed — the Xero bill and the cost split need them.
+export function jpsChecks(record, opts = {}) {
+    if (!record?.jps) return [];
+    return applyDismissals(jpsChecksRaw(record, opts), record.dismissed);
+}
+
+function jpsChecksRaw(record, { settings = {}, typicalMargin = null } = {}) {
+    const j = record.jps;
     const ei = record.exportInvoice || {};
     const conf = record.confirmed;
     const out = [];
     out.push(check('jps-number', 'block', 'JPS invoice number and date', !!(j.number && isYmd(j.date)),
-        j.number && isYmd(j.date) ? `${j.number}, ${j.date}` : 'Enter the invoice number and date'));
+        j.number && isYmd(j.date) ? `${j.number}, ${j.date}` : 'Enter the invoice number and date', { dismissible: false }));
     out.push(check('jps-currency', 'block', 'Same currency as our proforma', j.currency === (ei.currency || 'USD'),
-        `${j.currency || '—'} on the JPS invoice; ${ei.currency || 'USD'} on ours`));
+        `${j.currency || '—'} on the JPS invoice; ${ei.currency || 'USD'} on ours`, { dismissible: false }));
 
     // Lines multiply out and add up to the total
     {
@@ -113,7 +130,7 @@ export function jpsChecks(record, { settings = {}, typicalMargin = null } = {}) 
         if (withAmt.length && Number(j.total) > 0 && withAmt.reduce((s, l) => s + cents(l.amount), 0) !== cents(j.total)) {
             issues.push(`Lines sum to ${fmtMoney(withAmt.reduce((s, l) => s + cents(l.amount), 0) / 100)}, total printed ${fmtMoney(j.total)}`);
         }
-        out.push(check('jps-lines', 'block', 'JPS invoice lines and total add up', !issues.length, issues.join('; ') || `${j.currency} ${fmtMoney(j.total)}`));
+        out.push(check('jps-lines', 'block', 'JPS invoice lines and total add up', !issues.length, issues.join('; ') || `${j.currency} ${fmtMoney(j.total)}`, { dismissible: Number(j.total) > 0 }));
     }
 
     // Printed strings re-parse (standard number format)
@@ -131,7 +148,7 @@ export function jpsChecks(record, { settings = {}, typicalMargin = null } = {}) 
     }
 
     if (!conf) {
-        out.push(check('jps-deposit', 'block', 'Covers our proforma (the LC deposit)', false, 'Confirm the bales first'));
+        out.push(check('jps-deposit', 'block', 'Covers our proforma (the LC deposit)', false, 'Confirm the bales first', { dismissible: false }));
         return out;
     }
     const s = jpsSplit(record);
@@ -143,7 +160,7 @@ export function jpsChecks(record, { settings = {}, typicalMargin = null } = {}) 
         const ok = !!s && s.handlingAmount >= 0;
         out.push(check('jps-deposit', 'block', 'Covers our proforma (the LC deposit)', ok,
             s ? `LC deposit ${ei.currency || 'USD'} ${fmtMoney(deposit)} (${fmtKg(netKg)} kg × ${fmtRate(ei.rate)}, invoice ${ei.number || '—'}) + handling & sorting ${fmtMoney(s.handlingAmount)}`
-              : 'JPS total missing'));
+              : 'JPS total missing', { dismissible: false }));
     }
 
     // Weight on the JPS invoice = our net weight

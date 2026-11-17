@@ -7495,6 +7495,12 @@ a.db-row:hover { background: #f8fafc; border-color: #e2e8f0; }
 .sd-check--warn { background: #fffbeb; border-color: #fde68a; }
 .sd-check--warn .sd-check-i { color: #d97706; }
 .sd-check--na .sd-check-i { color: #94a3b8; }
+.sd-check-body { flex: 1; min-width: 0; }
+.sd-check-x { flex: none; align-self: center; font-size: 0.78rem; }
+.sd-check--dismissed { background: #f8fafc; border-color: #e2e8f0; border-style: dashed; }
+.sd-check--dismissed .sd-check-i { color: #94a3b8; }
+.sd-check--dismissed strong, .sd-check--dismissed .sd-check-d { color: #64748b; }
+.sd-check-dis { margin-top: 0.2rem; font-size: 0.75rem; color: #64748b; }
 .sd-checks--compact .sd-check { padding: 0.3rem 0.55rem; }
 .sd-grid2, .sd-grid3, .sd-grid4 { display: grid; gap: 0.6rem 0.9rem; }
 .sd-grid2 { grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
