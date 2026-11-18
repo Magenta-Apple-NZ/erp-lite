@@ -8,7 +8,7 @@ import {
     reviewFromPackingExtraction, reviewFromProformaExtraction, runChecks, blockingFailures,
     nextInvoiceNumber, exportInvoiceDefaults, deriveStatus, generationIssues, lcCrossChecks,
     renderPackingList, renderProforma, packingListWorkbookSpec, mergeSettings, missingSettings,
-    hasUnconfirmedChanges, docFilename, SETTINGS_SEED, renderJpsContract, amountInWords,
+    hasUnconfirmedChanges, docFilename, SETTINGS_SEED, renderJpsContract, amountInWords, jpsContractTerms,
 } from '../functions/api/import/_exportdocs.js';
 import { buildXlsx, crc32 } from '../functions/api/import/_xlsx.js';
 
@@ -579,7 +579,7 @@ test('signed JPS proforma waits for the JPS invoice, its terms, its checks and y
     assert.deepEqual(issues(record43({ jps: JPS_43 })), ["Confirm JPS's proforma invoice in section 5"]);
     assert.deepEqual(issues(record43({ jps: JPS_43, jpsConfirmed: { at: '2026-11-17T01:00:00Z', by: 'andrew@primetie.co.nz' } })), []);
     const ok = { jpsConfirmed: { at: '2026-11-17T01:00:00Z', by: 'andrew@primetie.co.nz' } };
-    assert.deepEqual(issues(record43({ ...ok, jps: { ...JPS_43, contract: {} } })), ['Last date of shipment missing', 'Expiry date missing']);
+    assert.deepEqual(issues(record43({ ...ok, jps: { ...JPS_43, contract: {} } })), ['Last date of shipment missing — it comes from the LC (Letter of Credit tab)', 'Expiry date missing — it comes from the LC (Letter of Credit tab)']);
     assert.deepEqual(issues(record43({ ...ok, jps: { ...JPS_43, number: '', lines: [] } })), ['JPS invoice number missing', 'JPS invoice lines need kg, unit price and amount']);
     assert.deepEqual(generationIssues({ record: record43({ ...ok, jps: JPS_43 }), settings: s, doc: 'jps', hasSignature: false }), ['Upload your signature in Document settings → Enviroware']);
     assert.deepEqual(generationIssues({ record: record43({ ...ok, jps: JPS_43 }), settings: s, doc: 'jps', hasSignature: true, jpsFailures: ['Printed figures read correctly'] }), ['JPS invoice fails: Printed figures read correctly']);
@@ -620,4 +620,21 @@ test("Xero tax codes are New Zealand's: settings saved with the UK zero-rated co
     assert.equal(mergeSettings({}).xero.taxTypes.exportSale, 'ZERORATED');
     assert.equal(mergeSettings({ xero: { taxTypes: { purchases: 'NONE', exportSale: 'ZERORATEDOUTPUT' } } }).xero.taxTypes.exportSale, 'ZERORATED');
     assert.equal(mergeSettings({ xero: { taxTypes: { exportSale: 'NONE' } } }).xero.taxTypes.exportSale, 'NONE', 'a deliberate choice is kept');
+});
+
+test("JPS's contract terms come from the linked LC; JPS's PDF stands in until there is one", () => {
+    const rec = record43({ jps: JPS_43 });   // PDF read 15 Jun / 30 Jun 2027, 1 x 40' FCL and 1 x 20' GP
+    const lc = { lcNumber: '320126011494', latestShipDate: '2027-05-31', expiryDate: '2027-06-15', goods: { container: '1x40 FCL' } };
+    assert.deepEqual(jpsContractTerms(rec, lc), {
+        lastShipmentDate: '2027-05-31', expiryDate: '2027-06-15', containers: '1x40 FCL',
+        from: { lastShipmentDate: 'lc', expiryDate: 'lc', containers: 'lc' }, lcNumber: '320126011494' });
+    const noLc = jpsContractTerms(rec, null);
+    assert.deepEqual([noLc.lastShipmentDate, noLc.from.lastShipmentDate, noLc.lcNumber], ['2027-06-15', 'pdf', null]);
+    const partial = jpsContractTerms(record43({ jps: { ...JPS_43, contract: {} } }), { lcNumber: 'X', expiryDate: '2027-06-15', goods: {} });
+    assert.deepEqual(partial.from, { lastShipmentDate: null, expiryDate: 'lc', containers: null });
+    // the signed copy and its readiness use the LC's values
+    const html = renderJpsContract({ record: { ...rec, jps: { ...rec.jps, contract: jpsContractTerms(rec, lc) } }, settings: mergeSettings({}), shipmentNumber: 43 });
+    assert.match(html, /Last date of shipment:<\/th><td>31st May 2027/);
+    assert.match(html, /Container size:<\/th><td>1x40 FCL/);
+    assert.deepEqual(generationIssues({ record: record43({ jps: { ...JPS_43, contract: {} }, jpsConfirmed: { at: '2026-11-18T01:00:00Z' } }), settings: mergeSettings({}), doc: 'jps', hasSignature: true, jpsTerms: jpsContractTerms(rec, lc) }), []);
 });

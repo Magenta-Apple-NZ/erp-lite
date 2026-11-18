@@ -596,12 +596,22 @@ const ShipDocs = (() => {
             ${locked ? '' : '<div class="sd-table-foot"><button class="btn-link" data-act="jps-add-line">+ Add line</button></div>'}
             <div id="sd-jps-checks">${checkListHtml(v.jpsChecks || [], 'sd-checks--compact')}</div>
             <div id="sd-jps-split">${splitHtml(v)}</div>
-            <h4 class="sd-h4">Contract terms ${info('Read from their PDF; printed on the signed copy')}</h4>
+            ${termsHtml(v.jpsTerms)}` };
+    }
+
+    // Contract terms on the signed copy: the LC's, read-only (JPS's PDF stands
+    // in until an LC is linked on the Letter of Credit tab).
+    function termsHtml(t) {
+        if (!t) return '';
+        const src = f => f === 'lc' ? `From LC ${t.lcNumber || ''}` : f === 'pdf' ? "Read from JPS's PDF — the LC's value replaces it once the LC is linked" : 'Comes from the LC — link it on the Letter of Credit tab';
+        const cell = (label, value, from) => `<div class="sd-field"><span class="imp-field-label">${esc(label)}</span>
+            <div class="sd-fig"><span class="sd-val${value ? '' : ' sd-muted'}"${tipAttr(src(from))}>${esc(value || 'From the LC')}</span>${from === 'pdf' ? ' <span class="sd-tag" data-tip="The LC isn\'t linked yet">from their PDF</span>' : ''}</div></div>`;
+        return `<h4 class="sd-h4">Contract terms ${info(`Set by the Letter of Credit (latest date of shipment 44C, expiry 31D, container) and printed on the signed copy.${t.lcNumber ? ' Linked LC: ' + t.lcNumber + '.' : ' No LC is linked yet.'}`)}</h4>
             <div class="sd-grid3">
-                ${inp('Last date of shipment', 'contract.lastShipmentDate', j.contract?.lastShipmentDate, 'type="date"')}
-                ${inp('Expiry date', 'contract.expiryDate', j.contract?.expiryDate, 'type="date"')}
-                ${inp('Containers', 'contract.containers', j.contract?.containers, '', "1 x 40' FCL")}
-            </div>` };
+                ${cell('Last date of shipment', day(t.lastShipmentDate), t.from.lastShipmentDate)}
+                ${cell('Expiry date', day(t.expiryDate), t.from.expiryDate)}
+                ${cell('Containers', t.containers, t.from.containers)}
+            </div>`;
     }
 
     function jpsDocHtml(st) {

@@ -60,6 +60,11 @@ export function withDownload(page, filename, auto) {
     return page.includes('</body>') ? page.replace('</body>', tail + '\n</body>') : page + tail;
 }
 
+// JPS's proforma prints the contract terms from the linked LC (jpsContractTerms).
+const withTerms = (record, terms) => (record?.jps && terms
+    ? { ...record, jps: { ...record.jps, contract: { lastShipmentDate: terms.lastShipmentDate, expiryDate: terms.expiryDate, containers: terms.containers } } }
+    : record);
+
 function messagePage(msg) {
     return `<!doctype html><meta charset="utf-8"><title>Export documents</title><body style="font:15px system-ui,sans-serif;padding:3rem;color:#334155"><p>${String(msg).replace(/</g, '&lt;')}</p></body>`;
 }
@@ -81,7 +86,7 @@ export async function onRequestGet({ env, params, request }) {
         const [settings, assets] = await Promise.all([loadSettings(env), loadAssets(env)]);
         const issues = view.generation[DOCS[dk]];
         const banner = issues.length ? `Preview only — not ready to issue: ${issues[0]}` : 'Preview — use Generate on the shipment to issue and keep a copy';
-        return html(render(dk, { record: view.record, settings, assets, shipmentNumber: view.shipment.number, banner }));
+        return html(render(dk, { record: withTerms(view.record, view.jpsTerms), settings, assets, shipmentNumber: view.shipment.number, banner }));
     } catch (e) {
         return viewError(e);
     }
@@ -107,7 +112,7 @@ export async function onRequestPost({ env, params, request }) {
             const [doc, stage] = dk.split(':');
             const at = new Date().toISOString();
             const key = `${params.id}:${doc}-${stage}:${Date.now().toString(36)}${metas.length}`;
-            const data = { shipmentNumber: view.shipment.number, confirmed: rec.confirmed, exportInvoice: rec.exportInvoice, lc: rec.lc || {}, jps: rec.jps || null, settings };
+            const data = { shipmentNumber: view.shipment.number, confirmed: rec.confirmed, exportInvoice: rec.exportInvoice, lc: rec.lc || {}, jps: withTerms(rec, view.jpsTerms).jps, settings };
             const page = render(dk, { record: data, settings, assets, shipmentNumber: view.shipment.number, banner: '' });
             await putJson(env, K.out(key), { html: page, data });
             const meta = {

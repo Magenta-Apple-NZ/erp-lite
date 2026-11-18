@@ -50,7 +50,7 @@ beforeEach(() => {
                 { id: 'ship44', seq: 44, schema: 3, milestones: [] },
             ] },
             lc_index: ['lc-320126011494'],
-            'lc:lc-320126011494': { id: 'lc-320126011494', lcNumber: '320126011494', issuedDate: '2026-12-01', linkedShipmentId: SHIP, proformaRef: '102/2026', proformaDate: '2026-11-13', amount: 21393.4, currency: 'USD', goods: { quantity: 18130, packageCount: 45, hsCode: '6002.90.00' } },
+            'lc:lc-320126011494': { id: 'lc-320126011494', lcNumber: '320126011494', issuedDate: '2026-12-01', linkedShipmentId: SHIP, proformaRef: '102/2026', proformaDate: '2026-11-13', amount: 21393.4, currency: 'USD', latestShipDate: '2027-05-31', expiryDate: '2027-06-15', goods: { quantity: 18130, packageCount: 45, hsCode: '6002.90.00', container: '1x40 FCL' } },
         }),
     };
     calls = [];
@@ -337,4 +337,12 @@ test('MCP shipment_export_docs: read-only view of bales, export invoice and docu
     assert.deepEqual(all.shipments, [{ shipment: 43, status: 'Draft', bales: 45, netKg: 18130, exportInvoice: '102/2026', amount: 21393.4, lcNumber: null, documents: 2 }]);
     assert.match((await rpc({ shipment: 99 })).content[0].text, /Shipment #99 not found/);
     assert.deepEqual([...env.ORDERS_KV.store.keys()].sort(), [...before.keys()].sort(), 'MCP wrote nothing');
+});
+
+test("the view carries JPS's contract terms from the linked LC", async () => {
+    await uploadBoth();
+    await call(confirmApi.onRequestPost, 'POST', '/c');
+    const v = (await call(recordApi.onRequestPatch, 'PATCH', '/r', { jps: { number: 'JPSE-102/2026', date: '2026-11-20', currency: 'USD', lines: [{ description: 'x', kg: 18130, unitPrice: 1.82, amount: 32996.6 }], total: 32996.6, contract: { lastShipmentDate: '2027-06-15', expiryDate: '2027-06-30', containers: '' } } })).body;
+    assert.deepEqual([v.jpsTerms.lastShipmentDate, v.jpsTerms.expiryDate, v.jpsTerms.containers, v.jpsTerms.lcNumber], ['2027-05-31', '2027-06-15', '1x40 FCL', '320126011494']);
+    assert.ok(!v.generation.jpsContract.some(i => /missing/.test(i)), 'the dates are there, from the LC');
 });
