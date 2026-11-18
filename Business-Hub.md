@@ -72,7 +72,7 @@ Both behind Cloudflare Access. `/api/me` maps the email to a role (UX gating onl
 
 **Stock** — the engine described in Stock-Rebuild.md. Prime Tie Bundled on FIFO shipment lots with landed cost; consumables with a product × consumable matrix; counts (opening stock at 12:00am on their date, per-shipment sub-count, reopen/edit); Receive / Adjust movements; per-item ledger with COGS; 13/36-month trajectory and consumables forecast on the shared seasonal curve; valuation CSV per committed count. Loose and eco Ties are parked (inactive) until wanted.
 
-**Imports / forecast** — shipments with milestone timelines and V3 landed-cost breakdown (feeds FIFO lot cost); stock trajectory anchored on the committed count; monthly forecast with Average / Good / Great; monthly averages recomputable from history.
+**Imports / forecast** — shipments with milestone timelines (a stage is done only when ticked; stages run in order, so ticking one ticks those before it and unticking one unticks those after; untouched dates are projections that follow the default gaps; a stage whose date has passed without a tick shows amber, with a one-click catch-up that leaves the last stage alone because it books the stock in; the linked LC's issue and shipment dates are offered for LC ready and Shipped) and V3 landed-cost breakdown (feeds FIFO lot cost); stock trajectory anchored on the committed count; monthly forecast with Average / Good / Great; monthly averages recomputable from history.
 
 **Sales history & analytics** — seed + live append; by month, cumulative (calendar / FY), type × size, annual, top stores; CSV round-trip and replace-historical import; store auto-match with stable storeId.
 

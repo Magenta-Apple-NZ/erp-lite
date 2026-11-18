@@ -1659,18 +1659,24 @@ const Warehouse = (() => {
             </div>`;
         }
 
-        // Minimalist SVG line-chart timeline. Dots are spaced by date when
-        // ≥2 dates exist; otherwise evenly by index. Done dots fill solid;
-        // a thin grey rule joins them with a slate progress overlay up to
-        // the last completed step. The row beneath shows a step number,
-        // label, and an editable date input.
+        // Shipment stage timeline. A stage is done only when someone ticks
+        // it; the date on a stage that isn't ticked is a projection from the
+        // default gaps. Each stage shows one state:
+        //   done      ticked (or a later stage is ticked — stages run in order)
+        //   overdue   not ticked and its projected date has passed
+        //   next      the first stage still to come
+        //   upcoming  everything after that
+        // The linked LC backs two stages with real dates (its issue date →
+        // LC ready, its shipment date → Shipped). They show on the row and
+        // tick the stage only when clicked: the last stage books the stock
+        // in, so ticks stay a person's call.
         // Map stage label keywords → emoji icon. Checked in order; first match wins.
         const MILESTONE_ICON_MAP = [
             [/italy|left.*bang/i,           '🚢'],
             [/tauranga|new zealand/i,        '🚛'],
             [/land.*bang|arriv.*bang/i,      '🇧🇩'],
             [/lc.*present|presented/i,       '📋'],
-            [/lc.*ready/i,                   '✅'],
+            [/lc.*ready/i,                   '🏦'],
             [/start.*lc|lc.*start/i,         '📄'],
             [/customs/i,                     '📦'],
             [/port/i,                        '⚓'],
@@ -1682,57 +1688,157 @@ const Warehouse = (() => {
             return '📍';
         }
 
-        function buildStageTimelineV3(s, milestones) {
+        const ISO_DAY   = /^\d{4}-\d{2}-\d{2}$/;
+        const dayTs     = iso => Date.parse(iso + 'T00:00:00Z');
+        const nzTodayIso = () => new Date().toLocaleDateString('en-CA', { timeZone: 'Pacific/Auckland' });
+        const stageDay  = iso => ISO_DAY.test(iso || '')
+            ? new Date(dayTs(iso)).toLocaleDateString('en-NZ', { day: 'numeric', month: 'short', timeZone: 'UTC' })
+            : '';
+        function inDays(from, to) {
+            const n = Math.round((dayTs(to) - dayTs(from)) / 86400000);
+            return n === 0 ? 'today' : n === 1 ? 'tomorrow' : 'in ' + n + ' days';
+        }
+
+        function stageStates(milestones, today) {
+            const lastDone = milestones.reduce((acc, m, i) => m.done ? i : acc, -1);
+            let nextSeen = false;
+            return milestones.map((m, i) => {
+                if (m.done || i < lastDone) return { state: 'done', implied: !m.done };
+                if (m.date && m.date < today) return { state: 'overdue' };
+                if (!nextSeen) { nextSeen = true; return { state: 'next' }; }
+                return { state: 'upcoming' };
+            });
+        }
+
+        // Stages whose dates have passed without a tick, bar the last one
+        // (ticking that books the stock in, so it stays its own click).
+        function stageCatchUp(milestones, today) {
+            const states = stageStates(milestones, today);
+            const idxs = states.map((x, i) => x.state === 'overdue' && i < milestones.length - 1 ? i : -1).filter(i => i >= 0);
+            return { count: idxs.length, idx: idxs.length ? idxs[idxs.length - 1] : -1 };
+        }
+
+        // Real dates for stages, from the shipment's linked LC.
+        function stageEvidence(milestones, lc) {
+            const out = {};
+            if (!lc) return out;
+            const lcName = 'LC ' + (lc.lcNumber || '');
+            milestones.forEach((m, i) => {
+                if (/lc.*ready/i.test(m.label) && ISO_DAY.test(lc.issuedDate || '')) {
+                    out[i] = { date: lc.issuedDate, text: 'LC issued ' + stageDay(lc.issuedDate), tip: lcName + ' was issued on ' + stageDay(lc.issuedDate) + ' (Letter of Credit tab).' };
+                } else if (/shipped|left italy/i.test(m.label) && ISO_DAY.test(lc.shipmentDate || '')) {
+                    out[i] = { date: lc.shipmentDate, text: 'Shipped ' + stageDay(lc.shipmentDate) + ' (LC)', tip: 'Shipment date recorded on ' + lcName + ' (Letter of Credit tab).' };
+                }
+            });
+            return out;
+        }
+
+        // The LC list, kept for a minute so re-renders don't refetch it.
+        let lcListCache = null;
+        function cachedLinkedLc(shipId) {
+            return lcListCache ? (lcListCache.lcs.find(l => l.linkedShipmentId === shipId) || null) : null;
+        }
+        async function linkedLcFor(shipId) {
+            if (!lcListCache || Date.now() - lcListCache.at > 60000) {
+                const data = await fetch('/api/lc').then(r => r.ok ? r.json() : null).catch(() => null);
+                lcListCache = { at: Date.now(), lcs: (data && data.lcs) || [] };
+            }
+            return cachedLinkedLc(shipId);
+        }
+
+        function buildStageTimelineV3(s, milestones, evidence = {}) {
             if (!milestones.length) {
                 return '<p class="wh-empty" style="margin:0">No stages yet — click + Add to create one.</p>';
             }
 
+            const today  = nzTodayIso();
+            const states = stageStates(milestones, today);
             const W = 800, padX = 24;
-            const tsValues = milestones.map(m => m.date ? new Date(m.date + 'T00:00:00').getTime() : null).filter(t => t != null);
+            const tsValues = milestones.map(m => ISO_DAY.test(m.date || '') ? dayTs(m.date) : null).filter(t => t != null);
             const useDates = tsValues.length >= 2;
             const minTs = useDates ? Math.min(...tsValues) : 0;
             const maxTs = useDates ? Math.max(...tsValues) : 0;
             const range  = maxTs - minTs || 1;
-            const xFor = (m, i) => useDates && m.date
-                ? padX + ((W - 2*padX) * (new Date(m.date + 'T00:00:00').getTime() - minTs) / range)
+            const xForTs = ts => padX + (W - 2*padX) * Math.min(1, Math.max(0, (ts - minTs) / range));
+            const xFor = (m, i) => useDates && ISO_DAY.test(m.date || '')
+                ? xForTs(dayTs(m.date))
                 : padX + ((W - 2*padX) * i / Math.max(1, milestones.length - 1));
-            const pctFor = (m, i) => (xFor(m, i) / W * 100).toFixed(2);
+            const pct = x => (x / W * 100).toFixed(2);
 
-            const lastDoneIdx = milestones.reduce((acc, m, i) => m.done ? i : acc, -1);
+            const lastDoneIdx = states.reduce((acc, x, i) => x.state === 'done' ? i : acc, -1);
             const lastDoneX   = lastDoneIdx >= 0 ? xFor(milestones[lastDoneIdx], lastDoneIdx) : padX;
+            const anyOverdue  = states.some(x => x.state === 'overdue');
+            const todayTs     = dayTs(today);
+            const todayX      = useDates ? xForTs(todayTs) : null;
+            const todayInside = useDates && todayTs >= minTs && todayTs <= maxTs;
 
-            // SVG carries only the track lines; icons are HTML so they don't stretch.
+            // Green to the last ticked stage; amber dashes on to today when
+            // stages in between are past their date but not ticked.
             const svg = `<svg viewBox="0 0 ${W} 4" preserveAspectRatio="none" class="ship-tl-svg">
                 <line x1="${padX}" y1="2" x2="${W-padX}" y2="2" stroke="#e2e8f0" stroke-width="2"/>
-                ${lastDoneIdx >= 0 ? `<line x1="${padX}" y1="2" x2="${lastDoneX.toFixed(1)}" y2="2" stroke="#7c3aed" stroke-width="2"/>` : ''}
+                ${anyOverdue && todayX != null && todayX > lastDoneX ? `<line x1="${lastDoneX.toFixed(1)}" y1="2" x2="${todayX.toFixed(1)}" y2="2" stroke="#f59e0b" stroke-width="2" stroke-dasharray="6 5"/>` : ''}
+                ${lastDoneIdx >= 0 ? `<line x1="${padX}" y1="2" x2="${lastDoneX.toFixed(1)}" y2="2" stroke="#16a34a" stroke-width="2.5"/>` : ''}
             </svg>`;
 
+            const STATE_WORD = { done: 'Done', overdue: 'Date passed, not ticked', next: 'Next', upcoming: 'Expected' };
             const icons = milestones.map((m, i) =>
-                `<span class="ship-tl-icon${m.done ? ' ship-tl-icon--done' : ''}"
-                       style="left:${pctFor(m, i)}%"
-                       title="${escHtml(m.label)}${m.date ? ' · ' + escHtml(m.date) : ''}"
+                `<span class="ship-tl-icon ship-tl-icon--${states[i].state}"
+                       style="left:${pct(xFor(m, i))}%"
+                       title="${escHtml(m.label)} · ${STATE_WORD[states[i].state]}${m.date ? ' · ' + escHtml(stageDay(m.date)) : ''}"
                  >${milestoneIcon(m.label)}</span>`
             ).join('');
+            const todayMark = todayInside
+                ? `<span class="ship-tl-today" style="left:${pct(todayX)}%"><span class="ship-tl-today-lbl">Today</span></span>`
+                : '';
 
-            const rows = milestones.map((m, i) => `
-                <div class="ship-tl-row${m.done ? ' ship-tl-row--done' : ''}">
-                    <button type="button" class="ship-tl-toggle${m.done ? ' ship-tl-toggle--done' : ''}"
-                            data-ship-id="${escHtml(s.id)}" data-idx="${i}"
-                            title="Click to ${m.done ? 'mark not done' : 'mark done'}">
+            const sid = escHtml(s.id);
+            const rows = milestones.map((m, i) => {
+                const st   = states[i].state;
+                const ev   = evidence[i];
+                const last = i === milestones.length - 1;
+                let line;
+                if (st === 'done') {
+                    line = states[i].implied
+                        ? `<span class="ship-tl-state ship-tl-state--done" data-tip="Not ticked itself, but a later stage is.">✓ Done</span>`
+                        : `<span class="ship-tl-state ship-tl-state--done">✓ Done</span>`;
+                    if (ev && ev.date !== m.date) {
+                        line += `<button type="button" class="ship-tl-use" data-ship-id="${sid}" data-idx="${i}" data-date="${escHtml(ev.date)}"
+                            data-tip="${escHtml(ev.tip)} Click to use that date.">LC says ${escHtml(stageDay(ev.date))}</button>`;
+                    }
+                } else if (ev) {
+                    line = `<button type="button" class="ship-tl-use ship-tl-use--tick" data-ship-id="${sid}" data-idx="${i}" data-date="${escHtml(ev.date)}"
+                        data-tip="${escHtml(ev.tip)} Click to tick this stage on that date.">${escHtml(ev.text)} · Tick</button>`;
+                } else if (st === 'overdue') {
+                    line = `<span class="ship-tl-state ship-tl-state--overdue" data-tip="${last
+                        ? 'Its projected date has passed. Ticking it books the stock in, so tick it once the container is here.'
+                        : 'Its projected date has passed. Tick it if it happened (and correct the date), or move the date if it is running late.'}">Date passed · not ticked</span>`;
+                } else if (st === 'next') {
+                    line = `<span class="ship-tl-state ship-tl-state--next">Next${m.date ? ' · ' + inDays(today, m.date) : ''}</span>`;
+                } else {
+                    line = `<span class="ship-tl-state">Expected</span>`;
+                }
+                const toggleTip = st === 'done'
+                    ? (states[i].implied ? 'Click to tick it' : 'Ticked. Click to untick (stages after it untick too)')
+                    : 'Click to tick as done (stages before it tick too)' + (last ? '. This books the stock in' : '');
+                return `
+                <div class="ship-tl-row ship-tl-row--${st}">
+                    <button type="button" class="ship-tl-toggle${st === 'done' ? ' ship-tl-toggle--done' : ''}"
+                            data-ship-id="${sid}" data-idx="${i}" title="${toggleTip}">
                         <span class="ship-tl-icon-badge">${milestoneIcon(m.label)}</span>
                         <span class="ship-tl-label">${escHtml(m.label)}</span>
                     </button>
-                    <input type="date" class="ship-tl-date"
-                        data-ship-id="${escHtml(s.id)}" data-idx="${i}"
+                    <input type="date" class="ship-tl-date${st === 'done' ? '' : ' ship-tl-date--projected'}"
+                        data-ship-id="${sid}" data-idx="${i}"
                         value="${escHtml(m.date || '')}"
-                        title="Edit date — later steps shift by their default gaps">
-                </div>
-            `).join('');
+                        title="${st === 'done' ? 'The date it happened' : 'Projected from the default gaps'}. Changing it moves the projected dates after it">
+                    <div class="ship-tl-state-line">${line}</div>
+                </div>`;
+            }).join('');
 
             return `<div class="ship-tl-section">
                 <div class="ship-tl-track">
                     ${svg}
-                    <div class="ship-tl-icons-row">${icons}</div>
+                    <div class="ship-tl-icons-row">${todayMark}${icons}</div>
                 </div>
                 <div class="ship-tl-rows">${rows}</div>
             </div>`;
@@ -1791,6 +1897,7 @@ const Warehouse = (() => {
             );
 
             const fmtKg = v => (v || 0).toLocaleString('en-NZ', { maximumFractionDigits: 0 });
+            const catchUp = stageCatchUp(milestones, nzTodayIso());
 
             // Net = white + colour. Waste applies evenly to both. Visual bar
             // segments are scaled against netKg so they always total 100%.
@@ -1853,8 +1960,10 @@ const Warehouse = (() => {
 
                         <div class="ship-det-section">
                             <div class="ship-det-hd">
-                                <h3 class="ship-det-title">Shipment Stage</h3>
+                                <h3 class="ship-det-title">Shipment Stage <span class="ship-tl-info" tabindex="0" data-tip="A stage counts as done only once it is ticked. Dates on stages that aren't ticked are projections from the default gaps. Amber means the date has passed but nobody has ticked it yet.">ⓘ</span></h3>
                                 <div class="ship-det-hd-actions">
+                                    ${catchUp.count ? `<button class="btn-link ship-tl-catchup" type="button" data-ship-id="${escHtml(s.id)}" data-idx="${catchUp.idx}"
+                                        data-tip="Ticks the stages whose dates have passed, keeping those dates. Correct any that were different afterwards. ${escHtml(milestones[milestones.length - 1].label)} stays a separate tick because it books the stock in.">Tick ${catchUp.count} past stage${catchUp.count === 1 ? '' : 's'}</button>` : ''}
                                     <label class="ship-start-date-lbl">
                                         <span>Started</span>
                                         <input type="date" class="imp-detail-input imp-url-input"
@@ -1866,7 +1975,7 @@ const Warehouse = (() => {
                                     <button class="btn-link ship-tl-cfg-toggle" type="button" title="Edit default gaps between stages">Defaults</button>
                                 </div>
                             </div>
-                            ${buildStageTimelineV3(s, milestones)}
+                            <div id="ship-tl-wrap">${buildStageTimelineV3(s, milestones, stageEvidence(milestones, cachedLinkedLc(s.id)))}</div>
                             ${buildStageDefaultsPanel(config)}
                         </div>
 
@@ -1964,6 +2073,16 @@ const Warehouse = (() => {
 
             if (typeof initCharts === 'function') initCharts(body);
             wireShipTabs(s, opts);
+
+            // Fill in the LC's dates once the LC list arrives (cached after
+            // the first load, so re-renders draw them straight away).
+            const shownEvidence = JSON.stringify(stageEvidence(milestones, cachedLinkedLc(s.id)));
+            linkedLcFor(s.id).then(lc => {
+                const ev = stageEvidence(milestones, lc);
+                if (currentDetailShipId !== s.id || JSON.stringify(ev) === shownEvidence) return;
+                const wrap = body.querySelector('#ship-tl-wrap');
+                if (wrap) wrap.innerHTML = buildStageTimelineV3(s, milestones, ev);
+            });
         }
 
         // Tabs on a shipment's detail: Overview · Export documents · Letter
@@ -3150,6 +3269,40 @@ const Warehouse = (() => {
 
         // ── Cost-line event delegation (delegated to avoid re-wiring on each rebuild) ──
 
+        // Tick or untick a stage. Stages run in order, so ticking one ticks
+        // the ones before it and unticking one unticks the ones after it. A
+        // ticked stage keeps its date unless that date is still to come (it
+        // can't have happened yet), which becomes today; `dates` ({ index:
+        // date }, from the LC) override a stage's own. A changed date moves
+        // the projected dates after it; the arrival month follows the last
+        // stage.
+        async function setStageDone(shipId, idx, done, dates = {}) {
+            const ship = (config.shipments || []).find(x => x.id === shipId);
+            const ms = ship && ship.milestones;
+            if (!ms || !ms[idx]) return;
+            const today = nzTodayIso();
+            const last = ms.length - 1;
+            if (!done && idx < last && ms[last].done
+                && !confirm(`Unticking "${ms[idx].label}" also unticks the stages after it, including "${ms[last].label}", which takes this shipment's stock back out. Continue?`)) return;
+            const before = ms[idx].date;
+            let next = ms.map((m, i) => {
+                if (done && i <= idx) {
+                    if (dates[i] && (!m.done || i === idx)) return { ...m, done: true, date: dates[i] };
+                    if (m.done) return m;
+                    return { ...m, done: true, date: m.date && m.date <= today ? m.date : today };
+                }
+                if (!done && i >= idx && m.done) return { ...m, done: false };
+                return m;
+            });
+            if (done && ship.schema === 3 && next[idx].date !== before) next = cascadeStageDates(next, idx, getStageDefaults(config));
+            config.shipments = config.shipments.map(s => {
+                if (s.id !== shipId) return s;
+                const arrival = next[next.length - 1]?.date;
+                return { ...s, milestones: next, ...(s.schema === 3 && arrival ? { ym: arrival.slice(0, 7) } : {}) };
+            });
+            await costSave();
+        }
+
         async function costSave() {
             try {
                 await api('/api/import/forecast', {
@@ -3485,15 +3638,32 @@ const Warehouse = (() => {
             if (stageStep) {
                 const { shipId } = stageStep.dataset;
                 const idx = parseInt(stageStep.dataset.idx);
-                const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Pacific/Auckland' });
-                config.shipments = (config.shipments || []).map(s => {
-                    if (s.id !== shipId) return s;
-                    const milestones = (s.milestones || []).map((m, i) =>
-                        i === idx ? { ...m, done: !m.done, date: !m.done && !m.date ? today : m.date } : m
-                    );
-                    return { ...s, milestones };
-                });
-                await costSave();
+                const ship = (config.shipments || []).find(x => x.id === shipId);
+                const m = ship && (ship.milestones || [])[idx];
+                if (!m) return;
+                // A stage shown as done only because a later one is ticked
+                // gets ticked itself, not unticked.
+                await setStageDone(shipId, idx, !m.done);
+                return;
+            }
+
+            // A date from the linked LC → tick the stage on that date.
+            const useBtn = e.target.closest('.ship-tl-use');
+            if (useBtn) {
+                const idx = parseInt(useBtn.dataset.idx);
+                await setStageDone(useBtn.dataset.shipId, idx, true, { [idx]: useBtn.dataset.date });
+                return;
+            }
+
+            // Tick every stage whose date has passed (bar the last), on the
+            // LC's dates where it has them.
+            const catchUpBtn = e.target.closest('.ship-tl-catchup');
+            if (catchUpBtn) {
+                const { shipId } = catchUpBtn.dataset;
+                const ship = (config.shipments || []).find(x => x.id === shipId);
+                const ev = stageEvidence((ship && ship.milestones) || [], cachedLinkedLc(shipId));
+                const dates = Object.fromEntries(Object.entries(ev).map(([i, x]) => [i, x.date]));
+                await setStageDone(shipId, parseInt(catchUpBtn.dataset.idx), true, dates);
                 return;
             }
 
