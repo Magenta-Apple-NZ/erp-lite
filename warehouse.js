@@ -952,12 +952,28 @@ const Warehouse = (() => {
             }));
         }
 
+        // Calendar-day arithmetic in UTC so the result doesn't depend on the
+        // browser's zone (local midnight in NZ is the previous UTC day,
+        // which used to land every projected stage a day early).
         function addDaysIso(iso, days) {
             if (!iso) return '';
-            const d = new Date(iso + 'T00:00:00');
+            const d = new Date(iso + 'T00:00:00Z');
             if (isNaN(d)) return '';
-            d.setDate(d.getDate() + days);
+            d.setUTCDate(d.getUTCDate() + days);
             return d.toISOString().slice(0, 10);
+        }
+
+        // Later stages that aren't ticked follow the stage before them by
+        // their default gap; ticked stages keep the date they happened.
+        function cascadeStageDates(ms, fromIdx, stageDefaults) {
+            let prev = ms[fromIdx] && ms[fromIdx].date;
+            if (!prev) return ms;
+            return ms.map((m, i) => {
+                if (i <= fromIdx) return m;
+                if (m.done && m.date) { prev = m.date; return m; }
+                prev = addDaysIso(prev, Number(stageDefaults[i]?.gap) || 0);
+                return { ...m, date: prev };
+            });
         }
 
         function defaultMilestonesV3(startDate, defaults = SHIP_STAGE_DEFAULTS_V3) {
@@ -3280,8 +3296,8 @@ const Warehouse = (() => {
             }
 
             // Milestone date input (per-stage editable date) — when a date
-            // is set, cascade later steps forward by their default gaps.
-            // Existing 'done' flags are preserved.
+            // is set, later stages that aren't ticked follow by their default
+            // gaps. Ticked stages keep their dates.
             if (e.target.matches('.ship-tl-date')) {
                 const { shipId } = e.target.dataset;
                 const idx = parseInt(e.target.dataset.idx);
@@ -3289,17 +3305,9 @@ const Warehouse = (() => {
                 const stageDefaults = getStageDefaults(config);
                 config.shipments = (config.shipments || []).map(sh => {
                     if (sh.id !== shipId) return sh;
-                    const ms = [...(sh.milestones || [])];
+                    let ms = [...(sh.milestones || [])];
                     ms[idx] = { ...ms[idx], date };
-                    if (date) {
-                        let prev = date;
-                        for (let i = idx + 1; i < ms.length; i++) {
-                            const gap = Number(stageDefaults[i]?.gap) || 0;
-                            const nextDate = addDaysIso(prev, gap);
-                            ms[i] = { ...ms[i], date: nextDate };
-                            prev = nextDate;
-                        }
-                    }
+                    if (date) ms = cascadeStageDates(ms, idx, stageDefaults);
                     const patch = { ...sh, milestones: ms };
                     if (idx === 0 && date) patch.startDate = date;
                     // ym = the actual arrival milestone date (last one). Earlier
@@ -3384,18 +3392,15 @@ const Warehouse = (() => {
                         if (s.id !== shipId || s.schema !== 3) {
                             return s.id === shipId ? { ...s, [f]: val } : s;
                         }
+                        // The start date is the first stage's date; stages
+                        // after it that aren't ticked follow by their gaps.
                         const fresh = defaultMilestonesV3(val, stageDefaults);
-                        const merged = (s.milestones || []).map((m, i) => {
-                            const f = fresh[i];
-                            if (!f) return m;
-                            // Preserve date only if milestone is marked done (confirmed actual).
-                            // Undone milestones get the recalculated projected date.
-                            return { ...m, date: m.done ? m.date : f.date };
-                        });
-                        const padded = merged.length < fresh.length
-                            ? [...merged, ...fresh.slice(merged.length)]
-                            : merged;
-                        return { ...s, startDate: val, ym: ymFromStartDate(val, stageDefaults), milestones: padded };
+                        const ms = s.milestones || [];
+                        const padded = ms.length < fresh.length ? [...ms, ...fresh.slice(ms.length)] : [...ms];
+                        padded[0] = { ...padded[0], date: val };
+                        const milestones = cascadeStageDates(padded, 0, stageDefaults);
+                        const arrival = milestones[milestones.length - 1]?.date;
+                        return { ...s, startDate: val, ym: arrival ? arrival.slice(0, 7) : ymFromStartDate(val, stageDefaults), milestones };
                     });
                     await quietSave();
                     renderShipDetail(config.shipments.find(s => s.id === shipId));
