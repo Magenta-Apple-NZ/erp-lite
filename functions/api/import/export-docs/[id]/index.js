@@ -3,6 +3,8 @@
 //   PATCH  { review?, jps?, exportInvoice?, lc? } → save, returns the same view
 //   PATCH  { jpsConfirm: true | false } → confirm (lock) / unlock JPS's proforma invoice;
 //          refused while a JPS check blocks. Editing it clears the confirmation.
+//   PATCH  { dismissXeroError: doc | 'refresh' } / { dismissExtractError: kind } → hide an
+//          error message once read (logged; the next attempt shows a new one)
 //   PATCH  { dismiss: checkId } / { restore: checkId } → dismiss a failing check
 //          instead of correcting it (logged; holds while the check fails the same way)
 // `review` is the unconfirmed working copy (autosaved as the user edits);
@@ -27,6 +29,7 @@ export async function onRequestPatch({ env, params, request }) {
         const body = await request.json();
         if (body.dismiss || body.restore) return await dismissal(env, params.id, body, whoami(request));
         if (body.jpsConfirm !== undefined) return await confirmJps(env, params.id, !!body.jpsConfirm, whoami(request));
+        if (body.dismissXeroError || body.dismissExtractError) return await dismissError(env, params.id, body, whoami(request));
         const rec = await loadRecord(env, params.id);
         const actions = [];
         if (body.review !== undefined) rec.review = sanitiseReview(body.review);
@@ -100,6 +103,25 @@ async function confirmJps(env, shipmentId, on, who) {
         if (!rec.jpsConfirmed) return jsonResponse(await buildView(env, shipmentId));
         rec.jpsConfirmed = null;
         await saveRecord(env, rec, who, "Unlocked JPS's proforma invoice for editing — confirmation cleared");
+    }
+    return jsonResponse(await buildView(env, shipmentId));
+}
+
+const ERROR_LABELS = { supplierBill: 'Pistoni bill', salesInvoice: 'Our proforma invoice', jpsBill: 'JPS bill', refresh: 'Refresh from Xero',
+    packingList: "Pistoni's packing list", proforma: "Pistoni's proforma invoice", jpsInvoice: "JPS's proforma invoice" };
+async function dismissError(env, shipmentId, body, who) {
+    const rec = await loadRecord(env, shipmentId);
+    if (body.dismissXeroError) {
+        const k = String(body.dismissXeroError);
+        if (!rec.xeroErrors?.[k]) return jsonResponse(await buildView(env, shipmentId));
+        delete rec.xeroErrors[k];
+        await saveRecord(env, rec, who, `Dismissed the Xero error on ${ERROR_LABELS[k] || k}`);
+    } else {
+        const k = String(body.dismissExtractError);
+        const x = rec.extractions?.[k];
+        if (!x?.error) return jsonResponse(await buildView(env, shipmentId));
+        rec.extractions[k] = { ...x, errorDismissed: true };
+        await saveRecord(env, rec, who, `Dismissed the reading error on ${ERROR_LABELS[k] || k}`);
     }
     return jsonResponse(await buildView(env, shipmentId));
 }

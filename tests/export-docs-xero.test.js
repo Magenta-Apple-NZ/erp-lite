@@ -317,6 +317,19 @@ test('reconciliation: the three proformas side by side, differences worked out',
     assert.equal(rc.diffs[1].text, "JPS's is USD 11,421.90 more than ours = USD 0.63/kg handling & sorting (usual 0.63/kg)");
 });
 
+test('error messages can be dismissed once read; the activity log keeps them', async () => {
+    await stageOne();
+    xeroRefuse = { status: 400, body: { Elements: [{ ValidationErrors: [{ Message: 'Organisation is not subscribed to currency EUR' }] }] } };
+    await call(xeroApi.onRequestPost, 'POST', { doc: 'supplierBill' });
+    xeroRefuse = null;
+    let v = (await call(recordApi.onRequestGet, 'GET')).body;
+    assert.ok(v.xero.errors.supplierBill);
+    v = (await call(recordApi.onRequestPatch, 'PATCH', { dismissXeroError: 'supplierBill' })).body;
+    assert.equal(v.xero.errors.supplierBill, undefined);
+    assert.equal(v.record.log[0].action, 'Dismissed the Xero error on Pistoni bill');
+    assert.ok(v.record.log.some(l => /not subscribed to currency EUR/.test(l.action)), 'the failure stays in the log');
+});
+
 test("a tax code this Xero doesn't have stops before anything is sent, with the real ones listed", async () => {
     await stageOne();
     const st = (await call(settingsApi.onRequestGet, 'GET')).body.settings;
