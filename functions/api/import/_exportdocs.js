@@ -611,28 +611,10 @@ export function hasUnconfirmedChanges(record) {
 // Why a document can't be generated yet ([] = ready).
 // doc: 'packing' | 'proforma'; stage: 'draft' | 'final' (packing only).
 // What a document is waiting for that only arrives later with the LC (its
-// number and date, the gross weight entered with them, the contract dates it
-// sets) — shown as "waiting for the LC", not as something to do now.
+// number and date, the gross weight entered with them) — shown as "waiting
+// for the LC", not as something to do now.
 const LC_WAIT = /^LC number missing$|^LC date of issue missing$|^Gross weight missing$/;
 export const waitsForLc = issue => LC_WAIT.test(String(issue || ''));
-
-// The contract terms on JPS's sales proforma — last date of shipment, expiry
-// date, containers — are the Letter of Credit's (44C, 31D, the container in
-// 45A), from the LC linked to the shipment. They aren't needed until the LC is
-// issued: before that they're blank and the signed copy prints without them.
-// from: 'lc' | null per field.
-export function jpsContractTerms(record, lc) {
-    const has = v => !!String(v || '').trim();
-    const pick = (lcVal, ok) => (ok(lcVal) ? { value: lcVal, from: 'lc' } : { value: '', from: null });
-    const ship = pick(lc?.latestShipDate, isYmd);
-    const exp = pick(lc?.expiryDate, isYmd);
-    const cont = pick(lc?.goods?.container, has);
-    return {
-        lastShipmentDate: ship.value, expiryDate: exp.value, containers: String(cont.value || '').trim(),
-        from: { lastShipmentDate: ship.from, expiryDate: exp.from, containers: cont.from },
-        lcNumber: lc?.lcNumber || null,
-    };
-}
 
 // doc 'jps' (our signed rewrite of JPS's sales proforma) also takes the
 // titles of JPS checks still blocking and whether a signature is uploaded.
@@ -661,6 +643,11 @@ export function generationIssues({ record, settings, doc, stage = 'draft', shipm
         if (!(j.lines || []).some(l => Number(l.kg) > 0 && Number(l.unitPrice) > 0 && Number(l.amount) > 0)) out.push('JPS invoice lines need kg, unit price and amount');
         if (jpsFailures.length) out.push(`JPS invoice fails: ${jpsFailures.join('; ')}`);
         else if (!r.jpsConfirmed) out.push("Confirm JPS's proforma invoice in step 3");
+        // The terms JPS opens the LC on — the proforma comes first.
+        const c = j.contract || {};
+        if (!isYmd(c.lastShipmentDate)) out.push('Last date of shipment missing');
+        if (!isYmd(c.expiryDate)) out.push('Expiry date missing');
+        if (!String(c.containers || '').trim()) out.push('Container size missing');
         if (!hasSignature) out.push('Upload your signature in Document settings → Enviroware');
     }
     if (doc === 'packing' && stage === 'final') {
@@ -672,6 +659,17 @@ export function generationIssues({ record, settings, doc, stage = 'draft', shipm
     }
     return out;
 }
+
+// The LC checks on JPS's contract terms, by the term they compare.
+export const LC_TERM_CHECKS = {
+    lastShipmentDate: 'Last date of shipment matches the LC',
+    expiryDate: 'Expiry date matches the LC',
+    containers: 'Container size matches the LC',
+};
+// "1 x 40' FCL" = "1X40 FT FCL" = "1x40 FCL": count, size and type, not spacing or feet marks.
+const containerKey = s => String(s || '').toLowerCase()
+    .replace(/(\d)\s*(ft|feet|foot)\b/g, '$1').replace(/\b(containers?|ft|feet|foot)\b|['’"]/g, '').replace(/[^a-z0-9]/g, '');
+export const sameContainers = (a, b) => containerKey(a) === containerKey(b);
 
 // Compare our figures with the LC linked to this shipment (Letter of Credit
 // tab). Warnings only: the LC is what the bank checks the documents against.
@@ -693,6 +691,11 @@ export function lcCrossChecks(record, lc, settings) {
     if (Number(g.quantity) > 0) add('Net weight matches the LC quantity', kgEq(g.quantity, t.netKg), `Bales ${fmtKg(t.netKg)} kg; LC ${fmtKg(g.quantity)} ${g.quantityUnit || ''}`);
     if (Number(g.packageCount) > 0) add('Bale count matches the LC', Number(g.packageCount) === t.count, `${t.count} bales; LC ${g.packageCount} ${g.packageType || ''}`);
     if (g.hsCode && settings?.hsCode) add('HS code matches the LC', norm(g.hsCode) === norm(settings.hsCode), `Settings ${settings.hsCode}; LC ${g.hsCode}`);
+    // JPS's proforma sets the contract terms; the LC JPS opens should carry them.
+    const c = record.jps?.contract || {};
+    if (isYmd(c.lastShipmentDate) && isYmd(lc.latestShipDate)) add(LC_TERM_CHECKS.lastShipmentDate, c.lastShipmentDate === lc.latestShipDate, `JPS's proforma ${longDate(c.lastShipmentDate)}; LC (44C) ${longDate(lc.latestShipDate)}`);
+    if (isYmd(c.expiryDate) && isYmd(lc.expiryDate)) add(LC_TERM_CHECKS.expiryDate, c.expiryDate === lc.expiryDate, `JPS's proforma ${longDate(c.expiryDate)}; LC (31D) ${longDate(lc.expiryDate)}`);
+    if (String(c.containers || '').trim() && String(g.container || '').trim()) add(LC_TERM_CHECKS.containers, sameContainers(c.containers, g.container), `JPS's proforma ${c.containers}; LC ${g.container}`);
     // The LC (field 47A) quotes the applicant's numbers; every one printed on
     // our documents must be among them.
     const lcText = [lc.rawText, ...(lc.f47aConditions || []).map(c => c.text)].filter(Boolean).join(' ');

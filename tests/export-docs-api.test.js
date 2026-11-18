@@ -341,10 +341,24 @@ test('MCP shipment_export_docs: read-only view of bales, export invoice and docu
     assert.deepEqual([...env.ORDERS_KV.store.keys()].sort(), [...before.keys()].sort(), 'MCP wrote nothing');
 });
 
-test("the view carries JPS's contract terms from the linked LC", async () => {
+test("JPS's contract terms: the proforma's own, changeable after confirming, the linked LC checked against them", async () => {
     await uploadBoth();
     await call(confirmApi.onRequestPost, 'POST', '/c');
-    const v = (await call(recordApi.onRequestPatch, 'PATCH', '/r', { jps: { number: 'JPSE-102/2026', date: '2026-11-20', currency: 'USD', lines: [{ description: 'x', kg: 18130, unitPrice: 1.82, amount: 32996.6 }], total: 32996.6, contract: { lastShipmentDate: '2027-06-15', expiryDate: '2027-06-30', containers: '' } } })).body;
-    assert.deepEqual([v.jpsTerms.lastShipmentDate, v.jpsTerms.expiryDate, v.jpsTerms.containers, v.jpsTerms.lcNumber], ['2027-05-31', '2027-06-15', '1x40 FCL', '320126011494']);
-    assert.ok(!v.generation.jpsContract.some(i => /missing/.test(i)), 'the dates are there, from the LC');
+    const jps = { number: 'JPSE-102/2026', date: '2026-11-20', currency: 'USD', lines: [{ description: 'x', kg: 18130, unitPrice: 1.82, amount: 32996.6 }], total: 32996.6, contract: { lastShipmentDate: '', expiryDate: '', containers: '' } };
+    let v = (await call(recordApi.onRequestPatch, 'PATCH', '/r', { jps })).body;
+    assert.deepEqual(v.generation.jpsContract.filter(i => /Last date|Expiry|Container/.test(i)), ['Last date of shipment missing', 'Expiry date missing', 'Container size missing']);
+    assert.equal(v.jpsTerms, undefined, 'no LC-sourced copy of the terms any more');
+    await call(recordApi.onRequestPatch, 'PATCH', '/r', { jpsConfirm: true });
+    assert.equal((await call(recordApi.onRequestPatch, 'PATCH', '/r', { jps })).status, 409, 'the bill figures stay locked');
+    const r = await call(recordApi.onRequestPatch, 'PATCH', '/r', { jpsContract: { lastShipmentDate: '2027-06-15', expiryDate: '2027-06-15', containers: "1 x 40' FCL", junk: 1 } });
+    assert.equal(r.status, 200, JSON.stringify(r.body));
+    v = r.body;
+    assert.ok(v.record.jpsConfirmed, 'still confirmed');
+    assert.deepEqual(v.record.jps.contract, { lastShipmentDate: '2027-06-15', expiryDate: '2027-06-15', containers: "1 x 40' FCL" });
+    assert.ok(!v.generation.jpsContract.some(i => /missing/.test(i)), v.generation.jpsContract.join(' · '));
+    assert.match(v.record.log[0].action, /JPS contract terms: last shipment 15th June 2027, expiry 15th June 2027, container 1 x 40' FCL/);
+    // the linked LC (latest shipment 31 May, expiry 15 Jun, 1x40 FCL) against them
+    const by = t => v.lcChecks.find(c => c.title === t);
+    assert.deepEqual([by('Last date of shipment matches the LC').ok, by('Expiry date matches the LC').ok, by('Container size matches the LC').ok], [false, true, true]);
+    assert.equal((await call(recordApi.onRequestPatch, 'PATCH', '/r', { jpsContract: {} })).body.record.jpsConfirmed?.at != null, true);
 });

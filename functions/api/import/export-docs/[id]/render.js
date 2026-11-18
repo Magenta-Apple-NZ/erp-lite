@@ -60,11 +60,6 @@ export function withDownload(page, filename, auto) {
     return page.includes('</body>') ? page.replace('</body>', tail + '\n</body>') : page + tail;
 }
 
-// JPS's proforma prints the contract terms from the linked LC (jpsContractTerms).
-const withTerms = (record, terms) => (record?.jps && terms
-    ? { ...record, jps: { ...record.jps, contract: { lastShipmentDate: terms.lastShipmentDate, expiryDate: terms.expiryDate, containers: terms.containers } } }
-    : record);
-
 function messagePage(msg) {
     return `<!doctype html><meta charset="utf-8"><title>Export documents</title><body style="font:15px system-ui,sans-serif;padding:3rem;color:#334155"><p>${String(msg).replace(/</g, '&lt;')}</p></body>`;
 }
@@ -86,7 +81,7 @@ export async function onRequestGet({ env, params, request }) {
         const [settings, assets] = await Promise.all([loadSettings(env), loadAssets(env)]);
         const issues = view.generation[DOCS[dk]];
         const banner = issues.length ? `Preview only — not ready to issue: ${issues[0]}` : 'Preview — use Generate on the shipment to issue and keep a copy';
-        return html(render(dk, { record: withTerms(view.record, view.jpsTerms), settings, assets, shipmentNumber: view.shipment.number, banner }));
+        return html(render(dk, { record: view.record, settings, assets, shipmentNumber: view.shipment.number, banner }));
     } catch (e) {
         return viewError(e);
     }
@@ -112,14 +107,14 @@ export async function onRequestPost({ env, params, request }) {
             const [doc, stage] = dk.split(':');
             const at = new Date().toISOString();
             const key = `${params.id}:${doc}-${stage}:${Date.now().toString(36)}${metas.length}`;
-            const data = { shipmentNumber: view.shipment.number, confirmed: rec.confirmed, exportInvoice: rec.exportInvoice, lc: rec.lc || {}, jps: withTerms(rec, view.jpsTerms).jps, settings };
+            const data = { shipmentNumber: view.shipment.number, confirmed: rec.confirmed, exportInvoice: rec.exportInvoice, lc: rec.lc || {}, jps: rec.jps || null, settings };
             const page = render(dk, { record: data, settings, assets, shipmentNumber: view.shipment.number, banner: '' });
             await putJson(env, K.out(key), { html: page, data });
             const meta = {
                 key, doc, stage, at, by: who, name: NAMES[dk],
                 filename: docFilename({ doc, stage, shipmentNumber: view.shipment.number, date: doc === 'jps' ? rec.jps.date : rec.exportInvoice.date }),
                 date: doc === 'jps' ? rec.jps.date : rec.exportInvoice.date, packages: t.count, netKg: t.netKg,
-                ...(doc === 'jps' && { invoiceNumber: rec.jps.number, currency: rec.jps.currency, amount: (rec.jps.lines || []).reduce((a, l) => a + cents(l.amount), 0) / 100 || rec.jps.total }),
+                ...(doc === 'jps' && { invoiceNumber: rec.jps.number, currency: rec.jps.currency, amount: (rec.jps.lines || []).reduce((a, l) => a + cents(l.amount), 0) / 100 || rec.jps.total, terms: { ...(rec.jps.contract || {}) } }),
                 ...(doc === 'proforma' && { invoiceNumber: rec.exportInvoice.number, rate: rec.exportInvoice.rate, currency: rec.exportInvoice.currency, amount: invoiceAmount(t.netKg, rec.exportInvoice.rate) }),
                 ...(stage === 'final' && doc === 'packing' && { lcNumber: rec.lc?.number, lcDate: rec.lc?.date, grossKg: rec.lc?.grossKg }),
             };

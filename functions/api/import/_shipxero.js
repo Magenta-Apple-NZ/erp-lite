@@ -30,8 +30,10 @@ export function parseStandardNumber(raw) {
 }
 
 // ── JPS invoice ──────────────────────────────────────────────────────────
-// contract: the terms that change per shipment on JPS's sales proforma
-// (printed on our signed rewrite of it).
+// contract: the terms that change per shipment on JPS's sales proforma —
+// last date of shipment, expiry date, container size — printed on our signed
+// rewrite of it. The proforma comes first; the LC JPS opens is checked
+// against them (lcCrossChecks).
 const emptyContract = () => ({ lastShipmentDate: '', expiryDate: '', containers: '' });
 
 export function emptyJps() {
@@ -75,11 +77,17 @@ export function sanitiseJps(j) {
         })),
         netKg: toNum(j.netKg), netKgRaw: rawOrNull(j.netKgRaw),
         total: toNum(j.total), totalRaw: rawOrNull(j.totalRaw),
-        contract: {
-            lastShipmentDate: isYmd(j.contract?.lastShipmentDate) ? j.contract.lastShipmentDate : '',
-            expiryDate: isYmd(j.contract?.expiryDate) ? j.contract.expiryDate : '',
-            containers: clean(j.contract?.containers, 120),
-        },
+        contract: sanitiseJpsContract(j.contract),
+    };
+}
+
+// The contract terms alone — they can be corrected after JPS's proforma is
+// confirmed (they don't touch the bill).
+export function sanitiseJpsContract(c) {
+    return {
+        lastShipmentDate: isYmd(c?.lastShipmentDate) ? c.lastShipmentDate : '',
+        expiryDate: isYmd(c?.expiryDate) ? c.expiryDate : '',
+        containers: clean(c?.containers, 120),
     };
 }
 

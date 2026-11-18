@@ -7654,6 +7654,8 @@ a.db-row:hover { background: #f8fafc; border-color: #e2e8f0; }
 .sd-grid4 { grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); }
 .sd-field { display: flex; flex-direction: column; gap: 0.2rem; min-width: 0; }
 .sd-field--btn { justify-content: flex-end; align-items: flex-start; }
+.sd-term-lc:empty { display: none; }
+.sd-term-lc { align-self: flex-start; }
 .sd-input { padding: 0.38rem 0.55rem; border: 1px solid #e2e8f0; border-radius: 6px; font: inherit; font-size: 0.83rem; color: #1e293b; background: #fff; width: 100%; box-sizing: border-box; }
 .sd-input:focus { outline: none; border-color: #3b82f6; }
 textarea.sd-input { resize: vertical; }

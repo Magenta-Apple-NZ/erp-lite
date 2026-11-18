@@ -8,7 +8,7 @@ import {
     reviewFromPackingExtraction, reviewFromProformaExtraction, runChecks, blockingFailures,
     nextInvoiceNumber, exportInvoiceDefaults, deriveStatus, generationIssues, lcCrossChecks,
     renderPackingList, renderProforma, packingListWorkbookSpec, mergeSettings, missingSettings,
-    hasUnconfirmedChanges, docFilename, SETTINGS_SEED, renderJpsContract, amountInWords, jpsContractTerms, waitsForLc,
+    hasUnconfirmedChanges, docFilename, SETTINGS_SEED, renderJpsContract, amountInWords, waitsForLc, sameContainers,
 } from '../functions/api/import/_exportdocs.js';
 import { buildXlsx, crc32 } from '../functions/api/import/_xlsx.js';
 
@@ -579,7 +579,8 @@ test('signed JPS proforma waits for the JPS invoice, its terms, its checks and y
     assert.deepEqual(issues(record43({ jps: JPS_43 })), ["Confirm JPS's proforma invoice in step 3"]);
     assert.deepEqual(issues(record43({ jps: JPS_43, jpsConfirmed: { at: '2026-11-17T01:00:00Z', by: 'andrew@primetie.co.nz' } })), []);
     const ok = { jpsConfirmed: { at: '2026-11-17T01:00:00Z', by: 'andrew@primetie.co.nz' } };
-    assert.deepEqual(issues(record43({ ...ok, jps: { ...JPS_43, contract: {} } })), [], 'the LC dates are not needed before the LC is issued');
+    assert.deepEqual(issues(record43({ ...ok, jps: { ...JPS_43, contract: {} } })), ['Last date of shipment missing', 'Expiry date missing', 'Container size missing'], 'JPS opens the LC on these terms, so the signed copy needs them');
+    assert.deepEqual(issues(record43({ ...ok, jps: { ...JPS_43, contract: { ...JPS_43.contract, containers: ' ' } } })), ['Container size missing']);
     assert.deepEqual(issues(record43({ ...ok, jps: { ...JPS_43, number: '', lines: [] } })), ['JPS invoice number missing', 'JPS invoice lines need kg, unit price and amount']);
     assert.deepEqual(generationIssues({ record: record43({ ...ok, jps: JPS_43 }), settings: s, doc: 'jps', hasSignature: false }), ['Upload your signature in Document settings → Enviroware']);
     assert.deepEqual(generationIssues({ record: record43({ ...ok, jps: JPS_43 }), settings: s, doc: 'jps', hasSignature: true, jpsFailures: ['Printed figures read correctly'] }), ['JPS invoice fails: Printed figures read correctly']);
@@ -622,27 +623,28 @@ test("Xero tax codes are New Zealand's: settings saved with the UK zero-rated co
     assert.equal(mergeSettings({ xero: { taxTypes: { exportSale: 'NONE' } } }).xero.taxTypes.exportSale, 'NONE', 'a deliberate choice is kept');
 });
 
-test("JPS's contract terms come from the linked LC, and only once it's issued", () => {
-    const rec = record43({ jps: JPS_43 });   // PDF read 15 Jun / 30 Jun 2027, 1 x 40' FCL and 1 x 20' GP
-    const lc = { lcNumber: '320126011494', latestShipDate: '2027-05-31', expiryDate: '2027-06-15', goods: { container: '1x40 FCL' } };
-    assert.deepEqual(jpsContractTerms(rec, lc), {
-        lastShipmentDate: '2027-05-31', expiryDate: '2027-06-15', containers: '1x40 FCL',
-        from: { lastShipmentDate: 'lc', expiryDate: 'lc', containers: 'lc' }, lcNumber: '320126011494' });
-    const noLc = jpsContractTerms(rec, null);
-    assert.deepEqual([noLc.lastShipmentDate, noLc.expiryDate, noLc.containers, noLc.from.lastShipmentDate, noLc.lcNumber], ['', '', '', null, null], 'nothing until the LC is issued');
-    const partial = jpsContractTerms(record43({ jps: { ...JPS_43, contract: {} } }), { lcNumber: 'X', expiryDate: '2027-06-15', goods: {} });
-    assert.deepEqual(partial.from, { lastShipmentDate: null, expiryDate: 'lc', containers: null });
-    // the signed copy and its readiness use the LC's values
-    const html = renderJpsContract({ record: { ...rec, jps: { ...rec.jps, contract: jpsContractTerms(rec, lc) } }, settings: mergeSettings({}), shipmentNumber: 43 });
-    assert.match(html, /Last date of shipment:<\/th><td>31st May 2027/);
-    assert.match(html, /Container size:<\/th><td>1x40 FCL/);
-    const before = renderJpsContract({ record: { ...rec, jps: { ...rec.jps, contract: noLc } }, settings: mergeSettings({}), shipmentNumber: 43 });
-    assert.doesNotMatch(before, /Last date of shipment|Expiry date:/, 'before the LC the signed copy prints without them');
+test("the LC is checked against JPS's contract terms", () => {
+    const rec = record43({ jps: JPS_43 });   // 15 Jun / 30 Jun 2027, 1 x 40' FCL and 1 x 20' GP
+    const terms = lc => lcCrossChecks(rec, lc, mergeSettings({})).filter(c => /^(Last date of shipment|Expiry date|Container size) matches the LC$/.test(c.title));
+    const same = { lcNumber: '320126011494', latestShipDate: '2027-06-15', expiryDate: '2027-06-30', goods: { container: "1 X 40 FT FCL AND 1 X 20' GP" } };
+    assert.deepEqual(terms(same).map(c => [c.title, c.ok, c.level]), [
+        ['Last date of shipment matches the LC', true, 'warn'], ['Expiry date matches the LC', true, 'warn'], ['Container size matches the LC', true, 'warn']]);
+    const diff = terms({ ...same, latestShipDate: '2027-05-31', goods: { container: '1x40 FCL' } });
+    assert.deepEqual(diff.filter(c => !c.ok).map(c => c.detail), [
+        "JPS's proforma 15th June 2027; LC (44C) 31st May 2027", "JPS's proforma 1 x 40' FCL and 1 x 20' GP; LC 1x40 FCL"]);
+    assert.deepEqual(terms({ lcNumber: 'X', goods: {} }), [], 'nothing to compare until the LC has them');
+    assert.deepEqual(lcCrossChecks(record43({ jps: { ...JPS_43, contract: {} } }), same, mergeSettings({})).filter(c => /matches the LC$/.test(c.title) && /date of shipment|Expiry|Container/.test(c.title)), [], 'or until the proforma has them');
+    assert.ok(sameContainers("1 x 40' FCL", '1x40ft FCL CONTAINER'));
+    assert.ok(!sameContainers('1x40 FCL', '1x20 FCL'));
+    // the signed copy prints the proforma's own terms, whatever the LC says
+    const html = renderJpsContract({ record: rec, settings: mergeSettings({}), shipmentNumber: 43 });
+    assert.match(html, /Last date of shipment:<\/th><td>15th June 2027/);
+    assert.match(html, /Container size:<\/th><td>1 x 40' FCL and 1 x 20' GP/);
 });
 
 test('what only comes with the LC is "waiting", not something to do now', () => {
     const issues = generationIssues({ record: record43({ jps: { ...JPS_43, contract: {} }, jpsConfirmed: { at: '2026-11-18T01:00:00Z' } }), settings: mergeSettings({}), doc: 'jps', hasSignature: false });
-    assert.deepEqual(issues, ['Upload your signature in Document settings → Enviroware'], 'the signed copy waits for nothing from the LC');
+    assert.ok(!issues.some(waitsForLc), 'the signed copy waits for nothing from the LC: its terms come first');
     const final = generationIssues({ record: record43(), settings: SETTINGS_FILLED, doc: 'packing', stage: 'final', shipmentNumber: 43 });
     assert.ok(final.every(waitsForLc), final.join(' · '));
 });

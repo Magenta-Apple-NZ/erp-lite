@@ -3,6 +3,8 @@
 //   PATCH  { review?, jps?, exportInvoice?, lc? } → save, returns the same view
 //   PATCH  { jpsConfirm: true | false } → confirm (lock) / unlock JPS's proforma invoice;
 //          refused while a JPS check blocks. Editing it clears the confirmation.
+//   PATCH  { jpsContract } → JPS's contract terms (last date of shipment, expiry date,
+//          container size) — allowed while JPS's proforma is confirmed (not on the bill)
 //   PATCH  { dismissXeroError: doc | 'refresh' } / { dismissExtractError: kind } → hide an
 //          error message once read (logged; the next attempt shows a new one)
 //   PATCH  { dismiss: checkId } / { restore: checkId } → dismiss a failing check
@@ -13,7 +15,7 @@
 import { jsonResponse, errResponse } from '../../../_xero.js';
 import { buildView, loadRecord, saveRecord, loadShipments, whoami, viewError } from '../_store.js';
 import { sanitiseReview, sanitiseExportInvoice, sanitiseLc, fmtRate, longDate, fmtKg, fmtMoney } from '../../_exportdocs.js';
-import { sanitiseJps } from '../../_shipxero.js';
+import { sanitiseJps, sanitiseJpsContract } from '../../_shipxero.js';
 
 export async function onRequestGet({ env, params }) {
     try {
@@ -36,6 +38,14 @@ export async function onRequestPatch({ env, params, request }) {
         if (body.jps !== undefined) {
             if (rec.jpsConfirmed) return errResponse("JPS's proforma invoice is confirmed — unlock it to edit", 409);
             rec.jps = sanitiseJps(body.jps);
+        }
+        if (body.jpsContract !== undefined) {
+            if (!rec.jps) return errResponse("No JPS proforma invoice yet", 400);
+            const prev = sanitiseJpsContract(rec.jps.contract), next = sanitiseJpsContract(body.jpsContract);
+            if (JSON.stringify(prev) !== JSON.stringify(next)) {
+                actions.push(`JPS contract terms: last shipment ${next.lastShipmentDate ? longDate(next.lastShipmentDate) : '—'}, expiry ${next.expiryDate ? longDate(next.expiryDate) : '—'}, container ${next.containers || '—'}`);
+            }
+            rec.jps = { ...rec.jps, contract: next };
         }
         if (body.exportInvoice !== undefined) {
             const prev = rec.exportInvoice || {};

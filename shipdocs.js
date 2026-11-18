@@ -226,8 +226,10 @@ const ShipDocs = (() => {
         s[3] = !r.confirmed ? { kind: 'waiting', text: 'Waiting for step 1' }
             : !r.jps ? { kind: 'open', text: 'To do' }
             : !r.jpsConfirmed ? (f3.length ? needs(f3.length) : { kind: 'open', text: 'Ready to confirm' })
+            : t3.length ? needs(t3.length)
+            : signed && signedStale(r) ? { kind: 'attention', text: 'Terms changed — generate again' }
             : signed ? { kind: 'done', text: `Signed copy ${day(nzYmd(signed.at))}`, tip: lockTip(r.jpsConfirmed.at, r.jpsConfirmed.by, 'The JPS bill and the signed copy use these figures.') }
-            : t3.length ? needs(t3.length) : { kind: 'open', text: 'Signed copy to generate' };
+            : { kind: 'open', text: 'Signed copy to generate' };
         // 4 · Xero
         const docs = v.xero?.docs || [], errs = v.xero?.errors || {};
         const inX = docs.filter(d => d.inXero).length;
@@ -609,26 +611,39 @@ const ShipDocs = (() => {
             ${locked ? '' : '<div class="sd-table-foot"><button class="btn-link" data-act="jps-add-line">+ Add line</button></div>'}
             <div id="sd-jps-checks">${checkListHtml(v.jpsChecks || [], 'sd-checks--compact')}</div>
             <div id="sd-jps-split">${splitHtml(v)}</div>
-            ${termsHtml(v.jpsTerms)}` };
+            ${termsHtml(st)}` };
     }
 
-    // Contract terms on the signed copy: the LC's, read-only — shown only once
-    // the LC is issued and linked (they aren't needed before then).
-    function termsHtml(t) {
-        if (!t || !Object.values(t.from).some(Boolean)) return '';
-        const cell = (label, value) => `<div class="sd-field"><span class="imp-field-label">${esc(label)}</span>
-            <div class="sd-fig"><span class="sd-val${value ? '' : ' sd-muted'}"${tipAttr(`From LC ${t.lcNumber || ''}`)}>${esc(value || '—')}</span></div></div>`;
-        return `<h4 class="sd-h4">Contract terms ${info(`From LC ${t.lcNumber || ''} (latest date of shipment 44C, expiry 31D, container) — printed on the signed copy.`)}</h4>
-            <div class="sd-grid3">
-                ${cell('Last date of shipment', day(t.lastShipmentDate))}
-                ${cell('Expiry date', day(t.expiryDate))}
-                ${cell('Containers', t.containers)}
-            </div>`;
+    // Contract terms on the signed copy. JPS's proforma sets them (read from
+    // their PDF, or typed) and JPS opens the LC on them, so the LC is checked
+    // against them. Editable while the proforma is confirmed: not on the bill.
+    const TERM_FIELDS = [['lastShipmentDate', 'Last date of shipment', 'date'], ['expiryDate', 'Expiry date', 'date'], ['containers', 'Container size', 'text']];
+    const TERM_LC_CHECK = { lastShipmentDate: 'Last date of shipment matches the LC', expiryDate: 'Expiry date matches the LC', containers: 'Container size matches the LC' };
+    function termsHtml(st) {
+        const c = st.jps?.contract || {};
+        const cell = ([k, label, type]) => `<label class="sd-field"><span class="imp-field-label">${esc(label)}</span>
+            <input class="sd-input" data-jpsc="${k}" type="${type}" value="${esc(c[k] || '')}"${type === 'text' ? ` maxlength="120" placeholder="1 x 40' FCL"` : ''}>
+            <span class="sd-term-lc" id="sd-term-lc-${k}">${termLcHtml(st, k)}</span></label>`;
+        return `<h4 class="sd-h4">Contract terms ${info("Printed on the signed copy. JPS opens the LC on these terms, so the LC is checked against them once it's linked. They can be changed after confirming — they aren't on the bill.")} <span class="sd-save" id="sd-terms-savestate"></span></h4>
+            <div class="sd-grid3">${TERM_FIELDS.map(cell).join('')}</div>`;
+    }
+    // The linked LC, where it says something else.
+    function termLcHtml(st, k) {
+        const c = (st.view.lcChecks || []).find(x => x.title === TERM_LC_CHECK[k]);
+        return c && c.ok === false && !c.dismissed ? `<span class="sd-issue"${tipAttr(c.detail)}>! The LC differs</span>` : '';
+    }
+    // A signed copy printed before the contract terms last changed.
+    const termsKey = c => TERM_FIELDS.map(([k]) => String(c?.[k] || '').trim()).join('|');
+    function signedStale(r) {
+        const o = latestOut(r, 'jps', 'contract');
+        return !!o && !!r.jps && termsKey(o.terms) !== termsKey(r.jps.contract);
     }
 
     function jpsDocHtml(st) {
-        if (!st.view.record.jps) return '';
-        return docRowHtml(st, { name: 'Signed copy for Paul', doc: 'jps', stage: 'contract', issues: st.view.generation?.jpsContract || [], waiting: st.view.waiting?.jpsContract || [], preview: 'doc=jps', gen: 'gen-jps', genLabel: 'Generate',
+        const r = st.view.record;
+        if (!r.jps) return '';
+        const issues = st.view.generation?.jpsContract || [];
+        return docRowHtml(st, { name: 'Signed copy for Paul', doc: 'jps', stage: 'contract', issues: issues.length || !signedStale(r) ? issues : ['Contract terms changed since it was generated — generate it again'], waiting: st.view.waiting?.jpsContract || [], preview: 'doc=jps', gen: 'gen-jps', genLabel: 'Generate',
             tip: "JPS's proforma invoice rewritten without their template's errors, signed and sealed by you. Send it to Paul to sign." });
     }
 
@@ -789,6 +804,7 @@ const ShipDocs = (() => {
         p.addEventListener('input', e => {
             if (e.target.dataset.path) onEdit(st, e.target);
             else if (e.target.dataset.jps) onJpsEdit(st, e.target);
+            else if (e.target.dataset.jpsc) onTermEdit(st, e.target);
         });
         p.addEventListener('change', e => { if (e.target.dataset.path && e.target.tagName === 'SELECT') onEdit(st, e.target); });
         // Typed figures: plain digits while editing, separators otherwise.
@@ -860,6 +876,29 @@ const ShipDocs = (() => {
     async function flushSave(st) {
         if (st.saveTimer) { clearTimeout(st.saveTimer); st.saveTimer = null; await saveReview(st); }
         if (st.jpsTimer) { clearTimeout(st.jpsTimer); st.jpsTimer = null; await saveJps(st); }
+        if (st.termsTimer) { clearTimeout(st.termsTimer); st.termsTimer = null; await saveTerms(st); }
+    }
+
+    // The contract terms save on their own (allowed while JPS's proforma is confirmed).
+    function onTermEdit(st, el) {
+        st.jps.contract = { ...(st.jps.contract || {}), [el.dataset.jpsc]: el.value };
+        clearTimeout(st.termsTimer);
+        const ss = $(st, '#sd-terms-savestate'); if (ss) ss.textContent = 'Unsaved…';
+        st.termsTimer = setTimeout(() => { st.termsTimer = null; saveTerms(st); }, 600);
+    }
+
+    async function saveTerms(st) {
+        const ss = $(st, '#sd-terms-savestate');
+        try {
+            if (ss) ss.textContent = 'Saving…';
+            st.view = await send(base(st.ship.id), 'PATCH', { jpsContract: st.jps.contract });
+            const jd = $(st, '#sd-jps-doc'); if (jd) jd.innerHTML = jpsDocHtml(st);
+            for (const [k] of TERM_FIELDS) { const h = $(st, '#sd-term-lc-' + k); if (h) h.innerHTML = termLcHtml(st, k); }
+            refreshStatus(st);
+            const s2 = $(st, '#sd-terms-savestate'); if (s2) s2.textContent = 'Saved';
+        } catch (e) {
+            if (ss) ss.textContent = 'Save failed: ' + e.message;
+        }
     }
 
     function onJpsEdit(st, el) {
