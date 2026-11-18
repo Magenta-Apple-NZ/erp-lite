@@ -43,16 +43,16 @@ export function jpsFromExtraction(x) {
     return {
         number: e.invoiceNumber != null ? String(e.invoiceNumber) : '',
         date: isYmd(e.invoiceDate) ? e.invoiceDate : '',
-        dateRaw: e.invoiceDateRaw ?? null,
+        dateRaw: e.invoiceDateRaw || null,
         currency: String(e.currency || 'USD').toUpperCase(),
         lines: (Array.isArray(e.lines) ? e.lines : []).map(l => ({
             description: String(l?.description || ''),
-            kg: toNum(l?.kg), kgRaw: l?.kgRaw ?? null,
-            unitPrice: toNum(l?.unitPrice), unitPriceRaw: l?.unitPriceRaw ?? null,
-            amount: toNum(l?.amount), amountRaw: l?.amountRaw ?? null,
+            kg: toNum(l?.kg), kgRaw: l?.kgRaw || null,
+            unitPrice: toNum(l?.unitPrice), unitPriceRaw: l?.unitPriceRaw || null,
+            amount: toNum(l?.amount), amountRaw: l?.amountRaw || null,
         })),
-        netKg: toNum(e.netWeightKg), netKgRaw: e.netWeightRaw ?? null,
-        total: toNum(e.total), totalRaw: e.totalRaw ?? null,
+        netKg: toNum(e.netWeightKg), netKgRaw: e.netWeightRaw || null,
+        total: toNum(e.total), totalRaw: e.totalRaw || null,
         contract: {
             lastShipmentDate: isYmd(e.lastShipmentDate) ? e.lastShipmentDate : '',
             expiryDate: isYmd(e.expiryDate) ? e.expiryDate : '',

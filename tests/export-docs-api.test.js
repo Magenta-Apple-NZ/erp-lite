@@ -132,9 +132,27 @@ test('extraction failure keeps the upload and reports the error', async () => {
     globalThis.fetch = async () => new Response(JSON.stringify({ error: { message: 'overloaded' } }), { status: 529 });
     const r = await call(extractApi.onRequestPost, 'POST', '/x', { kind: 'packingList', filename: 'p.pdf', data: PDF_B64 });
     assert.equal(r.status, 502);
-    assert.match(r.body.extractError, /Anthropic 529: overloaded/);
+    assert.equal(r.body.extractError, 'The reading service is busy — try again in a minute');
     assert.equal(r.body.record.files.packingList.filename, 'p.pdf');
-    assert.match(r.body.record.extractions.packingList.error, /overloaded/);
+    assert.equal(r.body.record.extractions.packingList.errorDetail, 'Anthropic 529: overloaded');
+    assert.match(r.body.record.log[0].action, /busy — try again in a minute \(Anthropic 529: overloaded\)/);
+});
+
+test('if the strict reading format is refused, the PDF is read once more in plain mode', async () => {
+    const plainCalls = [];
+    globalThis.fetch = async (url, init) => {
+        const body = JSON.parse(init.body);
+        plainCalls.push(body);
+        if (body.output_config) return new Response(JSON.stringify({ error: { message: 'Schemas contains too many parameters with union types (17 parameters with type arrays or anyOf).' } }), { status: 400 });
+        return new Response(JSON.stringify({ model: 'claude-sonnet-5', stop_reason: 'end_turn',
+            content: [{ type: 'text', text: 'Here it is:\n```json\n' + JSON.stringify(MODEL_OUT.packingList) + '\n```' }] }), { status: 200 });
+    };
+    const r = await call(extractApi.onRequestPost, 'POST', '/x', { kind: 'packingList', filename: 'p.pdf', data: PDF_B64 });
+    assert.equal(r.status, 200, JSON.stringify(r.body));
+    assert.equal(plainCalls.length, 2);
+    assert.equal(plainCalls[1].output_config, undefined);
+    assert.match(plainCalls[1].messages[0].content[1].text, /Return only one JSON object[\s\S]*"bales": \[ \{ "n": integer/);
+    assert.equal(r.body.reviewTotals.count, 45);
 });
 
 test('confirm is refused while a blocking check fails, then accepted', async () => {

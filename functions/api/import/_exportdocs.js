@@ -331,9 +331,9 @@ export function reviewFromPackingExtraction(x) {
         shipmentNumber: toNum(e.shipmentNumber),
         bales: normaliseBales(e.bales),
         packing: {
-            whiteTotalKg: toNum(e.whiteTotalKg), whiteTotalRaw: e.whiteTotalRaw ?? null,
-            colouredTotalKg: toNum(e.colouredTotalKg), colouredTotalRaw: e.colouredTotalRaw ?? null,
-            packages: toNum(e.totalPackages), packagesRaw: e.totalPackagesRaw ?? null,
+            whiteTotalKg: toNum(e.whiteTotalKg), whiteTotalRaw: e.whiteTotalRaw || null,
+            colouredTotalKg: toNum(e.colouredTotalKg), colouredTotalRaw: e.colouredTotalRaw || null,
+            packages: toNum(e.totalPackages), packagesRaw: e.totalPackagesRaw || null,
         },
     };
 }
@@ -343,17 +343,17 @@ export function reviewFromProformaExtraction(x) {
     return {
         number: e.documentNumber != null ? String(e.documentNumber) : '',
         date: isYmd(e.documentDate) ? e.documentDate : '',
-        dateRaw: e.documentDateRaw ?? null,
+        dateRaw: e.documentDateRaw || null,
         currency: String(e.currency || 'EUR').toUpperCase(),
         lines: (Array.isArray(e.lines) ? e.lines : []).map(l => ({
             description: String(l?.description || ''),
             colour: normaliseColour(l?.colour),
-            kg: toNum(l?.kg), kgRaw: l?.kgRaw ?? null,
-            unitPrice: toNum(l?.unitPrice), unitPriceRaw: l?.unitPriceRaw ?? null,
-            amount: toNum(l?.amount), amountRaw: l?.amountRaw ?? null,
+            kg: toNum(l?.kg), kgRaw: l?.kgRaw || null,
+            unitPrice: toNum(l?.unitPrice), unitPriceRaw: l?.unitPriceRaw || null,
+            amount: toNum(l?.amount), amountRaw: l?.amountRaw || null,
         })),
-        netKg: toNum(e.netWeightKg), netKgRaw: e.netWeightRaw ?? null,
-        total: toNum(e.total), totalRaw: e.totalRaw ?? null,
+        netKg: toNum(e.netWeightKg), netKgRaw: e.netWeightRaw || null,
+        total: toNum(e.total), totalRaw: e.totalRaw || null,
         destination: e.destination || '',
         deliveryTerms: e.deliveryTerms || '',
         hsCode: e.hsCode || '',

@@ -603,3 +603,15 @@ test("Pistoni's document number read as our GST number is flagged", () => {
     r.supplierInvoice.number = '';
     assert.match(runChecks(r, { shipmentNumber: 43 }).find(x => x.id === 'supplier-number').detail, /^Missing/);
 });
+
+test('the PDF-reading schemas stay within 16 nullable fields (the API refuses more)', async () => {
+    const { PACKING_SCHEMA, PROFORMA_SCHEMA, JPS_SCHEMA } = await import('../functions/api/import/export-docs/_extract.js');
+    const unions = schema => { let n = 0; const walk = o => { if (!o || typeof o !== 'object') return; if (o.anyOf || Array.isArray(o.type)) n++; Object.values(o.properties || {}).forEach(walk); if (o.items) walk(o.items); }; walk(schema); return n; };
+    for (const [name, sch] of Object.entries({ PACKING_SCHEMA, PROFORMA_SCHEMA, JPS_SCHEMA })) assert.ok(unions(sch) <= 16, `${name} has ${unions(sch)}`);
+    // "" from the model is "not printed", like null was
+    const r = reviewFromProformaExtraction({ documentNumber: '', documentDate: '', documentDateRaw: '', currency: 'EUR', lines: [{ description: 'X', colour: 'white', kg: 1, kgRaw: '', unitPrice: 1, unitPriceRaw: '1,00', amount: 1, amountRaw: '' }], netWeightKg: 1, netWeightRaw: '', total: 1, totalRaw: '', destination: '', deliveryTerms: '', hsCode: '', notes: '' });
+    assert.equal(r.lines[0].kgRaw, null);
+    assert.equal(r.lines[0].unitPriceRaw, '1,00');
+    assert.equal(r.totalRaw, null);
+    assert.equal(r.number, '');
+});

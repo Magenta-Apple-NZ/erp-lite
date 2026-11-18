@@ -40,8 +40,8 @@ export async function onRequestPost({ env, params, request }) {
             ext = await extractSupplierDoc(env, { kind, data });
         } catch (e) {
             rec = await loadRecord(env, params.id);
-            rec.extractions = { ...(rec.extractions || {}), [kind]: { at: new Date().toISOString(), by: who, fileKey: key, error: e.message } };
-            await saveRecord(env, rec, who, `Could not read the ${LABEL[kind]}: ${e.message}`);
+            rec.extractions = { ...(rec.extractions || {}), [kind]: { at: new Date().toISOString(), by: who, fileKey: key, error: e.message, errorDetail: e.detail || null } };
+            await saveRecord(env, rec, who, `Could not read the ${LABEL[kind]}: ${e.message}${e.detail ? ` (${e.detail})` : ''}`);
             return jsonResponse({ ...(await buildView(env, params.id)), extractError: e.message }, 502);
         }
 
