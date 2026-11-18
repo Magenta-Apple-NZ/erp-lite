@@ -536,12 +536,13 @@ const ShipDocs = (() => {
         return (now.length ? `<span class="sd-issue"${tipAttr(now.join(' · '))}>! ${esc(now.length === 1 ? now[0] : `${now.length} things to do first`)}</span>` : '')
             + (later.length ? `<span class="sd-wait"${tipAttr('Comes with the LC once it is issued and linked on the Letter of Credit tab: ' + later.map(i => i.replace(/ — it comes from the LC.*$/, '')).join(' · '))}>… Waiting for the LC</span>` : '');
     }
-    function docRowHtml(st, { name, doc, stage, issues = [], waiting = [], xlsx = false, preview, gen, genLabel, tip = '' }) {
+    // note: an amber chip that doesn't stop Generate (e.g. a copy that's out of date).
+    function docRowHtml(st, { name, doc, stage, issues = [], waiting = [], note = null, xlsx = false, preview, gen, genLabel, tip = '' }) {
         const v = st.view, b = base(v.shipment.id);
         const out = latestOut(v.record, doc, stage);
         return `<div class="sd-docrow">
             <div class="sd-docrow-name"><strong>${esc(name)}</strong>${info(tip)}
-                <span class="sd-muted"${out ? tipAttr(`Generated ${when(out.at)}${by(out.by)} · ${out.filename || ''}`) : ''}>${out ? `Generated ${esc(day(nzYmd(out.at)))}` : 'Not generated'}</span>${issuesChip(issues, waiting)}</div>
+                <span class="sd-muted"${out ? tipAttr(`Generated ${when(out.at)}${by(out.by)} · ${out.filename || ''}`) : ''}>${out ? `Generated ${esc(day(nzYmd(out.at)))}` : 'Not generated'}</span>${issuesChip(issues, waiting)}${note ? `<span class="sd-issue"${tipAttr(note.tip)}>! ${esc(note.text)}</span>` : ''}</div>
             <div class="sd-docrow-act">
                 <a class="btn-secondary btn-sm" href="${b}/render?${preview}" target="_blank" rel="noopener" title="How it would print with today's figures — not an issued copy">Preview</a>
                 ${out ? `<a class="btn-secondary btn-sm" href="${b}/render?out=${encodeURIComponent(out.key)}&download=1" target="_blank" rel="noopener" title="${esc(out.filename || '')}">Download PDF</a>` : ''}
@@ -643,7 +644,8 @@ const ShipDocs = (() => {
         const r = st.view.record;
         if (!r.jps) return '';
         const issues = st.view.generation?.jpsContract || [];
-        return docRowHtml(st, { name: 'Signed copy for Paul', doc: 'jps', stage: 'contract', issues: issues.length || !signedStale(r) ? issues : ['Contract terms changed since it was generated — generate it again'], waiting: st.view.waiting?.jpsContract || [], preview: 'doc=jps', gen: 'gen-jps', genLabel: 'Generate',
+        return docRowHtml(st, { name: 'Signed copy for Paul', doc: 'jps', stage: 'contract', issues,
+            note: !issues.length && signedStale(r) ? { text: 'Out of date', tip: 'Printed before the contract terms last changed — Generate again prints the current ones' } : null, waiting: st.view.waiting?.jpsContract || [], preview: 'doc=jps', gen: 'gen-jps', genLabel: 'Generate',
             tip: "JPS's proforma invoice rewritten without their template's errors, signed and sealed by you. Send it to Paul to sign." });
     }
 
