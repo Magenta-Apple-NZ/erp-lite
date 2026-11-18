@@ -309,14 +309,18 @@ const ShipDocs = (() => {
     // Only failing checks are listed (with Dismiss, or greyed with Undo once
     // dismissed); the ones that pass sit behind a "✓ N checks passed" button
     // that opens them in a popover.
+    // Only what still needs doing is listed; checks that passed and ones
+    // dismissed (with Undo) sit behind the "✓ N checks passed" pill.
     function checkListHtml(list, extraClass = '') {
-        const failingList = list.filter(c => c.ok === false);
+        const failingList = list.filter(c => c.ok === false && !c.dismissed);
+        const dismissed = list.filter(c => c.ok === false && c.dismissed);
         const passed = list.filter(c => c.ok !== false);
         const nOk = passed.filter(c => c.ok === true).length, nNa = passed.length - nOk;
-        const label = [nOk && `${!failingList.length && nOk > 1 ? 'All ' : ''}${nOk} check${nOk === 1 ? '' : 's'} passed`, nNa && `${nNa} not applicable`].filter(Boolean).join(' · ');
-        const pop = passed.length ? `<div class="sd-passed">
-            <button type="button" class="sd-passed-btn" data-act="toggle-passed" aria-expanded="false">✓ ${esc(label)}</button>
-            <div class="sd-passed-pop" hidden>${checkRowsHtml(passed, 'sd-checks--compact')}</div></div>` : '';
+        const label = [nOk && `${!failingList.length && !dismissed.length && nOk > 1 ? 'All ' : ''}${nOk} check${nOk === 1 ? '' : 's'} passed`, dismissed.length && `${dismissed.length} dismissed`, nNa && `${nNa} not applicable`].filter(Boolean).join(' · ');
+        const rest = [...passed, ...dismissed];
+        const pop = rest.length ? `<div class="sd-passed">
+            <button type="button" class="sd-passed-btn" data-act="toggle-passed" aria-expanded="false">${nOk ? '✓ ' : ''}${esc(label)}</button>
+            <div class="sd-passed-pop" hidden>${checkRowsHtml(rest, 'sd-checks--compact')}</div></div>` : '';
         return (failingList.length ? checkRowsHtml(failingList, extraClass) : '') + pop;
     }
 

@@ -1041,10 +1041,19 @@ const LC = (() => {
         const crossFail = cross.filter(c => c.ok === false && !c.dismissed);
         const crossOk = cross.filter(c => c.ok === true).length;
         const crossChip = cross.length ? `<button type="button" class="sd-cc" data-lc-open="6"${tipA((crossFail.length ? crossFail.map(c => '! ' + c.title).join(' · ') : `The LC matches our documents on all ${crossOk} checks`) + '. Click for details')}>${crossFail.length ? `<span class="sd-cc-warn">! ${crossFail.length}</span>` : ''}${crossOk ? `<span class="sd-cc-ok">✓ ${crossOk}</span>` : ''}</button>` : '';
-        const crossRows = cross.length ? `<h4 class="sd-sub">Against our documents (steps 1–5)</h4><ul class="sd-checks sd-checks--compact">${[...crossFail, ...cross.filter(c => c.ok !== false || c.dismissed)].map(c => {
+        // Only the differences are listed; passed and dismissed checks sit
+        // behind the "✓ N checks passed" pill, as in steps 1–5.
+        const crossRow = c => {
             const cls = c.dismissed ? 'dismissed' : c.ok === true ? 'ok' : c.ok === false ? 'warn' : 'na';
             return `<li class="sd-check sd-check--${cls}"><span class="sd-check-i">${c.dismissed ? '–' : c.ok === true ? '✓' : c.ok === false ? '!' : '–'}</span><span class="sd-check-body"><strong>${esc(c.title)}</strong>${c.dismissed ? ' <span class="sd-muted">(dismissed in step 5)</span>' : ''}<br><span class="sd-check-d">${esc(c.detail)}</span></span></li>`;
-        }).join('')}</ul>` : '';
+        };
+        const crossRest = cross.filter(c => c.ok !== false || c.dismissed);
+        const crossDis = crossRest.filter(c => c.dismissed).length;
+        const crossLabel = [crossOk && `${crossOk} check${crossOk === 1 ? '' : 's'} passed`, crossDis && `${crossDis} dismissed`].filter(Boolean).join(' · ');
+        const crossRows = cross.length ? `<h4 class="sd-sub">Against our documents (steps 1–5)</h4>
+            ${crossFail.length ? `<ul class="sd-checks sd-checks--compact">${crossFail.map(crossRow).join('')}</ul>` : ''}
+            ${crossRest.length ? `<div class="sd-passed"><button type="button" class="sd-passed-btn" data-lc-passed aria-expanded="false">${crossOk ? '✓ ' : ''}${esc(crossLabel || `${crossRest.length} not applicable`)}</button>
+                <div class="sd-passed-pop" hidden><ul class="sd-checks sd-checks--compact">${crossRest.map(crossRow).join('')}</ul></div></div>` : ''}` : '';
         const link = ctx.embedded
             ? `<p class="sd-muted">Linked to ${esc(lc.shipmentRef || 'this shipment')} · <button class="btn-link" id="lc-ship-unlink-btn" type="button">Unlink</button></p>`
             : lc.linkedShipmentId
@@ -1757,6 +1766,13 @@ const LC = (() => {
                 return;
             }
             if (e.target.closest('[data-lc-act="to-docs"]') && ctx.openTab) ctx.openTab('docs');
+            // Passed checks pop over (closed by a click elsewhere or Escape — shipdocs.js).
+            const pb = e.target.closest('[data-lc-passed]');
+            if (pb) {
+                const pop = pb.nextElementSibling, show = pop.hidden;
+                pop.hidden = !show;
+                pb.setAttribute('aria-expanded', String(show));
+            }
         });
 
         // Document name or checks chip → document pop-over (Results · Requirements · Files)
