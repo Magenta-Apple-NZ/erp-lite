@@ -301,7 +301,7 @@ test("JPS's proforma invoice: confirm locks it, unlock clears it, a new PDF need
     assert.equal(edit.status, 409, 'locked while confirmed');
     const un = await call(recordApi.onRequestPatch, 'PATCH', { jpsConfirm: false });
     assert.equal(un.body.record.jpsConfirmed, null);
-    assert.deepEqual(un.body.xero.docs.find(d => d.key === 'jpsBill').issues, ["Confirm JPS's proforma invoice in section 5"]);
+    assert.deepEqual(un.body.xero.docs.find(d => d.key === 'jpsBill').issues, ["Confirm JPS's proforma invoice in step 3"]);
     assert.match(un.body.record.log[0].action, /Unlocked JPS's proforma invoice/);
     await call(recordApi.onRequestPatch, 'PATCH', { jpsConfirm: true });
     const again = await call(extractApi.onRequestPost, 'POST', { kind: 'jpsInvoice', filename: 'JPS-118b.pdf', data: B64 });

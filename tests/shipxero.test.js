@@ -107,7 +107,7 @@ test('three Xero documents with the right type, contact, currency and totals', (
 test('Xero documents wait for account codes, ticks and a JPS invoice', () => {
     const docs = xeroDocs({ record: rec({ jps: null, exportInvoice: { number: '102/2026', date: '2026-11-13', rate: 1.18, currency: 'USD' } }), settings: mergeSettings({}), shipmentNumber: 43 });
     assert.ok(docs[0].issues.includes('Set the raw product account in Document settings → Xero'));
-    assert.ok(docs[1].issues.includes('Confirm our proforma invoice in section 3'));
+    assert.ok(docs[1].issues.includes('Confirm our proforma invoice in step 2'));
     assert.ok(docs[2].issues.includes('Upload or enter the JPS invoice'));
 });
 

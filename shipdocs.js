@@ -81,7 +81,7 @@ const ShipDocs = (() => {
         const v = st.view;
         st.panel.innerHTML = `
         <div class="sd">
-            ${stepsHtml(v)}
+            ${stepsHtml(st)}
             ${settingsBannerHtml(v)}
             ${SEC_ORDER.map(k => { const html = secHtml(st, k); return `<section class="ship-det-section sd-sec" id="sd-sec-${k}" ${html ? '' : 'hidden'}>${html}</section>`; }).join('')}
         </div>`;
@@ -93,7 +93,7 @@ const ShipDocs = (() => {
     // faint orange; finished stages glow green.
     function glowStages(st) {
         const s = sectionStatus(st);
-        const stages = ['1', '2', '3', '4', '5', '6', '7'];
+        const stages = ['1', '2', '3', '4', '5'];
         const current = stages.find(k => s[k] && s[k].kind !== 'done');
         for (const k of stages) {
             const el = $(st, '#sd-sec-' + k);
@@ -103,20 +103,14 @@ const ShipDocs = (() => {
         }
     }
 
-    function stepsHtml(v) {
-        const r = v.record, outs = r.outputs || [];
-        const has = (doc, stage) => outs.some(o => o.doc === doc && o.stage === stage);
-        const steps = [
-            ['Supplier documents', !!(r.files?.packingList && r.files?.proforma)],
-            ['Bales confirmed', !!r.confirmed],
-            ['Draft documents', has('packing', 'draft') && has('proforma', 'draft')],
-            ["JPS's proforma", !!r.jpsConfirmed],
-            ['In Xero', (v.xero?.docs || []).every(d => d.inXero)],
-            ['LC details', v.status === 'lc_issued' || v.status === 'final'],
-            ['Final packing list', has('packing', 'final')],
-        ];
+    // The five steps, as the sections below: ✓ when done, the current one highlighted.
+    function stepsHtml(st) {
+        const v = st.view, s = sectionStatus(st);
+        const names = { 1: "Pistoni's documents", 2: 'Our proforma invoice', 3: "JPS's proforma invoice", 4: 'In Xero', 5: 'LC and final packing list' };
+        const current = Object.keys(names).find(k => s[k] && s[k].kind !== 'done');
         return `<div class="sd-top">
-            <div class="sd-steps">${steps.map(([l, done], i) => `<span class="sd-step${done ? ' sd-step--done' : ''}"><span class="sd-step-n">${done ? '✓' : i + 1}</span>${esc(l)}</span>`).join('<span class="sd-step-sep"></span>')}</div>
+            <div class="sd-steps">${Object.entries(names).map(([k, l]) => { const done = s[k]?.kind === 'done';
+                return `<span class="sd-step${done ? ' sd-step--done' : k === current ? ' sd-step--current' : ''}"><span class="sd-step-n">${done ? '✓' : k}</span>${esc(l)}</span>`; }).join('<span class="sd-step-sep"></span>')}</div>
             <div class="sd-top-right"><span class="sd-chip sd-chip--${esc(v.status)}">${esc(v.statusLabel)}</span>
             <button class="btn-link" data-act="settings">Document settings</button></div>
         </div>`;
@@ -170,11 +164,13 @@ const ShipDocs = (() => {
             <span class="sd-sec-actions">${p.actions || ''}</span>
         </div>`;
     }
+    // p.bodyFirst: the details sit above the always-visible rows (step 2: its
+    // fields, then the documents they produce).
     function secHtml(st, key) {
         const p = SECS[key](st);
         if (!p) return '';
-        return hdHtml(st, key, p) + (p.always || '')
-            + (p.body ? `<div class="sd-sec-body" id="sd-body-${key}" ${st.open.has(String(key)) ? '' : 'hidden'}>${p.body}</div>` : '');
+        const body = p.body ? `<div class="sd-sec-body" id="sd-body-${key}" ${st.open.has(String(key)) ? '' : 'hidden'}>${p.body}</div>` : '';
+        return hdHtml(st, key, p) + (p.bodyFirst ? body + (p.always || '') : (p.always || '') + body);
     }
     function refreshHd(st, key) {
         const el = $(st, '#sd-hd-' + key);
@@ -188,11 +184,11 @@ const ShipDocs = (() => {
         el.hidden = !html;
         el.innerHTML = html;
     }
-    const SEC_ORDER = ['rc', '1', '2', '3', '4', '5', '6', 'cost', '7', 'hist'];
+    const SEC_ORDER = ['rc', '1', '2', '3', '4', 'cost', '5', 'hist'];
     // Open on first view: the step being worked on.
     function defaultOpen(st) {
         const s = sectionStatus(st);
-        const first = ['1', '2', '3', '5', '7'].find(n => s[n] && (s[n].kind === 'attention' || s[n].kind === 'open'));
+        const first = ['1', '2', '3', '5'].find(n => s[n] && (s[n].kind === 'attention' || s[n].kind === 'open'));
         return new Set(first ? [first] : []);
     }
     // After a confirm: close that section and open the next step.
@@ -205,50 +201,48 @@ const ShipDocs = (() => {
         const v = st.view, r = v.record, s = {};
         const needs = n => ({ kind: 'attention', text: `Needs attention (${n})` });
         const lockTip = (at, who_, what) => `Confirmed ${when(at)}${by(who_)}. ${what} Unlock to edit clears the confirmation.`;
-        // 1 · Pistoni's documents
+        const g = v.generation || {}, wait = v.waiting || {};
+        const todo = k => (g[k] || []).filter(i => !(wait[k] || []).includes(i));
+        // 1 · Pistoni's documents — A upload the PDFs, B check and confirm the figures
         const files = ['packingList', 'proforma'].map(k => ({ f: r.files?.[k], x: r.extractions?.[k] }));
-        s[1] = files.some(({ f, x }) => f && x?.error && x.fileKey === f.key && !x.errorDismissed) ? { kind: 'attention', text: "A PDF couldn't be read", tip: 'Open the section to read why, then replace the PDF or enter the figures by hand in section 2' }
-            : files.every(({ f }) => f) ? { kind: 'done', text: 'Both uploaded' }
-            : { kind: 'open', text: files.some(({ f }) => f) ? '1 of 2 uploaded' : 'To do' };
-        // 2 · Bales and Pistoni's figures
+        const readErr = files.some(({ f, x }) => f && x?.error && x.fileKey === f.key && !x.errorDismissed);
         const started = (st.review.bales || []).length || st.review.supplierInvoice;
-        const f2 = failing(v.checks.filter(REVIEW_CHECKS));
-        s[2] = r.confirmed && !v.unconfirmedChanges ? { kind: 'done', text: `Confirmed ${day(nzYmd(r.confirmed.confirmedAt))}`, tip: lockTip(r.confirmed.confirmedAt, r.confirmed.confirmedBy, 'The documents use these figures.') }
-            : !started ? { kind: 'waiting', text: "Waiting for Pistoni's documents" }
-            : f2.length ? needs(f2.length) : { kind: 'open', text: r.confirmed ? 'Changed since confirmed' : 'Ready to confirm' };
-        // 3 · Our proforma invoice
+        const f1 = failing(v.checks.filter(REVIEW_CHECKS));
+        s[1] = r.confirmed && !v.unconfirmedChanges ? { kind: 'done', text: `Confirmed ${day(nzYmd(r.confirmed.confirmedAt))}`, tip: lockTip(r.confirmed.confirmedAt, r.confirmed.confirmedBy, 'The documents use these figures.') }
+            : readErr ? { kind: 'attention', text: "A PDF couldn't be read", tip: 'Open the step to read why, then replace the PDF or enter the figures by hand' }
+            : !started ? { kind: 'open', text: files.some(({ f }) => f) ? '1 of 2 uploaded' : 'To do' }
+            : f1.length ? needs(f1.length) : { kind: 'open', text: r.confirmed ? 'Changed since confirmed' : 'Ready to confirm' };
+        // 2 · Our proforma invoice — A number, date and rate, B the draft documents
         const ei = r.exportInvoice;
-        s[3] = !r.confirmed ? { kind: 'waiting', text: 'Waiting for section 2' }
-            : eiConfirmed(ei) ? { kind: 'done', text: `Confirmed${ei.confirmedAt ? ' ' + day(nzYmd(ei.confirmedAt)) : ''}`, tip: ei.confirmedAt ? lockTip(ei.confirmedAt, ei.confirmedBy, '') : 'Unlock to edit clears the confirmation.' }
-            : { kind: 'open', text: 'Not confirmed' };
-        // 4 · Draft documents
-        const g = v.generation || {};
         const pd = latestOut(r, 'packing', 'draft'), pf = latestOut(r, 'proforma', 'draft');
-        const g4 = [...(g.packingDraft || []), ...(g.proforma || [])];
-        s[4] = !r.confirmed || !eiConfirmed(ei) ? { kind: 'waiting', text: 'Waiting for sections 2 and 3' }
-            : pd && pf ? { kind: 'done', text: `Generated ${day(nzYmd(pd.at < pf.at ? pf.at : pd.at))}` }
-            : g4.length ? needs(new Set(g4).size) : { kind: 'open', text: 'Ready to generate' };
-        // 5 · JPS's proforma invoice
-        const f5 = failing(v.jpsChecks);
-        s[5] = !r.confirmed ? { kind: 'waiting', text: 'Waiting for section 2' }
-            : r.jpsConfirmed ? { kind: 'done', text: `Confirmed ${day(nzYmd(r.jpsConfirmed.at))}`, tip: lockTip(r.jpsConfirmed.at, r.jpsConfirmed.by, 'The JPS bill and the signed copy use these figures.') }
+        const t2 = [...new Set([...todo('packingDraft'), ...todo('proforma')])];
+        s[2] = !r.confirmed ? { kind: 'waiting', text: 'Waiting for step 1' }
+            : !eiConfirmed(ei) ? { kind: 'open', text: 'Not confirmed' }
+            : pd && pf ? { kind: 'done', text: `Generated ${day(nzYmd(pd.at < pf.at ? pf.at : pd.at))}`, tip: ei.confirmedAt ? lockTip(ei.confirmedAt, ei.confirmedBy, '') : '' }
+            : t2.length ? needs(t2.length) : { kind: 'open', text: 'Ready to generate' };
+        // 3 · JPS's proforma invoice → the signed copy
+        const f3 = failing(v.jpsChecks), signed = latestOut(r, 'jps', 'contract'), t3 = todo('jpsContract');
+        s[3] = !r.confirmed ? { kind: 'waiting', text: 'Waiting for step 1' }
             : !r.jps ? { kind: 'open', text: 'To do' }
-            : f5.length ? needs(f5.length) : { kind: 'open', text: 'Ready to confirm' };
-        // 6 · Xero
+            : !r.jpsConfirmed ? (f3.length ? needs(f3.length) : { kind: 'open', text: 'Ready to confirm' })
+            : signed ? { kind: 'done', text: `Signed copy ${day(nzYmd(signed.at))}`, tip: lockTip(r.jpsConfirmed.at, r.jpsConfirmed.by, 'The JPS bill and the signed copy use these figures.') }
+            : t3.length ? needs(t3.length) : { kind: 'open', text: 'Signed copy to generate' };
+        // 4 · Xero
         const docs = v.xero?.docs || [], errs = v.xero?.errors || {};
         const inX = docs.filter(d => d.inXero).length;
-        s[6] = inX === docs.length && docs.length ? { kind: 'done', text: 'All three in Xero' }
+        s[4] = inX === docs.length && docs.length ? { kind: 'done', text: 'All three in Xero' }
             : docs.some(d => !d.inXero && errs[d.key]) || errs.refresh ? { kind: 'attention', text: 'Last attempt failed' }
             : docs.some(d => d.inXero && d.changedSincePush) ? { kind: 'attention', text: 'Changed since sent' }
             : { kind: docs.every(d => d.issues.length) ? 'waiting' : 'open', text: `${inX} of ${docs.length} in Xero` };
-        // 7 · Final
+        // 5 · LC details and final packing list
         const fin = latestOut(r, 'packing', 'final');
-        s[7] = fin ? { kind: 'done', text: `Generated ${day(nzYmd(fin.at))}` }
-            : !r.confirmed ? { kind: 'waiting', text: 'Waiting for section 2' }
+        s[5] = fin ? { kind: 'done', text: `Generated ${day(nzYmd(fin.at))}` }
+            : !r.confirmed ? { kind: 'waiting', text: 'Waiting for step 1' }
+            : todo('packingFinal').length ? needs(todo('packingFinal').length)
             : (g.packingFinal || []).length ? { kind: 'waiting', text: 'Waiting for the LC', tip: (g.packingFinal || []).join(' · ') } : { kind: 'open', text: 'Ready to generate' };
         // Cost breakdown
         const ch = (v.costPlan?.changes || []).length;
-        s.cost = !r.confirmed ? { kind: 'waiting', text: 'Waiting for section 2' }
+        s.cost = !r.confirmed ? { kind: 'waiting', text: 'Waiting for step 1' }
             : ch ? { kind: 'attention', text: `${ch} change${ch === 1 ? '' : 's'} to apply` } : { kind: 'done', text: 'Matches' };
         return s;
     }
@@ -301,7 +295,7 @@ const ShipDocs = (() => {
         const v = st.view;
         return {
             n: 1, title: "Pistoni's documents", stat: sectionStatus(st)[1],
-            info: "Pistoni's packing list and proforma invoice, read by AI. You check the figures in section 2.",
+            info: "Pistoni's packing list and proforma invoice, read by AI.",
             body: `<div class="sd-uploads">
                 ${uploadCardHtml(v, 'packingList', "Pistoni's packing list", 'The PACKING LIST TOECLIPS sheet with the WHITE and COLORED tables')}
                 ${uploadCardHtml(v, 'proforma', "Pistoni's proforma invoice", "Pistoni's proforma addressed to Enviroware")}</div>`,
@@ -485,7 +479,7 @@ const ShipDocs = (() => {
         };
     }
 
-    // Below section 2: the shipment's own weights, if they differ.
+    // Below step 1's figures: the shipment's own weights, if they differ.
     function confirmHtml(st) {
         const v = st.view, c = v.record.confirmed, t = v.reviewTotals, s = v.shipment;
         const weightsDiffer = st.opts.applyShipPatch && t.count && (Math.round(s.whiteRawKg) !== Math.round(t.whiteKg) || Math.round(s.colourRawKg) !== Math.round(t.colouredKg));
@@ -573,7 +567,7 @@ const ShipDocs = (() => {
     function jpsParts(st) {
         const v = st.view, j = st.jps, r = v.record;
         const head = {
-            n: 5, title: "JPS's proforma invoice", stat: sectionStatus(st)[5],
+            n: 3, title: "JPS's proforma invoice", stat: sectionStatus(st)[3],
             info: "JPS's invoice to us: our proforma amount (the LC deposit) plus JPS's handling & sorting. Paying it is what gets JPS to open the LC.",
         };
         if (!r.confirmed) return head;
@@ -665,7 +659,7 @@ const ShipDocs = (() => {
         const statusWord = (XERO_WORDS[v.xero?.status] || 'Draft').toLowerCase();
         const ccyNote = v.xero?.currencyMode === 'foreign' ? 'in their own currency' : "in NZD at the day's exchange rate (each line keeps the EUR / USD amount and rate)";
         return {
-            n: 6, title: 'Invoices in Xero', stat: sectionStatus(st)[6],
+            n: 4, title: 'Invoices in Xero', stat: sectionStatus(st)[4],
             info: `Created as ${statusWord}, ${ccyNote}, only when you click. Approve and pay them in Xero; Refresh reads back what was paid in NZD.`,
             meta: any && v.xero.refreshedAt ? `<span class="sd-muted"${tipAttr('Last read back from Xero')}>Checked ${esc(day(nzYmd(v.xero.refreshedAt)))}</span>` : '',
             actions: any ? '<button class="btn-secondary btn-sm" data-act="xero-refresh">Refresh from Xero</button>' : '',
@@ -703,7 +697,7 @@ const ShipDocs = (() => {
     function finalParts(st) {
         const v = st.view, lc = v.record.lc || {}, g = v.generation, L = v.linkedLc;
         const head = {
-            n: 7, title: 'LC details and final packing list', stat: sectionStatus(st)[7],
+            n: 5, title: 'LC details and final packing list', stat: sectionStatus(st)[5],
             info: "Once JPS has opened the LC: its number, date of issue and the gross weight, checked against the LC on the Letter of Credit tab. Then the final packing list.",
         };
         if (!v.record.confirmed) return head;
@@ -742,7 +736,22 @@ const ShipDocs = (() => {
         };
     }
 
-    const SECS = { rc: rcParts, 1: uploadsParts, 2: reviewParts, 3: invoiceParts, 4: docsParts, 5: jpsParts, 6: xeroParts, cost: costParts, 7: finalParts, hist: histParts };
+    function pistoniParts(st) {
+        const u = uploadsParts(st), r = reviewParts(st);
+        return { ...r, n: 1, title: "Pistoni's documents", stat: sectionStatus(st)[1],
+            info: "A · Pistoni's packing list and proforma invoice, read by AI. B · Check the bales and figures against the PDFs and confirm them — the documents use the confirmed figures. Figures read from a PDF show as text; ✎ corrects one.",
+            body: `<h4 class="sd-sub">A · Pistoni's PDFs</h4>${u.body}<h4 class="sd-sub">B · Bales and figures</h4>${r.body}` };
+    }
+    function proformaParts(st) {
+        const i = invoiceParts(st), d = docsParts(st);
+        return { n: 2, title: 'Our proforma invoice to JPS', stat: sectionStatus(st)[2],
+            info: 'A · Number, date and rate — the LC amount is net kg × rate; confirming it is needed before the documents and Xero. B · The draft packing list and our proforma for Paul: generating keeps a fixed copy of each to download and send; nothing is emailed or put in Drive.',
+            actions: [i.actions, d.actions].filter(Boolean).join(''),
+            always: d.always || '', bodyFirst: true,
+            body: i.body ? `<h4 class="sd-sub">A · Number, date and rate</h4>${i.body}${d.always ? '<h4 class="sd-sub">B · Draft documents for Paul</h4>' : ''}` : '' };
+    }
+
+    const SECS = { rc: rcParts, 1: pistoniParts, 2: proformaParts, 3: jpsParts, 4: xeroParts, cost: costParts, 5: finalParts, hist: histParts };
 
     // ── Behaviour ────────────────────────────────────────────────────────
     function wire(st) {
@@ -830,8 +839,8 @@ const ShipDocs = (() => {
     // After a save: headers (status, checks, buttons), the figures panel and
     // the sections without inputs are redrawn; inputs being typed in are not.
     function refreshStatus(st) {
-        for (const k of ['2', '3', '5', '7', 'cost']) refreshHd(st, k);
-        for (const k of ['rc', '4', '6']) redrawSec(st, k);
+        for (const k of ['1', '3', '5', 'cost']) refreshHd(st, k);
+        for (const k of ['rc', '2', '4']) redrawSec(st, k);
         glowStages(st);
     }
 
@@ -943,18 +952,18 @@ const ShipDocs = (() => {
                 { description: '', colour: 'white', kg: null, unitPrice: null, amount: null },
                 { description: '', colour: 'coloured', kg: null, unitPrice: null, amount: null },
             ], netKg: null, total: null };
-            redrawSec(st, '2');
+            redrawSec(st, '1');
             return scheduleSave(st, 0);
         }
-        if (a === 'add-line') { r.supplierInvoice.lines.push({ description: '', colour: '', kg: null, unitPrice: null, amount: null }); redrawSec(st, '2'); return scheduleSave(st, 0); }
-        if (a === 'del-line') { r.supplierInvoice.lines.splice(Number(btn.dataset.i), 1); redrawSec(st, '2'); return scheduleSave(st, 0); }
+        if (a === 'add-line') { r.supplierInvoice.lines.push({ description: '', colour: '', kg: null, unitPrice: null, amount: null }); redrawSec(st, '1'); return scheduleSave(st, 0); }
+        if (a === 'del-line') { r.supplierInvoice.lines.splice(Number(btn.dataset.i), 1); redrawSec(st, '1'); return scheduleSave(st, 0); }
         if (a === 'manual-jps') {
             st.jps = { number: '', date: '', currency: st.view.record.exportInvoice?.currency || 'USD', lines: [], netKg: null, total: null, contract: { lastShipmentDate: '', expiryDate: '', containers: '' } };
-            redrawSec(st, '5');
+            redrawSec(st, '3');
             return saveJps(st);
         }
-        if (a === 'jps-add-line') { st.jps.lines = [...(st.jps.lines || []), { description: '', kg: null, unitPrice: null, amount: null }]; redrawSec(st, '5'); return saveJps(st); }
-        if (a === 'jps-del-line') { st.jps.lines.splice(Number(btn.dataset.i), 1); redrawSec(st, '5'); return saveJps(st); }
+        if (a === 'jps-add-line') { st.jps.lines = [...(st.jps.lines || []), { description: '', kg: null, unitPrice: null, amount: null }]; redrawSec(st, '3'); return saveJps(st); }
+        if (a === 'jps-del-line') { st.jps.lines.splice(Number(btn.dataset.i), 1); redrawSec(st, '3'); return saveJps(st); }
         if (a === 'xero-push') {
             const d = st.view.xero.docs.find(x => x.key === btn.dataset.doc);
             const word = (XERO_WORDS[st.view.xero.status] || 'Draft').toLowerCase();
@@ -1007,32 +1016,32 @@ const ShipDocs = (() => {
             const [store, ...rest] = btn.dataset.field.split(':');
             const path = rest.join(':');
             st.editing.add(btn.dataset.field);
-            st.open.add(store === 'jps' ? '5' : '2');
-            redrawSec(st, store === 'jps' ? '5' : '2');
+            st.open.add(store === 'jps' ? '3' : '1');
+            redrawSec(st, store === 'jps' ? '3' : '1');
             const inp = st.panel.querySelector(`[data-${store === 'jps' ? 'jps' : 'path'}="${CSS.escape(path)}"]`);
             if (inp) { inp.focus(); inp.select?.(); }
             return;
         }
         if (a === 'unlock-bales') {
-            if (!confirm("Unlock section 2 to edit the bales and Pistoni's figures?\n\nThe confirmation is cleared: documents and Xero wait until you confirm again. Copies already generated and invoices already in Xero are not changed.")) return;
-            st.open.add('2');
-            return redrawWith(st, send(`${base(st.ship.id)}/confirm`, 'POST', { unlock: true }), 'Section 2 unlocked');
+            if (!confirm("Unlock step 1 to edit the bales and Pistoni's figures?\n\nThe confirmation is cleared: documents and Xero wait until you confirm again. Copies already generated and invoices already in Xero are not changed.")) return;
+            st.open.add('1');
+            return redrawWith(st, send(`${base(st.ship.id)}/confirm`, 'POST', { unlock: true }), 'Step 1 unlocked');
         }
         if (a === 'confirm-ei') {
             await saveInvoice(st, { numberConfirmed: true, rateConfirmed: true });
-            if (eiConfirmed(st.view.record.exportInvoice)) { openNext(st, '3'); draw(st); }
+            if (eiConfirmed(st.view.record.exportInvoice)) { openNext(st, '2'); draw(st); }
             return;
         }
         if (a === 'unlock-ei') {
             if (!confirm('Unlock our proforma invoice to edit it?\n\nIts confirmation is cleared until you confirm it again.')) return;
-            st.open.add('3');
+            st.open.add('2');
             return saveInvoice(st, { numberConfirmed: false, rateConfirmed: false });
         }
         if (a === 'use-suggested') return saveInvoice(st, { number: st.view.defaults.number });
-        if (a === 'confirm-jps') return redrawWith(st, send(base(st.ship.id), 'PATCH', { jpsConfirm: true }), "JPS's proforma invoice confirmed", () => openNext(st, '5'));
+        if (a === 'confirm-jps') return redrawWith(st, send(base(st.ship.id), 'PATCH', { jpsConfirm: true }), "JPS's proforma invoice confirmed", () => openNext(st, '3'));
         if (a === 'unlock-jps') {
             if (!confirm("Unlock JPS's proforma invoice to edit it?\n\nIts confirmation is cleared: the JPS bill and the signed copy wait until you confirm it again.")) return;
-            st.open.add('5');
+            st.open.add('3');
             return redrawWith(st, send(base(st.ship.id), 'PATCH', { jpsConfirm: false }), "JPS's proforma invoice unlocked");
         }
         if (a === 'toggle-passed') {
@@ -1128,7 +1137,7 @@ const ShipDocs = (() => {
         try {
             const view = await send(`${base(st.ship.id)}/confirm`, 'POST', {});
             setView(st, view);
-            openNext(st, '2');
+            openNext(st, '1');
             if (apply) await applyWeights(st, { whiteKg: view.weights.whiteRawKg, colouredKg: view.weights.colourRawKg }, true);
             else draw(st);
             toast(`Confirmed ${view.confirmedTotals.count} bales, ${fmtKg(view.confirmedTotals.netKg)} kg`);

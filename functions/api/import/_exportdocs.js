@@ -649,7 +649,7 @@ export function generationIssues({ record, settings, doc, stage = 'draft', shipm
     if (doc === 'proforma') {
         if (!parseInvoiceNumber(ei.number)) out.push('Invoice number must look like 102/2026');
         if (!(Number(ei.rate) > 0)) out.push('Export rate missing');
-        if (!ei.rateConfirmed || !ei.numberConfirmed) out.push('Confirm our proforma invoice in section 3');
+        if (!ei.rateConfirmed || !ei.numberConfirmed) out.push('Confirm our proforma invoice in step 2');
         const dup = otherInvoiceNumbers.find(o => String(o.number || '').replace(/\s/g, '') === String(ei.number || '').replace(/\s/g, ''));
         if (dup) out.push(`Invoice ${ei.number} is already used on Shipment #${dup.shipmentNumber}`);
     }
@@ -660,7 +660,7 @@ export function generationIssues({ record, settings, doc, stage = 'draft', shipm
         if (!isYmd(j.date)) out.push('JPS invoice date missing');
         if (!(j.lines || []).some(l => Number(l.kg) > 0 && Number(l.unitPrice) > 0 && Number(l.amount) > 0)) out.push('JPS invoice lines need kg, unit price and amount');
         if (jpsFailures.length) out.push(`JPS invoice fails: ${jpsFailures.join('; ')}`);
-        else if (!r.jpsConfirmed) out.push("Confirm JPS's proforma invoice in section 5");
+        else if (!r.jpsConfirmed) out.push("Confirm JPS's proforma invoice in step 3");
         if (!hasSignature) out.push('Upload your signature in Document settings → Enviroware');
     }
     if (doc === 'packing' && stage === 'final') {

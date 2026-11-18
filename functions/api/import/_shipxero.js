@@ -334,7 +334,7 @@ export function xeroDocs({ record, settings, shipmentNumber, confirmedOk = true,
                     AccountCode: acc.exportSale || '', TaxType: tax.exportSale || 'ZERORATED',
                 }],
             });
-            if (!ei.numberConfirmed || !ei.rateConfirmed) d.issues.push('Confirm our proforma invoice in section 3');
+            if (!ei.numberConfirmed || !ei.rateConfirmed) d.issues.push('Confirm our proforma invoice in step 2');
         }
         if (!acc.exportSale) d.issues.push('Set the export sale account in Document settings → Xero');
         if (!d.contactName) d.issues.push('Set the JPS contact in Document settings → Xero');
@@ -350,7 +350,7 @@ export function xeroDocs({ record, settings, shipmentNumber, confirmedOk = true,
         if (!r.jps) d.issues.push('Upload or enter the JPS invoice');
         else if (!sp) d.issues.push('JPS invoice total missing');
         else if (!jpsOk) d.issues.push('JPS invoice fails a check');
-        else if (!r.jpsConfirmed) d.issues.push("Confirm JPS's proforma invoice in section 5");
+        else if (!r.jpsConfirmed) d.issues.push("Confirm JPS's proforma invoice in step 3");
         if (sp) {
             Object.assign(d, {
                 currency: sp.currency, date: r.jps.date, number: r.jps.number, total: sp.total,

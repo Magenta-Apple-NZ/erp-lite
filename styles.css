@@ -7460,6 +7460,10 @@ a.db-row:hover { background: #f8fafc; border-color: #e2e8f0; }
 /* One clean row per section; details open below (▸). */
 .sd-sec { padding-top: 0.8rem; padding-bottom: 0.8rem; transition: box-shadow 0.2s, border-color 0.2s; }
 .sd-sec--done { border-color: #bbf7d0; box-shadow: 0 0 0 1px #dcfce7, 0 0 14px rgba(34, 197, 94, 0.14); }
+.sd-sub { margin: 0.9rem 0 0.5rem; font-size: 0.72rem; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: #64748b; }
+.sd-sec-body > .sd-sub:first-child { margin-top: 0; }
+.sd-step--current { color: #9a3412; font-weight: 600; }
+.sd-step--current .sd-step-n { background: #ffedd5; color: #9a3412; box-shadow: 0 0 0 1px #fdba74; }
 .sd-sec--current { border-color: #fdba74; box-shadow: 0 0 0 1px #ffedd5, 0 0 18px rgba(249, 115, 22, 0.18); }
 .sd-sec-hd { display: flex; align-items: center; gap: 0.55rem; flex-wrap: wrap; min-height: 2rem; }
 .sd-sec-toggle { display: inline-flex; align-items: center; gap: 0.4rem; border: 0; background: none; padding: 0.15rem 0; cursor: pointer; color: #475569; font: inherit; }

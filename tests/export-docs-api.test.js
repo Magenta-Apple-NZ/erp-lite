@@ -227,7 +227,7 @@ test('generation: the proforma waits for the rate/number ticks; then frozen copi
 
     const early = await call(renderApi.onRequestPost, 'POST', '/g', { docs: [{ doc: 'packing', stage: 'draft' }, { doc: 'proforma' }] });
     assert.equal(early.status, 422);
-    assert.match(early.body.error, /Confirm our proforma invoice in section 3/);
+    assert.match(early.body.error, /Confirm our proforma invoice in step 2/);
     assert.doesNotMatch(early.body.error, /Draft packing list/, 'the packing list is ready from the seeded settings');
 
     await fillSettings();
@@ -259,7 +259,7 @@ test('generation: the proforma waits for the rate/number ticks; then frozen copi
     assert.match(again, /USD 21,393\.40/);
 
     const live = await renderApi.onRequestGet({ env, params: { id: SHIP }, request: req('GET', '/r?doc=proforma') });
-    assert.match(await live.text(), /Preview only — not ready to issue: Confirm our proforma invoice in section 3/);
+    assert.match(await live.text(), /Preview only — not ready to issue: Confirm our proforma invoice in step 2/);
 
     const x = await xlsxApi.onRequestGet({ env, params: { id: SHIP }, request: req('GET', '/x') });
     assert.equal(x.status, 200);
