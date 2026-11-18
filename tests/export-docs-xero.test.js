@@ -68,6 +68,7 @@ beforeEach(() => {
                 const term = decodeURIComponent(path.split('=')[1]);
                 return json({ Contacts: /jps/i.test(term) ? [{ ContactID: 'c-jps', Name: 'JPS Enterprise', ContactStatus: 'ACTIVE' }] : [] });
             }
+            if (path.startsWith('TaxRates')) return json({ TaxRates: [{ TaxType: 'ZERORATED', Name: 'Zero Rated' }, { TaxType: 'NONE', Name: 'No GST' }, { TaxType: 'OUTPUT2', Name: 'GST on Income' }, { TaxType: 'INPUT2', Name: 'GST on Expenses' }] });
             if (path === 'Contacts' && init.method === 'POST') return json({ Contacts: [{ ContactID: 'c-' + body.Contacts[0].Name.split(' ')[0].toLowerCase(), Name: body.Contacts[0].Name }] });
             if (path.startsWith('Invoices?') && init.method === 'POST') {
                 if (xeroRefuse) return xeroRefuse.raw ? new Response(xeroRefuse.raw, { status: xeroRefuse.status }) : json(xeroRefuse.body, xeroRefuse.status);
@@ -131,7 +132,7 @@ test('three invoices created in Xero as drafts with the right lines; no duplicat
     assert.ok(posts.every(p => p.path === 'Invoices?unitdp=4'));
     const [bill, sale, jps] = posts.map(p => p.body.Invoices[0]);
     assert.deepEqual([bill.Type, bill.Status, bill.Contact.ContactID, bill.CurrencyCode, bill.InvoiceNumber, bill.Date], ['ACCPAY', 'DRAFT', 'c-pistoni', 'EUR', '23', '2026-11-12']);
-    assert.deepEqual([sale.Type, sale.Contact.ContactID, sale.CurrencyCode, sale.InvoiceNumber, sale.LineItems[0].TaxType], ['ACCREC', 'c-jps', 'USD', '102/2026', 'ZERORATEDOUTPUT']);
+    assert.deepEqual([sale.Type, sale.Contact.ContactID, sale.CurrencyCode, sale.InvoiceNumber, sale.LineItems[0].TaxType], ['ACCREC', 'c-jps', 'USD', '102/2026', 'ZERORATED']);
     assert.deepEqual(jps.LineItems.map(l => [l.Quantity, l.UnitAmount, l.AccountCode]), [[18130, 1.18, '820'], [1, 11421.9, '631']]);
     assert.ok(xeroCalls.some(c => c.path === 'Contacts' && c.method === 'POST' && c.body.Contacts[0].Name === 'Pistoni SRL'), 'missing supplier contact is created');
     assert.ok(!xeroCalls.some(c => c.path === 'Contacts' && c.method === 'POST' && /JPS/.test(c.body.Contacts[0].Name)), 'existing JPS contact is reused');
@@ -314,4 +315,26 @@ test('reconciliation: the three proformas side by side, differences worked out',
         ['packing', 18130, null, null], ['supplier', 18130, 'EUR', 17262.75], ['ours', 18130, 'USD', 21393.4], ['jps', 18130, 'USD', 32815.3]]);
     assert.deepEqual(rc.diffs.map(d => [d.id, d.status]), [['kg', 'ok'], ['margin', 'ok'], ['dates', 'ok']]);
     assert.equal(rc.diffs[1].text, "JPS's is USD 11,421.90 more than ours = USD 0.63/kg handling & sorting (usual 0.63/kg)");
+});
+
+test("a tax code this Xero doesn't have stops before anything is sent, with the real ones listed", async () => {
+    await stageOne();
+    const st = (await call(settingsApi.onRequestGet, 'GET')).body.settings;
+    st.xero.taxTypes.exportSale = 'ZERORATEDOUTPUT_X';
+    await call(settingsApi.onRequestPut, 'PUT', { settings: st });
+    const r = await call(xeroApi.onRequestPost, 'POST', { doc: 'salesInvoice' });
+    assert.equal(r.status, 422);
+    assert.equal(r.body.xeroError.summary, 'Xero has no tax rate ZERORATEDOUTPUT_X — choose one in Document settings → Xero');
+    assert.match(r.body.xeroError.message, /Its rates: Zero Rated \(ZERORATED\), No GST \(NONE\)/);
+    assert.equal(r.body.xeroError.step, 'tax');
+    assert.ok(!xeroCalls.some(c => c.method === 'POST' && c.path.startsWith('Invoices')), 'nothing was sent to Xero');
+});
+
+test('a Xero refusal reads as one plain sentence; the full reply stays in the details', async () => {
+    await stageOne();
+    xeroRefuse = { status: 400, body: { Elements: [{ ValidationErrors: [{ Message: 'The TaxType code ZERORATEDOUTPUT does not exist or cannot be used for this type of transaction.' }] }] } };
+    const r = await call(xeroApi.onRequestPost, 'POST', { doc: 'salesInvoice' });
+    xeroRefuse = null;
+    assert.equal(r.body.xeroError.summary, "Xero doesn't accept the tax rate ZERORATEDOUTPUT — choose another in Document settings → Xero");
+    assert.match(r.body.xeroError.message, /^Xero 400: The TaxType code ZERORATEDOUTPUT/);
 });

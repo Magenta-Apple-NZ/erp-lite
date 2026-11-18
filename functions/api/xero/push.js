@@ -171,7 +171,8 @@ export async function onRequestPost({ env, request }) {
                     Quantity: l.quantity,
                     UnitAmount: l.unitPrice,
                 };
-                if (isExport) item.TaxType = 'ZERORATEDOUTPUT';
+                // New Zealand's zero-rated code (ZERORATEDOUTPUT is the UK one; NZ Xero refuses it).
+                if (isExport) item.TaxType = 'ZERORATED';
                 if (l.sku) {
                     item.ItemCode = l.sku;
                 } else if (l.accountCode) {

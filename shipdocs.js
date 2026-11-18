@@ -579,7 +579,7 @@ const ShipDocs = (() => {
 
     // ── Xero ─────────────────────────────────────────────────────────────
     const XERO_WORDS = { DRAFT: 'Draft', SUBMITTED: 'Awaiting approval', AUTHORISED: 'Awaiting payment', PAID: 'Paid', VOIDED: 'Voided', DELETED: 'Deleted' };
-    const XERO_STEPS = { check: 'checking the invoice', rate: 'getting the exchange rate', auth: 'signing in to Xero', contact: 'finding the contact', create: 'creating the invoice', refresh: 'reading back from Xero' };
+    const XERO_STEPS = { check: 'checking the invoice', rate: 'getting the exchange rate', tax: 'checking the tax rates', auth: 'signing in to Xero', contact: 'finding the contact', create: 'creating the invoice', refresh: 'reading back from Xero' };
 
     // The last failed attempt, kept on the shipment until one succeeds: what
     // Xero said, what was sent, and how far it got.
@@ -1072,6 +1072,7 @@ const ShipDocs = (() => {
         const overlay = document.createElement('div');
         overlay.className = 'modal-overlay';
         const inp = (label, path, val, attrs = '') => `<label class="sd-field"><span class="imp-field-label">${esc(label)}</span><input class="sd-input" data-s="${path}" value="${esc(val ?? '')}" ${attrs}></label>`;
+        const taxSel = (label, path, val, opts) => `<label class="sd-field"><span class="imp-field-label">${esc(label)}</span><select class="sd-input" data-s="${path}">${opts.map(([v, l]) => `<option value="${v}" ${val === v ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select></label>`;
         const ta = (label, path, arr, rows = 3) => `<label class="sd-field"><span class="imp-field-label">${esc(label)}</span><textarea class="sd-input" data-s="${path}" data-lines rows="${rows}">${esc((arr || []).join('\n'))}</textarea></label>`;
         const image = n => `<div class="sd-image" data-asset="${n}"><span class="imp-field-label">${n === 'seal' ? 'Official seal' : 'Signature'}</span>
             <div class="sd-image-prev">${data.assets[n] ? `<img src="/api/import/export-docs/settings/${n}?v=${Date.now()}" alt="">` : '<span class="sd-muted">None</span>'}</div>
@@ -1108,7 +1109,9 @@ const ShipDocs = (() => {
                     ${[['DRAFT', 'Draft'], ['SUBMITTED', 'Awaiting approval'], ['AUTHORISED', 'Awaiting payment']].map(([v, l]) => `<option value="${v}" ${s.xero.status === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label></div>
                 <h4 class="sd-h4">Account codes <span class="sd-muted">your accountant's choice — nothing goes to Xero until they're set</span></h4>
                 <div class="sd-grid4">${inp('Raw product (Pistoni bill)', 'xero.accounts.rawProduct', s.xero.accounts.rawProduct)}${inp('LC deposit (JPS bill)', 'xero.accounts.lcDeposit', s.xero.accounts.lcDeposit)}
-                    ${inp('Handling & sorting (JPS bill)', 'xero.accounts.handling', s.xero.accounts.handling)}${inp('Export sale (our proforma)', 'xero.accounts.exportSale', s.xero.accounts.exportSale)}</div>`,
+                    ${inp('Handling & sorting (JPS bill)', 'xero.accounts.handling', s.xero.accounts.handling)}${inp('Export sale (our proforma)', 'xero.accounts.exportSale', s.xero.accounts.exportSale)}</div>
+                <div class="sd-grid4">${taxSel('Tax rate on our proforma', 'xero.taxTypes.exportSale', s.xero.taxTypes?.exportSale || 'ZERORATED', [['ZERORATED', 'Zero Rated'], ['NONE', 'No GST'], ['OUTPUT2', 'GST on Income (15%)']])}
+                    ${taxSel('Tax rate on the bills', 'xero.taxTypes.purchases', s.xero.taxTypes?.purchases || 'NONE', [['NONE', 'No GST'], ['GSTONIMPORTS', 'GST on Imports'], ['INPUT2', 'GST on Expenses (15%)']])}</div>`,
         };
         const first = SETTINGS_TABS.find(([k]) => gaps[k].length)?.[0] || 'enviroware';
         overlay.innerHTML = `<div class="modal-box sd-settings">

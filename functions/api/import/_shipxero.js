@@ -331,7 +331,7 @@ export function xeroDocs({ record, settings, shipmentNumber, confirmedOk = true,
                 lines: [{
                     Description: `${fmtKg(t.netKg)}kg toeclip (knitted nylon stocking material), ${t.count} bales — ${ship}`,
                     Quantity: t.netKg, UnitAmount: Number(ei.rate) || 0,
-                    AccountCode: acc.exportSale || '', TaxType: tax.exportSale || 'ZERORATEDOUTPUT',
+                    AccountCode: acc.exportSale || '', TaxType: tax.exportSale || 'ZERORATED',
                 }],
             });
             if (!ei.numberConfirmed || !ei.rateConfirmed) d.issues.push('Confirm our proforma invoice in section 3');

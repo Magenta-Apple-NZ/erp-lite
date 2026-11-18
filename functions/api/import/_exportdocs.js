@@ -135,7 +135,8 @@ export const SETTINGS_SEED = {
         // has no multi-currency). 'foreign': in their own currency.
         currencyMode: 'nzd',
         accounts: { rawProduct: '', lcDeposit: '', handling: '', exportSale: '' },
-        taxTypes: { purchases: 'NONE', exportSale: 'ZERORATEDOUTPUT' },
+        // New Zealand tax rate codes: ZERORATED = Zero Rated, NONE = No GST.
+        taxTypes: { purchases: 'NONE', exportSale: 'ZERORATED' },
     },
 };
 
@@ -155,6 +156,11 @@ export function mergeSettings(saved) {
     if (!isObj(saved)) return out;
     saved = { ...saved };
     for (const k of CODE_OWNED) delete saved[k];
+    // Until 18 Nov 2026 the seed had the UK code ZERORATEDOUTPUT, which a New
+    // Zealand Xero refuses; its zero-rated code is ZERORATED.
+    if (isObj(saved.xero) && isObj(saved.xero.taxTypes) && saved.xero.taxTypes.exportSale === 'ZERORATEDOUTPUT') {
+        saved.xero = { ...saved.xero, taxTypes: { ...saved.xero.taxTypes, exportSale: 'ZERORATED' } };
+    }
     if (isObj(saved.identifiers) && String(saved.identifiers.bankBin || '').trim() === OLD_BANK_BIN && !saved.identifiers.bankVatReg) {
         saved.identifiers = { ...saved.identifiers, bankBin: '', bankVatReg: OLD_BANK_BIN };
     }

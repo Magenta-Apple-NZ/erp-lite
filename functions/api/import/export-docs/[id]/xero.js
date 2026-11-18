@@ -23,7 +23,38 @@ import { nzToday } from '../../../_dates.js';
 
 const API = 'https://api.xero.com/api.xro/2.0/';
 const STATUS_WORDS = { DRAFT: 'draft', SUBMITTED: 'awaiting approval', AUTHORISED: 'awaiting payment', PAID: 'paid', VOIDED: 'voided', DELETED: 'deleted' };
-const STEP_WORDS = { check: 'checking the invoice', rate: 'getting the exchange rate', auth: 'signing in to Xero', contact: 'finding the contact', create: 'creating the invoice', refresh: 'reading back from Xero' };
+const STEP_WORDS = { check: 'checking the invoice', rate: 'getting the exchange rate', auth: 'signing in to Xero', contact: 'finding the contact', tax: 'checking the tax rates', create: 'creating the invoice', refresh: 'reading back from Xero' };
+const TAX_KEY = 'tax_rates_cache';
+
+// One plain sentence for a refusal; Xero's own words stay in the details.
+export function plainXero(e) {
+    const d = (e.details || []).join(' ') + ' ' + (e.message || '');
+    let m;
+    if ((m = d.match(/TaxType code '?([A-Z0-9]+)'?/))) return `Xero doesn't accept the tax rate ${m[1]} — choose another in Document settings → Xero`;
+    if ((m = d.match(/not subscribed to currency (\w+)/))) return `This Xero isn't set up for ${m[1]} — set Document settings → Xero → Currency to NZD`;
+    if ((m = d.match(/Account code '?(\w+)'? (?:is not|cannot|does not)/i))) return `Xero doesn't accept account ${m[1]} here — check the account codes in Document settings → Xero`;
+    if (/already (?:been )?used|must be unique/i.test(d)) return 'Xero already has an invoice with this number';
+    if (e.status === 0) return "Couldn't reach Xero — try again";
+    if (e.status === 429) return 'Xero is limiting requests — try again in a minute';
+    if (e.status >= 500) return 'Xero had a problem — try again';
+    return (e.details || [])[0] || e.message;
+}
+
+// The organisation's active tax rates (cached an hour), or null when they
+// can't be read (an older connection without accounting.settings.read):
+// then the invoice simply goes to Xero, which checks it itself.
+async function activeTaxRates(env, token) {
+    const cached = await env.XERO_KV.get(TAX_KEY, { type: 'json' }).catch(() => null);
+    if (Array.isArray(cached)) return cached;
+    try {
+        const data = await xeroFetch(token, 'TaxRates?where=' + encodeURIComponent('Status=="ACTIVE"'));
+        const list = (data.TaxRates || []).map(t => ({ code: t.TaxType, name: t.Name }));
+        if (list.length) await env.XERO_KV.put(TAX_KEY, JSON.stringify(list), { expirationTtl: 3600 });
+        return list.length ? list : null;
+    } catch {
+        return null;
+    }
+}
 
 class XeroRefused extends Error {}
 
@@ -97,6 +128,7 @@ async function fail(env, shipmentId, key, e, who, ctx) {
     const message = auth ? `${e.message.replace(/\s*—\s*reconnect Xero at \/api\/xero\/auth$/, '')} — reconnect Xero in Settings → Integrations` : (e.message || String(e));
     const entry = {
         at: new Date().toISOString(), by: who, step: auth ? 'auth' : ctx.step, message,
+        summary: auth || ctx.issues ? message : e.summary || (e instanceof XeroRefused ? plainXero(e) : message),
         details: e.details || ctx.issues || [], xeroStatus: e.status ?? null, request: e.request || null,
         response: e.response || null, sent: ctx.sent || null,
     };
@@ -111,7 +143,7 @@ async function fail(env, shipmentId, key, e, who, ctx) {
     } catch (logErr) {
         console.error('shipdocs: could not record the Xero failure', logErr);
     }
-    const status = auth ? 401 : ctx.issues ? 422 : e instanceof XeroRefused ? 502 : 500;
+    const status = auth ? 401 : ctx.issues || e.local ? 422 : e instanceof XeroRefused ? 502 : 500;
     return jsonResponse({ error: message, xeroError: entry, ...(ctx.issues && { issues: ctx.issues }) }, status);
 }
 
@@ -151,6 +183,20 @@ export async function onRequestPost({ env, params, request }) {
         ctx.step = 'contact';
         const contactId = await findOrCreateContact(token, d.contactName);
         const payload = xeroPayload(doc, contactId, settings.xero?.status);
+        // The tax codes must be rates this Xero has — checked here, so a wrong
+        // code stops with the list of real ones instead of a Xero refusal.
+        ctx.step = 'tax';
+        const rates = await activeTaxRates(env, token);
+        if (rates) {
+            const known = new Set(rates.map(r => r.code));
+            const bad = [...new Set(payload.LineItems.map(l => l.TaxType).filter(t => t && !known.has(t)))];
+            if (bad.length) {
+                const e = new Error(`Xero has no active tax rate ${bad.join(', ')}. Its rates: ${rates.map(r => `${r.name} (${r.code})`).join(', ')}.`);
+                e.summary = `Xero has no tax rate ${bad.join(', ')} — choose one in Document settings → Xero`;
+                e.local = true;
+                throw e;
+            }
+        }
         ctx.sent = xeroSentSummary(payload, d.contactName);
         ctx.step = 'create';
         const data = await xeroFetch(token, 'Invoices?unitdp=4', { method: 'POST', body: JSON.stringify({ Invoices: [payload] }) });

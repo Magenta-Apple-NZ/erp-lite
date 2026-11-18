@@ -91,7 +91,7 @@ test('three Xero documents with the right type, contact, currency and totals', (
     ]);
     for (const d of docs) assert.deepEqual(d.issues, [], d.key);
     assert.deepEqual(bill.lines.map(l => [l.Quantity, l.UnitAmount, l.AccountCode, l.TaxType]), [[4887, 1.5, '630', 'NONE'], [13243, 0.75, '630', 'NONE']]);
-    assert.deepEqual(sale.lines.map(l => [l.Quantity, l.UnitAmount, l.AccountCode, l.TaxType]), [[18130, 1.18, '200', 'ZERORATEDOUTPUT']]);
+    assert.deepEqual(sale.lines.map(l => [l.Quantity, l.UnitAmount, l.AccountCode, l.TaxType]), [[18130, 1.18, '200', 'ZERORATED']]);
     // JPS bill: deposit kg × rate, handling as one exact amount so the bill equals JPS's printed total
     assert.deepEqual(jps.lines.map(l => [l.Quantity, l.UnitAmount, l.AccountCode]), [[18130, 1.18, '820'], [1, 11421.9, '631']]);
     assert.equal(Math.round(18130 * 1.18 * 100) / 100 + 11421.9, 32815.3);

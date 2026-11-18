@@ -615,3 +615,9 @@ test('the PDF-reading schemas stay within 16 nullable fields (the API refuses mo
     assert.equal(r.totalRaw, null);
     assert.equal(r.number, '');
 });
+
+test("Xero tax codes are New Zealand's: settings saved with the UK zero-rated code are corrected", () => {
+    assert.equal(mergeSettings({}).xero.taxTypes.exportSale, 'ZERORATED');
+    assert.equal(mergeSettings({ xero: { taxTypes: { purchases: 'NONE', exportSale: 'ZERORATEDOUTPUT' } } }).xero.taxTypes.exportSale, 'ZERORATED');
+    assert.equal(mergeSettings({ xero: { taxTypes: { exportSale: 'NONE' } } }).xero.taxTypes.exportSale, 'NONE', 'a deliberate choice is kept');
+});
