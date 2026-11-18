@@ -267,8 +267,6 @@ const LC = (() => {
         { id: 'cond-22', text: 'All documents show importer name and address — omitting from any single document is a discrepancy' },
     ];
 
-    const STATUS_CYCLE  = ['todo', 'prep', 'ready', 'disc'];
-    const STATUS_LABELS = { todo: 'Not started', prep: 'In preparation', ready: 'Ready', disc: 'Discrepancy' };
 
     // Section + short name per check id, for the grouped results pop-over.
     // F47A condition checks (f47a-*) are derived, not listed here.
@@ -804,20 +802,68 @@ const LC = (() => {
         return `${lcShipNum(lc)}_${pascal}_${ddmmyy}${extM ? extM[0] : '.pdf'}`;
     }
 
+    // ── Detail: the LC as steps 6–10 of its shipment ──────────────────────
+    // Carries on from the Export documents tab (steps 1–5): our proforma
+    // invoice becomes the commercial invoice, the draft packing list the
+    // final one, and both go to ANZ with the bill of lading, the certificate
+    // of origin and the notices. Same layout as that tab: one row per step
+    // (status, checks, buttons), details open on click, explanations in
+    // tooltips; the first unfinished step glows orange, finished ones green.
+    // Opened from a shipment it sits in the shipment's Letter of Credit tab
+    // (renderShipmentTab); #lc/<id> shows it alone for an LC with no shipment.
+    const LC_STEPS = { 6: 'The letter of credit', 7: 'Our documents', 8: 'Shipping documents', 9: 'Within 21 days of shipment', 10: 'Present to ANZ' };
+    const LC_STEP_SHORT = { 6: 'The LC', 7: 'Our documents', 8: 'Shipping documents', 9: 'Notices', 10: 'Present to ANZ' };
+    const LC_STEP_KEYS = ['6', '7', '8', '9', '10'];
+    const LC_STEP_DOCS = {
+        7: ['commercialInvoice', 'packingList', 'beneficiaryCertificate', 'inspectionCertificate', 'draft'],
+        8: ['billOfLading', 'certificateOfOrigin'],
+        9: ['insuranceNotification', 'applicantEmail'],
+    };
+    const LC_DOC_NAMES = {
+        commercialInvoice: 'Commercial invoice', packingList: 'Final packing list', beneficiaryCertificate: "Beneficiary's certificate",
+        inspectionCertificate: 'Pre-shipment inspection certificate', draft: 'Draft at sight', billOfLading: 'Bill of lading',
+        certificateOfOrigin: 'Certificate of origin', insuranceNotification: 'Insurance notice', applicantEmail: 'Copy documents to the applicant',
+    };
+    const STAT_ICON = { done: '✓', attention: '!', open: '○', waiting: '…' };
+    const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const escA = s => esc(s).replace(/"/g, '&quot;');
+    const tipA = t => (t ? ` data-tip="${escA(t)}"` : '');
+    const infoI = t => (t ? `<span class="sd-info" tabindex="0"${tipA(t)} aria-label="${escA(t)}">i</span>` : '');
+    const dayLabel = ymd => { const m = String(ymd || '').match(/^(\d{4})-(\d{2})-(\d{2})/); return m ? `${Number(m[3])} ${MON[Number(m[2]) - 1]} ${m[1]}` : ''; };
+    const nzDay = iso => new Date(iso).toLocaleDateString('en-CA', { timeZone: 'Pacific/Auckland' });
+    const nzToday = () => nzDay(Date.now());
+    const daysFrom = (a, b) => Math.round((Date.parse(b + 'T00:00:00Z') - Date.parse(a + 'T00:00:00Z')) / 86400000);
+    const addDaysUtc = (ymd, n) => { const d = new Date(ymd + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
+    const lcIsRead = lc => !!(lc.issuedDate && lc.expiryDate && Number(lc.amount) > 0);
+    const presentBy = lc => (lc.shipmentDate ? addDaysUtc(lc.shipmentDate, Number(lc.presentationDays) || 21) : '');
+
+    // Open sections per LC, kept across redraws.
+    const _lcOpen = new Map();
+    // The LC on screen. Lookups go through it: a page left behind (the
+    // standalone LC page, hidden) can still hold elements with the same ids.
+    let _lcRoot = null;
+    const lcEl = id => (_lcRoot && _lcRoot.isConnected ? _lcRoot.querySelector('#' + CSS.escape(id)) : null);
+
     // Header control for the ANZ presentation ("claim") form — a per-LC link,
     // completed for each LC. Just a link; we don't rebuild the form.
     function claimFormControl(lc) {
-        const svg = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="13" y2="17"/></svg>';
         if (lc.claimFormUrl) {
-            return `<a href="${esc(lc.claimFormUrl)}" target="_blank" rel="noopener" class="lc-hd-btn lc-hd-btn--drive">${svg} ANZ Claim Form ↗</a>`
-                + `<button class="lc-drive-change-btn" id="lc-claimform-change" type="button">Change</button>`;
+            return `<a href="${escA(lc.claimFormUrl)}" target="_blank" rel="noopener" class="btn-secondary btn-sm">ANZ claim form ↗</a>`
+                + `<button class="btn-link" id="lc-claimform-change" type="button">Change</button>`;
         }
-        return `<button class="lc-hd-btn lc-hd-btn--drive" id="lc-claimform-add" type="button">${svg} + ANZ Claim Form</button>`;
+        return `<button class="btn-secondary btn-sm" id="lc-claimform-add" type="button"${tipA("Link the completed ANZ Export Documentary Credit Presentation Form for this LC")}>+ ANZ claim form</button>`;
+    }
+
+    function driveFolderControl(url) {
+        return url
+            ? `<a href="${escA(url)}" target="_blank" rel="noopener" class="btn-link">Drive folder ↗</a> <button class="btn-link lc2-muted-link" id="lc-drive-change-btn" type="button">Change</button>`
+            : `<button class="btn-link" id="lc-drive-add-btn" type="button"${tipA('Uploaded documents are copied into this Drive folder')}>Link Drive folder</button>`;
     }
 
     // Scroll the LC reference to a clause anchor WITHOUT changing the URL hash
     // (a hash change would trigger the SPA router and navigate away). Tolerates
     // cite/anchor id variants, e.g. lc-f-46a-<doc> → lcref-46a-<doc> → lc-f-46a.
+    // The LC text sits in a collapsed section: open it first.
     function scrollToClause(cite) {
         const tries = [];
         if (cite) {
@@ -828,8 +874,16 @@ const LC = (() => {
         }
         tries.push('lc-raw-section');
         let el = null;
-        for (const t of tries) { if (t) { el = document.getElementById(t); if (el) break; } }
+        for (const t of tries) { if (t) { el = lcEl(t); if (el) break; } }
         if (!el) return;
+        const body = el.closest('.sd-sec-body');
+        if (body && body.hidden) {
+            body.hidden = false;
+            const key = body.dataset.lcSec;
+            const caret = _lcRoot && _lcRoot.querySelector(`[data-lc-toggle="${key}"] .sd-caret`);
+            if (caret) caret.textContent = '▾';
+            if (_activeLcId && _lcOpen.get(_activeLcId)) _lcOpen.get(_activeLcId).add(key);
+        }
         el.scrollIntoView({ behavior: 'smooth', block: 'center' });
         el.classList.add('lc-clause-flash');
         setTimeout(() => el.classList.remove('lc-clause-flash'), 2200);
@@ -841,7 +895,7 @@ const LC = (() => {
             if (!Object.keys(_pending).length) return;
             const payload = { ..._pending };
             _pending = {};
-            const statusEl = document.getElementById('lc-save-status');
+            const statusEl = lcEl('lc-save-status');
             if (statusEl) statusEl.textContent = 'Saving…';
             try {
                 await apiFetch('/api/lc/' + id, { method: 'PATCH', body: JSON.stringify(payload) });
@@ -850,10 +904,6 @@ const LC = (() => {
                 if (statusEl) statusEl.textContent = 'Save failed';
             }
         }, 700);
-    }
-
-    function readyCount(lc) {
-        return Object.values(lc.docStatus || {}).filter(s => s === 'ready').length;
     }
 
     function docLinkIcon(url) {
@@ -867,53 +917,359 @@ const LC = (() => {
         return `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/><polyline points="15,3 21,3 21,9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>`;
     }
 
-    function renderDocCard(doc, lc) {
-        const status = (lc.docStatus || {})[doc.id] || 'todo';
-        const ICONS = {
-            draft:                  `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M11 2l3 3-8.5 8.5L2 14.5l1-3.5z"/><line x1="9" y1="4" x2="12" y2="7"/></svg>`,
-            commercialInvoice:      `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="1.5" x2="8" y2="14.5"/><path d="M11 4.3C11 3 9.7 2.5 8 2.5S5 3.2 5 4.7c0 3.3 6 1.6 6 4.9 0 1.6-1.3 2.4-3 2.4s-3-.7-3-2.3"/></svg>`,
-            billOfLading:           `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 10h11l-1.3 3.5H3.8z"/><line x1="8" y1="10" x2="8" y2="2.5"/><path d="M8 3.2l4 5.3H8z"/></svg>`,
-            certificateOfOrigin:    `<svg viewBox="0 0 16 16"><rect x="2.5" y="3.5" width="11" height="9" fill="#fff" stroke="#cbd5e1" stroke-width="0.6"/><rect x="2.5" y="3.5" width="3.67" height="9" fill="#009246" stroke="none"/><rect x="9.83" y="3.5" width="3.67" height="9" fill="#CE2B37" stroke="none"/></svg>`,
-            insuranceNotification:  `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 1.5l5 2.5v4c0 3-2 5-5 6C6 13 3 11 3 8V4z"/></svg>`,
-            applicantEmail:         `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="3" width="14" height="10" rx="1.5"/><polyline points="1,3 8,9 15,3"/></svg>`,
-            beneficiaryCertificate: `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="1" width="12" height="14" rx="1"/><path d="M5.5 8l2 2 3-3"/></svg>`,
-            inspectionCertificate:  `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="6.5" cy="6.5" r="4"/><path d="M9.5 9.5l4 4"/></svg>`,
-            packingList:            `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 5l6-3 6 3-6 3z"/><path d="M2 5v6l6 3 6-3V5"/><path d="M8 8v6"/></svg>`,
-        };
+    // One document's check state: accepted by hand, or its last AI check.
+    function lcDocState(lc, docDef) {
+        if ((lc.manualAccepts || {})[docDef.id]) return { kind: 'accepted', done: true };
+        const saved = (lc.aiChecks || {})[docDef.id];
+        const res = saved && Array.isArray(saved.results) ? saved.results : [];
+        if (!res.length) return { kind: 'none', done: false };
+        const fail = res.filter(r => r.result === 'fail'), flag = res.filter(r => r.result === 'flag');
+        const pass = res.length - fail.length - flag.length;
+        const kind = fail.length ? 'fail' : flag.length ? 'flag' : saved.draft ? 'draft' : 'pass';
+        return { kind, done: kind === 'pass', fail, flag, pass, saved };
+    }
 
-        return `
-        <div class="lc-doc-card lc-doc-card--${status}" id="lcdoc-${doc.id}" data-doc="${doc.id}">
-            <div class="lc-doc-hd" data-open-doc="${doc.id}" role="button" tabindex="0">
-                <div class="lc-doc-icon">${ICONS[doc.id] || ''}</div>
-                <div class="lc-doc-meta">
-                    <div class="lc-doc-title">${esc(doc.title)}</div>
-                    <div class="lc-doc-copies">${esc(doc.copies)}</div>
-                </div>
-            </div>
-            <div class="lc-card-check-results" id="lccheck-${doc.id}" hidden></div>
-            <div class="lc-doc-actions">
-                    ${doc.id === 'insuranceNotification' ? `
-                    <button class="lc-ins-compose-btn" data-compose-insurance type="button">
-                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><polyline points="2,4 12,13 22,4"/></svg>
-                        Send Email
-                    </button>` : ''}
-                    ${doc.id === 'applicantEmail' ? `
-                    <button class="lc-ins-compose-btn" data-compose-applicant type="button">
-                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><polyline points="2,4 12,13 22,4"/></svg>
-                        Send Email
-                    </button>` : ''}
-                    <button class="lc-doc-upload-btn" data-upload-doc="${doc.id}" type="button">
-                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-                        Upload PDF
-                    </button>
-            </div>
+    // ✗ 1 · ! 1 · ✓ 7 — click opens the document (results, requirements, files).
+    function lcCheckChip(docDef, st) {
+        if (st.kind === 'accepted') return `<button type="button" class="sd-cc" data-open-doc="${docDef.id}"${tipA('Accepted by hand. Click for details')}><span class="sd-cc-ok">✓ Accepted</span></button>`;
+        if (st.kind === 'none') return '<span class="sd-muted">Not checked yet</span>';
+        const nameOf = r => { const c = docDef.checks.find(x => x.id === r.checkId); return c ? checkMeta(c).name : (r.checkId || 'check'); };
+        const issues = [...st.fail.map(r => '✗ ' + nameOf(r)), ...st.flag.map(r => '! ' + nameOf(r))];
+        const parts = [st.fail.length && `<span class="sd-cc-fail">✗ ${st.fail.length}</span>`, st.flag.length && `<span class="sd-cc-warn">! ${st.flag.length}</span>`, st.pass && `<span class="sd-cc-ok">✓ ${st.pass}</span>`].filter(Boolean).join('');
+        const s = st.saved;
+        const checked = s.checkedAt ? ', checked ' + dayLabel(nzDay(s.checkedAt)) : '';
+        const tip = (issues.length ? issues.join(' · ') : `All ${st.pass} checks passed`) + ` (${s.draft ? 'draft' : 'final'}${s.filename ? ' ' + s.filename : ''}${checked}). Click for details`;
+        return `<button type="button" class="sd-cc" data-open-doc="${docDef.id}"${tipA(tip)}>${parts}</button>`
+            + (s.draft ? `<span class="sd-wait"${tipA('Checked on a draft. Upload the final to finish')}>Draft copy</span>` : '');
+    }
+
+    function lcConditions(lc) {
+        const general = (lc.f47aConditions || [])
+            .filter(c => !c.docId || c.docId === 'general')
+            .map((c, i) => ({ id: `f47a-general-${i}`, text: c.text }));
+        return [...STANDARD_CONDITIONS, ...general];
+    }
+
+    // The shipment's "LC presented" stage (Overview), when it is ticked.
+    function presentedFrom(ship) {
+        const m = ((ship && ship.milestones) || []).find(x => /lc.*present|presented/i.test(x.label || ''));
+        return m && m.done ? { date: m.date || '' } : null;
+    }
+
+    // Status of steps 6–10: { kind: done | attention | open | waiting, text, tip }.
+    function lcStatus(ctx) {
+        const { lc, docs, xd } = ctx;
+        const today = nzToday();
+        const read = lcIsRead(lc);
+        const byId = Object.fromEntries(docs.map(d => [d.id, d]));
+        const s = {};
+        const cross = ((xd && xd.lcChecks) || []).filter(c => c.ok === false && !c.dismissed);
+        s[6] = !read ? { kind: 'open', text: 'Upload the LC PDF', tip: "JPS's bank sends the LC. Reading its PDF fills in the dates and what every document must say." }
+            : cross.length ? { kind: 'attention', text: 'Differs from our documents', tip: cross.map(c => `${c.title}: ${c.detail}`).join(' · ') }
+            : { kind: 'done', text: 'Issued ' + dayLabel(lc.issuedDate) };
+        for (const k of [7, 8, 9]) {
+            const ids = LC_STEP_DOCS[k].filter(id => byId[id]);
+            const states = ids.map(id => [id, lcDocState(lc, byId[id])]);
+            const done = states.filter(([, x]) => x.done).length;
+            const bad = states.filter(([, x]) => x.kind === 'fail' || x.kind === 'flag');
+            if (!read) s[k] = { kind: 'waiting', text: 'Waiting for the LC', tip: 'Upload the LC PDF in step 6 first. It sets what each document must say.' };
+            else if (done === ids.length) s[k] = { kind: 'done', text: `All ${ids.length} checked` };
+            else if (bad.length) s[k] = { kind: 'attention', text: `${bad.length} to fix`, tip: bad.map(([id]) => LC_DOC_NAMES[id]).join(' · ') };
+            else s[k] = { kind: 'open', text: `${done} of ${ids.length} checked` };
+        }
+        // The notices run on the clock from the shipment date.
+        if (read && s[9].kind !== 'done') {
+            const due = presentBy(lc);
+            if (!due) s[9] = { kind: 'waiting', text: 'After shipment', tip: 'Due within 21 days of the shipment date. Enter it in step 6.' };
+            else if (s[9].kind === 'open') s[9] = today > due
+                ? { kind: 'attention', text: 'Was due ' + dayLabel(due), tip: `${s[9].text}. Both were due 21 days after shipment.` }
+                : { kind: 'open', text: 'Due ' + dayLabel(due), tip: `${s[9].text}. Due 21 days after shipment.` };
+        }
+        const conds = lcConditions(lc);
+        const condDone = conds.filter(c => (lc.condChecks || {})[c.id]).length;
+        const docsDone = [7, 8, 9].every(k => s[k].kind === 'done');
+        if (!read) s[10] = { kind: 'waiting', text: 'Waiting for the LC' };
+        else if (ctx.presented) s[10] = { kind: 'done', text: 'Presented' + (ctx.presented.date ? ' ' + dayLabel(ctx.presented.date) : ''), tip: "From the shipment's LC presented stage on the Overview." };
+        else if (lc.expiryDate && today > lc.expiryDate) s[10] = { kind: 'attention', text: 'LC expired ' + dayLabel(lc.expiryDate), tip: ctx.embedded ? "If it was presented in time, tick LC presented on the Overview." : '' };
+        else if (docsDone && condDone === conds.length) s[10] = { kind: 'open', text: 'Ready to present', tip: ctx.embedded ? 'Tick LC presented on the Overview once ANZ has the documents.' : '' };
+        else s[10] = { kind: 'open', text: `${condDone} of ${conds.length} conditions confirmed`, tip: docsDone ? '' : 'Steps 7–9 also need every document checked.' };
+        return s;
+    }
+
+    // ── Section parts: { n, title, info, stat, meta, actions, always, body } ──
+    function lcKv(rows) {
+        return `<dl class="lc2-kv">${rows.filter(Boolean).map(([k, v, mono]) => `<div><dt>${esc(k)}</dt><dd${mono ? ' class="lc-mono"' : ''}>${esc(v || '—')}</dd></div>`).join('')}</dl>`;
+    }
+
+    // Issued · Shipped (editable) · Latest shipment · Present by · Expires.
+    function lcDatesHtml(ctx) {
+        const { lc } = ctx;
+        const today = nzToday();
+        const ship = lc.shipmentDate || '';
+        const by = presentBy(lc);
+        const pres = ctx.presented;
+        const countdown = d => { const n = daysFrom(today, d); return n === 0 ? 'today' : n > 0 ? `in ${n} day${n === 1 ? '' : 's'}` : `${-n} day${n === -1 ? '' : 's'} ago`; };
+        const soon = d => d && d >= today && daysFrom(today, d) <= 21;
+        const cell = (label, date, state, note, tip) => `<div class="lc2-date lc2-date--${state}"${tipA(tip)}>
+            <span class="lc2-date-l">${label}</span><span class="lc2-date-v">${date ? dayLabel(date) : '—'}</span><span class="lc2-date-n">${esc(note)}</span></div>`;
+        const latest = lc.latestShipDate;
+        const latestState = !latest ? 'plain' : ship ? (ship <= latest ? 'met' : 'late') : today > latest ? 'late' : soon(latest) ? 'due' : 'plain';
+        const latestNote = !latest ? '' : ship ? (ship <= latest ? 'met' : 'shipped late') : today > latest ? 'passed, not shipped' : countdown(latest);
+        const byState = !by ? 'plain' : pres ? (pres.date && pres.date > by ? 'late' : 'met') : today > by ? 'late' : soon(by) ? 'due' : 'plain';
+        const byNote = !by ? 'shipment + 21 days' : pres ? 'presented' + (pres.date ? ' ' + dayLabel(pres.date) : '') : countdown(by);
+        const exp = lc.expiryDate;
+        const expState = !exp ? 'plain' : pres ? 'plain' : today > exp ? 'late' : soon(exp) ? 'due' : 'plain';
+        const expNote = !exp ? '' : pres ? '' : today > exp ? 'expired' : countdown(exp);
+        return `<div class="lc2-dates">
+            ${cell('Issued', lc.issuedDate, 'met', '', 'Date of issue (LC field 31C). No document may be dated before it.')}
+            <label class="lc2-date lc2-date--${ship ? 'met' : 'plain'}"${tipA("The bill of lading's on-board date. The 21-day deadlines run from it.")}>
+                <span class="lc2-date-l">Shipped</span>
+                <input type="date" class="lc2-date-in" id="lc-shipdate" value="${escA(ship)}">
+                <span class="lc2-date-n">${ship ? '' : lc.estimatedShipDate ? 'expected ' + esc(dayLabel(lc.estimatedShipDate)) : 'on-board date'}</span>
+            </label>
+            ${cell('Latest shipment', latest, latestState, latestNote, 'Latest date of shipment (LC field 44C).')}
+            ${cell('Present by', by, byState, byNote, `Documents to ANZ, and the notices in step 9, within ${Number(lc.presentationDays) || 21} days of shipment.`)}
+            ${cell('Expires', exp, expState, expNote, 'Expiry (LC field 31D). Presentation must also be before this.')}
         </div>`;
     }
 
-    async function renderDetail(container, id) {
+    function lcStep6(ctx, s) {
+        const { lc, xd } = ctx;
+        const g = lc.goods || {}, p = lc.ports || {}, ap = lc.applicant || {}, ab = lc.applicantBank || {}, adv = lc.advisingBank || {};
+        const read = lcIsRead(lc);
+        const cross = (xd && xd.lcChecks) || [];
+        const crossFail = cross.filter(c => c.ok === false && !c.dismissed);
+        const crossOk = cross.filter(c => c.ok === true).length;
+        const crossChip = cross.length ? `<button type="button" class="sd-cc" data-lc-open="6"${tipA((crossFail.length ? crossFail.map(c => '! ' + c.title).join(' · ') : `The LC matches our documents on all ${crossOk} checks`) + '. Click for details')}>${crossFail.length ? `<span class="sd-cc-warn">! ${crossFail.length}</span>` : ''}${crossOk ? `<span class="sd-cc-ok">✓ ${crossOk}</span>` : ''}</button>` : '';
+        const crossRows = cross.length ? `<h4 class="sd-sub">Against our documents (steps 1–5)</h4><ul class="sd-checks sd-checks--compact">${[...crossFail, ...cross.filter(c => c.ok !== false || c.dismissed)].map(c => {
+            const cls = c.dismissed ? 'dismissed' : c.ok === true ? 'ok' : c.ok === false ? 'warn' : 'na';
+            return `<li class="sd-check sd-check--${cls}"><span class="sd-check-i">${c.dismissed ? '–' : c.ok === true ? '✓' : c.ok === false ? '!' : '–'}</span><span class="sd-check-body"><strong>${esc(c.title)}</strong>${c.dismissed ? ' <span class="sd-muted">(dismissed in step 5)</span>' : ''}<br><span class="sd-check-d">${esc(c.detail)}</span></span></li>`;
+        }).join('')}</ul>` : '';
+        const link = ctx.embedded
+            ? `<p class="sd-muted">Linked to ${esc(lc.shipmentRef || 'this shipment')} · <button class="btn-link" id="lc-ship-unlink-btn" type="button">Unlink</button></p>`
+            : lc.linkedShipmentId
+                ? `<p class="sd-muted">Linked to <a href="#imports/ship/${encodeURIComponent(lc.linkedShipmentId)}/lc">${esc(lc.shipmentRef || 'its shipment')}</a> · <button class="btn-link" id="lc-ship-unlink-btn" type="button">Unlink</button></p>`
+                : `<p class="sd-muted">Not linked to a shipment · <button class="btn-link" id="lc-ship-link-btn" type="button">Link to a shipment</button></p>
+                   <div class="lc-ship-link-form" id="lc-ship-link-form" hidden>
+                       <select class="lc-input" id="lc-ship-link-select"><option value="">Loading shipments…</option></select>
+                       <button id="lc-ship-link-save" type="button" class="btn-primary btn-sm">Link</button>
+                       <button id="lc-ship-link-cancel" type="button" class="btn-link">Cancel</button>
+                   </div>`;
+        return {
+            n: 6, title: LC_STEPS[6], stat: s[6],
+            info: "JPS's bank opens the LC against our proforma invoice (step 2). Its PDF, read by AI, sets the dates and what every document must say, and is checked against our proforma and bales.",
+            meta: crossChip,
+            actions: `<button class="btn-${read ? 'secondary' : 'primary'} btn-sm" id="lc-extract-btn" type="button"${tipA(read ? 'Read an amended or clearer copy of the LC PDF' : "Read the LC PDF from JPS's bank with AI")}>${read ? 'Read the PDF again' : 'Upload LC PDF'}</button>
+                <input type="file" id="lc-extract-file-input" accept=".pdf,application/pdf" hidden>`,
+            always: read ? lcDatesHtml(ctx) : '',
+            body: `${crossRows}
+                <h4 class="sd-sub">Key details</h4>
+                ${lcKv([
+                    ['LC number', lc.lcNumber, true], ['Amount', fmtAmt(lc.currency, lc.amount), true],
+                    ['Quantity', `${(g.quantity || 0).toLocaleString('en-NZ')} ${g.quantityUnit || 'kg'}`, true], ['Unit price', `${lc.currency || 'USD'} ${g.unitPrice || '—'}/${g.quantityUnit || 'kg'}`, true],
+                    ['Incoterms', g.incoterms], ['Proforma', [lc.proformaRef, dayLabel(lc.proformaDate)].filter(Boolean).join(' · '), true],
+                    ['Expiry place', lc.expiryPlace], ['Governed by', lc.governedBy],
+                ])}
+                <h4 class="sd-sub">Parties and shipping</h4>
+                ${lcKv([
+                    ['Beneficiary', lc.beneficiary || 'Enviroware Ltd'], ['Applicant', [ap.name, ap.address].filter(Boolean).join(', ')],
+                    ['Issuing bank', [ab.name, ab.city].filter(Boolean).join(', ')], ['Advising bank', [adv.name, adv.city].filter(Boolean).join(', ')],
+                    ['HS code', g.hsCode, true], ['Origin', g.origin], ['Container', g.container], ['Packages', `${g.packageCount || '?'} ${g.packageType || 'packages'}`, true],
+                    ['Port of loading', p.loading], ['Port of discharge', p.discharge], p.finalDestination ? ['Final destination', p.finalDestination] : null,
+                ])}
+                ${link}`,
+        };
+    }
+
+    function lcDocRow(ctx, d) {
+        const { lc, xd } = ctx;
+        const st = lcDocState(lc, d);
+        let sub = esc(d.copies), extra = '', act = '';
+        if (d.id === 'commercialInvoice') {
+            // Our proforma's number once it's confirmed in step 2; else the one the LC cites.
+            const ei = xd && xd.record && xd.record.exportInvoice;
+            const ours = (ei && ei.numberConfirmed && ei.number) || lc.proformaRef;
+            if (ours) sub = `From our proforma invoice ${esc(ours)} · ${sub}`;
+            const mism = ((xd && xd.lcChecks) || []).find(c => /^Proforma number/.test(c.title) && c.ok === false && !c.dismissed);
+            if (mism) extra = `<span class="sd-issue"${tipA(mism.detail)}>! The LC cites ${esc(lc.proformaRef)}</span>`;
+        }
+        if (d.id === 'packingList' && xd) {
+            const out = (xd.record.outputs || []).find(o => o.doc === 'packing' && o.stage === 'final');
+            const b = '/api/import/export-docs/' + encodeURIComponent(xd.shipment.id);
+            sub = out ? `Generated ${esc(dayLabel(nzDay(out.at)))} in step 5 · ${sub}` : `From our draft packing list, in step 5 · ${sub}`;
+            act = out
+                ? `<a class="btn-secondary btn-sm" href="${b}/render?out=${encodeURIComponent(out.key)}&download=1" target="_blank" rel="noopener"${tipA(out.filename || '')}>Download PDF</a>`
+                : `<button class="btn-secondary btn-sm" type="button" data-lc-act="to-docs"${tipA('Generate it on the Export documents tab, step 5')}>Go to step 5</button>`;
+        }
+        if (d.id === 'draft') sub = `On ${esc((lc.applicantBank || {}).name || 'the issuing bank')} · ${sub}`;
+        if (d.id === 'insuranceNotification') act = `<button class="btn-secondary btn-sm" data-compose-insurance type="button"${tipA('Drafts the notice to the insurer with the cover note and the LC clause')}>Email</button>`;
+        if (d.id === 'applicantEmail') act = `<button class="btn-secondary btn-sm" data-compose-applicant type="button"${tipA('Drafts the email to the applicant listing the final documents')}>Email</button>`;
+        return `<div class="sd-docrow lc2-row" id="lcdoc-${d.id}">
+            <div class="sd-docrow-name">
+                <button type="button" class="lc2-name" data-open-doc="${d.id}"${tipA(d.desc + '. Click for requirements, check results and files')}>${esc(LC_DOC_NAMES[d.id] || d.title)}</button>
+                <span class="sd-muted">${sub}</span>${lcCheckChip(d, st)}${extra}
+            </div>
+            <div class="sd-docrow-act">${act}<button class="btn-secondary btn-sm" type="button" data-upload-doc="${d.id}"${tipA('Upload the PDF to check it against the LC')}>Upload PDF</button></div>
+            <div class="lc-card-check-results lc2-progress" id="lccheck-${d.id}" hidden></div>
+        </div>`;
+    }
+    const lcDocRows = (ctx, k) => `<div class="sd-docs">${LC_STEP_DOCS[k].map(id => ctx.docs.find(d => d.id === id)).filter(Boolean).map(d => lcDocRow(ctx, d)).join('')}</div>`;
+
+    function lcStep7(ctx, s) {
+        return { n: 7, title: LC_STEPS[7], stat: s[7], always: lcDocRows(ctx, 7),
+            info: 'What Enviroware issues for the bank: the commercial invoice (our proforma invoice, final), the final packing list (step 5), our two certificates and the draft at sight. Upload each PDF to check it against the LC.' };
+    }
+    function lcStep8(ctx, s) {
+        return { n: 8, title: LC_STEPS[8], stat: s[8], always: lcDocRows(ctx, 8),
+            info: "From the shipping line and the chamber of commerce. Upload each to check it against the LC; if the check can't confirm one, accept it by hand from its details." };
+    }
+    function lcStep9(ctx, s) {
+        const ins = ctx.lc.insurance || {};
+        return { n: 9, title: LC_STEPS[9], stat: s[9], always: lcDocRows(ctx, 9),
+            info: 'Both are due within 21 days of shipment: tell the insurer, and email a copy set of the documents to the applicant. Email drafts each message; upload what was sent to check it.',
+            body: (ins.contactName || ins.email || ins.coverNote) ? `<h4 class="sd-sub">Insurance contact</h4>${lcKv([['Contact', ins.contactName], ['Email', ins.email], ['Cover note', ins.coverNote, true]])}` : '' };
+    }
+    function lcStep10(ctx, s) {
+        const { lc } = ctx;
+        const conds = lcConditions(lc);
+        const checks = lc.condChecks || {};
+        const done = conds.filter(c => checks[c.id]).length;
+        return { n: 10, title: LC_STEPS[10], stat: s[10],
+            info: "Confirm the LC's general conditions, print the checklist and covering letter, and take the originals to ANZ with its claim form." + (ctx.embedded ? " Tick LC presented on the Overview when it's done." : ''),
+            meta: `<span class="sd-muted" id="lc-cond-count">${done} of ${conds.length} conditions</span>`,
+            actions: `<span class="lc-claimform-wrap" id="lc-claimform-wrap">${claimFormControl(lc)}</span>
+                <button class="btn-secondary btn-sm" id="lc-print-checklist-btn" type="button"${tipA('Copy counts per document, and the covering letter to ANZ')}>Print checklist</button>`,
+            body: `<div class="lc-cond-grid" id="lc-cond-grid">${conds.map((c, i) => {
+                const on = !!checks[c.id];
+                return `<div class="lc-cond-item${on ? ' lc-cond-item--done' : ''}">
+                    <span class="lc-cond-num">${String(i + 1).padStart(2, '0')}</span>
+                    <input type="checkbox" id="cond-${c.id}" data-cond="${c.id}" ${on ? 'checked' : ''}>
+                    <label for="cond-${c.id}">${esc(c.text)}</label>
+                </div>`; }).join('')}</div>` };
+    }
+    function lcStepText(ctx) {
+        return { title: 'LC text', info: 'The LC as issued (MT700). The § links on each requirement jump here.',
+            meta: `<span class="sd-muted">${ctx.lc.rawMt700 ? 'As printed on the LC' : 'Rebuilt from the details'}</span>`,
+            body: mt700Html(ctx.lc, ctx.docs) };
+    }
+    function lcStepIssues() {
+        return { title: 'Recurring issues', info: 'Patterns flagged (⚑) on past check results. Every check looks out for them.',
+            body: `<div class="lc-known-issues-card" id="lc-known-issues-card"><div id="lc-known-issues-list"><span class="lc-known-issues-empty">Loading…</span></div></div>` };
+    }
+    const LC_PARTS = { 6: lcStep6, 7: lcStep7, 8: lcStep8, 9: lcStep9, 10: lcStep10, text: lcStepText, issues: lcStepIssues };
+    const LC_ORDER = ['6', '7', '8', '9', '10', 'text', 'issues'];
+
+    function lcHdHtml(key, p, open) {
+        const title = `${p.n ? p.n + ' · ' : ''}${esc(p.title)}`;
+        return `<div class="sd-sec-hd" id="lchd-${key}">
+            ${p.body ? `<button type="button" class="sd-sec-toggle" data-lc-toggle="${key}" aria-expanded="${open}" title="${open ? 'Hide' : 'Show'} the details"><span class="sd-caret">${open ? '▾' : '▸'}</span><span class="sd-sec-title">${title}</span></button>`
+                : `<span class="sd-sec-toggle sd-sec-toggle--static"><span class="sd-caret"></span><span class="sd-sec-title">${title}</span></span>`}
+            ${infoI(p.info)}
+            <span class="sd-sec-meta">${p.stat ? `<span class="sd-sstat sd-sstat--${p.stat.kind}"${tipA(p.stat.tip)}>${STAT_ICON[p.stat.kind]} ${esc(p.stat.text)}</span>` : ''}${p.meta || ''}</span>
+            <span class="sd-sec-actions">${p.actions || ''}</span>
+        </div>`;
+    }
+
+    // ✓ done · current (orange) · to come. Embedded, it starts with a step
+    // back to the Export documents tab (steps 1–5).
+    function lcStepsHtml(ctx, s) {
+        const current = LC_STEP_KEYS.find(k => s[k].kind !== 'done');
+        const prev = ctx.embedded
+            ? `<button type="button" class="sd-step sd-step--link" data-lc-act="to-docs"${tipA('Steps 1–5 are on the Export documents tab')}><span class="sd-step-n sd-step-n--wide">1–5</span>Export documents</button><span class="sd-step-sep"></span>`
+            : '';
+        return `<div class="sd-steps">${prev}${LC_STEP_KEYS.map(k => {
+            const done = s[k].kind === 'done';
+            return `<span class="sd-step${done ? ' sd-step--done' : k === current ? ' sd-step--current' : ''}"><span class="sd-step-n">${done ? '✓' : k}</span>${esc(LC_STEP_SHORT[k])}</span>`;
+        }).join('<span class="sd-step-sep"></span>')}</div>`;
+    }
+
+    function lcGlow(root, s) {
+        const current = LC_STEP_KEYS.find(k => s[k].kind !== 'done');
+        for (const k of LC_STEP_KEYS) {
+            const el = root.querySelector('#lcsec-' + k);
+            if (!el) continue;
+            el.classList.toggle('sd-sec--done', s[k].kind === 'done');
+            el.classList.toggle('sd-sec--current', k === current);
+        }
+    }
+
+    function lcDetailHtml(ctx, open) {
+        const { lc } = ctx;
+        const s = lcStatus(ctx);
+        const secs = LC_ORDER.map(key => {
+            const p = LC_PARTS[key](ctx, s);
+            const isOpen = open.has(key);
+            const body = p.body ? `<div class="sd-sec-body" id="lcbody-${key}" data-lc-sec="${key}" ${isOpen ? '' : 'hidden'}>${p.body}</div>` : '';
+            return `<section class="ship-det-section sd-sec" id="lcsec-${key}">${lcHdHtml(key, p, isOpen)}${p.always || ''}${body}</section>`;
+        });
+        // Steps 7–9 share one wrapper: the document rows' clicks are handled there.
+        const html = `
+            <div class="sd-top">
+                ${lcStepsHtml(ctx, s)}
+                <div class="sd-top-right">
+                    <span class="lc-save-status" id="lc-save-status"></span>
+                    <button class="lc2-lcno lc-mono" data-copy="${escA(lc.lcNumber)}" type="button" title="Copy the LC number">LC ${esc(lc.lcNumber)} <span aria-hidden="true">⧉</span></button>
+                    <span class="lc-drive-folder-wrap" id="lc-drive-folder-wrap">${driveFolderControl(lc.driveFolderUrl)}</span>
+                </div>
+            </div>
+            <div class="lc-drive-folder-form" id="lc-drive-folder-form" hidden>
+                <input type="url" id="lc-drive-folder-input" class="lc-input" placeholder="Paste the Google Drive folder URL (the shipment folder under 2. Importation)" value="${escA(lc.driveFolderUrl || '')}">
+                <button id="lc-drive-save-btn" type="button" class="btn-primary btn-sm">Save</button>
+                <button id="lc-drive-cancel-btn" type="button" class="btn-link">Cancel</button>
+                ${lc.driveFolderUrl ? '<button id="lc-drive-remove-btn" type="button" class="btn-link">Remove</button>' : ''}
+            </div>
+            ${secs[0]}
+            <div id="lc-doc-list">${secs[1]}${secs[2]}${secs[3]}</div>
+            ${secs.slice(4).join('')}
+            <input type="file" id="lc-card-file-input" accept=".pdf,application/pdf" hidden>`;
+        return { html, s };
+    }
+
+    // ctx: { lc, docs, xd (the shipment's export documents view), ship,
+    // presented, embedded, openTab(tab), reload(), onUnlinked(), redraw(), refresh() }
+    function drawDetail(container, id, ctx) {
+        const { lc } = ctx;
+        _activeLcId = id;
+        _driveFolderUrl = lc.driveFolderUrl || '';
+        ctx.docs = generateDocuments(lc);
+        if (!_lcOpen.has(id)) {
+            const first = LC_STEP_KEYS.find(k => lcStatus(ctx)[k].kind !== 'done');
+            _lcOpen.set(id, new Set(first && first !== '7' && first !== '8' ? [first] : []));
+        }
+        const open = _lcOpen.get(id);
+        const { html, s } = lcDetailHtml(ctx, open);
+        const root = document.createElement('div');
+        root.className = 'sd lc2';
+        root.innerHTML = ctx.embedded ? html : `
+            <div class="lc-detail-hd"><a class="lc-back" href="#lc">← Letters of Credit</a></div>
+            <div class="ship-detail-hdr" style="margin-bottom:0.75rem">
+                <h1 class="ship-detail-title">LC ${esc(lc.lcNumber)}</h1>
+                <p class="ship-detail-meta">${esc(((lc.applicant || {}).name) || 'Letter of credit')}${lc.amount ? ' · ' + esc(fmtAmt(lc.currency, lc.amount)) : ''}</p>
+            </div>${html}`;
+        const wrap = ctx.embedded ? root : Object.assign(document.createElement('div'), { className: 'orders-view-inner' });
+        if (!ctx.embedded) wrap.appendChild(root);
+        document.querySelectorAll('.lc2').forEach(r => { if (!container.contains(r)) r.remove(); });
+        container.replaceChildren(wrap);
+        _lcRoot = root;
+        lcGlow(root, s);
+        ctx.redraw = () => drawDetail(container, id, ctx);
+        // Status, strip and glow only — for edits that don't change the rows.
+        ctx.refresh = () => {
+            const st = lcStatus(ctx);
+            const strip = root.querySelector('.sd-steps');
+            if (strip) strip.outerHTML = lcStepsHtml(ctx, st);
+            for (const key of LC_ORDER) {
+                const hd = root.querySelector('#lchd-' + key);
+                if (hd) hd.outerHTML = lcHdHtml(key, LC_PARTS[key](ctx, st), open.has(key));
+            }
+            lcGlow(root, st);
+        };
+        bindDetailEvents(root, id, ctx.docs, lc, ctx);
+    }
+
+    async function renderDetail(container, id, opts = {}) {
         _activeLcId = id;
         container.innerHTML = '<p class="lc-loading">Loading…</p>';
-
         let lc;
         try {
             lc = await apiFetch('/api/lc/' + id);
@@ -921,159 +1277,112 @@ const LC = (() => {
             container.innerHTML = `<p class="lc-error">Could not load LC: ${esc(e.message)}</p>`;
             return;
         }
-
-        _driveFolderUrl = lc.driveFolderUrl || '';
-
+        // An LC belongs with its shipment: show it in the shipment's tab.
+        if (!opts.embedded && lc.linkedShipmentId) {
+            const fc = await apiFetch('/api/import/forecast').catch(() => null);
+            if (fc && (fc.shipments || []).some(s => s.id === lc.linkedShipmentId)) {
+                location.replace('#imports/ship/' + encodeURIComponent(lc.linkedShipmentId) + '/lc');
+                return;
+            }
+        }
         // Normalise F47A conditions — older records may hold plain strings
         lc.f47aConditions = (lc.f47aConditions || []).map(c =>
             typeof c === 'string' ? { text: c, docId: null } : c
         ).filter(c => c && c.text);
+        const xd = opts.embedded && opts.ship
+            ? await apiFetch('/api/import/export-docs/' + encodeURIComponent(opts.ship.id)).catch(() => null)
+            : null;
+        const ctx = {
+            lc, xd, ship: opts.ship || null, presented: opts.embedded ? presentedFrom(opts.ship) : null,
+            embedded: !!opts.embedded, openTab: opts.openTab || null,
+            onUnlinked: opts.onUnlinked || null,
+            reload: () => renderDetail(container, id, opts),
+        };
+        drawDetail(container, id, ctx);
+    }
 
-        const docs = generateDocuments(lc);
-
-        const shipDays   = daysUntil(lc.latestShipDate);
-        const expiryDays = daysUntil(lc.expiryDate);
-
-        const g   = lc.goods        || {};
-        const p   = lc.ports        || {};
-        const ab  = lc.applicantBank|| {};
-        const ap  = lc.applicant    || {};
-        const adv = lc.advisingBank || {};
-        const ins = lc.insurance    || {};
-
-        const sideRow = (label, val, mono = false) =>
-            `<div class="lc-srow"><span class="lc-srow-label">${label}</span><span class="lc-srow-val${mono ? ' lc-mono' : ''}">${esc(val || '—')}</span></div>`;
-
-        const insCardHtml = (ins.contactName || ins.email || ins.coverNote)
-            ? '<div class="lc-scard">'
-                + '<div class="lc-scard-title">Insurance Contact</div>'
-                + (ins.contactName ? sideRow('Contact', ins.contactName) : '')
-                + (ins.email ? '<div class="lc-srow"><span class="lc-srow-label">Email</span>'
-                    + '<a href="mailto:' + esc(ins.email) + '" class="lc-srow-link" style="font-size:0.8rem">' + esc(ins.email) + '</a></div>' : '')
-                + (ins.coverNote ? sideRow('Cover Note', ins.coverNote, true) : '')
-                + '</div>'
-            : '';
-
-        const f47aGeneral = (lc.f47aConditions || [])
-            .filter(c => !c.docId || c.docId === 'general')
-            .map((c, i) => ({ id: `f47a-general-${i}`, text: c.text }));
-        const allConditions = [...STANDARD_CONDITIONS, ...f47aGeneral];
-        const condChecks = lc.condChecks || {};
-        const condDone   = allConditions.filter(c => condChecks[c.id]).length;
-        const condItems  = allConditions.map((c, i) => {
-            const checked = !!condChecks[c.id];
-            return `<div class="lc-cond-item${checked ? ' lc-cond-item--done' : ''}">
-                <span class="lc-cond-num">${String(i + 1).padStart(2, '0')}</span>
-                <input type="checkbox" id="cond-${c.id}" data-cond="${c.id}" ${checked ? 'checked' : ''}>
-                <label for="cond-${c.id}">${esc(c.text)}</label>
-            </div>`;
-        }).join('');
-
-        // ── Timeline bar pre-computation ──────────────────────────────────────
-        function isoTs(iso) {
-            if (!iso) return null;
-            const [y,m,d] = iso.split('-').map(Number);
-            return new Date(y,m-1,d).getTime();
+    // The shipment's Letter of Credit tab: its LC as steps 6–10, or — before
+    // JPS has opened one — step 6 waiting, to add the LC or link one.
+    // opts.openTab(tab) switches the shipment's tab.
+    async function renderShipmentTab(panel, ship, opts = {}) {
+        const shipRef = 'Shipment #' + (ship.seq || ship.id);
+        const reload = () => renderShipmentTab(panel, ship, opts);
+        panel.innerHTML = '<div class="ship-lc-loading">Loading…</div>';
+        let lcs;
+        try {
+            ({ lcs } = await apiFetch('/api/lc'));
+        } catch (e) {
+            panel.innerHTML = `<p class="ship-lc-err">Could not load the LC: ${esc(e.message)}</p>`;
+            return;
         }
-        const tlStart = isoTs(lc.issuedDate);
-        const tlEnd   = isoTs(lc.expiryDate);
-        const tlRange = (tlStart && tlEnd && tlEnd > tlStart) ? tlEnd - tlStart : null;
-
-        function tlPct(iso) {
-            const t = isoTs(iso);
-            if (!t || !tlRange) return null;
-            return +Math.min(100, Math.max(0, (t - tlStart) / tlRange * 100)).toFixed(1);
+        const linked = (lcs || []).find(l => l.linkedShipmentId === ship.id);
+        if (linked) {
+            return renderDetail(panel, linked.id, { embedded: true, ship, openTab: opts.openTab, onUnlinked: reload });
         }
-
-        function buildTlTrack(shipDate) {
-            if (!tlRange) return '<div class="lc-tl2-missing">Set issued date and expiry date to see timeline</div>';
-            const todayIso = new Date().toISOString().slice(0, 10);
-            const todayPct = tlPct(todayIso);
-            const pdays2   = lc.presentationDays || 21;
-            const presIso  = shipDate ? addDays(shipDate, pdays2) : null;
-            const shipPct       = tlPct(shipDate);
-            const presPct       = tlPct(presIso);
-            const latestShipPct = tlPct(lc.latestShipDate);
-            const estShipPct    = tlPct(lc.estimatedShipDate);
-            const shipIsToday   = shipDate && shipDate === todayIso;
-
-            const dotCls = (dateIso, colourCls) =>
-                (todayIso && dateIso && dateIso > todayIso) ? 'lc-tl2-dot--grey' : colourCls;
-
-            function label(pct, nameHtml, dateHtml, deltaHtml2) {
-                return '<div class="lc-tl2-info" style="left:' + pct + '%">'
-                    + '<div class="lc-tl2-name">' + nameHtml + '</div>'
-                    + '<div class="lc-tl2-date">' + dateHtml + '</div>'
-                    + (deltaHtml2 ? '<div class="lc-tl2-delta">' + deltaHtml2 + '</div>' : '')
-                    + '</div>';
+        const unlinked = (lcs || []).filter(l => !l.linkedShipmentId && !l.linkedOrderId);
+        const waiting = { kind: 'waiting', text: 'Waiting for JPS to open the LC' };
+        const s = { 6: waiting, 7: waiting, 8: waiting, 9: waiting, 10: waiting };
+        panel.innerHTML = `<div class="sd lc2">
+            <div class="sd-top">${lcStepsHtml({ embedded: true }, s)}</div>
+            <section class="ship-det-section sd-sec sd-sec--current">
+                ${lcHdHtml('6', { n: 6, title: LC_STEPS[6], stat: waiting,
+                    info: "JPS's bank opens the LC against our proforma invoice. Add it here with its number, then upload its PDF; steps 7–10 follow from it." }, false)}
+                <form class="lc2-new" id="lc2-new-form">
+                    <input class="lc-input lc-mono" id="lc2-new-number" type="text" placeholder="LC number, e.g. 320126011494" autocomplete="off">
+                    <button class="btn-primary btn-sm" type="submit">Add the LC</button>
+                    <span class="sd-muted" id="lc2-new-msg"></span>
+                </form>
+                ${unlinked.length ? `<h4 class="sd-sub">Or link one already in the Hub</h4><div class="sd-docs">${unlinked.map(l => `
+                    <div class="sd-docrow">
+                        <div class="sd-docrow-name"><strong class="lc-mono">${esc(l.lcNumber)}</strong><span class="sd-muted">${esc([(l.applicant || {}).name, l.amount ? fmtAmt(l.currency, l.amount) : '', l.issuedDate ? 'issued ' + dayLabel(l.issuedDate) : ''].filter(Boolean).join(' · '))}</span></div>
+                        <div class="sd-docrow-act"><button class="btn-secondary btn-sm" data-lc2-link="${escA(l.id)}" type="button">Link</button><button class="btn-link" data-lc2-del="${escA(l.id)}" type="button" title="Delete this LC">Delete</button></div>
+                    </div>`).join('')}</div>` : ''}
+            </section>
+        </div>`;
+        const link = async lcId => {
+            await apiFetch('/api/lc/' + lcId, { method: 'PATCH', body: JSON.stringify({ linkedShipmentId: ship.id, shipmentRef: shipRef }) });
+            reload();
+        };
+        const root = panel.firstElementChild;   // listeners on the root, so a reload leaves none behind
+        document.querySelectorAll('.lc2').forEach(r => { if (r !== root) r.remove(); });
+        _lcRoot = root;
+        root.querySelector('#lc2-new-form').addEventListener('submit', async e => {
+            e.preventDefault();
+            const lcNumber = root.querySelector('#lc2-new-number').value.trim();
+            const msg = root.querySelector('#lc2-new-msg');
+            if (!lcNumber) return;
+            const btn = e.target.querySelector('button[type=submit]');
+            btn.disabled = true;
+            try {
+                const res = await fetch('/api/lc', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ lcNumber, linkedShipmentId: ship.id, shipmentRef: shipRef }) });
+                const created = await res.json().catch(() => ({}));
+                if (res.status === 409) {
+                    msg.innerHTML = `That LC is already in the Hub. <button class="btn-link" data-lc2-link="${escA(created.id || 'lc-' + lcNumber.replace(/[^a-zA-Z0-9]/g, ''))}" type="button">Link it to this shipment</button>`;
+                    btn.disabled = false;
+                    return;
+                }
+                if (!res.ok) throw new Error(created.error || 'Could not add the LC');
+                reload();
+            } catch (err) {
+                msg.textContent = '✗ ' + err.message;
+                btn.disabled = false;
             }
-
-            // Rail and today line first (behind everything)
-            let html     = '<div class="lc-tl2-rail"></div>';
-            let labelsHtml = '';
-
-            if (todayPct !== null) {
-                html += '<div class="lc-tl2-today-line" style="left:' + todayPct + '%"></div>';
+        });
+        root.addEventListener('click', async e => {
+            const toDocs = e.target.closest('[data-lc-act="to-docs"]');
+            if (toDocs && opts.openTab) { opts.openTab('docs'); return; }
+            const l = e.target.closest('[data-lc2-link]');
+            if (l) { await link(l.dataset.lc2Link).catch(err => alert(err.message)); return; }
+            const d = e.target.closest('[data-lc2-del]');
+            if (d && confirm('Delete this LC? This cannot be undone.')) {
+                await fetch('/api/lc/' + d.dataset.lc2Del, { method: 'DELETE' });
+                reload();
             }
+        });
+    }
 
-            // Dots only inside marks; labels emitted separately at end so DOM order puts them on top
-            html += '<div class="lc-tl2-mark" style="left:0%">'
-                + '<div class="lc-tl2-dot ' + dotCls(lc.issuedDate, '') + '"></div>'
-                + '</div>';
-            labelsHtml += label('0', 'LC Issued', esc(fmtDate(lc.issuedDate)), '');
-
-            if (lc.estimatedShipDate && estShipPct !== null) {
-                const estDays = daysUntil(lc.estimatedShipDate);
-                html += '<div class="lc-tl2-mark lc-tl2-mark--btn" data-setship title="Click to record actual shipment date" style="left:' + estShipPct + '%">'
-                    + '<div class="lc-tl2-dot ' + dotCls(lc.estimatedShipDate, 'lc-tl2-dot--estship') + '"></div>'
-                    + '</div>';
-                labelsHtml += label(estShipPct, 'Est. Ship', esc(fmtDate(lc.estimatedShipDate)), estDays !== null ? deltaHtml(estDays) : '');
-            }
-
-            if (latestShipPct !== null) {
-                const lsDays = daysUntil(lc.latestShipDate);
-                html += '<div class="lc-tl2-mark" style="left:' + latestShipPct + '%">'
-                    + '<div class="lc-tl2-dot ' + dotCls(lc.latestShipDate, 'lc-tl2-dot--latestship') + '"></div>'
-                    + '</div>';
-                labelsHtml += label(latestShipPct, 'Latest Ship', esc(fmtDate(lc.latestShipDate)), lsDays !== null ? deltaHtml(lsDays) : '');
-            }
-
-            if (presIso && presPct !== null) {
-                const presDays = daysUntil(presIso);
-                html += '<div class="lc-tl2-mark" style="left:' + presPct + '%">'
-                    + '<div class="lc-tl2-dot ' + dotCls(presIso, 'lc-tl2-dot--pres') + '"></div>'
-                    + '</div>';
-                labelsHtml += label(presPct, 'Present by', esc(fmtDate(presIso)), presDays !== null ? deltaHtml(presDays) : '');
-            }
-
-            if (shipDate && shipPct !== null) {
-                const shipLabel = shipIsToday ? 'Shipped · Today' : 'Shipped';
-                html += '<div class="lc-tl2-mark lc-tl2-mark--btn" data-setship title="Click to edit shipment date" style="left:' + shipPct + '%">'
-                    + '<div class="lc-tl2-dot ' + dotCls(shipDate, 'lc-tl2-dot--shipped') + '"></div>'
-                    + '</div>';
-                labelsHtml += label(shipPct, shipLabel, esc(fmtDate(shipDate)), '');
-            }
-
-            const expDays = daysUntil(lc.expiryDate);
-            html += '<div class="lc-tl2-mark" style="left:100%">'
-                + '<div class="lc-tl2-dot ' + dotCls(lc.expiryDate, 'lc-tl2-dot--expiry') + '"></div>'
-                + '</div>';
-            labelsHtml += label('100', 'LC Expiry', esc(fmtDate(lc.expiryDate)), expDays !== null ? deltaHtml(expDays) : '');
-
-            // Labels last in DOM → always above rail, today line, and dots by DOM order
-            return html + labelsHtml;
-        }
-
-        const tlWrap = '<div class="lc-tl2" id="lc-tl2">'
-            + '<div class="lc-tl2-track" id="lc-tl2-track">' + buildTlTrack(lc.shipmentDate) + '</div>'
-            + '<div class="lc-tl2-ship-row" id="lc-tl2-ship-row"' + (lc.shipmentDate && lc.estimatedShipDate ? ' hidden' : '') + '>'
-            + '<span class="lc-tl2-ctrl-label">Actual shipment date</span>'
-            + '<input type="date" id="lc-shipment-date-input" class="lc-input lc-mono" value="' + esc(lc.shipmentDate || '') + '" style="font-size:0.82rem;padding:0.22rem 0.4rem;width:auto;">'
-            + (lc.shipmentDate ? '<button class="lc-tl2-ship-done" id="lc-tl2-ship-done" type="button">Done</button>' : '')
-            + '</div>'
-            + '</div>';
-
-        // ── MT700 LC Reference pre-computation ────────────────────────────────
+    function mt700Html(lc, docs) {
+        const g = lc.goods || {}, p = lc.ports || {}, ab = lc.applicantBank || {}, ap = lc.applicant || {}, ins = lc.insurance || {};
         function rawLines(val) {
             return esc(val || '—').replace(/\n/g, '<br>');
         }
@@ -1103,7 +1412,7 @@ const LC = (() => {
         let lcRawHtml = '<section class="lc-raw-section" id="lc-raw-section">'
             + '<div class="lc-raw-section-hd">'
             + '<span class="lc-section-label">LC Reference — MT700</span>'
-            + (lc.rawMt700 ? '' : '<span class="lc-raw-verbatim-hint">Upload the LC PDF above to show verbatim text</span>')
+            + (lc.rawMt700 ? '' : '<span class="lc-raw-verbatim-hint">Upload the LC PDF in step 6 to show it as printed</span>')
             + '</div>';
 
         if (lc.rawMt700) {
@@ -1217,7 +1526,7 @@ const LC = (() => {
                         + '</div>';
                 });
             } else {
-                lcRawHtml += '<div class="lc-raw-cond-item lc-raw-cond-item--empty">No additional conditions recorded. Upload the LC PDF above to populate.</div>';
+                lcRawHtml += '<div class="lc-raw-cond-item lc-raw-cond-item--empty">No additional conditions recorded. Upload the LC PDF in step 6 to fill these in.</div>';
             }
             lcRawHtml += '</div>';
 
@@ -1232,166 +1541,7 @@ const LC = (() => {
         }
 
         lcRawHtml += '</section>';
-
-        // ── Grouped document list ──────────────────────────────────────────────
-        const DOC_GROUPS = [
-            { id: 'admin',    label: 'Bank / Admin' },
-            { id: '3rdparty', label: '3rd Party Documents' },
-            { id: 'enviro',   label: 'Enviroware Documents' },
-            { id: 'email',    label: 'Email Notifications' },
-        ];
-        let docListHtml = '';
-        DOC_GROUPS.forEach(function(grp) {
-            const grpDocs = docs.filter(function(d) { return d.group === grp.id; });
-            if (!grpDocs.length) return;
-            docListHtml += '<div class="lc-doc-group-hd">' + esc(grp.label) + '</div>';
-            grpDocs.forEach(function(d) { docListHtml += renderDocCard(d, lc); });
-        });
-
-        const backHref  = lc.linkedShipmentId ? '#imports/ship/' + encodeURIComponent(lc.linkedShipmentId) : '#lc';
-        const backLabel = lc.linkedShipmentId ? '← ' + esc(lc.shipmentRef || 'Shipment') : '← Letters of Credit';
-        const h1Label   = lc.shipmentRef || esc(lc.lcNumber);
-
-        container.innerHTML = `
-        <div class="orders-view-inner">
-            <div class="lc-detail-hd">
-                <a class="lc-back" href="${backHref}">${backLabel}</a>
-                <span class="lc-save-status" id="lc-save-status"></span>
-            </div>
-            <div class="ship-detail-hdr" style="margin-bottom:0.25rem">
-                <h1 class="ship-detail-title">${esc(h1Label)}</h1>
-                <p class="ship-detail-meta">Letter of Credit · ${esc(lc.lcNumber)}</p>
-            </div>
-
-            <div class="lc-checker-identity">
-                <div class="lc-idbar">
-                    <div class="lc-idbar-cell">
-                        <span class="lc-idbar-label">Shipment</span>
-                        ${lc.linkedShipmentId
-                            ? '<div class="lc-ship-linked">'
-                                + '<a href="#imports/ship/' + encodeURIComponent(lc.linkedShipmentId) + '" class="lc-ship-linked-id">' + esc(lc.shipmentRef || lc.linkedShipmentId) + ' ↗</a>'
-                                + '<button class="lc-ship-unlink-btn" id="lc-ship-unlink-btn" type="button">Unlink</button>'
-                              + '</div>'
-                            : '<button class="lc-hd-btn lc-hd-btn--ghost" id="lc-ship-link-btn" type="button">+ Link to Shipment</button>'
-                        }
-                    </div>
-                    <div class="lc-idbar-cell">
-                        <span class="lc-idbar-label">LC Number</span>
-                        <button class="lc-idbar-lcnum lc-mono" data-copy="${esc(lc.lcNumber)}" type="button" title="Copy LC number">
-                            #${esc(lc.lcNumber)}
-                            <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="5" width="9" height="9" rx="1.5"/><path d="M3 11V3a1 1 0 011-1h8"/></svg>
-                        </button>
-                    </div>
-                    <div class="lc-idbar-spacer"></div>
-                    <button class="lc-hd-btn lc-hd-btn--drive" id="lc-print-checklist-btn" type="button" title="Print the presentation checklist — copy counts per document">
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9V2h12v7"/><path d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
-                        Print checklist
-                    </button>
-                    <button class="lc-hd-btn lc-hd-btn--primary" id="lc-extract-btn" type="button" title="Upload LC PDF to re-extract all fields with AI">
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-                        Upload LC PDF
-                    </button>
-                    <input type="file" id="lc-extract-file-input" accept=".pdf,application/pdf" hidden>
-                    <div class="lc-drive-folder-wrap" id="lc-drive-folder-wrap">
-                        ${lc.driveFolderUrl
-                            ? `<a href="${esc(lc.driveFolderUrl)}" target="_blank" class="lc-hd-btn lc-hd-btn--drive">
-                                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><polygon points="7.5,3 16.5,3 22,13 13,13" fill="#fbbc04"/><polygon points="2,13 7.5,3 11.5,13 6,23" fill="#34a853"/><polygon points="12,13 6,23 18,23 24,13" fill="#4285f4"/></svg>
-                                   Drive folder ↗
-                               </a>
-                               <button class="lc-drive-change-btn" id="lc-drive-change-btn" type="button">Change</button>`
-                            : `<button class="lc-hd-btn lc-hd-btn--drive" id="lc-drive-add-btn" type="button">
-                                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><polygon points="7.5,3 16.5,3 22,13 13,13" fill="#fbbc04"/><polygon points="2,13 7.5,3 11.5,13 6,23" fill="#34a853"/><polygon points="12,13 6,23 18,23 24,13" fill="#4285f4"/></polygon></svg>
-                                   Link Google Drive
-                               </button>`
-                        }
-                    </div>
-                    <div class="lc-claimform-wrap" id="lc-claimform-wrap">${claimFormControl(lc)}</div>
-                    <div class="lc-idbar-amt lc-mono">${esc(fmtAmt(lc.currency, lc.amount))}</div>
-                </div>
-                <div class="lc-ship-link-form" id="lc-ship-link-form" hidden>
-                    <select class="lc-input" id="lc-ship-link-select" style="font-size:0.8rem;padding:0.35rem 0.5rem;">
-                        <option value="">Loading shipments…</option>
-                    </select>
-                    <div class="lc-drive-form-btns" style="margin-top:0.4rem">
-                        <button id="lc-ship-link-save" type="button" class="lc-doc-link-save">Link</button>
-                        <button id="lc-ship-link-cancel" type="button" class="lc-doc-link-cancel">Cancel</button>
-                    </div>
-                </div>
-                <div class="lc-drive-folder-form" id="lc-drive-folder-form" hidden>
-                    <input type="url" id="lc-drive-folder-input" class="lc-input"
-                           placeholder="Paste Google Drive folder URL (e.g. the shipment folder under 2. Importation)…"
-                           value="${esc(lc.driveFolderUrl || '')}"
-                           style="width:100%;font-size:0.8rem;padding:0.35rem 0.5rem;margin-bottom:0.4rem;">
-                    <div class="lc-drive-form-btns">
-                        <button id="lc-drive-save-btn" type="button" class="lc-doc-link-save">Save</button>
-                        <button id="lc-drive-cancel-btn" type="button" class="lc-doc-link-cancel">Cancel</button>
-                        ${lc.driveFolderUrl ? `<button id="lc-drive-remove-btn" type="button" class="lc-doc-link-clear">Remove</button>` : ''}
-                    </div>
-                </div>
-            </div>
-
-            ${tlWrap}
-
-            <div class="lc-checker-body">
-                <main class="lc-checker-main">
-                    <div class="lc-doc-list" id="lc-doc-list">
-                        ${docListHtml}
-                    </div>
-
-                    <details class="lc-cond-section" id="lc-cond-section">
-                        <summary class="lc-cond-summary">
-                            <span class="lc-cond-title">General Conditions — F47A</span>
-                            <span class="lc-cond-count" id="lc-cond-count">${condDone} of ${allConditions.length} confirmed</span>
-                        </summary>
-                        <div class="lc-cond-grid" id="lc-cond-grid">${condItems}</div>
-                    </details>
-
-                    <input type="file" id="lc-card-file-input" accept=".pdf,application/pdf" hidden>
-
-                    ${lcRawHtml}
-                </main>
-
-                <aside class="lc-ref-sidebar">
-                    <div class="lc-scard lc-scard--key">
-                        <div class="lc-scard-title">Key Details <span class="lc-scard-hint">— what changes per LC</span></div>
-                        ${sideRow('LC #',        lc.lcNumber, true)}
-                        ${sideRow('LC issued',   fmtDate(lc.issuedDate))}
-                        ${sideRow('Incoterms',   g.incoterms)}
-                        ${sideRow('Quantity',    `${(g.quantity || 0).toLocaleString()} ${g.quantityUnit || 'kg'}`, true)}
-                        ${sideRow('Unit price',  `${lc.currency || 'USD'} ${g.unitPrice || '—'} / ${g.quantityUnit || 'kg'}`, true)}
-                        ${sideRow('LC Amount',   fmtAmt(lc.currency, lc.amount), true)}
-                        ${sideRow('Proforma #',  lc.proformaRef, true)}
-                        ${sideRow('PI date',     fmtDate(lc.proformaDate))}
-                    </div>
-                    <details class="lc-scard lc-scard--boiler">
-                        <summary class="lc-scard-title">LC details <span class="lc-scard-hint">— boilerplate, usually unchanged</span></summary>
-                        <div class="lc-scard-boiler-body">
-                            ${sideRow('Beneficiary',   lc.beneficiary || 'Enviroware Ltd')}
-                            ${sideRow('Applicant',     ap.name + (ap.address ? ', ' + ap.address : ''))}
-                            ${sideRow('Issuing bank',  ab.name + (ab.city ? ', ' + ab.city : ''))}
-                            ${sideRow('Advising bank', adv.name + (adv.city ? ', ' + adv.city : ''))}
-                            ${sideRow('HS Code',     g.hsCode, true)}
-                            ${sideRow('Origin',      g.origin)}
-                            ${sideRow('Container',   g.container)}
-                            ${sideRow('Packages',    `${g.packageCount || '?'} ${g.packageType || 'packages'}`, true)}
-                            ${sideRow('Governed by', lc.governedBy)}
-                            ${sideRow('Port loading',   p.loading)}
-                            ${sideRow('Port discharge', p.discharge)}
-                            ${sideRow('Final dest.',    p.finalDestination)}
-                        </div>
-                    </details>
-                    ${insCardHtml}
-                    <div class="lc-scard lc-known-issues-card" id="lc-known-issues-card">
-                        <div class="lc-scard-title">Recurring Issues
-                            <span class="lc-known-issues-hint">— flagged from past checks</span>
-                        </div>
-                        <div id="lc-known-issues-list"><span class="lc-known-issues-empty">Loading…</span></div>
-                    </div>
-                </aside>
-            </div>
-        </div>`;
-
-        bindDetailEvents(container, id, docs, lc, buildTlTrack);
+        return lcRawHtml;
     }
 
     function showExtractReviewModal(fields, lc, lcId, onSaved) {
@@ -1590,8 +1740,26 @@ const LC = (() => {
         });
     }
 
-    function bindDetailEvents(container, id, docs, lc, buildTlTrack) {
-        // Card click → document pop-over (Results · Requirements · Files)
+    function bindDetailEvents(container, id, docs, lc, ctx) {
+        // Sections: ▸ opens the details; a checks chip opens its section.
+        container.addEventListener('click', e => {
+            const t = e.target.closest('[data-lc-toggle], [data-lc-open]');
+            if (t) {
+                const key = t.dataset.lcToggle || t.dataset.lcOpen;
+                const open = _lcOpen.get(id);
+                const body = container.querySelector('#lcbody-' + key);
+                if (!body || !open) return;
+                const show = t.dataset.lcOpen ? true : body.hidden;
+                body.hidden = !show;
+                show ? open.add(key) : open.delete(key);
+                const btn = container.querySelector(`[data-lc-toggle="${key}"]`);
+                if (btn) { btn.setAttribute('aria-expanded', String(show)); btn.querySelector('.sd-caret').textContent = show ? '▾' : '▸'; }
+                return;
+            }
+            if (e.target.closest('[data-lc-act="to-docs"]') && ctx.openTab) ctx.openTab('docs');
+        });
+
+        // Document name or checks chip → document pop-over (Results · Requirements · Files)
         container.querySelector('#lc-doc-list').addEventListener('click', e => {
             const trigger = e.target.closest('[data-open-doc]');
             if (!trigger) return;
@@ -1605,46 +1773,6 @@ const LC = (() => {
             if (!hd) return;
             e.preventDefault();
             showDocModal(hd.dataset.openDoc, null);
-        });
-
-        // Status chip: cycle and save immediately
-        container.querySelector('#lc-doc-list').addEventListener('click', async e => {
-            const btn = e.target.closest('[data-status-doc]');
-            if (!btn) return;
-            const docId = btn.dataset.statusDoc;
-            const card  = container.querySelector(`#lcdoc-${docId}`);
-            const curr  = STATUS_CYCLE.indexOf(btn.className.match(/lc-chip--(\w+)/)?.[1] || 'todo');
-            const next  = STATUS_CYCLE[(curr + 1) % STATUS_CYCLE.length];
-
-            btn.className  = `lc-chip lc-chip--${next}`;
-            btn.textContent = STATUS_LABELS[next];
-            card.className  = card.className.replace(/lc-doc-card--(?:todo|prep|ready|disc)/, `lc-doc-card--${next}`);
-
-            updateClearance(container);
-
-            await apiFetch('/api/lc/' + id, {
-                method: 'PATCH',
-                body: JSON.stringify({ docStatus: { [docId]: next } }),
-            }).catch(() => {});
-        });
-
-        // Doc checkboxes: accumulate and debounce
-        container.querySelector('#lc-doc-list').addEventListener('change', e => {
-            const cb = e.target.closest('[data-check]');
-            if (!cb) return;
-            const checkId = cb.dataset.check;
-            cb.closest('.lc-check-item')?.classList.toggle('lc-check-item--done', cb.checked);
-
-            // update progress counter in card header
-            const card = cb.closest('.lc-doc-card');
-            const total  = card.querySelectorAll('[data-check]').length;
-            const ticked = card.querySelectorAll('[data-check]:checked').length;
-            const prog = card.querySelector('.lc-doc-prog');
-            if (prog) prog.textContent = `${ticked}/${total}`;
-
-            if (!_pending.docChecks) _pending.docChecks = {};
-            _pending.docChecks[checkId] = cb.checked;
-            scheduleChecksave(id);
         });
 
         // Flag issue as recurring pattern (bound on doc list + results modal)
@@ -1702,10 +1830,8 @@ const LC = (() => {
             if (!cb) return;
             cb.closest('.lc-cond-item')?.classList.toggle('lc-cond-item--done', cb.checked);
 
-            const total  = container.querySelectorAll('[data-cond]').length;
-            const ticked = container.querySelectorAll('[data-cond]:checked').length;
-            const count = container.querySelector('#lc-cond-count');
-            if (count) count.textContent = `${ticked} of ${total} confirmed`;
+            lc.condChecks = { ...(lc.condChecks || {}), [cb.dataset.cond]: cb.checked };
+            ctx.refresh();
 
             if (!_pending.condChecks) _pending.condChecks = {};
             _pending.condChecks[cb.dataset.cond] = cb.checked;
@@ -1731,36 +1857,13 @@ const LC = (() => {
             }
         });
 
-        // Timeline: click Est. Ship or Shipped dot to reveal/hide ship date input
-        container.querySelector('#lc-tl2')?.addEventListener('click', e => {
-            const mark = e.target.closest('[data-setship]');
-            if (!mark) return;
-            const row = container.querySelector('#lc-tl2-ship-row');
-            if (row) {
-                row.hidden = !row.hidden;
-                if (!row.hidden) row.querySelector('#lc-shipment-date-input')?.focus();
-            }
+        // Shipment date (the B/L on-board date): the 21-day deadlines run from it.
+        container.querySelector('#lc-shipdate')?.addEventListener('change', async e => {
+            const val = e.target.value || '';
+            await apiFetch('/api/lc/' + id, { method: 'PATCH', body: JSON.stringify({ shipmentDate: val }) }).catch(() => {});
+            lc.shipmentDate = val;
+            ctx.redraw();
         });
-
-        // "Done" button collapses the row when ship date already set
-        container.querySelector('#lc-tl2-ship-done')?.addEventListener('click', () => {
-            const row = container.querySelector('#lc-tl2-ship-row');
-            if (row) row.hidden = true;
-        });
-
-        // Shipment date input — patch + redraw track
-        const shipDateInput = container.querySelector('#lc-shipment-date-input');
-        if (shipDateInput) {
-            shipDateInput.addEventListener('change', async () => {
-                const val = shipDateInput.value;
-                await apiFetch('/api/lc/' + id, {
-                    method: 'PATCH',
-                    body: JSON.stringify({ shipmentDate: val }),
-                }).catch(() => {});
-                const trackEl = container.querySelector('#lc-tl2-track');
-                if (trackEl && buildTlTrack) trackEl.innerHTML = buildTlTrack(val);
-            });
-        }
 
         // Per-card document upload — shows draft/final confirm before archiving + checking
         const cardFileInput = container.querySelector('#lc-card-file-input');
@@ -1833,7 +1936,7 @@ const LC = (() => {
             updateDriveFolderDisplay(container, url);
             await apiFetch('/api/lc/' + id, { method: 'PATCH', body: JSON.stringify({ driveFolderUrl: url }) }).catch(() => {});
             if (!url) return;
-            const statusEl = document.getElementById('lc-save-status');
+            const statusEl = lcEl('lc-save-status');
             if (statusEl) statusEl.textContent = 'Syncing files to Drive…';
             try {
                 const res = await apiFetch('/api/lc-docs', {
@@ -1869,13 +1972,7 @@ const LC = (() => {
         function updateDriveFolderDisplay(container, url) {
             const wrap = container.querySelector('#lc-drive-folder-wrap');
             if (!wrap) return;
-            const driveSvg = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none"><polygon points="7.5,3 16.5,3 22,13 13,13" fill="#fbbc04"/><polygon points="2,13 7.5,3 11.5,13 6,23" fill="#34a853"/><polygon points="12,13 6,23 18,23 24,13" fill="#4285f4"/></svg>';
-            if (url) {
-                wrap.innerHTML = `<a href="${esc(url)}" target="_blank" class="lc-hd-btn lc-hd-btn--drive">${driveSvg} Drive folder ↗</a>
-                <button class="lc-drive-change-btn" id="lc-drive-change-btn" type="button">Change</button>`;
-            } else {
-                wrap.innerHTML = `<button class="lc-hd-btn lc-hd-btn--drive" id="lc-drive-add-btn" type="button">${driveSvg} Link Google Drive</button>`;
-            }
+            wrap.innerHTML = driveFolderControl(url);
             const input = container.querySelector('#lc-drive-folder-input');
             if (input) input.value = url;
         }
@@ -1888,9 +1985,10 @@ const LC = (() => {
             try {
                 const fc = await apiFetch('/api/import/forecast');
                 const ships = (fc.shipments || []).slice().reverse();
+                const label = s => s.seq ? 'Shipment #' + s.seq : (s.note || s.id);
                 sel.innerHTML = '<option value="">Select a shipment…</option>'
-                    + ships.map(s => '<option value="' + esc(s.id) + '" data-ref="' + esc(s.note || s.id) + '">'
-                        + esc(s.note || s.id) + (s.ym ? ' · ' + esc(s.ym) : '') + '</option>').join('');
+                    + ships.map(s => '<option value="' + escA(s.id) + '" data-ref="' + escA(label(s)) + '">'
+                        + esc(label(s)) + (s.ym ? ' · ' + esc(s.ym) : '') + '</option>').join('');
             } catch {
                 sel.innerHTML = '<option value="">Could not load shipments</option>';
             }
@@ -1906,7 +2004,7 @@ const LC = (() => {
                 method: 'PATCH',
                 body: JSON.stringify({ linkedShipmentId: sel.value, shipmentRef: opt.dataset.ref || sel.value }),
             }).catch(() => {});
-            renderDetail(container, id);
+            ctx.reload();
         });
 
         // Delete an archived file (rows live in the doc pop-over's Files tab)
@@ -2053,6 +2151,7 @@ const LC = (() => {
                 const file = extractInput.files[0];
                 if (!file) return;
                 extractInput.value = '';
+                const label = extractBtn.textContent;
                 extractBtn.disabled = true;
                 extractBtn.textContent = 'Reading…';
                 showExtractOverlay('Reading document…');
@@ -2083,13 +2182,13 @@ const LC = (() => {
                         }),
                     }).catch(e => console.error('[LC] source PDF archive failed', e));
                     hideExtractOverlay();
-                    showExtractReviewModal(json.fields, lc, id, () => renderDetail(container, id));
+                    showExtractReviewModal(json.fields, lc, id, () => ctx.reload());
                 } catch (err) {
                     hideExtractOverlay();
                     alert('Extraction failed: ' + err.message);
                 } finally {
                     extractBtn.disabled = false;
-                    extractBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg> Upload LC PDF';
+                    extractBtn.textContent = label;
                 }
             });
         }
@@ -2213,43 +2312,13 @@ const LC = (() => {
         // Shipment link — populate dropdown from active orders
         // Unlink shipment
         container.querySelector('#lc-ship-unlink-btn')?.addEventListener('click', async () => {
+            if (!confirm('Unlink this LC from ' + (lc.shipmentRef || 'its shipment') + '?')) return;
             await apiFetch('/api/lc/' + id, { method: 'PATCH', body: JSON.stringify({ linkedShipmentId: '' }) }).catch(() => {});
-            renderDetail(container, id);
+            if (ctx.onUnlinked) ctx.onUnlinked(); else ctx.reload();
         });
 
         loadArchivedDocs(container, id);
         loadKnownIssues(container);
-
-        // Render the AI check summary bar into a doc card (always visible, opens
-        // the results pop-over). Used for live checks and for restoring stored
-        // results when the page is revisited.
-        // badge: { label, cls: 'draft'|'final', errDetail? }
-        function renderCheckResults(docId, results, badge) {
-            const resultsEl = container.querySelector('#lccheck-' + docId);
-            const card      = container.querySelector('#lcdoc-' + docId);
-            if (!resultsEl) return;
-
-            const passed  = results.filter(r => r.result === 'pass').length;
-            const flagged = results.filter(r => r.result === 'flag').length;
-            const failed  = results.filter(r => r.result === 'fail').length;
-            const sumCls  = failed > 0 ? 'fail' : flagged > 0 ? 'flag' : 'pass';
-            const sumIcon = failed > 0 ? '✗' : flagged > 0 ? '⚠' : '✓';
-            const sumParts = [`${passed} pass`];
-            if (flagged) sumParts.push(`${flagged} flag`);
-            if (failed)  sumParts.push(`${failed} fail`);
-
-            resultsEl.innerHTML = '<button class="lc-check-matrix-bar lc-check-matrix-bar--' + sumCls + ' lc-check-summary-btn" type="button" data-open-doc="' + esc(docId) + '"'
-                + (badge.errDetail ? ' title="' + esc(badge.errDetail) + '"' : '') + '>'
-                + '<span class="lc-check-matrix-tally">' + sumIcon + ' ' + sumParts.join(' · ') + '</span>'
-                + '</button>';
-            resultsEl.hidden = false;
-
-            // Colour the card's edge by outcome: green all-pass, purple flags, red fails
-            if (card) {
-                card.classList.remove('lc-doc-card--todo', 'lc-doc-card--prep', 'lc-doc-card--ready', 'lc-doc-card--disc');
-                card.classList.add(sumCls === 'pass' ? 'lc-doc-card--ready' : sumCls === 'flag' ? 'lc-doc-card--prep' : 'lc-doc-card--disc');
-            }
-        }
 
         // Document pop-over — tabs: Results · Requirements · Files
         function showDocModal(docId, tab) {
@@ -2390,33 +2459,14 @@ const LC = (() => {
             const on = !!(lc.manualAccepts || {})[docId];
             const next = on ? null : { at: new Date().toISOString() };
             lc.manualAccepts = { ...(lc.manualAccepts || {}), [docId]: next };
-            // Refresh the banner in place
+            // Refresh the banner in place, and the page behind it
             const banner = modal.querySelector('.lc-manual-accept');
             if (banner) banner.outerHTML = manualAcceptBanner(docId);
-            reflectManualAccept(docId);
+            ctx.redraw();
             apiFetch('/api/lc/' + id, {
                 method: 'PATCH',
                 body: JSON.stringify({ manualAccepts: { [docId]: next } }),
             }).catch(e => console.error('manual accept save failed', e));
-        }
-
-        // Reflect a doc's manual-accept state on its card (green edge + strip).
-        function reflectManualAccept(docId) {
-            const card = container.querySelector('#lcdoc-' + docId);
-            if (!card) return;
-            const on = !!(lc.manualAccepts || {})[docId];
-            card.classList.toggle('lc-doc-card--accepted', on);
-            const resultsEl = container.querySelector('#lccheck-' + docId);
-            if (!resultsEl) return;
-            const hasAi = (lc.aiChecks || {})[docId];
-            if (on && !hasAi) {
-                resultsEl.innerHTML = '<button class="lc-check-matrix-bar lc-check-matrix-bar--pass lc-check-summary-btn" type="button" data-open-doc="' + esc(docId) + '">'
-                    + '<span class="lc-check-matrix-tally">✓ Manually accepted</span></button>';
-                resultsEl.hidden = false;
-            } else if (!on && !hasAi) {
-                resultsEl.hidden = true;
-                resultsEl.innerHTML = '';
-            }
         }
 
         // Grouped results body (sections → named checks) + filter pills
@@ -2500,21 +2550,6 @@ const LC = (() => {
             modal.querySelectorAll('.lc-res-filter').forEach(b =>
                 b.classList.toggle('lc-res-filter--on', b.dataset.resFilter === f));
         }
-
-        // Restore stored AI check results so navigating away doesn't lose them
-        Object.entries(lc.aiChecks || {}).forEach(([docId, saved]) => {
-            if (!saved || !Array.isArray(saved.results)) return;
-            const when = saved.checkedAt ? fmtDate(saved.checkedAt.slice(0, 10)) : '';
-            renderCheckResults(docId, saved.results, {
-                label: (saved.draft ? 'Draft' : 'Final') + (when ? ' · checked ' + when : ''),
-                cls:   saved.draft ? 'draft' : 'final',
-            });
-        });
-
-        // Reflect any manual-accept overrides on their cards
-        Object.keys(lc.manualAccepts || {}).forEach(docId => {
-            if ((lc.manualAccepts || {})[docId]) reflectManualAccept(docId);
-        });
 
         async function handleDocCheck(file, docId, isDraft = false) {
             const docDef = docs.find(d => d.id === docId);
@@ -2604,11 +2639,6 @@ const LC = (() => {
                 if (!json.ok) throw new Error(json.error || 'Check failed');
 
                 const results = json.results;
-                renderCheckResults(docId, results, {
-                    label: archiveLabel,
-                    cls: isDraft ? 'draft' : 'final',
-                    errDetail: archiveErrDetail,
-                });
 
                 // Persist so the evaluation survives navigation
                 const stored = { results, checkedAt: new Date().toISOString(), filename: file.name, draft: isDraft };
@@ -2617,6 +2647,12 @@ const LC = (() => {
                     method: 'PATCH',
                     body: JSON.stringify({ aiChecks: { [docId]: stored } }),
                 }).catch(e => console.error('[LC check] failed to persist results:', e));
+                ctx.redraw();
+                const statusEl = lcEl('lc-save-status');
+                if (statusEl && archiveLabel) {
+                    statusEl.textContent = archiveLabel + (archiveErrDetail ? ': ' + archiveErrDetail : '');
+                    setTimeout(() => { if (statusEl.isConnected) statusEl.textContent = ''; }, 6000);
+                }
 
             } catch (err) {
                 resultsEl.innerHTML = '<div class="lc-check-matrix-bar lc-check-matrix-bar--fail lc-check-ai-bar">'
@@ -2689,23 +2725,6 @@ const LC = (() => {
         }
     }
 
-    function updateClearance(container) {
-        const chips = [...container.querySelectorAll('[data-status-doc]')];
-        const ready = chips.filter(b => b.classList.contains('lc-chip--ready')).length;
-        const pct   = Math.round((ready / 7) * 100);
-
-        const fill  = container.querySelector('#lc-pfill');
-        const label = container.querySelector('#lc-plabel');
-        const chip  = container.querySelector('#lc-clearance');
-        if (fill)  fill.style.width = pct + '%';
-        if (label) label.textContent = `${ready} of 8 documents ready`;
-        if (chip) {
-            const cleared = ready === 8;
-            chip.textContent = cleared ? 'Cleared to present' : 'Not cleared to present';
-            chip.className   = `lc-clearance-chip ${cleared ? 'lc-clearance--ok' : 'lc-clearance--no'}`;
-        }
-    }
-
     // ── Public router ─────────────────────────────────────────────────────────
 
     async function render(container, subpath) {
@@ -2720,6 +2739,7 @@ const LC = (() => {
 
     return {
         render,
+        renderShipmentTab,
         setPendingShip:   ref           => { _pendingShipRef = ref; },
         setPendingShipId: (shipId, seq) => { _pendingShipId = shipId; _pendingShipRef = 'Shipment #' + seq; },
     };

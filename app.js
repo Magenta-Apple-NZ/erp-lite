@@ -826,7 +826,8 @@ async function handleRoute() {
         return;
     }
 
-    const shipMatch = hash.match(/^imports\/ship\/(.+)$/);
+    // #imports/ship/<id>, or #imports/ship/<id>/<tab> to open on a tab (docs, lc).
+    const shipMatch = hash.match(/^imports\/ship\/([^/]+)(?:\/(overview|docs|lc))?$/);
     if (hash === 'imports' || shipMatch) {
         setActiveView('view-imports');
         setActiveNav('nav-imports');
@@ -834,6 +835,7 @@ async function handleRoute() {
         document.getElementById('lc-container').style.display = 'none';
         if (shipMatch && typeof Warehouse !== 'undefined') {
             Warehouse._pendingShipId = decodeURIComponent(shipMatch[1]);
+            Warehouse._pendingShipTab = shipMatch[2] || null;
         }
         await ImportsView.render(document.getElementById('imports-container'));
         return;

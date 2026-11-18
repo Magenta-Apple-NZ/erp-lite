@@ -110,7 +110,8 @@ const ShipDocs = (() => {
         const current = Object.keys(names).find(k => s[k] && s[k].kind !== 'done');
         return `<div class="sd-top">
             <div class="sd-steps">${Object.entries(names).map(([k, l]) => { const done = s[k]?.kind === 'done';
-                return `<span class="sd-step${done ? ' sd-step--done' : k === current ? ' sd-step--current' : ''}"><span class="sd-step-n">${done ? '✓' : k}</span>${esc(l)}</span>`; }).join('<span class="sd-step-sep"></span>')}</div>
+                return `<span class="sd-step${done ? ' sd-step--done' : k === current ? ' sd-step--current' : ''}"><span class="sd-step-n">${done ? '✓' : k}</span>${esc(l)}</span>`; }).join('<span class="sd-step-sep"></span>')}${st.opts.openTab
+                ? `<span class="sd-step-sep"></span><button type="button" class="sd-step sd-step--link" data-act="to-lc"${tipAttr('Steps 6–10 are on the Letter of Credit tab')}><span class="sd-step-n sd-step-n--wide">6–10</span>Letter of credit</button>` : ''}</div>
             <div class="sd-top-right"><span class="sd-chip sd-chip--${esc(v.status)}">${esc(v.statusLabel)}</span>
             <button class="btn-link" data-act="settings">Document settings</button></div>
         </div>`;
@@ -928,6 +929,7 @@ const ShipDocs = (() => {
             'unlock-bales', 'confirm-ei', 'unlock-ei', 'use-suggested', 'confirm-jps', 'unlock-jps'].includes(a)) await flushSave(st);
         const r = st.review;
         if (a === 'settings') return openSettings(() => load(st));
+        if (a === 'to-lc') return st.opts.openTab && st.opts.openTab('lc');
         if (a === 'add-bale') {
             const max = Math.max(0, ...(r.bales || []).map(b => Number(b.n) || 0));
             r.bales = [...(r.bales || []), { n: max + 1, kg: null, colour: '' }];

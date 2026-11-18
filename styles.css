@@ -7720,3 +7720,51 @@ textarea.sd-input { resize: vertical; }
     .sd-split-row span:nth-child(3) { grid-column: 1 / -1; }
     .sd-top { flex-direction: column; align-items: flex-start; }
 }
+
+/* ── Letter of Credit tab: steps 6–10, in the Export documents layout (.sd) ── */
+.sd-step--link { border: 0; background: none; padding: 0; font: inherit; font-size: 0.78rem; cursor: pointer; color: #475569; }
+.sd-step--link:hover { color: #0f172a; text-decoration: underline; text-underline-offset: 2px; }
+.sd-step-n--wide { width: auto; padding: 0 0.4rem; border-radius: 999px; }
+.lc2 .lc-save-status:empty { display: none; }
+.lc2-lcno { border: 1px solid #e2e8f0; background: #fff; border-radius: 999px; padding: 0.15rem 0.6rem; font-size: 0.76rem; color: #334155; cursor: pointer; }
+.lc2-lcno:hover { border-color: #94a3b8; }
+.lc2-lcno.lc-copy-btn--ok { border-color: #86efac; color: #15803d; }
+.lc2-muted-link { color: #94a3b8; }
+.lc2 .lc-drive-folder-form { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; }
+.lc2 .lc-drive-folder-form[hidden] { display: none; }
+.lc2 .lc-drive-folder-form .lc-input { flex: 1; min-width: 240px; font-size: 0.8rem; }
+.lc2 .lc-ship-link-form:not([hidden]) { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; }
+/* Key dates: Issued · Shipped · Latest shipment · Present by · Expires */
+.lc2-dates { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 0.5rem; margin-top: 0.6rem; }
+.lc2-date { display: flex; flex-direction: column; gap: 0.1rem; padding: 0.45rem 0.65rem; border-radius: 6px; border: 1px solid #e2e8f0; background: #f8fafc; min-width: 0; }
+.lc2-date-l { font-size: 0.68rem; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: #64748b; }
+.lc2-date-v { font-size: 0.86rem; font-weight: 600; color: #0f172a; }
+.lc2-date-n { font-size: 0.72rem; color: #64748b; min-height: 1em; }
+.lc2-date--met { background: #f0fdf4; border-color: #bbf7d0; }
+.lc2-date--met .lc2-date-n { color: #15803d; }
+.lc2-date--due { background: #fffbeb; border-color: #fde68a; }
+.lc2-date--due .lc2-date-n { color: #b45309; font-weight: 600; }
+.lc2-date--late { background: #fef2f2; border-color: #fecaca; }
+.lc2-date--late .lc2-date-n { color: #b91c1c; font-weight: 600; }
+.lc2-date-in { border: 0; background: transparent; padding: 0; font: inherit; font-size: 0.86rem; font-weight: 600; color: #0f172a; width: 100%; }
+.lc2-date-in:focus { outline: none; box-shadow: 0 1px 0 #3b82f6; }
+/* Document rows: name (opens its details) · copies · checks · buttons */
+.lc2-name { border: 0; background: none; padding: 0; font: inherit; font-weight: 700; color: #0f172a; cursor: pointer; text-align: left; }
+.lc2-name:hover { text-decoration: underline; text-underline-offset: 2px; }
+.lc2-row .lc2-progress { flex-basis: 100%; border: 0; background: none; }
+.lc2-row .lc2-progress:empty { display: none; }
+.lc2-row .lc-card-check-loading { padding: 0.25rem 0; }
+.lc2-row .lc-check-matrix-bar { border-radius: 6px; }
+/* Details as label / value pairs */
+.lc2-kv { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 0.45rem 1.25rem; margin: 0 0 0.25rem; }
+.lc2-kv > div { display: flex; flex-direction: column; gap: 0.05rem; min-width: 0; }
+.lc2-kv dt { font-size: 0.68rem; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: #94a3b8; }
+.lc2-kv dd { margin: 0; font-size: 0.82rem; color: #1e293b; overflow-wrap: anywhere; }
+.lc2 .lc-cond-grid { margin: 0; }
+.lc2 .lc-raw-section { border-top: 0; margin-top: 0; padding-top: 0; }
+.lc2 .lc-known-issues-card { border: 0; padding: 0; background: none; }
+.lc2-new { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; margin-top: 0.6rem; }
+.lc2-new .lc-input { width: 260px; max-width: 100%; font-size: 0.85rem; }
+.lc2-row .lc-upload-confirm { display: flex; flex-direction: row; flex-wrap: wrap; align-items: center; gap: 0.6rem; padding: 0.45rem 0.65rem; margin-top: 0.25rem; border-radius: 6px; }
+.lc2 .sd-docrow-act [data-tip]:hover::after, .lc2 .sd-top-right [data-tip]:hover::after { left: auto; right: 0; }
+.lc2-row .lc-upload-confirm .lc-upload-confirm-fname { flex: 0 1 auto; flex-basis: auto; font-weight: 600; }
