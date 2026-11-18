@@ -610,17 +610,23 @@ export function hasUnconfirmedChanges(record) {
 
 // Why a document can't be generated yet ([] = ready).
 // doc: 'packing' | 'proforma'; stage: 'draft' | 'final' (packing only).
+// What a document is waiting for that only arrives later with the LC (its
+// number and date, the gross weight entered with them, the contract dates it
+// sets) — shown as "waiting for the LC", not as something to do now.
+const LC_WAIT = /^LC number missing$|^LC date of issue missing$|^Gross weight missing$/;
+export const waitsForLc = issue => LC_WAIT.test(String(issue || ''));
+
 // The contract terms on JPS's sales proforma — last date of shipment, expiry
 // date, containers — are the Letter of Credit's (44C, 31D, the container in
-// 45A), from the LC linked to the shipment. Until one is linked, what was read
-// from JPS's PDF stands in. from: 'lc' | 'pdf' | null per field.
+// 45A), from the LC linked to the shipment. They aren't needed until the LC is
+// issued: before that they're blank and the signed copy prints without them.
+// from: 'lc' | null per field.
 export function jpsContractTerms(record, lc) {
-    const pdf = record?.jps?.contract || {};
     const has = v => !!String(v || '').trim();
-    const pick = (lcVal, pdfVal, ok) => (ok(lcVal) ? { value: lcVal, from: 'lc' } : ok(pdfVal) ? { value: pdfVal, from: 'pdf' } : { value: '', from: null });
-    const ship = pick(lc?.latestShipDate, pdf.lastShipmentDate, isYmd);
-    const exp = pick(lc?.expiryDate, pdf.expiryDate, isYmd);
-    const cont = pick(lc?.goods?.container, pdf.containers, has);
+    const pick = (lcVal, ok) => (ok(lcVal) ? { value: lcVal, from: 'lc' } : { value: '', from: null });
+    const ship = pick(lc?.latestShipDate, isYmd);
+    const exp = pick(lc?.expiryDate, isYmd);
+    const cont = pick(lc?.goods?.container, has);
     return {
         lastShipmentDate: ship.value, expiryDate: exp.value, containers: String(cont.value || '').trim(),
         from: { lastShipmentDate: ship.from, expiryDate: exp.from, containers: cont.from },
@@ -629,9 +635,8 @@ export function jpsContractTerms(record, lc) {
 }
 
 // doc 'jps' (our signed rewrite of JPS's sales proforma) also takes the
-// titles of JPS checks still blocking, whether a signature is uploaded and
-// the contract terms (jpsContractTerms, from the linked LC).
-export function generationIssues({ record, settings, doc, stage = 'draft', shipmentNumber = null, otherInvoiceNumbers = [], jpsFailures = [], hasSignature = false, jpsTerms = null }) {
+// titles of JPS checks still blocking and whether a signature is uploaded.
+export function generationIssues({ record, settings, doc, stage = 'draft', shipmentNumber = null, otherInvoiceNumbers = [], jpsFailures = [], hasSignature = false }) {
     const r = record || {};
     const out = [];
     const miss = missingSettings(settings, doc);
@@ -656,9 +661,6 @@ export function generationIssues({ record, settings, doc, stage = 'draft', shipm
         if (!(j.lines || []).some(l => Number(l.kg) > 0 && Number(l.unitPrice) > 0 && Number(l.amount) > 0)) out.push('JPS invoice lines need kg, unit price and amount');
         if (jpsFailures.length) out.push(`JPS invoice fails: ${jpsFailures.join('; ')}`);
         else if (!r.jpsConfirmed) out.push("Confirm JPS's proforma invoice in section 5");
-        const c = jpsTerms || jpsContractTerms(r, null);
-        if (!isYmd(c.lastShipmentDate)) out.push("Last date of shipment missing — it comes from the LC (Letter of Credit tab)");
-        if (!isYmd(c.expiryDate)) out.push("Expiry date missing — it comes from the LC (Letter of Credit tab)");
         if (!hasSignature) out.push('Upload your signature in Document settings → Enviroware');
     }
     if (doc === 'packing' && stage === 'final') {

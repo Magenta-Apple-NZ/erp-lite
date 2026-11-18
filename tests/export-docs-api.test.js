@@ -275,6 +275,8 @@ test('final packing list: LC details checked against the linked LC; status final
     let v = (await call(recordApi.onRequestGet, 'GET', '/r')).body;
     assert.equal(v.linkedLc.lcNumber, '320126011494');
     assert.deepEqual(v.generation.packingFinal, ['LC number missing', 'LC date of issue missing', 'Gross weight missing']);
+    assert.deepEqual(v.waiting.packingFinal, ['LC number missing', 'LC date of issue missing', 'Gross weight missing'], 'these wait for the LC — nothing to do yet');
+    assert.deepEqual(v.waiting.proforma, []);
 
     v = (await call(recordApi.onRequestPatch, 'PATCH', '/r', { lc: { number: '320126011494', date: '2026-12-01', grossKg: 18136 }, exportInvoice: { ...v.record.exportInvoice, date: '2026-11-13', numberConfirmed: true, rateConfirmed: true } })).body;
     assert.equal(v.status, 'lc_issued');

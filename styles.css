@@ -7458,7 +7458,9 @@ a.db-row:hover { background: #f8fafc; border-color: #e2e8f0; }
 /* ── Shipment export documents (shipdocs.js) ── */
 .sd { font-size: 0.85rem; color: #1e293b; max-width: 1200px; }
 /* One clean row per section; details open below (▸). */
-.sd-sec { padding-top: 0.8rem; padding-bottom: 0.8rem; }
+.sd-sec { padding-top: 0.8rem; padding-bottom: 0.8rem; transition: box-shadow 0.2s, border-color 0.2s; }
+.sd-sec--done { border-color: #bbf7d0; box-shadow: 0 0 0 1px #dcfce7, 0 0 14px rgba(34, 197, 94, 0.14); }
+.sd-sec--current { border-color: #fdba74; box-shadow: 0 0 0 1px #ffedd5, 0 0 18px rgba(249, 115, 22, 0.18); }
 .sd-sec-hd { display: flex; align-items: center; gap: 0.55rem; flex-wrap: wrap; min-height: 2rem; }
 .sd-sec-toggle { display: inline-flex; align-items: center; gap: 0.4rem; border: 0; background: none; padding: 0.15rem 0; cursor: pointer; color: #475569; font: inherit; }
 .sd-sec-toggle--static { cursor: default; }
@@ -7484,6 +7486,7 @@ a.db-row:hover { background: #f8fafc; border-color: #e2e8f0; }
 .sd-dchip { display: inline-flex; align-items: center; gap: 0.25rem; padding: 0.1rem 0.5rem; border-radius: 999px; font-size: 0.72rem; font-weight: 600; border: 1px solid #e2e8f0; background: #f8fafc; color: #64748b; cursor: help; }
 .sd-dchip--ok { background: #f0fdf4; border-color: #bbf7d0; color: #166534; }
 .sd-dchip--warn { background: #fffbeb; border-color: #fde68a; color: #92400e; }
+.sd-wait { display: inline-block; padding: 0.05rem 0.5rem; border-radius: 999px; background: #f8fafc; border: 1px solid #e2e8f0; color: #64748b; font-size: 0.72rem; font-weight: 600; cursor: help; }
 .sd-issue { display: inline-block; padding: 0.05rem 0.5rem; border-radius: 999px; background: #fffbeb; border: 1px solid #fde68a; color: #92400e; font-size: 0.72rem; font-weight: 600; cursor: help; }
 /* Document rows and Xero rows: one line each */
 .sd-docs { margin-top: 0.4rem; }

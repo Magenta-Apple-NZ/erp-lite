@@ -85,7 +85,22 @@ const ShipDocs = (() => {
             ${settingsBannerHtml(v)}
             ${SEC_ORDER.map(k => { const html = secHtml(st, k); return `<section class="ship-det-section sd-sec" id="sd-sec-${k}" ${html ? '' : 'hidden'}>${html}</section>`; }).join('')}
         </div>`;
+        glowStages(st);
         wire(st);
+    }
+
+    // The stage being worked on (the first numbered section not done) glows
+    // faint orange; finished stages glow green.
+    function glowStages(st) {
+        const s = sectionStatus(st);
+        const stages = ['1', '2', '3', '4', '5', '6', '7'];
+        const current = stages.find(k => s[k] && s[k].kind !== 'done');
+        for (const k of stages) {
+            const el = $(st, '#sd-sec-' + k);
+            if (!el) continue;
+            el.classList.toggle('sd-sec--done', s[k]?.kind === 'done');
+            el.classList.toggle('sd-sec--current', k === current);
+        }
     }
 
     function stepsHtml(v) {
@@ -516,17 +531,20 @@ const ShipDocs = (() => {
 
     // ── Documents ────────────────────────────────────────────────────────
     // Every document row is the same: name, when a copy was generated, and
-    // Preview · Download PDF · .xlsx · Generate. What still blocks it is a chip.
-    function issuesChip(list) {
-        if (!list.length) return '';
-        return `<span class="sd-issue"${tipAttr(list.join(' · '))}>! ${esc(list.length === 1 ? list[0] : `${list.length} things to do first`)}</span>`;
+    // Preview · Download PDF · .xlsx · Generate. What still blocks it is a chip:
+    // amber for something to do now, grey for what only comes with the LC.
+    function issuesChip(list, waiting = []) {
+        const later = list.filter(i => waiting.includes(i));
+        const now = list.filter(i => !waiting.includes(i));
+        return (now.length ? `<span class="sd-issue"${tipAttr(now.join(' · '))}>! ${esc(now.length === 1 ? now[0] : `${now.length} things to do first`)}</span>` : '')
+            + (later.length ? `<span class="sd-wait"${tipAttr('Comes with the LC once it is issued and linked on the Letter of Credit tab: ' + later.map(i => i.replace(/ — it comes from the LC.*$/, '')).join(' · '))}>… Waiting for the LC</span>` : '');
     }
-    function docRowHtml(st, { name, doc, stage, issues = [], xlsx = false, preview, gen, genLabel, tip = '' }) {
+    function docRowHtml(st, { name, doc, stage, issues = [], waiting = [], xlsx = false, preview, gen, genLabel, tip = '' }) {
         const v = st.view, b = base(v.shipment.id);
         const out = latestOut(v.record, doc, stage);
         return `<div class="sd-docrow">
             <div class="sd-docrow-name"><strong>${esc(name)}</strong>${info(tip)}
-                <span class="sd-muted"${out ? tipAttr(`Generated ${when(out.at)}${by(out.by)} · ${out.filename || ''}`) : ''}>${out ? `Generated ${esc(day(nzYmd(out.at)))}` : 'Not generated'}</span>${issuesChip(issues)}</div>
+                <span class="sd-muted"${out ? tipAttr(`Generated ${when(out.at)}${by(out.by)} · ${out.filename || ''}`) : ''}>${out ? `Generated ${esc(day(nzYmd(out.at)))}` : 'Not generated'}</span>${issuesChip(issues, waiting)}</div>
             <div class="sd-docrow-act">
                 <a class="btn-secondary btn-sm" href="${b}/render?${preview}" target="_blank" rel="noopener" title="How it would print with today's figures — not an issued copy">Preview</a>
                 ${out ? `<a class="btn-secondary btn-sm" href="${b}/render?out=${encodeURIComponent(out.key)}&download=1" target="_blank" rel="noopener" title="${esc(out.filename || '')}">Download PDF</a>` : ''}
@@ -599,24 +617,23 @@ const ShipDocs = (() => {
             ${termsHtml(v.jpsTerms)}` };
     }
 
-    // Contract terms on the signed copy: the LC's, read-only (JPS's PDF stands
-    // in until an LC is linked on the Letter of Credit tab).
+    // Contract terms on the signed copy: the LC's, read-only — shown only once
+    // the LC is issued and linked (they aren't needed before then).
     function termsHtml(t) {
-        if (!t) return '';
-        const src = f => f === 'lc' ? `From LC ${t.lcNumber || ''}` : f === 'pdf' ? "Read from JPS's PDF — the LC's value replaces it once the LC is linked" : 'Comes from the LC — link it on the Letter of Credit tab';
-        const cell = (label, value, from) => `<div class="sd-field"><span class="imp-field-label">${esc(label)}</span>
-            <div class="sd-fig"><span class="sd-val${value ? '' : ' sd-muted'}"${tipAttr(src(from))}>${esc(value || 'From the LC')}</span>${from === 'pdf' ? ' <span class="sd-tag" data-tip="The LC isn\'t linked yet">from their PDF</span>' : ''}</div></div>`;
-        return `<h4 class="sd-h4">Contract terms ${info(`Set by the Letter of Credit (latest date of shipment 44C, expiry 31D, container) and printed on the signed copy.${t.lcNumber ? ' Linked LC: ' + t.lcNumber + '.' : ' No LC is linked yet.'}`)}</h4>
+        if (!t || !Object.values(t.from).some(Boolean)) return '';
+        const cell = (label, value) => `<div class="sd-field"><span class="imp-field-label">${esc(label)}</span>
+            <div class="sd-fig"><span class="sd-val${value ? '' : ' sd-muted'}"${tipAttr(`From LC ${t.lcNumber || ''}`)}>${esc(value || '—')}</span></div></div>`;
+        return `<h4 class="sd-h4">Contract terms ${info(`From LC ${t.lcNumber || ''} (latest date of shipment 44C, expiry 31D, container) — printed on the signed copy.`)}</h4>
             <div class="sd-grid3">
-                ${cell('Last date of shipment', day(t.lastShipmentDate), t.from.lastShipmentDate)}
-                ${cell('Expiry date', day(t.expiryDate), t.from.expiryDate)}
-                ${cell('Containers', t.containers, t.from.containers)}
+                ${cell('Last date of shipment', day(t.lastShipmentDate))}
+                ${cell('Expiry date', day(t.expiryDate))}
+                ${cell('Containers', t.containers)}
             </div>`;
     }
 
     function jpsDocHtml(st) {
         if (!st.view.record.jps) return '';
-        return docRowHtml(st, { name: 'Signed copy for Paul', doc: 'jps', stage: 'contract', issues: st.view.generation?.jpsContract || [], preview: 'doc=jps', gen: 'gen-jps', genLabel: 'Generate',
+        return docRowHtml(st, { name: 'Signed copy for Paul', doc: 'jps', stage: 'contract', issues: st.view.generation?.jpsContract || [], waiting: st.view.waiting?.jpsContract || [], preview: 'doc=jps', gen: 'gen-jps', genLabel: 'Generate',
             tip: "JPS's proforma invoice rewritten without their template's errors, signed and sealed by you. Send it to Paul to sign." });
     }
 
@@ -693,7 +710,7 @@ const ShipDocs = (() => {
         const useLc = L && (L.lcNumber !== lc.number || (L.issuedDate && L.issuedDate !== lc.date));
         return { ...head,
             checks: v.lcChecks.length ? v.lcChecks : null,
-            always: `<div class="sd-docs">${docRowHtml(st, { name: 'Final packing list', doc: 'packing', stage: 'final', issues: g.packingFinal, xlsx: true, preview: 'doc=packing&stage=final', gen: 'gen-final', genLabel: 'Generate' })}</div>`,
+            always: `<div class="sd-docs">${docRowHtml(st, { name: 'Final packing list', doc: 'packing', stage: 'final', issues: g.packingFinal, waiting: v.waiting?.packingFinal || [], xlsx: true, preview: 'doc=packing&stage=final', gen: 'gen-final', genLabel: 'Generate' })}</div>`,
             body: `${L ? `<p class="sd-muted">Linked LC: <strong>${esc(L.lcNumber)}</strong>${L.issuedDate ? `, issued ${esc(day(L.issuedDate))}` : ''}${useLc ? ` · <button class="btn-link" data-act="use-lc">Use these</button>` : ''}</p>` : '<p class="sd-muted">No LC linked yet (Letter of Credit tab) — you can still enter the details.</p>'}
             <div class="sd-grid4">
                 <label class="sd-field"><span class="imp-field-label">LC no.</span><input class="sd-input" id="sd-lc-number" value="${esc(lc.number || '')}"></label>
@@ -815,6 +832,7 @@ const ShipDocs = (() => {
     function refreshStatus(st) {
         for (const k of ['2', '3', '5', '7', 'cost']) refreshHd(st, k);
         for (const k of ['rc', '4', '6']) redrawSec(st, k);
+        glowStages(st);
     }
 
     function refreshReviewBits(st) {

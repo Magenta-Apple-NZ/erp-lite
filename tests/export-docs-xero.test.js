@@ -198,7 +198,7 @@ test('signed JPS proforma: terms read from their PDF, generated once your signat
     assert.match(page, /SALES PROFORMA INVOICE/);
     assert.match(page, /data:image\/png;base64,U0lH/);
     assert.match(page, /Thirty-Two Thousand Eight Hundred and Fifteen and Thirty Cents Only/);
-    assert.match(page, /Last date of shipment:<\/th><td>15th June 2027/);
+    assert.doesNotMatch(page, /Last date of shipment/, 'no LC linked yet: printed without the LC dates');
 
     const preview = await (await renderApi.onRequestGet({ env, params: { id: SHIP }, request: new Request('https://hub.test/x?doc=jps') })).text();
     assert.match(preview, /Preview — use Generate/);

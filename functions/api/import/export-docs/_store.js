@@ -13,7 +13,7 @@ import { getJson, putJson, whoami } from '../../stock/_store.js';
 import { shipNumber, shipLabel } from '../../stock/_engine.js';
 import {
     mergeSettings, emptyReview, runChecks, baleTotals, invoiceAmount, exportInvoiceDefaults,
-    generationIssues, lcCrossChecks, deriveStatus, STATUS_LABELS, hasUnconfirmedChanges, missingSettings, blockingFailures, jpsContractTerms,
+    generationIssues, lcCrossChecks, deriveStatus, STATUS_LABELS, hasUnconfirmedChanges, missingSettings, blockingFailures, jpsContractTerms, waitsForLc,
 } from '../_exportdocs.js';
 import { jpsChecks, jpsSplit, xeroDocs, costPlan, convertDocToNzd, reconcile } from '../_shipxero.js';
 import { nzToday } from '../../_dates.js';
@@ -124,9 +124,10 @@ export async function buildView(env, shipmentId) {
     const confirmedOk = record.confirmed ? !blockingFailures(runChecks(record.confirmed, { settings, shipmentNumber: number, dismissed: record.dismissed })).length : false;
     const jpsOk = !blockingFailures(jChecks).length;
     const jpsFailures = blockingFailures(jChecks).map(c => c.title);
-    // JPS's contract terms come from the linked LC (JPS's PDF until there is one).
+    // JPS's contract terms come from the linked LC, once it's issued.
     const jpsTerms = rec.jps ? jpsContractTerms(rec, lc) : null;
-    const gen = (doc, stage) => generationIssues({ record: rec, settings, doc, stage, shipmentNumber: number, otherInvoiceNumbers, jpsFailures, hasSignature, jpsTerms });
+    const gen = (doc, stage) => generationIssues({ record: rec, settings, doc, stage, shipmentNumber: number, otherInvoiceNumbers, jpsFailures, hasSignature });
+    const generation = { packingDraft: gen('packing', 'draft'), proforma: gen('proforma'), packingFinal: gen('packing', 'final'), jpsContract: gen('jps') };
     return {
         shipment: {
             id: ship.id, number, label: shipLabel(ship), startDate: ship.startDate || null,
@@ -140,7 +141,9 @@ export async function buildView(env, shipmentId) {
         confirmedTotals,
         amount: confirmedTotals ? invoiceAmount(confirmedTotals.netKg, exportInvoice.rate) : null,
         unconfirmedChanges: hasUnconfirmedChanges(record),
-        generation: { packingDraft: gen('packing', 'draft'), proforma: gen('proforma'), packingFinal: gen('packing', 'final'), jpsContract: gen('jps') },
+        generation,
+        // The part of each list that waits for the LC (a later step), not for you.
+        waiting: Object.fromEntries(Object.entries(generation).map(([k, list]) => [k, list.filter(waitsForLc)])),
         hasSignature,
         linkedLc: lc ? {
             id: lc.id, lcNumber: lc.lcNumber || '', issuedDate: lc.issuedDate || '', proformaRef: lc.proformaRef || '',
